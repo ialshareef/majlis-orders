@@ -1,0 +1,17 @@
+# أسرار — لا تُرفع أبداً
+.cf-token
+*.token
+.env
+
+# ملفات مُولَّدة (تُبنى بأمر build-worker.ps1)
+worker/worker.bundle.js
+deploy/
+deploy.zip
+
+# إعدادات محلية للأدوات
+.claude/settings.local.json
+
+# نظام التشغيل
+Thumbs.db
+desktop.ini
+.DS_Store

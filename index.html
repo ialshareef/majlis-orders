@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0F172A">
+<title>أصالة نجد | إدارة طلبات المجالس</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<!-- خط واحد للموقع كله: IBM Plex Sans Arabic يغطي العربية واللاتينية والأرقام بتصميم واحد -->
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+
+<!-- ============ أيقونات SVG ============ -->
+<svg xmlns="http://www.w3.org/2000/svg" style="display:none">
+  <symbol id="i-sofa" viewBox="0 0 24 24"><path d="M6 11V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4"/><path d="M3 13a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5H3z"/><path d="M5 18v2M19 18v2M3 15h18"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M8 6h13M8 12h13M8 18h13"/><path d="M3 6h.01M3 12h.01M3 18h.01"/></symbol>
+  <symbol id="i-tag" viewBox="0 0 24 24"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><path d="M7 7h.01"/></symbol>
+  <symbol id="i-users" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M4 21v-7M4 10V3M12 21v-9M12 8V3M20 21v-5M20 12V3M1 14h6M9 8h6M17 16h6"/></symbol>
+  <symbol id="i-logout" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5M21 12H9"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><path d="M17 21v-8H7v8M7 3v5h8"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M16 13H8M16 17H8"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
+  <symbol id="i-rotate" viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V4H4v12h4"/></symbol>
+  <symbol id="i-scissors" viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4L8.12 15.88M14.47 14.48L20 20M8.12 8.12L12 12"/></symbol>
+  <symbol id="i-align" viewBox="0 0 24 24"><path d="M4 3v18"/><path d="M8 8h12M8 16h12M12 4l-4 4 4 4M12 12l-4 4 4 4"/></symbol>
+  <symbol id="i-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M11 8v6M8 11h6"/></symbol>
+  <symbol id="i-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35M8 11h6"/></symbol>
+  <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M6 21V4h12v17"/><path d="M14 12h.01"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M12 4v16M4 12h16"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></symbol>
+  <symbol id="i-receipt" viewBox="0 0 24 24"><path d="M4 2v20l3-2 3 2 3-2 3 2 3-2 3 2V2l-3 2-3-2-3 2-3-2-3 2z"/><path d="M8 8h8M8 12h8M8 16h5"/></symbol>
+  <symbol id="i-wallet" viewBox="0 0 24 24"><path d="M20 7H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2z"/><path d="M16 3H8M16 13h2"/></symbol>
+  <symbol id="i-user" viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M20 21a8 8 0 0 0-16 0"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></symbol>
+  <symbol id="i-corner" viewBox="0 0 24 24"><path d="M5 3v12a4 4 0 0 0 4 4h12"/><path d="M5 9h4a2 2 0 0 1 2 2v4"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></symbol>
+  <symbol id="i-ruler" viewBox="0 0 24 24"><path d="M3 17l14-14 4 4L7 21z"/><path d="M14 6l1 1M11 9l1 1M8 12l1 1"/></symbol>
+  <symbol id="i-money" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M6 12h.01M18 12h.01"/></symbol>
+  <symbol id="i-pillow" viewBox="0 0 24 24"><path d="M3 6c6-2 12-2 18 0v12c-6 2-12 2-18 0z"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="M9 18l6-6-6-6"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-upload" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z"/></symbol>
+  <symbol id="i-move" viewBox="0 0 24 24"><path d="M5 9l-3 3 3 3M9 5l3-3 3 3M15 19l-3 3-3-3M19 9l3 3-3 3M2 12h20M12 2v20"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2.3-5.7L3 10"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M20.5 13a9 9 0 1 1-2.3-5.7L21 10"/></symbol>
+  <symbol id="i-lock" viewBox="0 0 24 24"><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></symbol>
+  <symbol id="i-whatsapp" viewBox="0 0 24 24"><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20.6l1.6-4.9A8.4 8.4 0 1 1 20.5 11.7z"/><path d="M8.9 9c.2-.4.4-.4.6-.4h.5c.2 0 .4 0 .5.4l.6 1.4c.1.2 0 .3-.1.4l-.3.4c-.1.1-.2.3-.1.4.2.4.6 1 1.1 1.4.6.5 1.1.7 1.4.8.2 0 .3 0 .4-.2l.4-.5c.1-.1.3-.2.4-.1l1.3.7c.2.1.3.2.3.4 0 .5-.4 1-.8 1.2-.4.2-.9.2-1.4.1-.9-.3-2-.8-3.1-1.8-1-1-1.6-2.2-1.9-3-.2-.5-.1-1.1.2-1.6z"/></symbol>
+  <symbol id="i-print" viewBox="0 0 24 24"><path d="M6 9V3h12v6"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="7" rx="1"/></symbol>
+  <symbol id="i-swap" viewBox="0 0 24 24"><path d="M16 3l4 4-4 4"/><path d="M20 7H4"/><path d="M8 21l-4-4 4-4"/><path d="M4 17h16"/></symbol>
+</svg>
+
+<!-- ============ شاشة الدخول ============ -->
+<div id="loginScreen" class="login-screen">
+  <div class="login-art">
+    <div class="art-ring" aria-hidden="true"></div>
+    <div class="art-ring-2" aria-hidden="true"></div>
+    <div class="art-grid" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+    <div class="art-card art-card-1" aria-hidden="true">
+      <span class="art-bar w90"></span><span class="art-bar accent w70"></span><span class="art-bar w45"></span>
+    </div>
+    <div class="art-card art-card-2" aria-hidden="true">
+      <span class="art-bar accent w45"></span><span class="art-bar w70"></span>
+    </div>
+    <div class="art-block" aria-hidden="true"></div>
+    <div class="login-brand">
+      <span class="brand-mark lg"><svg><use href="#i-sofa"/></svg></span>
+      <h1>أصالة نجد</h1>
+      <p>نظام إدارة طلبات المجالس: صمّم، سعّر، واستلم الطلبات من مكان واحد.</p>
+    </div>
+  </div>
+  <form id="loginForm" class="login-card" autocomplete="on">
+    <h2>تسجيل الدخول</h2>
+    <label>اسم المستخدم <input id="loginUser" autocomplete="username" required></label>
+    <label>كلمة المرور <input id="loginPass" type="password" autocomplete="current-password" required></label>
+    <button class="btn primary block lg" type="submit">دخول</button>
+    <p id="loginError" class="error" role="alert"></p>
+    <p class="hint">أول مرة؟ المستخدم <b>admin</b> وكلمة المرور <b>admin</b>. غيّرها من صفحة المستخدمين.</p>
+  </form>
+</div>
+
+<!-- ============ التطبيق ============ -->
+<div id="app" class="app" hidden>
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark"><svg><use href="#i-sofa"/></svg></span>
+      <span class="brand-text"><b id="shopNameLbl">أصالة نجد</b><small>نظام إدارة الطلبات</small></span>
+    </div>
+    <nav class="tabs" id="mainNav">
+      <button data-page="order" class="active"><svg><use href="#i-pen"/></svg><span>الطلب</span></button>
+      <button data-page="orders"><svg><use href="#i-list"/></svg><span>الطلبات</span></button>
+      <button data-page="items" data-admin><svg><use href="#i-tag"/></svg><span>الأصناف</span></button>
+      <button data-page="users" data-admin><svg><use href="#i-users"/></svg><span>المستخدمون</span></button>
+      <button data-page="activity" data-admin><svg><use href="#i-clock"/></svg><span>التحديثات</span></button>
+    </nav>
+    <div class="userbox">
+      <button id="netState" class="net-chip" data-state="ok" hidden title="حالة الاتصال — اضغط للتحديث الآن">
+        <i class="net-dot"></i><span id="netLabel">محدّث</span>
+      </button>
+      <div class="notif-wrap">
+        <button id="btnNotif" class="icon-btn notif-btn" title="مركز التنبيهات" aria-haspopup="dialog" aria-expanded="false" aria-controls="notifPanel">
+          <svg><use href="#i-bell"/></svg>
+          <span id="notifCount" class="notif-badge" hidden></span>
+        </button>
+        <div id="notifPanel" class="notif-panel" role="dialog" aria-modal="false" aria-labelledby="notifTitle" hidden>
+          <div class="notif-head">
+            <h3 id="notifTitle">التنبيهات</h3>
+            <button type="button" id="notifReadAll" class="link-btn">تعليم الكل كمقروء</button>
+            <button type="button" id="notifClose" class="icon-btn" title="إغلاق"><svg><use href="#i-x"/></svg></button>
+          </div>
+          <div id="notifList" class="notif-list"></div>
+          <div id="notifEmpty" class="empty notif-empty" hidden><svg><use href="#i-bell"/></svg><p>لا توجد تنبيهات حالياً</p></div>
+        </div>
+      </div>
+      <span class="user-chip"><i class="avatar" id="userAvatar">م</i><span id="currentUserName"></span></span>
+      <button id="btnSettings" class="icon-btn" data-admin title="الإعدادات والنسخ الاحتياطي"><svg><use href="#i-settings"/></svg></button>
+      <button id="btnLogout" class="icon-btn" title="خروج"><svg><use href="#i-logout"/></svg></button>
+    </div>
+  </header>
+
+  <main>
+    <!-- ============ الصفحة الأولى: الطلب ============ -->
+    <section id="page-order" class="page active">
+      <div id="orderLockBanner" class="lock-banner" hidden>
+        <svg><use href="#i-lock"/></svg>
+        <span>هذا الطلب من إنشاء <b id="lockOwner">موظف آخر</b>، وهو معروض للاطلاع فقط. يستطيع مدير النظام نقل ملكيته إليك من صفحة الطلبات.</span>
+      </div>
+      <div class="order-bar">
+        <div class="order-title">
+          <div><h2 id="orderTitle">طلب جديد</h2><small id="orderMeta" class="order-meta"></small></div>
+          <span id="orderDirty" class="dot-badge" title="تغييرات غير محفوظة" hidden></span>
+        </div>
+        <label class="status-chip" id="statusChip" data-status="new" title="حالة الطلب">
+          <i class="status-dot"></i>
+          <select id="orderStatus" aria-label="حالة الطلب">
+            <option value="new">جديد</option>
+            <option value="progress">قيد التنفيذ</option>
+            <option value="done">اكتمال التنفيذ</option>
+            <option value="delivered">تم التوصيل</option>
+            <option value="cancelled">ملغي</option>
+          </select>
+          <svg class="status-caret"><use href="#i-chevron"/></svg>
+        </label>
+        <div class="order-summary">
+          <span>المجموع <b id="barTotal">0.00</b></span>
+          <span class="rem">المتبقي <b id="barRemaining">0.00</b></span>
+        </div>
+        <div class="actions">
+          <button id="btnNewOrder" class="btn" title="طلب جديد"><svg><use href="#i-plus"/></svg><span>جديد</span></button>
+          <button id="btnExportPdfTop" class="btn" title="تصدير ومشاركة PDF"><svg><use href="#i-file"/></svg><span>PDF</span></button>
+          <button id="btnSaveOrder" class="btn primary" title="حفظ الطلب"><svg><use href="#i-save"/></svg><span>حفظ الطلب</span></button>
+        </div>
+      </div>
+
+      <nav class="steps" id="stepNav" aria-label="أقسام الطلب">
+        <a href="#m-design"><i>١</i>التصميم</a>
+        <a href="#m-price"><i>٢</i>التسعير</a>
+        <a href="#m-customer"><i>٣</i>العميل</a>
+        <a href="#m-pay"><i>٤</i>الدفع</a>
+        <a href="#m-export"><i>٥</i>التصدير</a>
+      </nav>
+
+      <!-- الموديول 1: التصميم -->
+      <section class="card module" id="m-design">
+        <header class="module-head">
+          <h3><span class="step-num">١</span><svg><use href="#i-ruler"/></svg>التصميم</h3>
+          <span class="hint">حدّد مقاسات الغرفة، ثم أضف الكنب والفتحات على المخطط.</span>
+        </header>
+        <div class="designer-layout">
+          <div class="canvas-col">
+            <div class="canvas-toolbar">
+              <div class="tb-group">
+                <button class="tb-btn" id="tbAddSofa" title="إضافة كنب على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>كنب</span></button>
+                <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
+                <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
+                <button class="tb-btn" id="tbFillAll" title="فرش كل الجدران بالكنب"><svg><use href="#i-home"/></svg><span>فرش الكل</span></button>
+              </div>
+              <div class="tb-group">
+                <button class="tb-btn icon" id="tbUndo" title="تراجع (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
+                <button class="tb-btn icon" id="tbRedo" title="إعادة (Ctrl+Y)" disabled><svg><use href="#i-redo"/></svg></button>
+                <span class="tb-sep"></span>
+                <button class="tb-btn" id="tbEdit" title="تحرير خصائص المحدد (أو نقرة مزدوجة عليه)" disabled><svg><use href="#i-pen"/></svg><span>تحرير</span></button>
+                <button class="tb-btn icon" id="tbZoomOut" title="تصغير"><svg><use href="#i-zoom-out"/></svg></button>
+                <button class="tb-btn icon" id="tbZoomIn" title="تكبير"><svg><use href="#i-zoom-in"/></svg></button>
+                <button class="tb-btn icon" id="tbFit" title="ملاءمة العرض"><svg><use href="#i-fit"/></svg></button>
+              </div>
+            </div>
+            <div class="canvas-mode">
+              <span id="canvasModeHint">اسحب بإصبعك لتمرير الصفحة</span>
+              <button id="btnCanvasMode" class="btn small" aria-pressed="false" aria-controls="designCanvas">تحرير المخطط</button>
+            </div>
+            <div class="canvas-wrap">
+              <canvas id="designCanvas" aria-label="مخطط الغرفة والكنب" aria-describedby="canvasModeHint"></canvas>
+              <div id="overlapWarn" class="canvas-alert" hidden><svg><use href="#i-alert"/></svg> يوجد تداخل بين بعض القطع (مظللة بالأحمر)</div>
+              <div id="canvasHint" class="canvas-hint">اضغط على جدار لتعديله</div>
+              <div id="inspector" class="inspector" hidden></div>
+            </div>
+          </div>
+
+          <aside class="designer-panel">
+            <div class="ptabs" id="panelTabs">
+              <button data-tab="room" class="active"><svg><use href="#i-home"/></svg>الغرفة</button>
+              <button data-tab="sofa"><svg><use href="#i-sofa"/></svg>الكنب</button>
+              <button data-tab="corner"><svg><use href="#i-corner"/></svg>الزوايا</button>
+              <button data-tab="acc"><svg><use href="#i-pillow"/></svg>الإكسسوارات</button>
+            </div>
+
+            <div class="ptab active" data-tab="room">
+              <div class="row2">
+                <label>العرض الداخلي (م) <input id="roomW" type="number" step="0.1" min="0.5" value="5"></label>
+                <label>الطول الداخلي (م) <input id="roomH" type="number" step="0.1" min="0.5" value="4"></label>
+              </div>
+              <button id="btnApplyRect" class="btn block">تطبيق كغرفة مستطيلة</button>
+              <details class="wall-details"><summary>تعديل الجدران بالتفصيل <span>للغرف غير المستطيلة</span></summary><div class="walls-head">
+                <span>الجدران</span>
+                <button id="btnAddWall" class="btn small ghost"><svg><use href="#i-plus"/></svg> جدار</button>
+              </div>
+              <table class="walls-table">
+                <thead><tr><th>#</th><th>الطول (م)</th><th>الاتجاه°</th><th></th></tr></thead>
+                <tbody id="wallsBody"></tbody>
+              </table>
+              <p class="hint">الاتجاه: 0 يمين، 90 أسفل، 180 يسار، 270 أعلى. تعديل طول جدار يعدّل الجدار المقابل تلقائياً لتبقى الغرفة مغلقة.</p>
+              <p id="wallsWarn" class="warn"></p></details>
+            </div>
+
+            <div class="ptab" data-tab="sofa">
+              <p class="hint">الكنبة تُركَّب من ثلاثة: الخشب والقماش والإسفنج. سعر المتر مجموع أسعارها.</p>
+              <div class="row2">
+                <label>الخشب <select id="sofaWoodSel"></select></label>
+                <label>القماش <select id="sofaFabricSel"></select></label>
+              </div>
+              <div class="row2">
+                <label>الإسفنج <select id="sofaFoamSel"></select></label>
+                <label>العمق (م) <input id="sofaDepth" type="number" step="0.05" min="0.3" value="0.8"></label>
+              </div>
+              <p id="sofaPriceHint" class="hint"></p>
+              <label>الجدار <select id="wallSel"></select></label>
+              <div class="row2">
+                <button id="btnAddSofaWall" class="btn primary">إضافة على الجدار</button>
+                <button id="btnFillAll" class="btn">فرش كل الجدران</button>
+              </div>
+              <button id="btnAddSofaFree" class="btn block ghost">إضافة قطعة حرة</button>
+              <div class="field-group">
+                <span class="field-label">طريقة قياس الكنب على الجدار</span>
+                <div class="segmented" id="cornerMode">
+                  <button data-v="deduct" class="active">بدون تكرار الزوايا</button>
+                  <button data-v="full">بطول الجدار كامل</button>
+                </div>
+                <p class="hint" id="cornerHint">لا تداخل: الزاوية تُحسب مرة واحدة للجدار الأطول، وتُخصم من الجدار المجاور.</p>
+              </div>
+            </div>
+
+            <div class="ptab" data-tab="corner">
+              <p class="hint">لكل زاوية حالة واحدة: عادية، أو فاضية لطاولة خدمة جانبية، أو كنب زاوية على الضلعين.</p>
+              <p class="hint">كنب الزاوية يستعمل نفس تركيبة تبويب «الكنب».</p>
+              <div id="cornerList" class="corner-list"></div>
+              <p class="hint">الزاوية الفاضية تُخصم من الجدارين معاً، ولا يملؤها «فرش كل الجدران»، وتُكتب في الفاتورة للورشة.</p>
+            </div>
+
+            <div class="ptab" data-tab="acc">
+              <p class="hint">اضغط لإضافة القطعة في وسط الغرفة ثم اسحبها لمكانها.</p>
+              <div id="accButtons" class="acc-buttons"></div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- الموديول 2: التسعير -->
+      <section class="card module" id="m-price">
+        <header class="module-head">
+          <h3><span class="step-num">٢</span><svg><use href="#i-receipt"/></svg>التسعير</h3>
+          <button id="btnAddManual" class="btn small"><svg><use href="#i-plus"/></svg> صنف إضافي</button>
+        </header>
+        <div class="table-wrap">
+          <table class="table" id="priceTable">
+            <thead><tr><th>#</th><th>الصنف</th><th>الوحدة</th><th>الكمية</th><th>السعر</th><th>الإجمالي</th><th></th></tr></thead>
+            <tbody></tbody>
+            <tfoot>
+              <tr class="sub-row"><td colspan="5">المجموع قبل الضريبة</td><td id="priceSubtotal" class="num">0.00</td><td></td></tr>
+              <tr class="vat-row"><td colspan="5"><label class="inline-check"><input type="checkbox" id="vatEnabled" checked> ضريبة القيمة المضافة <input type="number" aria-label="نسبة الضريبة" inputmode="decimal" id="vatRate" class="inline rate" min="0" max="100" step="0.5" value="15"> %</label></td><td id="priceVat" class="num">0.00</td><td></td></tr>
+              <tr class="total-row"><td colspan="5">الإجمالي</td><td id="priceTotal" class="num">0.00</td><td></td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <p class="hint">الكنب يُسعّر بالمتر والإكسسوارات بالقطعة. يمكن تعديل السعر لهذا العميل مباشرة في الجدول.</p>
+      </section>
+
+      <div class="grid2">
+        <!-- الموديول 3: العميل -->
+        <section class="card module" id="m-customer">
+          <header class="module-head"><h3><span class="step-num">٣</span><svg><use href="#i-user"/></svg>بيانات العميل</h3></header>
+          <div class="fields">
+            <label class="fld wide">
+              <svg><use href="#i-user"/></svg>
+              <span class="fld-body"><b>اسم العميل</b><input id="custName" placeholder="الاسم الكامل"></span>
+            </label>
+            <label class="fld">
+              <svg><use href="#i-phone"/></svg>
+              <span class="fld-body"><b>رقم الجوال</b><input id="custPhone" inputmode="tel" placeholder="05xxxxxxxx"></span>
+            </label>
+            <label class="fld" title="تاريخ التوصيل المتوقع">
+              <svg><use href="#i-calendar"/></svg>
+              <span class="fld-body"><b>تاريخ التوصيل</b><input id="deliveryDate" type="date"><small id="deliveryEcho"></small></span>
+            </label>
+            <label class="fld wide">
+              <svg><use href="#i-pin"/></svg>
+              <span class="fld-body"><b>مكان التوصيل</b><textarea id="custAddress" rows="1" placeholder="المدينة، الحي، وصف الموقع"></textarea></span>
+            </label>
+            <label class="fld wide">
+              <svg><use href="#i-pen"/></svg>
+              <span class="fld-body"><b>ملاحظات</b><textarea id="orderNotes" rows="1" placeholder="أي تفاصيل إضافية عن الطلب"></textarea></span>
+            </label>
+          </div>
+        </section>
+
+        <!-- الموديول 4 + 5 -->
+        <div class="stack">
+          <section class="card module" id="m-pay">
+            <header class="module-head">
+              <h3><span class="step-num">٤</span><svg><use href="#i-wallet"/></svg>الدفع</h3>
+              <span class="pay-badge" id="payBadge" data-state="none">غير مدفوع</span>
+            </header>
+
+            <div class="pay" id="payBlock" data-state="none">
+              <div class="pay-track" role="presentation"><span class="pay-fill" id="payFill"></span></div>
+
+              <div class="pay-figs">
+                <div class="pay-fig">
+                  <span id="payTotalLbl">الإجمالي</span>
+                  <b id="payTotal" class="num">0.00</b>
+                  <small id="payVatNote"></small>
+                </div>
+                <label class="pay-fig is-input">
+                  <span id="payPaidLbl">المدفوع</span>
+                  <input id="payPaid" type="text" inputmode="decimal" value="0.00" class="num">
+                </label>
+                <div class="pay-fig is-rem">
+                  <span id="payRemLbl">المتبقي</span>
+                  <b id="payRemaining" class="num">0.00</b>
+                </div>
+              </div>
+
+              <div class="pay-quick" id="payQuick">
+                <button type="button" data-pay="1" class="btn small">المبلغ كامل</button>
+                <button type="button" data-pay="0.5" class="btn small">النصف</button>
+                <button type="button" data-pay="0.25" class="btn small">عربون ٢٥٪</button>
+                <button type="button" data-pay="0" class="btn small">تصفير</button>
+              </div>
+            </div>
+          </section>
+          <section class="card module" id="m-export">
+            <header class="module-head"><h3><span class="step-num">٥</span><svg><use href="#i-file"/></svg>تصدير الطلب</h3></header>
+            <p class="hint">يُنتَج ملف PDF من صفحة واحدة يشمل التصميم والتسعير والمبالغ وتاريخ التوصيل واسم الموظف، ثم تُعرض نافذة لمشاركته مع العميل على واتساب أو حفظه أو طباعته.</p>
+            <button id="btnExportPdf" class="btn primary block lg"><svg><use href="#i-file"/></svg> تصدير ومشاركة PDF</button>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ الصفحة الثالثة: الطلبات ============ -->
+    <section id="page-orders" class="page">
+      <div class="page-head">
+        <h2>جميع الطلبات</h2>
+        <div class="filters ord-filters">
+          <label class="search"><svg><use href="#i-search"/></svg><input id="ordSearch" aria-label="البحث في الطلبات" placeholder="بحث بالاسم / الجوال / رقم الطلب"></label>
+          <label class="date-f">من <input id="ordFrom" type="date" aria-label="من تاريخ"></label>
+          <label class="date-f">إلى <input id="ordTo" type="date" aria-label="إلى تاريخ"></label>
+          <div class="chip-group" id="ordStatusChips" role="group" aria-label="تصفية حسب حالة الطلب (اختيار متعدد)">
+            <button type="button" class="chip" data-stf="new" aria-pressed="false">جديد</button>
+            <button type="button" class="chip" data-stf="progress" aria-pressed="false">قيد التنفيذ</button>
+            <button type="button" class="chip" data-stf="done" aria-pressed="false">اكتمال التنفيذ</button>
+            <button type="button" class="chip" data-stf="delivered" aria-pressed="false">تم التوصيل</button>
+            <button type="button" class="chip" data-stf="cancelled" aria-pressed="false">ملغي</button>
+          </div>
+          <button type="button" class="btn small" id="ordClearFilters" hidden><svg><use href="#i-x"/></svg> مسح الفلاتر</button>
+        </div>
+      </div>
+      <p class="hint filter-note" id="ordersFilterNote" hidden></p>
+      <div class="stats-row" id="ordersStats"></div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="table responsive" id="ordersTable">
+            <thead><tr><th>رقم</th><th>التاريخ</th><th>العميل</th><th>الجوال</th><th>المجموع</th><th data-admin>التكلفة</th><th data-admin title="المبيعات قبل الضريبة ناقص التكاليف">صافي الربح</th><th>المدفوع</th><th>المتبقي</th><th>التوصيل</th><th>الحالة</th><th>الموظف</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="ordersMore" class="more-bar" hidden></div>
+        <div id="ordersEmpty" class="empty" hidden><svg><use href="#i-list"/></svg><p>لا توجد طلبات مطابقة</p></div>
+      </div>
+    </section>
+
+    <!-- ============ الصفحة الثانية: الأصناف ============ -->
+    <section id="page-items" class="page">
+      <div class="page-head">
+        <h2>إدارة الأصناف والأسعار</h2>
+        <button id="btnAddItem" class="btn primary"><svg><use href="#i-plus"/></svg> صنف جديد</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="table responsive" id="itemsTable">
+            <thead><tr><th>الصنف</th><th>الفئة</th><th>ملاحظة</th><th>الوحدة</th><th>السعر</th><th>الأبعاد الافتراضية</th><th>اللون</th><th>الحالة</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="itemsMore" class="more-bar" hidden></div>
+      </div>
+    </section>
+
+    <!-- ============ الصفحة الرابعة: المستخدمون ============ -->
+    <section id="page-users" class="page">
+      <div class="page-head">
+        <h2>إدارة المستخدمين</h2>
+        <button id="btnAddUser" class="btn primary"><svg><use href="#i-plus"/></svg> مستخدم جديد</button>
+      </div>
+      <div class="card">
+        <div class="table-wrap">
+          <table class="table responsive" id="usersTable">
+            <thead><tr><th>الاسم</th><th>اسم المستخدم</th><th>الدور</th><th>الحالة</th><th>عدد الطلبات</th><th></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============ الصفحة الخامسة: سجل التحديثات (مدير) ============ -->
+    <section id="page-activity" class="page">
+      <div class="page-head">
+        <h2>سجل تحديثات الطلبات</h2>
+        <div class="actions">
+          <button id="btnActCsv" class="btn small"><svg><use href="#i-download"/></svg> تصدير CSV</button>
+          <button id="btnActClear" class="btn small danger"><svg><use href="#i-trash"/></svg> مسح السجل</button>
+        </div>
+      </div>
+      <div class="stats-row" id="actStats"></div>
+      <div class="card">
+        <div class="filters act-filters">
+          <label class="search"><svg><use href="#i-search"/></svg><input id="actSearch" placeholder="بحث برقم الطلب / العميل / الموظف / التفاصيل"></label>
+          <select id="actUser"><option value="">كل الموظفين</option></select>
+          <select id="actType">
+            <option value="">كل الإجراءات</option>
+            <option value="create">إنشاء طلب</option>
+            <option value="update">تعديل طلب</option>
+            <option value="status">تغيير الحالة</option>
+            <option value="cost">تعديل التكاليف</option>
+            <option value="export">تصدير PDF</option>
+            <option value="delete">حذف طلب</option>
+          </select>
+          <label class="date-f">من <input id="actFrom" type="date"></label>
+          <label class="date-f">إلى <input id="actTo" type="date"></label>
+        </div>
+        <div class="table-wrap">
+          <table class="table responsive" id="actTable">
+            <thead><tr><th>الوقت</th><th>الموظف</th><th>الطلب</th><th>العميل</th><th>الإجراء</th><th>التفاصيل</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="actEmpty" class="empty" hidden><svg><use href="#i-clock"/></svg><p>لا توجد تحديثات مطابقة</p></div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav" id="bottomNav">
+    <button data-page="order" class="active"><svg><use href="#i-pen"/></svg><span>الطلب</span></button>
+    <button data-page="orders"><svg><use href="#i-list"/></svg><span>الطلبات</span></button>
+    <button data-page="items" data-admin><svg><use href="#i-tag"/></svg><span>الأصناف</span></button>
+    <button data-page="users" data-admin><svg><use href="#i-users"/></svg><span>المستخدمون</span></button>
+    <button data-page="activity" data-admin><svg><use href="#i-clock"/></svg><span>التحديثات</span></button>
+  </nav>
+</div>
+
+<!-- ============ منطقة الطباعة (PDF) ============ -->
+<div id="printArea"></div>
+
+<!-- ============ نافذة حوار عامة ============ -->
+<div id="modal" class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle" hidden>
+  <div class="modal-card">
+    <div class="modal-head"><h3 id="modalTitle"></h3><button id="modalClose" class="icon-btn" aria-label="إغلاق النافذة"><svg><use href="#i-x"/></svg></button></div>
+    <div id="modalBody" class="modal-body"></div>
+  </div>
+</div>
+
+<!-- اقتراحات أنواع الأقمشة (تُملأ من الأصناف) -->
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="config.js"></script>
+<script src="js/store.js"></script>
+<script src="js/designer.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

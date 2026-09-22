@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>اختبار النسخة المنشورة (Worker + D1 محاكاة)</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+<div id="testStatus" style="position:fixed;top:0;left:0;z-index:9999;background:#111;color:#0f0;font:12px monospace;padding:4px 8px;direction:ltr">loading…</div>
+<script>
+/* صفحة اختبار للمطوّر: تشغّل worker.bundle.js (نفس الملف المنشور) على قاعدة SQLite حقيقية،
+   وتحمّل واجهة التطبيق من الـ Worker نفسه — أي اختبار للنسخة المنشورة بالكامل. */
+window.TEST = { log: [] };
+
+(async function boot() {
+  const status = (m) => { document.getElementById('testStatus').textContent = m; window.TEST.log.push(m); };
+  const realFetch = window.fetch.bind(window);
+  try {
+    status('loading sql.js…');
+    const SQL = await initSqlJs({ locateFile: (f) => 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f });
+    const sqlite = new SQL.Database();
+    status('running schema.sql…');
+    sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+    window.TEST.sqlite = sqlite;
+
+    // محاكاة واجهة D1 فوق sql.js
+    const norm = (v) => (v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v));
+    const DB = {
+      prepare(sql) {
+        const st = { sql, args: [] };
+        st.bind = (...a) => { st.args = a.map(norm); return st; };
+        st.first = async () => { const s = sqlite.prepare(sql); s.bind(st.args); const has = s.step(); const row = has ? s.getAsObject() : null; s.free(); return row; };
+        st.all = async () => { const s = sqlite.prepare(sql); s.bind(st.args); const results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results, success: true }; };
+        st.run = async () => { sqlite.run(sql, st.args); return { success: true }; };
+        return st;
+      },
+      async batch(stmts) { const out = []; for (const s of stmts) out.push(await s.run()); return out; },
+    };
+
+    status('importing worker.bundle.js…');
+    const mod = await import('../worker/worker.bundle.js');
+    const env = { DB };
+    const ORIGIN = 'https://majlis.test';
+    window.TEST.env = env;
+    window.TEST.calls = 0;
+    const call = (url, init) => mod.default.fetch(new Request(url, init), env);
+
+    // كل طلب إلى ORIGIN يذهب للـ Worker (واجهة + API)
+    window.fetch = async (input, init) => {
+      const url = typeof input === 'string' ? input : input.url;
+      if (url.startsWith(ORIGIN)) { window.TEST.calls++; return call(url, init); }
+      return realFetch(input, init);
+    };
+    window.TEST.api = async (method, path, body, token) => {
+      const headers = { 'Content-Type': 'application/json' }; if (token) headers['x-session-token'] = token;
+      const init = { method, headers }; if (body != null && method !== 'GET') init.body = JSON.stringify(body);
+      const r = await call(ORIGIN + path, init);
+      return { status: r.status, body: await r.json().catch(() => null) };
+    };
+
+    // 1) الواجهة تُخدم من الـ Worker نفسه
+    status('fetching app from worker…');
+    const rIndex = await call(ORIGIN + '/');
+    const html = await rIndex.text();
+    window.TEST.assets = {
+      indexStatus: rIndex.status,
+      indexType: rIndex.headers.get('Content-Type'),
+      indexLen: html.length,
+      hasTitle: html.includes('أصالة نجد'),
+    };
+    for (const p of ['/css/style.css', '/js/store.js', '/js/designer.js', '/js/app.js', '/config.js']) {
+      const r = await call(ORIGIN + p);
+      window.TEST.assets[p] = { status: r.status, type: r.headers.get('Content-Type'), len: (await r.text()).length };
+    }
+    const r404 = await call(ORIGIN + '/nope.png');
+    window.TEST.assets.missing = r404.status;
+
+    // 2) تشغيل التطبيق من كود الـ Worker
+    status('booting app…');
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script').forEach((s) => s.remove());
+    const style = document.createElement('style');
+    style.textContent = await (await call(ORIGIN + '/css/style.css')).text();
+    document.head.appendChild(style);
+    const wrap = document.createElement('div');
+    wrap.innerHTML = doc.body.innerHTML;
+    document.body.appendChild(wrap);
+
+    const runFromWorker = async (p) => {
+      const code = await (await call(ORIGIN + p)).text();
+      const s = document.createElement('script');
+      s.textContent = code;
+      document.body.appendChild(s);
+    };
+    // config.js يضبط apiUrl على أصل الصفحة — نثبّته على ORIGIN في الاختبار
+    window.APP_CONFIG = { apiUrl: ORIGIN };
+    await runFromWorker('/js/store.js');
+    await runFromWorker('/js/designer.js');
+    await runFromWorker('/js/app.js');
+    await new Promise((r) => setTimeout(r, 400));
+    status('READY');
+    window.TEST.ready = true;
+  } catch (e) {
+    console.error(e);
+    status('ERROR: ' + e.message);
+    window.TEST.error = e.message + ' | ' + (e.stack || '').split('\n')[1];
+  }
+})();
+</script>
+</body>
+</html>
