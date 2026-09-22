@@ -1,6 +1,7 @@
-# Simple local static file server for the app: http://localhost:8080
+# Simple local static file server for the app: http://localhost:8090
+# Port 8080 is reserved by Windows on this machine (netsh excludedportrange), so 8090 is the default.
 # Run: right-click > Run with PowerShell   (or: powershell -ExecutionPolicy Bypass -File serve.ps1)
-param([int]$Port = 8080, [switch]$NoOpen)
+param([int]$Port = 8090, [switch]$NoOpen)
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $listener = New-Object System.Net.HttpListener

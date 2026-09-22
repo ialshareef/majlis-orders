@@ -594,6 +594,37 @@
       return this.addPiece({ kind: 'acc', itemId: item.id, x: round(pos.x, 3), y: round(pos.y, 3), w, h, rot: 0, shape: item.shape || 'rect' });
     }
 
+    /**
+     * ضبط عدد قطع إكسسوار في التصميم إلى العدد المطلوب: يُضيف في الفراغ أو يحذف الأحدث.
+     * تُستعمل من جدول التسعير ليُعكس تعديل الكمية على المخطط. خطوة واحدة في سجل التراجع.
+     * تُعيد العدد بعد التنفيذ.
+     */
+    setAccessoryCount(item, count) {
+      const n = Math.max(0, Math.round(+count || 0));
+      const have = this.state.pieces.filter((p) => p.kind === 'acc' && p.itemId === item.id);
+      const diff = n - have.length;
+      if (!diff) return have.length;
+      // إضافة كل قطعة تُطلق changed() فتُعيد رسم الطلب كله: تُعطَّل حتى تكتمل العملية
+      const onChange = this.opts.onChange;
+      this._suspendHistory = true;
+      this.opts.onChange = null;
+      try {
+        if (diff > 0) for (let i = 0; i < diff; i++) this.addAccessory(item);
+        else {
+          const drop = new Set(have.slice(diff).map((p) => p.id));
+          this.state.pieces = this.state.pieces.filter((p) => !drop.has(p.id));
+          if (this.sel && this.sel.type === 'piece' && drop.has(this.sel.id)) this.sel = null;
+        }
+      } finally {
+        this._suspendHistory = false;
+        this.opts.onChange = onChange;
+      }
+      // لا تُفتح لوحة الخصائص على قطعة أُضيفت من صفحة التسعير
+      this.select(null);
+      this.changed();
+      return n;
+    }
+
     /** محاولة إلصاق قطعة كنب بأقرب جدار مطابق للاتجاه */
     _trySnapToWall(p, g = this.geometry(), tol = 0.25) {
       if (p.kind !== 'sofa') { delete p.wall; delete p.t; return false; }
@@ -613,6 +644,8 @@
       const p = this.selectedPiece();
       if (!p) return;
       const rotChanged = props.rot != null && norm360(+props.rot) !== p.rot;
+      // مقاس الإكسسوار محكوم ببطاقة الصنف: يُقبل فقط مع تغيير الصنف نفسه
+      if (!Designer.canResize(p) && props.itemId === undefined) { props = Object.assign({}, props); delete props.w; delete props.h; }
       Object.assign(p, props);
       p.w = Math.max(MIN_SIZE, +p.w || MIN_SIZE);
       p.h = Math.max(MIN_SIZE, +p.h || MIN_SIZE);
@@ -779,9 +812,16 @@
       return { resizeW: at(p.w / 2, 0), resizeH: at(0, p.h / 2), rotate: { x: top.x + s * ROT_OFFSET, y: top.y - c * ROT_OFFSET }, top };
     }
 
+    /**
+     * الإكسسوار مقاسه من بطاقة الصنف ولا يُغيَّر في المخطط:
+     * مقبضا التكبير لا يُرسمان له ولا يُلتقطان، ويبقى التدوير متاحاً.
+     */
+    static canResize(p) { return !!p && p.kind !== 'acc'; }
+
     _hitHandle(p, sx, sy, tol) {
       const hs = this._handles(p);
-      for (const k of ['rotate', 'resizeW', 'resizeH']) {
+      const keys = Designer.canResize(p) ? ['rotate', 'resizeW', 'resizeH'] : ['rotate'];
+      for (const k of keys) {
         if (Math.hypot(hs[k].x - sx, hs[k].y - sy) <= tol) return k;
       }
       return null;
@@ -1335,8 +1375,10 @@
           ctx.save();
           ctx.strokeStyle = '#2f80ed'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
           ctx.beginPath(); ctx.moveTo(hs.top.x, hs.top.y); ctx.lineTo(hs.rotate.x, hs.rotate.y); ctx.stroke();
-          drawHandle(ctx, hs.resizeW, '#2f80ed', '↔');
-          drawHandle(ctx, hs.resizeH, '#2f80ed', '↕');
+          if (Designer.canResize(p)) {
+            drawHandle(ctx, hs.resizeW, '#2f80ed', '↔');
+            drawHandle(ctx, hs.resizeH, '#2f80ed', '↕');
+          }
           drawHandle(ctx, hs.rotate, '#27ae60', '↻');
           ctx.restore();
         }

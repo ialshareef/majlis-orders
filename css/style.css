@@ -142,6 +142,13 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--background), 0 0 0 4px rgba(0, 82, 255, .35);
 }
+/* حقل للعرض فقط: قيمة محكومة من مكان آخر (مثل مقاس الإكسسوار من بطاقة الصنف) */
+input[readonly] {
+  background: var(--muted); color: var(--muted-foreground-strong);
+  border-style: dashed; cursor: default;
+}
+input[readonly]:hover:not(:focus) { border-color: var(--border); }
+input[readonly]:focus { border-color: var(--border); box-shadow: none; }
 input[type="color"] { padding: 4px; cursor: pointer; }
 input[type="checkbox"] { width: 20px; height: 20px; min-height: 0; accent-color: var(--accent); vertical-align: middle; cursor: pointer; }
 select { cursor: pointer; }
@@ -905,25 +912,6 @@ main { padding: 26px 24px 72px; max-width: 1500px; margin: 0 auto; }
 .walls-table tr.sel td:first-child { border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
 .walls-table tr.sel td:last-child { border-radius: var(--radius-sm) 0 0 var(--radius-sm); }
 
-/* قائمة الزوايا */
-.corner-list { display: grid; gap: 10px; margin-top: 12px; }
-.corner-row {
-  border: 1px solid var(--border); border-radius: var(--radius);
-  background: var(--muted); padding: 11px 12px;
-}
-.corner-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 9px; }
-.corner-head b { font-size: .92rem; }
-.corner-head small { color: var(--muted-foreground-strong); font-size: .74rem; font-weight: 500; }
-.corner-seg { width: 100%; }
-.corner-seg button { flex: 1 1 0; font-size: .8rem; padding: 0 6px; }
-.corner-field { margin: 10px 0 0; font-size: .78rem; color: var(--muted-foreground-strong); }
-.corner-field input { margin-top: 5px; background: var(--card); }
-.corner-arms { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; margin-top: 10px; }
-.corner-arms label { font-size: .76rem; color: var(--muted-foreground-strong); margin: 0; }
-.corner-arms input { margin-top: 5px; background: var(--card); }
-.corner-total { margin: 9px 0 0; font-size: .8rem; color: var(--muted-foreground-strong); }
-.corner-total b { font-family: var(--font-mono); color: var(--foreground); direction: ltr; display: inline-block; }
-
 .acc-buttons { display: flex; flex-wrap: wrap; gap: 9px; }
 .acc-buttons .btn { gap: 9px; }
 .acc-buttons .sw { width: 14px; height: 14px; border-radius: 4px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .1); }
@@ -1154,6 +1142,40 @@ main { padding: 26px 24px 72px; max-width: 1500px; margin: 0 auto; }
 .pay-badge[data-state="partial"] { background: var(--warn-bg);   color: var(--warn);   border-color: var(--warn-border); }
 .pay-badge[data-state="full"]    { background: var(--ok-bg);     color: var(--ok);     border-color: rgba(4, 120, 87, .25); }
 .pay-badge[data-state="over"]    { background: var(--danger-bg); color: var(--danger); border-color: var(--danger-border); }
+
+/* ---------------------------------------------------------------------
+   المرفقات — خانتان: اسم اختياري + صورة واحدة لكل خانة
+   --------------------------------------------------------------------- */
+.atts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.att { display: grid; gap: 10px; min-width: 0; }
+.att-box { position: relative; }
+
+/* منطقة الاختيار هي الصورة نفسها: نقرة واحدة تفتح المتصفّح، ومعاينة بعدها */
+.att-pick {
+  display: flex; align-items: center; justify-content: center;
+  width: 100%; height: 190px; padding: 10px; overflow: hidden;
+  background: var(--muted); border: 1.5px dashed var(--border);
+  border-radius: var(--radius); cursor: pointer; font: inherit;
+  transition: border-color .2s var(--ease-out), background-color .2s, box-shadow .2s;
+}
+.att-pick:hover { border-color: var(--accent); background: var(--info-bg); }
+.att-pick:focus-visible { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 82, 255, .12); }
+.att[data-has="1"] .att-pick { border-style: solid; background: var(--card); padding: 6px; }
+.att[data-busy="1"] .att-pick { opacity: .55; pointer-events: none; }
+.att-img { max-width: 100%; max-height: 100%; object-fit: contain; border-radius: var(--radius-sm); display: block; }
+.att-ph { display: grid; justify-items: center; gap: 5px; text-align: center; color: var(--muted-foreground); pointer-events: none; }
+.att-ph svg { width: 30px; height: 30px; color: var(--accent); opacity: .75; }
+.att-ph b { font-size: .92rem; font-weight: 600; color: var(--foreground); }
+.att-ph small { font-size: .76rem; line-height: 1.5; max-width: 22ch; }
+
+.att-bar { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.att-size { flex: 1; font-size: .76rem; color: var(--muted-foreground); }
+.att-bar .btn { flex: none; }
+
+@media (max-width: 720px) {
+  .atts { grid-template-columns: minmax(0, 1fr); }
+  .att-pick { height: 165px; }
+}
 
 /* =====================================================================
    12) النافذة والتنبيه
@@ -1422,6 +1444,8 @@ main { padding: 26px 24px 72px; max-width: 1500px; margin: 0 auto; }
 .inv {
   width: 190mm; height: 277mm; display: flex; flex-direction: column;
   font-family: var(--font-ui); color: #111; font-size: 10.5pt; direction: rtl; overflow: hidden;
+  /* مقابض الضغط التي يشدّها fitOnePage حتى تدخل الفاتورة في صفحة واحدة */
+  --row-fs: 9.5pt; --row-pad: 1.4mm; --vis-min: 40mm;
 }
 /* تباعد الأحرف صفر في الفاتورة: html2canvas يرسم الحروف منفردة عند وجوده فتنكسر العربية */
 .inv * { box-sizing: border-box; letter-spacing: normal; word-spacing: normal; }
@@ -1446,19 +1470,26 @@ main { padding: 26px 24px 72px; max-width: 1500px; margin: 0 auto; }
 .inv-info b.wrap { white-space: normal; font-size: 9.5pt; line-height: 1.3; }
 .inv-info b.num { font-family: var(--font-mono); }
 .inv h2 { font-family: var(--font-ui); font-size: 10.5pt; color: var(--accent); margin: 0 0 1.5mm; font-weight: 700; }
-.inv-design { flex: 1 1 auto; min-height: 40mm; display: flex; flex-direction: column; }
+/* التصميم والمرفقات في صفّ واحد لا في كتلتين فوق بعض: المرفقات تأخذ عرضاً
+   لا ارتفاعاً، فتبقى الفاتورة صفحة واحدة مهما بلغ عدد الأصناف. */
+.inv-visuals { flex: 1 1 auto; min-height: var(--vis-min); display: flex; gap: 3mm; }
+.inv-design { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
 .inv-design .imgbox { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #E2E8F0; border-radius: 2mm; background: #fff; overflow: hidden; }
 .inv-design img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.inv-atts { flex: none; width: 48mm; min-height: 0; display: flex; flex-direction: column; }
+.inv-atts .att-col { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 2mm; }
+.inv-atts figure { flex: 1 1 0; min-height: 0; margin: 0; display: flex; flex-direction: column; }
+.inv-atts .imgbox { flex: 1 1 auto; min-height: 0; display: flex; align-items: center; justify-content: center; border: 1px solid #E2E8F0; border-radius: 2mm; background: #fff; overflow: hidden; }
+.inv-atts img { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+.inv-atts figcaption { margin-top: .8mm; font-size: 8pt; color: #555; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .inv-items { margin-top: 3mm; }
-.inv-items table { width: 100%; border-collapse: collapse; font-size: 9.5pt; }
-.inv-items th { background: #EAF0FF; color: #0B3AB8; padding: 1.6mm 2.2mm; text-align: right; font-weight: 700; border-bottom: 1px solid #C7D6F5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-.inv-items td { padding: 1.4mm 2.2mm; border-bottom: 1px solid #EDF1F5; }
+.inv-items table { width: 100%; border-collapse: collapse; font-size: var(--row-fs); }
+.inv-items th { background: #EAF0FF; color: #0B3AB8; padding: calc(var(--row-pad) + .2mm) 2.2mm; text-align: right; font-weight: 700; border-bottom: 1px solid #C7D6F5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.inv-items td { padding: var(--row-pad) 2.2mm; border-bottom: 1px solid #EDF1F5; }
 .inv-items tr:nth-child(even) td { background: #FAFBFD; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .inv-items td small { color: #666; font-size: 8pt; }
 .inv .num { direction: ltr; text-align: right; font-family: var(--font-mono); font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
-.inv.dense .inv-items table { font-size: 8.5pt; }
-.inv.dense .inv-items td { padding: .8mm 2mm; }
-.inv.dense .inv-items th { padding: 1.1mm 2mm; }
+.inv.dense { --row-fs: 8.5pt; --row-pad: .8mm; }
 .inv-bottom { display: flex; justify-content: space-between; align-items: stretch; gap: 4mm; margin-top: 3mm; }
 .inv-notes { flex: 1; font-size: 9pt; color: #444; background: #FAFAFA; border: 1px solid #EEE; border-radius: 2mm; padding: 2mm 3mm; }
 .inv-notes b { color: #222; }

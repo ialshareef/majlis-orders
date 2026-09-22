@@ -10,7 +10,11 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
   const r2 = (v) => Math.round(num(v) * 100) / 100;
-  const fmt = (v) => r2(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  /** كل مبلغ في النظام عدد صحيح بلا كسور: تقريب للأقرب (12.49 ← 12 و12.50 ← 13) */
+  const money = (v) => Math.round(num(v));
+  const fmt = (v) => money(v).toLocaleString('en-US');
+  /** الكميات بالمتر والنسب المئوية تبقى بكسرين */
+  const fmtQty = (v) => r2(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const pad2 = (n) => String(n).padStart(2, '0');
   // التواريخ تُعرض بالتوقيت المحلي (القيم المخزنة ISO بتوقيت UTC، وتواريخ التوصيل نص YYYY-MM-DD)
@@ -176,6 +180,30 @@
     if (el) el.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'start' });
   }));
 
+  /* ---------------- المرفقات (صورتان تظهران في الفاتورة) ----------------
+     الصورة تُخزَّن داخل سجل الطلب نفسه (data URL) لأن النظام بلا مخزن ملفات،
+     فتُصغَّر قبل التخزين وإلا ضخّمت السجل وأبطأت المزامنة.
+     موضع التعريف هنا مقصود: newOrder() يُستدعى بعدها مباشرة عند الإقلاع. */
+  const ATT_COUNT = 2;   // عدد الخانات
+
+  const emptyAttachments = () => Array.from({ length: ATT_COUNT }, () => ({ name: '', src: '' }));
+
+  /** ضمان مصفوفة بطول ATT_COUNT مهما كان شكل الطلب المحفوظ */
+  function normalizeAttachments(list) {
+    const out = emptyAttachments();
+    (Array.isArray(list) ? list : []).slice(0, ATT_COUNT).forEach((a, i) => {
+      if (!a) return;
+      out[i] = {
+        name: String(a.name || '').slice(0, 60),
+        src: typeof a.src === 'string' && a.src.startsWith('data:image/') ? a.src : '',
+      };
+    });
+    return out;
+  }
+
+  /** المرفقات التي تحمل صورة فعلاً — وهي وحدها ما يدخل الفاتورة */
+  const filledAttachments = (o) => normalizeAttachments(o && o.attachments).filter((a) => a.src);
+
   /* ---------------- حالة الطلب الحالي ---------------- */
   let cur = newOrder();
   let dirty = false;
@@ -192,6 +220,7 @@
     '#m-customer input', '#m-customer select', '#m-customer textarea',
     '#orderStatus', '#m-pay input', '#m-pay button',
     '#m-price input', '#m-price select', '#m-price button',
+    '#m-att input', '#m-att button',
     '.designer-panel input', '.designer-panel select', '.designer-panel button',
     '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbFillAll', '#btnAddManual',
   ].join(', ');
@@ -217,7 +246,7 @@
       design: Designer.emptyState(5, 4, settings().cornerMode || 'deduct'),
       priceOverrides: {}, manualRows: [], costs: {}, extraCosts: [],
       customer: { name: '', phone: '', address: '' },
-      deliveryDate: '', paid: 0, notes: '',
+      deliveryDate: '', paid: 0, notes: '', attachments: emptyAttachments(),
       vat: { enabled: settings().vatEnabled !== false, rate: num(settings().vatRate ?? 15) },
       createdBy: null, createdByName: '', createdAt: null, updatedAt: null,
       total: 0,
@@ -310,7 +339,7 @@
   }
   /** مجموع الزيادات على سعر المتر من المواصفات المختارة */
   function specSurcharge(p) {
-    return SPECS.reduce((s, sp) => { const r = specRecord(p, sp.key); return s + (r ? num(r.price) : 0); }, 0);
+    return SPECS.reduce((s, sp) => { const r = specRecord(p, sp.key); return s + (r ? money(r.price) : 0); }, 0);
   }
   /** وصف المواصفات لسطر الفاتورة */
   function specSummary(p) {
@@ -425,107 +454,8 @@
       $('#roomW').value = Designer.util.round(walls[0].len, 3);
       $('#roomH').value = Designer.util.round(walls[1].len, 3);
     }
-    renderCorners();
   }
 
-  /* ---------------- الزوايا ----------------
-     ثلاث حالات لكل زاوية: عادية، فاضية (طاولة خدمة)، كنب زاوية على الضلعين. */
-  function cornerStateOf(v) {
-    if (designer.cornerSpot(v)) return 'free';
-    const arm = designer.state.pieces.find((p) => p.corner === v && p.group);
-    return arm ? 'sofa' : 'none';
-  }
-
-  function renderCorners() {
-    const box = $('#cornerList');
-    if (!box) return;
-    const walls = designer.state.walls;
-    const g = designer.geometry();
-    if (!g.closed) {
-      box.innerHTML = '<p class="warn">الزوايا تحتاج غرفة مغلقة. أغلق الجدران أولاً.</p>';
-      return;
-    }
-    box.innerHTML = walls.map((_, v) => {
-      const { prev, next } = designer.cornerWalls(v);
-      const st = cornerStateOf(v);
-      const spot = designer.cornerSpot(v);
-      const arms = st === 'sofa' ? designer.state.pieces.filter((p) => p.corner === v && p.group) : [];
-      const total = arms.reduce((s, a) => s + num(a.w), 0);
-      return `
-      <div class="corner-row" data-v="${v}">
-        <div class="corner-head">
-          <b>الزاوية ${v + 1}</b>
-          <small>جدار ${prev + 1} × جدار ${next + 1}</small>
-        </div>
-        <div class="segmented corner-seg" data-v="${v}">
-          <button data-s="none" class="${st === 'none' ? 'active' : ''}">عادية</button>
-          <button data-s="free" class="${st === 'free' ? 'active' : ''}">فاضية</button>
-          <button data-s="sofa" class="${st === 'sofa' ? 'active' : ''}">كنب زاوية</button>
-        </div>
-        ${st === 'free' ? `
-          <label class="corner-field">مقاس الفراغ (م)
-            <input type="number" step="0.05" min="0.2" max="3" data-size="${v}" value="${Designer.util.round(spot.size, 2)}">
-          </label>` : ''}
-        ${st === 'sofa' ? `
-          <div class="corner-arms">
-            <label>ذراع جدار ${prev + 1} (م)<input type="number" step="0.1" min="0.3" data-arm="prev" data-v="${v}" value="${Designer.util.round(num(arms.find((a) => a.wall === prev)?.w) + (designer.state.cornerMode === 'full' ? 0 : num(arms[0]?.h)), 2)}"></label>
-            <label>ذراع جدار ${next + 1} (م)<input type="number" step="0.1" min="0.3" data-arm="next" data-v="${v}" value="${Designer.util.round(num(arms.find((a) => a.wall === next)?.w), 2)}"></label>
-          </div>
-          <p class="corner-total">المحتسب: <b>${fmt(total)}</b> متر طولي</p>` : ''}
-      </div>`;
-    }).join('');
-
-    $$('.corner-seg button', box).forEach((b) => b.addEventListener('click', () => {
-      const v = +b.closest('.corner-seg').dataset.v;
-      setCornerState(v, b.dataset.s);
-    }));
-    $$('input[data-size]', box).forEach((inp) => inp.addEventListener('change', () => {
-      designer.setCornerSpot(+inp.dataset.size, num(inp.value));
-    }));
-    $$('input[data-arm]', box).forEach((inp) => inp.addEventListener('change', () => {
-      const v = +inp.dataset.v;
-      const row = inp.closest('.corner-row');
-      const pv = num($('input[data-arm="prev"]', row).value);
-      const nx = num($('input[data-arm="next"]', row).value);
-      rebuildCornerSofa(v, pv, nx);
-    }));
-  }
-
-  function clearCorner(v) {
-    const arms = designer.state.pieces.filter((p) => p.corner === v && p.group);
-    if (arms.length) designer.removeGroup(arms[0].group);
-    designer.clearCornerSpot(v);
-  }
-
-  function setCornerState(v, next) {
-    const cur = cornerStateOf(v);
-    if (cur === next) return;
-    clearCorner(v);
-    if (next === 'free') designer.setCornerSpot(v, 0.6);
-    else if (next === 'sofa') {
-      const spec = selectedSofaSpec();
-      if (!spec) { renderCorners(); return; }
-      if (!designer.addCornerSofa(v, spec, 1.2, 1.2)) toast('تعذّر وضع كنب الزاوية هنا', true);
-    }
-    renderCorners();
-  }
-
-  function rebuildCornerSofa(v, armPrev, armNext) {
-    const arms = designer.state.pieces.filter((p) => p.corner === v && p.group);
-    // احتفظ بتركيبة الذراع الموجود حتى لا يتغيّر الخشب والقماش عند تعديل الطول
-    let spec;
-    if (arms.length) {
-      spec = { depth: arms[0].h };
-      SPECS.forEach((s) => { if (arms[0][s.field]) spec[s.field] = arms[0][s.field]; });
-      if (arms[0].itemId) spec.itemId = arms[0].itemId;
-    } else {
-      spec = selectedSofaSpec();
-    }
-    if (!spec) return;
-    if (arms.length) designer.removeGroup(arms[0].group);
-    designer.addCornerSofa(v, spec, armPrev, armNext);
-    renderCorners();
-  }
   function syncWallSel() {
     const i = designer.selectedWallIndex();
     if (i >= 0) $('#wallSel').value = String(i);
@@ -607,7 +537,7 @@
     for (const s of SPECS) {
       const rec = Store.getItem($(SOFA_SEL[s.key]).value);
       if (!rec || rec.category !== s.cat) { ok = false; continue; }
-      total += num(rec.price);
+      total += money(rec.price);
       parts.push(`${rec.name} ${fmt(rec.price)}`);
     }
     el.textContent = ok ? `سعر المتر: ${parts.join(' + ')} = ${fmt(total)} ${currency()}` : 'اختر الثلاثة لحساب سعر المتر.';
@@ -752,9 +682,10 @@
           ${isSofa ? SPECS.map((s) => `<label>${s.label} ${specSelect('sel_' + s.key, s, p[s.field] || '', '')}</label>`).join('') : ''}
         </div>
         <div class="row2">
-          <label>${p.kind === 'sofa' ? 'الطول' : 'الطول'} (م) <input id="selW" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.w, 2)}"></label>
-          <label>${p.kind === 'sofa' ? 'العمق' : 'العرض'} (م) <input id="selH" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.h, 2)}"></label>
+          <label>الطول (م) <input id="selW" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.w, 2)}" ${isSofa ? '' : 'readonly tabindex="-1"'}></label>
+          <label>${isSofa ? 'العمق' : 'العرض'} (م) <input id="selH" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.h, 2)}" ${isSofa ? '' : 'readonly tabindex="-1"'}></label>
         </div>
+        ${isSofa ? '' : '<p class="hint">مقاس الإكسسوار ثابت من بطاقة الصنف في صفحة «الأصناف». لتغييره، عدّل الصنف هناك أو اختر صنفاً آخر من القائمة أعلاه.</p>'}
         <div class="row2">
           <label>الزاوية° <input id="selRot" type="number" step="5" value="${Math.round(p.rot)}"></label>
           <label>ملاحظة <input id="selNote" value="${esc(p.note || '')}" placeholder="اختياري"></label>
@@ -823,11 +754,17 @@
     } else {
       const apply = () => {
         const p = designer.selectedPiece(); if (!p) return;
-        const props = { w: num($('#selW', insp).value), h: num($('#selH', insp).value), rot: num($('#selRot', insp).value), note: $('#selNote', insp).value.trim() };
+        const props = { rot: num($('#selRot', insp).value), note: $('#selNote', insp).value.trim() };
+        // الكنب يُقاس يدوياً؛ الإكسسوار مقاسه من بطاقة الصنف فلا يُرسل من الحقول
+        if (p.kind === 'sofa') { props.w = num($('#selW', insp).value); props.h = num($('#selH', insp).value); }
         SPECS.forEach((s) => { const el = $('#sel_' + s.key, insp); if (el) props[s.field] = el.value || ''; });
         const selIt = $('#selItem', insp);
         const it = selIt ? Store.getItem(selIt.value) : null;
-        if (it) { props.itemId = it.id; if (p.kind === 'acc') props.shape = it.shape || 'rect'; }
+        if (it) {
+          props.itemId = it.id;
+          // تبديل صنف الإكسسوار يجلب مقاس الصنف الجديد
+          if (p.kind === 'acc') { props.shape = it.shape || 'rect'; props.w = num(it.w) || p.w; props.h = num(it.h) || p.h; }
+        }
         designer.updateSelected(props);
         refreshInspectorValues(designer.selectionInfo());
         const lbl = $('.insp-head b', insp);
@@ -918,8 +855,14 @@
     return undefined;
   }
 
-  /** صيغة عدد القطع بالعربية: قطعة، قطعتان، ٣ قطع، ١١ قطعة */
+  /** صيغة عدد القطع بالعربية: قطعة، قطعتان، 3 قطع، 11 قطعة */
   const piecesLabel = (n) => (n === 1 ? 'قطعة' : n === 2 ? 'قطعتان' : n <= 10 ? `${n} قطع` : `${n} قطعة`);
+
+  /** سقف عدد قطع الإكسسوار الواحد: رقم مكتوب بالخطأ (500) يملأ المخطط ويُبطئ الرسم */
+  const ACC_MAX = 99;
+
+  /** صنف الإكسسوار الذي يُعاد إليه التركيز بعد إعادة رسم جدول التسعير */
+  let accQtyFocus = null;
 
   function computeLines(order) {
     const lines = [];
@@ -941,10 +884,10 @@
       const legacy = legacySofaItem(p);
       // سعر المتر = مجموع أسعار الخشب والقماش والإسفنج.
       // الطلبات القديمة كانت تربط الكنبة بصنف واحد، فتحتفظ بسعره.
-      const base = legacy ? r2(num(legacy.price)) : r2(specSurcharge(p));
+      const base = legacy ? money(legacy.price) : money(specSurcharge(p));
       const l = { key: g.key, kind: 'sofa', legacyKeys: g.legacyKeys };
       const saved = storedFor(ov, l);
-      const price = saved !== undefined ? num(saved) : base;
+      const price = saved !== undefined ? money(saved) : base;
       const qty = r2(g.pieces.reduce((s, a) => s + num(a.w), 0));
       const specs = specSummary(p);
       // العدّ بالقطع كما يراها العميل: ذراعا الزاوية قطعة واحدة
@@ -966,24 +909,24 @@
         ...notes,
       ].filter(Boolean).join(' • ');
       const nm = legacy ? legacy.name : 'كنب';
-      lines.push(Object.assign(l, { name: nm, sub, unit: 'متر', qty, price, basePrice: base, total: r2(qty * price) }));
+      lines.push(Object.assign(l, { name: nm, sub, unit: 'متر', qty, price, basePrice: base, total: money(qty * price) }));
     });
     const groups = {};
     (order.design.pieces || []).filter((p) => p.kind === 'acc').forEach((p) => { groups[p.itemId] = (groups[p.itemId] || 0) + 1; });
     Object.entries(groups).forEach(([itemId, qty]) => {
       const it = getItem(itemId);
       const key = 'item:' + itemId;
-      const price = ov[key] !== undefined ? num(ov[key]) : num(it.price);
-      lines.push({ key, kind: 'acc', name: it.name, sub: '', unit: 'قطعة', qty, price, basePrice: num(it.price), total: r2(qty * price) });
+      const price = ov[key] !== undefined ? money(ov[key]) : money(it.price);
+      lines.push({ key, kind: 'acc', itemId, name: it.name, sub: '', unit: 'قطعة', qty, price, basePrice: money(it.price), total: money(qty * price) });
     });
     (order.manualRows || []).forEach((r, idx) => {
-      lines.push({ key: 'manual:' + idx, kind: 'manual', idx, name: r.name, sub: '', unit: r.unit || 'قطعة', qty: num(r.qty), price: num(r.price), basePrice: num(r.price), total: r2(num(r.qty) * num(r.price)) });
+      lines.push({ key: 'manual:' + idx, kind: 'manual', idx, name: r.name, sub: '', unit: r.unit || 'قطعة', qty: num(r.qty), price: money(r.price), basePrice: money(r.price), total: money(num(r.qty) * money(r.price)) });
     });
-    const subtotal = r2(lines.reduce((s, l) => s + l.total, 0));
+    const subtotal = money(lines.reduce((s, l) => s + l.total, 0));
     const vat = order.vat || { enabled: false, rate: 15 };
     const vatRate = vat.enabled ? Math.min(100, Math.max(0, num(vat.rate))) : 0;
-    const vatAmount = r2(subtotal * vatRate / 100);
-    const total = r2(subtotal + vatAmount);
+    const vatAmount = money(subtotal * vatRate / 100);
+    const total = money(subtotal + vatAmount);
     return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, total };
   }
 
@@ -997,7 +940,7 @@
     const raw = l.kind === 'manual' ? ((order.manualRows || [])[l.idx] || {}).cost : storedFor(order.costs, l);
     if (raw === undefined || raw === null || raw === '') return null;
     const n = parseFloat(raw);
-    return Number.isFinite(n) ? n : null;
+    return Number.isFinite(n) ? money(n) : null;
   }
 
   /** هل يستعمل الطلب هذا الصنف؟ الكنبة تشير إلى الخشب والقماش والإسفنج،
@@ -1013,7 +956,7 @@
   function extraCosts(order) {
     return (order.extraCosts || [])
       .filter((e) => e && (String(e.name || '').trim() || num(e.amount)))
-      .map((e) => ({ name: String(e.name || '').trim(), amount: r2(e.amount) }));
+      .map((e) => ({ name: String(e.name || '').trim(), amount: money(e.amount) }));
   }
 
   /** اقتراحات جاهزة تُسرّع كتابة البنود المتكررة */
@@ -1030,16 +973,16 @@
       const unitCost = lineCost(order, l);
       return Object.assign({}, l, {
         unitCost,
-        costTotal: unitCost === null ? null : r2(l.qty * unitCost),
-        profit: unitCost === null ? null : r2(l.total - r2(l.qty * unitCost)),
+        costTotal: unitCost === null ? null : money(l.qty * unitCost),
+        profit: unitCost === null ? null : money(l.total - money(l.qty * unitCost)),
       });
     });
     const filled = rows.filter((r) => r.unitCost !== null);
-    const linesCost = r2(filled.reduce((s, r) => s + r.costTotal, 0));
+    const linesCost = money(filled.reduce((s, r) => s + r.costTotal, 0));
     const extras = extraCosts(order);
-    const extrasCost = r2(extras.reduce((s, e) => s + e.amount, 0));
-    const costTotal = r2(linesCost + extrasCost);
-    const profit = r2(subtotal - costTotal);
+    const extrasCost = money(extras.reduce((s, e) => s + e.amount, 0));
+    const costTotal = money(linesCost + extrasCost);
+    const profit = money(subtotal - costTotal);
     return {
       rows, subtotal, vatEnabled, total, costTotal, profit,
       linesCost, extras, extrasCost,
@@ -1050,20 +993,20 @@
 
   /** إجمالي تكلفة الطلب كما حُفظ، أو null إن لم تُدخل تكاليف */
   function orderCost(o) {
-    return (o && o.costTotal !== undefined && o.costTotal !== null) ? r2(o.costTotal) : null;
+    return (o && o.costTotal !== undefined && o.costTotal !== null) ? money(o.costTotal) : null;
   }
 
   /** المبيعات قبل الضريبة: أساس حساب الربح (الطلبات القديمة تُشتق من المجموع) */
   function orderRevenue(o) {
-    if (o.subtotal !== undefined && o.subtotal !== null) return r2(o.subtotal);
+    if (o.subtotal !== undefined && o.subtotal !== null) return money(o.subtotal);
     const rate = (o.vat && o.vat.enabled) ? num(o.vatRate != null ? o.vatRate : o.vat.rate) : 0;
-    return r2(num(o.total) / (1 + rate / 100));
+    return money(num(o.total) / (1 + rate / 100));
   }
 
   /** صافي ربح الطلب، أو null إن لم تُدخل تكاليفه */
   function orderProfit(o) {
     const c = orderCost(o);
-    return c === null ? null : r2(orderRevenue(o) - c);
+    return c === null ? null : money(orderRevenue(o) - c);
   }
 
   /** تحديث إجمالي التكلفة المخزّن في الطلب (يُحذف الحقل إن لم تبقَ أي تكلفة) */
@@ -1084,9 +1027,12 @@
         const nameCell = l.kind === 'manual'
           ? `<input class="inline wide" data-m="${l.idx}" data-k="name" value="${esc(l.name)}" placeholder="اسم الصنف">`
           : `${esc(l.name)}${l.sub ? `<span class="sub">${esc(l.sub)}</span>` : ''}`;
+        // كمية الإكسسوار تُكتب هنا وتنعكس على التصميم: تُضاف القطع أو تُحذف
         const qtyCell = l.kind === 'manual'
           ? `<input class="inline num" type="number" step="0.01" min="0" data-m="${l.idx}" data-k="qty" value="${l.qty}">`
-          : `<span class="num">${l.kind === 'sofa' ? fmt(l.qty) : l.qty}</span>`;
+          : l.kind === 'acc'
+            ? `<input aria-label="عدد ${esc(l.name || 'الإكسسوار')}" title="تعديل العدد يضيف القطع أو يحذفها من التصميم" class="inline num" type="number" step="1" min="0" max="${ACC_MAX}" inputmode="numeric" data-accqty="${esc(l.itemId)}" value="${l.qty}">`
+            : `<span class="num">${fmtQty(l.qty)}</span>`;
         const unitCell = l.kind === 'manual'
           ? `<select class="inline" data-m="${l.idx}" data-k="unit" style="width:90px"><option ${l.unit === 'قطعة' ? 'selected' : ''}>قطعة</option><option ${l.unit === 'متر' ? 'selected' : ''}>متر</option><option ${l.unit === 'خدمة' ? 'selected' : ''}>خدمة</option></select>`
           : l.unit;
@@ -1095,7 +1041,7 @@
           <td class="price-name" data-label="الصنف">${nameCell}</td>
           <td class="price-unit" data-label="الوحدة">${unitCell}</td>
           <td class="price-qty" data-label="الكمية">${qtyCell}</td>
-          <td class="price-edit" data-label="سعر الوحدة"><input aria-label="سعر ${esc(l.name || 'الصنف')}" inputmode="decimal" class="inline num" type="number" step="0.01" min="0" data-price="${esc(l.key)}" value="${l.price}">
+          <td class="price-edit" data-label="سعر الوحدة"><input aria-label="سعر ${esc(l.name || 'الصنف')}" inputmode="numeric" class="inline num" type="number" step="1" min="0" data-price="${esc(l.key)}" value="${l.price}">
               ${overridden ? `<button type="button" class="overridden" data-reset="${esc(l.key)}" title="إعادة السعر الأصلي">↺ الأصلي ${fmt(l.basePrice)}</button>` : ''}</td>
           <td class="num price-total" data-label="الإجمالي"><b>${fmt(l.total)}</b></td>
           <td class="row-actions">${l.kind === 'manual' ? `<button class="icon-btn" aria-label="حذف الصنف الإضافي" data-mdel="${l.idx}">${icon('x')}</button>` : ''}</td>
@@ -1114,10 +1060,21 @@
 
     $$('input[data-price]', tb).forEach((inp) => inp.addEventListener('change', () => {
       const key = inp.dataset.price;
-      const v = Math.max(0, num(inp.value));
+      const v = Math.max(0, money(inp.value));
       if (key.startsWith('manual:')) cur.manualRows[+key.split(':')[1]].price = v;
       else cur.priceOverrides[key] = v;
       setDirty(true); renderPricing();
+    }));
+    $$('input[data-accqty]', tb).forEach((inp) => inp.addEventListener('change', () => {
+      const it = getItem(inp.dataset.accqty);
+      const have = (cur.design.pieces || []).filter((p) => p.kind === 'acc' && p.itemId === it.id).length;
+      let n = Math.max(0, Math.round(num(inp.value)));
+      if (n > ACC_MAX) { n = ACC_MAX; toast(`أقصى عدد للصنف الواحد ${ACC_MAX} قطعة`, true); }
+      if (n === have) { inp.value = have; return; }
+      accQtyFocus = it.id;
+      designer.setAccessoryCount(it, n); // onChange يحدّث الطلب ويعيد رسم التسعير
+      const d = n - have;
+      toast(d > 0 ? `أُضيفت ${d} من «${it.name}» إلى التصميم` : `حُذفت ${-d} من «${it.name}» من التصميم`);
     }));
     $$('[data-reset]', tb).forEach((el) => el.addEventListener('click', () => { delete cur.priceOverrides[el.dataset.reset]; setDirty(true); renderPricing(); }));
     $$('[data-m]', tb).forEach((el) => el.addEventListener('change', () => {
@@ -1131,6 +1088,12 @@
     prepareControls(tb);
     renderPayment();
     if (readOnly) $$(LOCKABLE).forEach((el) => { el.disabled = true; });
+    // تعديل الكمية يعيد رسم الجدول: يعود التركيز إلى الحقل نفسه ليُكمل المستخدم بالأسهم
+    if (accQtyFocus) {
+      const el = $$('input[data-accqty]', tb).find((e) => e.dataset.accqty === accQtyFocus);
+      accQtyFocus = null;
+      if (el && !el.disabled) { el.focus({ preventScroll: true }); el.select(); }
+    }
   }
 
   $('#btnAddManual').addEventListener('click', () => {
@@ -1150,7 +1113,7 @@
   const fieldMap = {
     custName: (v) => (cur.customer.name = v), custPhone: (v) => (cur.customer.phone = v), custAddress: (v) => (cur.customer.address = v),
     deliveryDate: (v) => (cur.deliveryDate = v), orderStatus: (v) => (cur.status = v), orderNotes: (v) => (cur.notes = v),
-    payPaid: (v) => (cur.paid = Math.max(0, num(String(v).replace(/,/g, '')))),
+    payPaid: (v) => (cur.paid = Math.max(0, money(String(v).replace(/,/g, '')))),
   };
   Object.keys(fieldMap).forEach((id) => $('#' + id).addEventListener('input', () => {
     fieldMap[id]($('#' + id).value);
@@ -1170,7 +1133,8 @@
     const d = new Date(v + 'T00:00:00');
     if (isNaN(d)) { el.textContent = ''; return; }
     try {
-      el.textContent = d.toLocaleDateString('ar-u-ca-gregory', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      // nu-latn: لولاها يعطي المحرّك أرقاماً هندية (٢٠٢٦) وباقي النظام بأرقام عربية
+      el.textContent = d.toLocaleDateString('ar-u-ca-gregory-nu-latn', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
     } catch (_) { el.textContent = v; }
   }
 
@@ -1224,7 +1188,7 @@
   }
 
   /* المدفوع يُعرض منسّقاً كجيرانه (3,829.50)، ويصير رقماً خاماً أثناء الكتابة فقط */
-  $('#payPaid').addEventListener('focus', () => { $('#payPaid').value = r2(num(cur.paid)) || 0; });
+  $('#payPaid').addEventListener('focus', () => { $('#payPaid').value = money(cur.paid) || 0; });
   $('#payPaid').addEventListener('blur', () => { $('#payPaid').value = fmt(cur.paid); });
 
   /* اختصارات الدفعات: العربون نصف أو ربع المبلغ بضغطة واحدة */
@@ -1232,11 +1196,124 @@
     const btn = e.target.closest('button[data-pay]');
     if (!btn || readOnly) return;
     const f = parseFloat(btn.dataset.pay);
-    const v = Math.max(0, Math.round((cur.total || 0) * f * 100) / 100);
+    const v = Math.max(0, money((cur.total || 0) * f));
     cur.paid = v;
     $('#payPaid').value = fmt(v);
     setDirty(true);
     renderPayment();
+  });
+
+  /* ---------------- المرفقات: واجهة الخانتين ---------------- */
+  const ATT_DIM = 1000;          // أطول ضلع بالبكسل بعد التصغير
+  const ATT_TARGET = 130 * 1024; // الحجم المستهدف للصورة الواحدة
+
+  /** حجم الـ data URL بالكيلوبايت (طول Base64 ≈ ٤/٣ حجم البايتات) */
+  const dataUrlKB = (src) => Math.round((String(src).length * 0.75) / 1024);
+
+  function decodeImageFile(file) {
+    if (window.createImageBitmap) {
+      // imageOrientation: صور الجوال تحمل دوراناً في EXIF لا يطبّقه الرسم على الكانفس
+      return createImageBitmap(file, { imageOrientation: 'from-image' }).catch(() => decodeViaImg(file));
+    }
+    return decodeViaImg(file);
+  }
+
+  function decodeViaImg(file) {
+    return new Promise((res, rej) => {
+      const fr = new FileReader();
+      fr.onerror = () => rej(new Error('تعذّرت قراءة الملف'));
+      fr.onload = () => {
+        const im = new Image();
+        im.onload = () => res(im);
+        im.onerror = () => rej(new Error('الملف ليس صورة صالحة'));
+        im.src = fr.result;
+      };
+      fr.readAsDataURL(file);
+    });
+  }
+
+  async function shrinkImage(file) {
+    const im = await decodeImageFile(file);
+    const sw = im.width, sh = im.height;
+    if (!sw || !sh) throw new Error('الملف ليس صورة صالحة');
+    const scale = Math.min(1, ATT_DIM / Math.max(sw, sh));
+    const w = Math.max(1, Math.round(sw * scale)), h = Math.max(1, Math.round(sh * scale));
+    const cv = document.createElement('canvas');
+    cv.width = w; cv.height = h;
+    const ctx = cv.getContext('2d');
+    // خلفية بيضاء: شفافية PNG تصير سوداء عند التحويل إلى JPEG
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(im, 0, 0, w, h);
+    if (im.close) im.close();
+    let out = cv.toDataURL('image/jpeg', 0.82);
+    for (let q = 0.7; dataUrlKB(out) * 1024 > ATT_TARGET && q >= 0.42; q -= 0.14) out = cv.toDataURL('image/jpeg', q);
+    return out;
+  }
+
+  const attSlots = () => $$('#attList .att');
+
+  function renderAttachments() {
+    cur.attachments = normalizeAttachments(cur.attachments);
+    attSlots().forEach((slot, i) => {
+      const a = cur.attachments[i];
+      const img = $('.att-img', slot), bar = $('.att-bar', slot);
+      $('.att-title', slot).value = a.name || '';
+      slot.dataset.has = a.src ? '1' : '';
+      img.hidden = !a.src;
+      if (a.src) img.src = a.src; else img.removeAttribute('src');
+      $('.att-ph', slot).hidden = !!a.src;
+      bar.hidden = !a.src;
+      $('.att-size', slot).textContent = a.src ? `${dataUrlKB(a.src)} ك.ب` : '';
+    });
+  }
+
+  async function pickAttachment(i, file) {
+    if (!file) return;
+    if (!/^image\//.test(file.type)) { toast('اختر ملف صورة', true); return; }
+    const slot = attSlots()[i];
+    const order = cur;   // الضغط ليس فورياً: قد يُفتح طلب آخر قبل أن ينتهي
+    slot.dataset.busy = '1';
+    try {
+      const src = await shrinkImage(file);
+      if (cur !== order) return;
+      // الكتابة بعد الانتظار لا قبله: renderAttachments يستبدل المصفوفة بكائنات
+      // جديدة، فصورة تنتهي متأخّرة تضيع لو أمسكنا بالكائن قبل await.
+      cur.attachments = normalizeAttachments(cur.attachments);
+      cur.attachments[i].src = src;
+      setDirty(true);
+      renderAttachments();
+    } catch (e) {
+      toast('تعذّر إرفاق الصورة: ' + e.message, true);
+    } finally {
+      slot.dataset.busy = '';
+    }
+  }
+
+  $('#attList').addEventListener('click', (e) => {
+    const slot = e.target.closest('.att');
+    if (!slot || readOnly) return;
+    const i = +slot.dataset.att;
+    if (e.target.closest('.att-pick') || e.target.closest('.att-replace')) $('.att-file', slot).click();
+    else if (e.target.closest('.att-remove')) {
+      cur.attachments[i] = { name: cur.attachments[i].name, src: '' };
+      $('.att-file', slot).value = '';
+      setDirty(true);
+      renderAttachments();
+    }
+  });
+
+  $('#attList').addEventListener('change', (e) => {
+    const slot = e.target.closest('.att');
+    if (!slot || !e.target.classList.contains('att-file')) return;
+    pickAttachment(+slot.dataset.att, e.target.files && e.target.files[0]);
+    e.target.value = '';   // اختيار الملف نفسه مرة أخرى يجب أن يطلق الحدث
+  });
+
+  $('#attList').addEventListener('input', (e) => {
+    const slot = e.target.closest('.att');
+    if (!slot || !e.target.classList.contains('att-title')) return;
+    cur.attachments[+slot.dataset.att].name = e.target.value.slice(0, 60);
+    setDirty(true);
   });
 
   function fillOrderForm() {
@@ -1251,6 +1328,7 @@
     syncDeliveryEcho();
     autoGrow($('#custAddress'));
     autoGrow($('#orderNotes'));
+    renderAttachments();
     $('#orderTitle').textContent = cur.number ? `الطلب #${cur.number}` : 'طلب جديد';
     renderOrderMeta();
     closeInspector();
@@ -1271,6 +1349,7 @@
     cur.costs = cur.costs || {};
     cur.extraCosts = cur.extraCosts || [];
     cur.customer = cur.customer || { name: '', phone: '', address: '' };
+    cur.attachments = normalizeAttachments(cur.attachments);
     // الطلبات القديمة المحفوظة بدون ضريبة تبقى كما هي
     cur.vat = cur.vat || { enabled: false, rate: num(settings().vatRate ?? 15) };
     readOnly = !canEditOrder(cur);
@@ -1314,7 +1393,7 @@
     cur.extraCosts = extraCosts(cur);
     syncCostTotal(cur);
     cur.total = total;
-    cur.remaining = r2(total - num(cur.paid));
+    cur.remaining = money(total - num(cur.paid));
     const nowIso = Store.now();
     if (!cur.id) {
       let no;
@@ -1465,6 +1544,7 @@
     const cur$ = currency();
     const emp = order.createdByName || (Store.getUser(order.createdBy) || {}).name || currentUser.name;
     const c = order.customer || {};
+    const atts = filledAttachments(order);
     const dense = lines.length > 12;
     return `
     <div class="inv ${dense ? 'dense' : ''}">
@@ -1484,12 +1564,16 @@
         <div><span>الموظف</span><b>${esc(emp)}</b></div>
         <div><span>مقاس الغرفة (داخلي)</span><b>${roomSummary(order.design)}</b></div>
       </div>
-      <div class="inv-design"><h2>التصميم</h2><div class="imgbox"><img src="${img}" alt="التصميم"></div></div>
+      <div class="inv-visuals">
+        <div class="inv-design"><h2>التصميم</h2><div class="imgbox"><img src="${img}" alt="التصميم"></div></div>
+        ${atts.length ? `<div class="inv-atts"><h2>المرفقات</h2><div class="att-col">${atts.map((a, i) => `
+          <figure><div class="imgbox"><img src="${a.src}" alt="مرفق ${i + 1}"></div><figcaption>${esc(a.name) || `مرفق ${i + 1}`}</figcaption></figure>`).join('')}</div></div>` : ''}
+      </div>
       <div class="inv-items">
         <h2>التسعير</h2>
         <table>
           <thead><tr><th style="width:7mm">#</th><th>الصنف</th><th style="width:16mm">الوحدة</th><th style="width:18mm">الكمية</th><th style="width:24mm">السعر (${cur$})</th><th style="width:28mm">الإجمالي (${cur$})</th></tr></thead>
-          <tbody>${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}${l.sub ? ` <small>— ${esc(l.sub)}</small>` : ''}</td><td>${esc(l.unit)}</td><td class="num">${l.kind === 'sofa' ? fmt(l.qty) : l.qty}</td><td class="num">${fmt(l.price)}</td><td class="num">${fmt(l.total)}</td></tr>`).join('') || '<tr><td colspan="6">لا توجد أصناف</td></tr>'}</tbody>
+          <tbody>${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}${l.sub ? ` <small>— ${esc(l.sub)}</small>` : ''}</td><td>${esc(l.unit)}</td><td class="num">${l.kind === 'sofa' ? fmtQty(l.qty) : l.qty}</td><td class="num">${fmt(l.price)}</td><td class="num">${fmt(l.total)}</td></tr>`).join('') || '<tr><td colspan="6">لا توجد أصناف</td></tr>'}</tbody>
         </table>
       </div>
       <div class="inv-bottom">
@@ -1510,16 +1594,41 @@
     </div>`;
   }
 
-  /** بناء الفاتورة في منطقة الطباعة وانتظار تحميل صورة التصميم */
+  /* ارتفاع ‎.inv‎ ثابت (277مم) و overflow مخفي، فطلب بأصناف كثيرة كان تُقصّ
+     أسطره الأخيرة بلا إنذار. نضيّق جدول التسعير — وهو الجزء الوحيد الذي ينمو
+     بعدد الأصناف — ثم مربّع التصميم، درجة درجة حتى تدخل الصفحة. */
+  function fitOnePage(area) {
+    const inv = $('.inv', area);
+    if (!inv) return;
+    const keep = area.style.cssText;
+    // القياس يحتاج عنصراً معروضاً: نعرضه خارج الشاشة لا أمام المستخدم
+    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff';
+    const dense = inv.classList.contains('dense');
+    let fs = dense ? 8.5 : 9.5, pad = dense ? 0.8 : 1.4, vis = 40;
+    for (let i = 0; i < 24 && inv.scrollHeight > inv.clientHeight + 1; i++) {
+      fs = Math.max(5.8, fs - 0.28);
+      pad = Math.max(0.2, pad - 0.1);
+      if (fs <= 7.6) vis = Math.max(20, vis - 2);   // مربّع التصميم آخر ما يُضغط
+      inv.style.setProperty('--row-fs', fs.toFixed(2) + 'pt');
+      inv.style.setProperty('--row-pad', pad.toFixed(2) + 'mm');
+      inv.style.setProperty('--vis-min', vis + 'mm');
+    }
+    area.style.cssText = keep;
+  }
+
+  /** بناء الفاتورة في منطقة الطباعة وانتظار تحميل صورة التصميم والمرفقات */
   function renderPrintArea(order) {
     const area = $('#printArea');
     area.innerHTML = buildPrintDoc(order);
-    const img = $('img', area);
+    // صورة التصميم والمرفقات معاً: html2canvas يرسم الفراغ إن صوّر قبل اكتمالها
+    const imgs = $$('img', area).filter((im) => !im.complete);
+    if (!imgs.length) { fitOnePage(area); return Promise.resolve(); }
     return new Promise((res) => {
-      if (!img || img.complete) return res();
-      let done = false;
-      const go = () => { if (done) return; done = true; res(); };
-      img.onload = go; img.onerror = go; setTimeout(go, 1200);
+      let left = imgs.length, done = false;
+      const fin = () => { if (done) return; done = true; fitOnePage(area); res(); };
+      const one = () => { if (--left <= 0) fin(); };
+      imgs.forEach((im) => { im.onload = one; im.onerror = one; });
+      setTimeout(fin, 1500);
     });
   }
 
@@ -1725,9 +1834,9 @@
     const money = ordStatuses.has('cancelled') ? list : list.filter((o) => o.status !== 'cancelled');
     const sum = (f2) => money.reduce((s, o) => s + num(f2(o)), 0);
     const costed = money.filter((o) => orderCost(o) !== null);
-    const costSum = r2(costed.reduce((s, o) => s + orderCost(o), 0));
-    const profitSum = r2(costed.reduce((s, o) => s + orderProfit(o), 0));
-    const costedRevenue = r2(costed.reduce((s, o) => s + orderRevenue(o), 0));
+    const costSum = money(costed.reduce((s, o) => s + orderCost(o), 0));
+    const profitSum = money(costed.reduce((s, o) => s + orderProfit(o), 0));
+    const costedRevenue = money(costed.reduce((s, o) => s + orderRevenue(o), 0));
     const marginPct = costedRevenue > 0 ? r2((profitSum / costedRevenue) * 100) : 0;
     const noCost = money.length - costed.length;
     $('#ordersStats').innerHTML = `
@@ -1739,7 +1848,7 @@
       <div class="stat"><span>اكتمال التنفيذ</span><b>${list.filter((o) => o.status === 'done').length}</b></div>
       ${canSeeCosts() ? `
       <div class="stat cost"><span>إجمالي التكاليف</span><b>${costed.length ? fmt(costSum) : '—'}</b><small>بتكلفة: ${costed.length}${noCost ? ` • بلا تكلفة: ${noCost}` : ''}</small></div>
-      <div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : ''}">${costed.length ? fmt(profitSum) : '—'}</b><small>${costed.length ? `هامش ${fmt(marginPct)}٪` : 'أدخل التكاليف لحساب الربح'}</small></div>` : ''}`;
+      <div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : ''}">${costed.length ? fmt(profitSum) : '—'}</b><small>${costed.length ? `هامش ${fmtQty(marginPct)}٪` : 'أدخل التكاليف لحساب الربح'}</small></div>` : ''}`;
 
     const tb = $('#ordersTable tbody');
     $('#ordersEmpty').hidden = list.length > 0;
@@ -1853,10 +1962,10 @@
       <tr>
         <td class="no-label price-index">${i + 1}</td>
         <td data-label="الصنف" class="span2">${esc(r.name)}${r.sub ? `<span class="sub">${esc(r.sub)}</span>` : ''}</td>
-        <td data-label="الكمية" class="num">${r.kind === 'sofa' ? fmt(r.qty) : r.qty} ${esc(r.unit)}</td>
+        <td data-label="الكمية" class="num">${r.kind === 'sofa' ? fmtQty(r.qty) : r.qty} ${esc(r.unit)}</td>
         <td data-label="سعر البيع" class="num">${fmt(r.price)}</td>
         <td data-label="إجمالي البيع" class="num">${fmt(r.total)}</td>
-        <td data-label="تكلفة الوحدة"><input class="inline num" type="number" step="0.01" min="0" inputmode="decimal" data-ck="${esc(r.key)}" value="${r.unitCost === null ? '' : r.unitCost}" placeholder="0.00" aria-label="تكلفة الوحدة لـ ${esc(r.name)}"></td>
+        <td data-label="تكلفة الوحدة"><input class="inline num" type="number" step="1" min="0" inputmode="numeric" data-ck="${esc(r.key)}" value="${r.unitCost === null ? '' : r.unitCost}" placeholder="0" aria-label="تكلفة الوحدة لـ ${esc(r.name)}"></td>
         <td data-label="إجمالي التكلفة" class="num" data-ct="${esc(r.key)}">—</td>
         <td data-label="الربح" class="num" data-cp="${esc(r.key)}">—</td>
       </tr>`).join('');
@@ -1891,7 +2000,7 @@
         const raw = String(inp.value).trim();
         if (raw === '') return null;
         const v = parseFloat(raw);
-        return Number.isFinite(v) && v >= 0 ? v : NaN;
+        return Number.isFinite(v) && v >= 0 ? Math.round(v) : NaN;
       };
 
       /* --- البنود الإضافية: تُدار كقائمة محلية ثم تُحفظ مع الطلب --- */
@@ -1910,7 +2019,7 @@
         host.innerHTML = extraRows.length ? extraRows.map((e, i) => `
           <div class="extra-row" data-i="${i}">
             <input class="inline wide" data-ex="name" value="${esc(e.name)}" placeholder="اسم البند (مثل: التوصيل)" aria-label="اسم البند الإضافي">
-            <input class="inline num" type="number" step="0.01" min="0" inputmode="decimal" data-ex="amount" value="${esc(e.amount)}" placeholder="0.00" aria-label="مبلغ البند الإضافي">
+            <input class="inline num" type="number" step="1" min="0" inputmode="numeric" data-ex="amount" value="${esc(e.amount)}" placeholder="0" aria-label="مبلغ البند الإضافي">
             <button type="button" class="icon-btn" data-exdel="${i}" aria-label="حذف البند">${icon('x')}</button>
           </div>`).join('') : '<p class="hint empty-extras">لا توجد بنود إضافية.</p>';
         $$('[data-ex]', host).forEach((inp) => inp.addEventListener('input', recalc));
@@ -1943,15 +2052,15 @@
           const ok = v !== null && !Number.isNaN(v);
           inp.classList.toggle('bad', Number.isNaN(v));
           if (Number.isNaN(v)) bad++;
-          const ct = ok ? r2(r.qty * v) : null;
-          const pf = ok ? r2(r.total - ct) : null;
+          const ct = ok ? money(r.qty * v) : null;
+          const pf = ok ? money(r.total - ct) : null;
           if (ok) { costTotal += ct; filled++; }
           $(`[data-ct="${key}"]`, b).innerHTML = ok ? fmt(ct) : '<span class="hint">—</span>';
           const cp = $(`[data-cp="${key}"]`, b);
           cp.className = 'num' + (ok ? (pf < 0 ? ' neg' : ' pos') : '');
           cp.innerHTML = ok ? fmt(pf) : '<span class="hint">—</span>';
         });
-        const linesCost = r2(costTotal);
+        const linesCost = money(costTotal);
 
         // البنود الإضافية
         let extrasCost = 0, extrasCount = 0;
@@ -1965,10 +2074,10 @@
           extrasCost += (v || 0);
           extrasCount++;
         });
-        extrasCost = r2(extrasCost);
+        extrasCost = money(extrasCost);
 
-        costTotal = r2(linesCost + extrasCost);
-        const profit = r2(info.subtotal - costTotal);
+        costTotal = money(linesCost + extrasCost);
+        const profit = money(info.subtotal - costTotal);
         const margin = info.subtotal > 0 ? r2((profit / info.subtotal) * 100) : 0;
         const missing = inputs.length - filled;
         const anyCost = filled > 0 || extrasCount > 0;
@@ -1982,7 +2091,7 @@
           <div class="stat"><span>إجمالي البيع${info.vatEnabled ? ' <small>(قبل الضريبة)</small>' : ''}</span><b>${fmt(info.subtotal)}</b></div>
           <div class="stat"><span>إجمالي التكاليف</span><b>${anyCost ? fmt(costTotal) : '—'}</b>${breakdown ? `<small>${breakdown}</small>` : ''}</div>
           <div class="stat"><span>صافي الربح</span><b class="${anyCost ? pcls : ''}">${anyCost ? fmt(profit) : '—'}</b></div>
-          <div class="stat"><span>هامش الربح</span><b class="${anyCost ? pcls : ''}">${anyCost ? fmt(margin) + '٪' : '—'}</b></div>`;
+          <div class="stat"><span>هامش الربح</span><b class="${anyCost ? pcls : ''}">${anyCost ? fmtQty(margin) + '٪' : '—'}</b></div>`;
         $('#costErr', b).textContent = bad ? 'تكلفة غير صالحة: أدخل رقماً لا يقل عن صفر' : '';
         $('#costOk', b).disabled = bad > 0;
       }
@@ -2003,7 +2112,7 @@
           if (v === null) return;
           if (Number.isNaN(v)) { bad = true; return; }
           const r = rowOf(inp.dataset.ck);
-          if (r.kind === 'manual') manual[r.idx] = r2(v); else costs[r.key] = r2(v);
+          if (r.kind === 'manual') manual[r.idx] = money(v); else costs[r.key] = money(v);
         });
         // البنود الإضافية: يُحذف الفارغ تماماً، ويُسمّى ما له مبلغ بلا اسم
         const extras = [];
@@ -2012,7 +2121,7 @@
           const v = read($('[data-ex="amount"]', row));
           if (Number.isNaN(v)) { bad = true; return; }
           if (!name && v === null) return;
-          extras.push({ name: name || 'تكلفة إضافية', amount: r2(v || 0) });
+          extras.push({ name: name || 'تكلفة إضافية', amount: money(v || 0) });
         });
         if (bad) { $('#costErr', b).textContent = 'تكلفة غير صالحة: أدخل رقماً لا يقل عن صفر'; return; }
 
@@ -2028,7 +2137,7 @@
         const newCost = orderCost(o);
         const ev = logActivity('cost', o, [
           `التكاليف: من ${prevCost === null ? 'غير محددة' : fmt(prevCost)} إلى ${newCost === null ? 'غير محددة' : fmt(newCost)}`,
-          after.entered ? `صافي الربح ${fmt(after.profit)} (هامش ${fmt(after.margin)}٪)` : 'لا تكاليف مسجّلة على الطلب',
+          after.entered ? `صافي الربح ${fmt(after.profit)} (هامش ${fmtQty(after.margin)}٪)` : 'لا تكاليف مسجّلة على الطلب',
           after.entered ? `تكاليف الأصناف ${fmt(after.linesCost)} • إضافية ${fmt(after.extrasCost)}` : '',
           after.extras.length ? `بنود إضافية: ${after.extras.map((e) => `${e.name} ${fmt(e.amount)}`).join('، ')}` : '',
         ].filter(Boolean));
@@ -2147,7 +2256,7 @@
           <option value="acc" ${it.category === 'acc' ? 'selected' : ''}>إكسسوار (يُسعّر بالقطعة)</option>
           ${it.category === 'sofa' ? '<option value="sofa" selected>كنب (فئة قديمة)</option>' : ''}
         </select></label>
-        <label id="fPriceLbl">السعر (${currency()}) <input id="fPrice" type="number" min="0" step="0.01" value="${it.price}"></label>
+        <label id="fPriceLbl">السعر (${currency()}) <input id="fPrice" type="number" min="0" step="1" value="${it.price}"></label>
       </div>
       <div id="fSofa">
         <div class="row2">
@@ -2191,13 +2300,15 @@
         const cat = $('#fCat', b).value;
         const byMetre = cat !== 'acc';
         const data = {
-          name, category: cat, unit: byMetre ? 'm' : 'pc', price: Math.max(0, num($('#fPrice', b).value)),
+          name, category: cat, unit: byMetre ? 'm' : 'pc', price: Math.max(0, money($('#fPrice', b).value)),
           depth: Math.max(0.3, num($('#fDepth', b).value) || 0.8),
           w: Math.max(0.1, num($('#fW', b).value) || 0.5), h: Math.max(0.1, num($('#fH', b).value) || 0.5),
           shape: $('#fShape', b).value, color: byMetre ? $('#fColor', b).value : $('#fColor2', b).value,
         };
-        if (item) Object.assign(item, data);
-        else db().items.push(Object.assign({ id: Store.uid(), active: true }, data));
+        // الصنف يُجلب بمعرّفه الآن: المرجع الملتقط عند فتح النافذة قد تكون المزامنة استبدلته
+        const live = item ? Store.getItem(item.id) : null;
+        if (live) Object.assign(live, data);
+        else db().items.push(Object.assign({ id: (item && item.id) || Store.uid(), active: item ? item.active !== false : true }, data));
         if (!(await Store.save())) { $('#fErr', b).textContent = 'فشل الحفظ على الخادم: ' + Store.lastError; return; }
         closeModal(); afterItemsChange();
         toast('تم حفظ الصنف');
@@ -2305,6 +2416,9 @@
     if (!!pv.enabled !== !!nv.enabled) ch.push(nv.enabled ? `تفعيل الضريبة ${num(nv.rate)}%` : 'إلغاء الضريبة');
     else if (nv.enabled && num(pv.rate) !== num(nv.rate)) ch.push(`نسبة الضريبة: من ${num(pv.rate)}% إلى ${num(nv.rate)}%`);
     if ((prev.notes || '') !== (next.notes || '')) ch.push('تعديل الملاحظات');
+    const pa = filledAttachments(prev), na = filledAttachments(next);
+    if (pa.length !== na.length) ch.push(`المرفقات: من ${pa.length} إلى ${na.length} صورة`);
+    else if (JSON.stringify(normalizeAttachments(prev.attachments)) !== JSON.stringify(normalizeAttachments(next.attachments))) ch.push('تعديل المرفقات');
 
     const pd = prev.design || {}, nd = next.design || {};
     const sig = (d) => JSON.stringify((d.walls || []).map((w) => [r2(w.len), w.angle]));
@@ -2452,6 +2566,8 @@
       </div>
       <p class="hint" style="margin-top:8px">الطلبات: ${db().orders.length} • الأصناف: ${db().items.length} • المستخدمون: ${db().users.length}</p>`, (b) => {
       $('#sSave', b).onclick = async () => {
+        // يُقرأ كائن الإعدادات الآن لا عند فتح النافذة: أي مزامنة تستبدله بكائن جديد
+        const s = settings();
         Object.assign(s, {
           shopName: $('#sName', b).value.trim(), phone: $('#sPhone', b).value.trim(), address: $('#sAddr', b).value.trim(),
           currency: $('#sCur', b).value.trim() || 'ر.س', invoiceNote: $('#sInvNote', b).value.trim(), cornerMode: $('#sCorner', b).value, cornerModeChosen: true,
@@ -2680,6 +2796,9 @@
   let syncing = false;
   async function syncFromServer() {
     if (!Store.isRemote || syncing || !currentUser || $('#app').hidden) return;
+    // نافذة منبثقة مفتوحة (إعدادات، صنف، تكاليف): المزامنة تستبدل كائنات البيانات
+    // فتصير المراجع التي التقطتها النافذة يتيمة ويضيع ما يُحفظ. تُؤجَّل حتى تُغلق.
+    if (!$('#modal').hidden) return;
     if (!navigator.onLine) { setNetState('off'); return; }
     syncing = true;
     setNetState('sync');
@@ -2732,6 +2851,28 @@
     root.querySelectorAll('input[type="number"]').forEach(el => el.setAttribute('inputmode', 'decimal'));
     root.querySelectorAll('[data-m]').forEach(el => el.setAttribute('aria-label', ({name:'اسم الصنف', qty:'الكمية', unit:'الوحدة'})[el.dataset.k] || 'الصنف'));
   }
+
+  /* عند الدخول إلى خانة أرقام بالنقر أو اللمس: ضع المؤشر بعد آخر رقم (يمينه) بدل بدايته لتسهيل التعديل. */
+  const NUM_FIELDS = 'input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"], input[inputmode="tel"], input.num';
+  function caretToEnd(el) {
+    const v = el.value;
+    if (!v) return;
+    /* خانات type=number لا تدعم setSelectionRange؛ إعادة كتابة القيمة تنقل المؤشر إلى النهاية. */
+    if (el.type === 'number') { el.value = ''; el.value = v; return; }
+    try { el.setSelectionRange(v.length, v.length); } catch (_) { /* نوع لا يدعم تحديد النص */ }
+  }
+  let caretPending = null;
+  document.addEventListener('pointerdown', (e) => {
+    const el = e.target;
+    caretPending = el instanceof HTMLInputElement && !el.readOnly && !el.disabled
+      && el.matches(NUM_FIELDS) && document.activeElement !== el ? el : null;
+  }, true);
+  /* بعد النقرة فقط — النقرات التالية داخل الخانة تبقى حرة لوضع المؤشر حيث يشاء المستخدم. */
+  document.addEventListener('click', (e) => {
+    const el = caretPending;
+    caretPending = null;
+    if (el && el === e.target && document.activeElement === el) caretToEnd(el);
+  }, true);
   let canvasEditing = false;
   function setCanvasEditing(editing) {
     canvasEditing = editing;
