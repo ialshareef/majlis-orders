@@ -1632,9 +1632,25 @@
     });
   }
 
+  /* لا تُصدَّر فاتورة من طلب غير محفوظ: الورقة التي تصل العميل يجب أن تطابق
+     ما في النظام — مسودة بلا رقم أو تعديلات لم تصل الخادم تعني فاتورة لا أثر لها. */
+  function requireSavedOrder(order) {
+    if (!order || !order.id) {
+      toast('لا يمكن إصدار الفاتورة قبل حفظ الطلب — اضغط «حفظ الطلب» أولاً', true);
+      return false;
+    }
+    if (cur.id === order.id && dirty) {
+      toast('توجد تعديلات غير محفوظة — احفظ الطلب أولاً ثم أصدر الفاتورة', true);
+      return false;
+    }
+    return true;
+  }
+
   /** المسار الأساسي: تجهيز الفاتورة ثم عرض نافذة التصدير والمشاركة */
   async function shareOrder(order) {
-    if (order.id) { logActivity('export', order, [`الإجمالي ${fmt(order.total)}`]); Store.save(); }
+    if (!requireSavedOrder(order)) return;
+    logActivity('export', order, [`الإجمالي ${fmt(order.total)}`]);
+    Store.save();
     await renderPrintArea(order);
     exportShareModal(order);
   }
@@ -1782,7 +1798,12 @@
 
   async function exportCurrent() {
     cur.design = designer.getState();
-    if (!readOnly && cur.customer.name.trim()) await saveOrder(true);
+    // الحفظ قرار المستخدم لا خطوة صامتة: نوقف التصدير ونوجّهه إلى زر الحفظ
+    if (!requireSavedOrder(cur)) {
+      const sv = $('#btnSaveOrder');
+      if (sv && !sv.hidden) sv.focus();
+      return;
+    }
     await shareOrder(cur);
   }
   $('#btnExportPdf').addEventListener('click', exportCurrent);
@@ -1831,14 +1852,15 @@
     if (filtering) note.textContent = `الملخص والجدول محسوبان على الطلبات المطابقة للفلتر: ${list.length} من ${db().orders.length}.`;
 
     // المبالغ لا تشمل الطلبات الملغية إلا إذا اختارها المستخدم صراحةً
-    const money = ordStatuses.has('cancelled') ? list : list.filter((o) => o.status !== 'cancelled');
-    const sum = (f2) => money.reduce((s, o) => s + num(f2(o)), 0);
-    const costed = money.filter((o) => orderCost(o) !== null);
+    // (الاسم moneyList لا money: الأخير يحجب دالة التقريب money المستعملة أسفله)
+    const moneyList = ordStatuses.has('cancelled') ? list : list.filter((o) => o.status !== 'cancelled');
+    const sum = (f2) => moneyList.reduce((s, o) => s + num(f2(o)), 0);
+    const costed = moneyList.filter((o) => orderCost(o) !== null);
     const costSum = money(costed.reduce((s, o) => s + orderCost(o), 0));
     const profitSum = money(costed.reduce((s, o) => s + orderProfit(o), 0));
     const costedRevenue = money(costed.reduce((s, o) => s + orderRevenue(o), 0));
     const marginPct = costedRevenue > 0 ? r2((profitSum / costedRevenue) * 100) : 0;
-    const noCost = money.length - costed.length;
+    const noCost = moneyList.length - costed.length;
     $('#ordersStats').innerHTML = `
       <div class="stat"><span>عدد الطلبات</span><b>${list.length}</b></div>
       <div class="stat"><span>إجمالي المبيعات</span><b>${fmt(sum((o) => o.total))}</b></div>
@@ -2806,26 +2828,32 @@
       const before = cur.id ? db().orders.find((o) => o.id === cur.id) : null;
       const beforeUpdated = before ? before.updatedAt : null;
       await Store.refresh();
-      const active = ($('.page.active') || {}).id || '';
-      if (active === 'page-orders') renderOrders();
-      else if (active === 'page-activity') renderActivity();
-      else if (active === 'page-items') renderItems();
-      else if (active === 'page-users') renderUsers();
-      renderItemSelects();
-      applyPermissions();
-      renderNotifications();
-      if (cur.id) {
-        const remote = db().orders.find((o) => o.id === cur.id);
-        if (!remote) {
-          if (!dirty) { toast('تم حذف هذا الطلب من جهاز آخر'); startNewOrder(true); }
-        } else if (remote.updatedAt !== beforeUpdated && !dirty) {
-          loadOrder(remote, false);
-          toast(`تم تحديث الطلب #${remote.number} من جهاز آخر`);
-        }
-      } else if (active === 'page-order') {
-        renderPricing();
-      }
+      // الجلب نجح، وما بعده عرض فقط: خطأ في رسم شاشة واحدة كان يُحسب انقطاع
+      // مزامنة فيقلب الشارة إلى «تعذّر التحديث» ويُسقط بقية التحديثات معه.
+      // لذا تُعلن الحالة هنا، ويُعزل كل رسم عن جاره.
       setNetState('ok');
+      const draw = (label, fn) => { try { fn(); } catch (err) { console.error('render failed:', label, err); } };
+      const active = ($('.page.active') || {}).id || '';
+      if (active === 'page-orders') draw('orders', renderOrders);
+      else if (active === 'page-activity') draw('activity', renderActivity);
+      else if (active === 'page-items') draw('items', renderItems);
+      else if (active === 'page-users') draw('users', renderUsers);
+      draw('itemSelects', renderItemSelects);
+      draw('permissions', applyPermissions);
+      draw('notifications', renderNotifications);
+      draw('currentOrder', () => {
+        if (cur.id) {
+          const remote = db().orders.find((o) => o.id === cur.id);
+          if (!remote) {
+            if (!dirty) { toast('تم حذف هذا الطلب من جهاز آخر'); startNewOrder(true); }
+          } else if (remote.updatedAt !== beforeUpdated && !dirty) {
+            loadOrder(remote, false);
+            toast(`تم تحديث الطلب #${remote.number} من جهاز آخر`);
+          }
+        } else if (active === 'page-order') {
+          renderPricing();
+        }
+      });
     } catch (e) {
       // كان هذا صامتاً تماماً: الموظف يظنّ أنه على أحدث البيانات وهو على لقطة قديمة
       console.warn('sync failed', e);
