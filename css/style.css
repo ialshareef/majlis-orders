@@ -131,6 +131,9 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
 }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* الحقول مستثناة: لها تنسيق تركيز خاص بها (إطار بلون التمييز وهالة حوله)، فالمستطيل
+   الافتراضي فوقه يرسم إطاراً ثانياً — وفي حقول .fld يظهر مستطيلاً داخل الحقل. */
+input:focus-visible, select:focus-visible, textarea:focus-visible { outline: none; }
 
 .sr-only {
   position: absolute !important; width: 1px; height: 1px; padding: 0; margin: -1px;
@@ -699,7 +702,9 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .stat b.stat-text { font-size: 1rem; direction: rtl; text-align: start; }
-.stat small { display: block; font-size: .74rem; color: var(--ink-3); margin-top: 3px; line-height: 1.45; }
+/* التعليقات الصغيرة (‎.73rem فأقل ≈ 11px) وزنها 500 كنظيراتها في الطبقة نفسها:
+   الوزن 400 الموروث من قاعدة small يجعلها أخفّ من عنوانها بلا سبب. */
+.stat small { display: block; font-size: .74rem; font-weight: 500; color: var(--ink-3); margin-top: 3px; line-height: 1.45; }
 .stat.remaining b { color: var(--warn); }
 .stat b.pos { color: var(--ok); }
 .stat b.neg { color: var(--danger); }
@@ -707,9 +712,10 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 .stat .delta.up { color: var(--ok); }
 .stat .delta.down { color: var(--danger); }
 .stat .delta.flat { color: var(--ink-3); font-weight: 400; }
-/* مؤشرات ذكاء الأعمال: أرقام أكبر بوزن خفيف — أسلوب تقرير تنفيذي */
+/* مؤشرات ذكاء الأعمال: الرقم يكبر بحجمه لا بثقله — أسلوب تقرير تنفيذي. لكن 500
+   حدّاً أدنى: الرقم عنوان البطاقة، فلا يصحّ أن يخرج أخفّ من سطر وصفه فوقه. */
 .kpis .stat { flex-basis: 23%; padding: 18px 20px 16px; }
-.kpis .stat b { font-size: 1.8rem; font-weight: 300; margin-top: 6px; }
+.kpis .stat b { font-size: 1.8rem; font-weight: 500; margin-top: 6px; }
 
 /* =====================================================================
    13) الجداول
@@ -876,7 +882,7 @@ body[data-page="order"] main { padding-top: 12px; }
 .os dd { margin: 3px 0 0; min-width: 0; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
 .os dd b { font-size: 1rem; font-weight: 600; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 .os dd b.is-empty { color: var(--ink-3); font-weight: 500; font-size: .92rem; }
-.os dd small { font-size: .74rem; color: var(--ink-3); white-space: nowrap; }
+.os dd small { font-size: .74rem; font-weight: 500; color: var(--ink-3); white-space: nowrap; }
 .os dd small.late { color: var(--danger); font-weight: 600; }
 .os-status dd { margin-top: 1px; }
 .os-money dd b { font-size: 1.14rem; font-variant-numeric: tabular-nums; direction: ltr; }
@@ -1193,7 +1199,7 @@ body[data-page="order"] main { padding-top: 12px; }
   display: block; margin-top: 4px; font-size: 1.4rem; font-weight: 600;
   direction: ltr; text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.pay-fig > small { display: block; font-size: .74rem; color: var(--ink-3); line-height: 1.4; margin-top: 2px; }
+.pay-fig > small { display: block; font-size: .74rem; font-weight: 500; color: var(--ink-3); line-height: 1.4; margin-top: 2px; }
 .pay-fig.is-rem { background: color-mix(in srgb, var(--pay-color) 7%, var(--surface)); }
 .pay-fig.is-rem > b { color: var(--pay-color); }
 .pay[data-state="none"] .pay-fig.is-rem > b { color: var(--ink); }
@@ -1505,8 +1511,8 @@ body.modal-open { overflow: hidden; }
 .donut-wrap { display: flex; align-items: center; justify-content: center; gap: 22px 26px; flex-wrap: wrap; }
 .donut { width: 164px; height: 164px; flex: none; fill: none; stroke: none; }
 .donut text { stroke: none; font-family: var(--font); }
-.donut .dn-total { fill: var(--ink); font-size: 30px; font-weight: 300; text-anchor: middle; }
-.donut .dn-cap { fill: var(--ink-3); font-size: 12px; text-anchor: middle; }
+.donut .dn-total { fill: var(--ink); font-size: 30px; font-weight: 500; text-anchor: middle; }
+.donut .dn-cap { fill: var(--ink-3); font-size: 12px; font-weight: 500; text-anchor: middle; }
 .dn-legend { flex: 1; min-width: 200px; display: grid; gap: 9px; }
 .dn-item { display: flex; align-items: center; gap: 10px; font-size: .86rem; color: var(--ink-2); }
 .dn-item i { width: 9px; height: 9px; border-radius: 50%; flex: none; }
