@@ -53,7 +53,7 @@
       return [{ len: w, angle: 0 }, { len: h, angle: 90 }, { len: w, angle: 180 }, { len: h, angle: 270 }];
     }
     static emptyState(w = 5, h = 4, cornerMode = 'deduct') {
-      return { walls: Designer.rectWalls(w, h), openings: [], pieces: [], cornerSpots: [], cornerMode };
+      return { walls: Designer.rectWalls(w, h), openings: [], pieces: [], cornerMode };
     }
     static normalizeState(s, defaults = {}) {
       const st = JSON.parse(JSON.stringify(s || {}));
@@ -61,14 +61,9 @@
       st.walls = st.walls.map((w) => ({ len: Math.max(0.3, +w.len || 0.3), angle: norm360(+w.angle || 0) }));
       st.openings = Array.isArray(st.openings) ? st.openings : [];
       st.pieces = Array.isArray(st.pieces) ? st.pieces : [];
-      // حجوزات الزوايا: زاوية تُترك فاضية لطاولة خدمة جانبية.
-      // at = رقم الزاوية (نقطة بداية الجدار at ونهاية الجدار الذي قبله).
-      st.cornerSpots = (Array.isArray(st.cornerSpots) ? st.cornerSpots : [])
-        .filter((c) => c && Number.isInteger(+c.at) && +c.at >= 0 && +c.at < st.walls.length)
-        .map((c) => ({ at: +c.at, size: Math.min(3, Math.max(0.2, +c.size || 0.6)), note: String(c.note || '') }));
-      // زاوية واحدة لكل رأس
-      const seen = new Set();
-      st.cornerSpots = st.cornerSpots.filter((c) => (seen.has(c.at) ? false : seen.add(c.at)));
+      // حجوزات الزوايا (زاوية فاضية) ميزة أُزيلت: تُحذف من الطلبات القديمة عند فتحها
+      // فتعود الجدران إلى أطوالها الكاملة بدل أن تبقى محجوزة بلا واجهة تُدير الحجز.
+      delete st.cornerSpots;
       if (st.cornerMode !== 'full' && st.cornerMode !== 'deduct') st.cornerMode = defaults.cornerMode || 'deduct';
       return st;
     }
@@ -164,52 +159,6 @@
       return { pts, poly, walls, area, sgn, closed, gap, bb: { minX, minY, maxX, maxY } };
     }
 
-    /* ---------- زوايا الغرفة ----------
-       الزاوية v هي الرأس المشترك بين نهاية الجدار (v-1) وبداية الجدار v.
-       غرفة مغلقة بـ N جداراً فيها N زاوية. */
-    cornerWalls(v) {
-      const n = this.state.walls.length;
-      return { prev: (v - 1 + n) % n, next: v % n };
-    }
-    cornerPoint(v) {
-      const g = this.geometry();
-      return g.pts[v % this.state.walls.length];
-    }
-    cornerSpot(v) { return (this.state.cornerSpots || []).find((c) => c.at === v) || null; }
-
-    /** حجز زاوية (فاضية لطاولة خدمة) أو تحديث مقاسها */
-    setCornerSpot(v, size = 0.6, note = '') {
-      const n = this.state.walls.length;
-      if (!Number.isInteger(v) || v < 0 || v >= n) return null;
-      const sz = Math.min(3, Math.max(0.2, +size || 0.6));
-      const cur = this.cornerSpot(v);
-      if (cur) { cur.size = sz; cur.note = String(note || cur.note || ''); }
-      else this.state.cornerSpots.push({ at: v, size: sz, note: String(note || '') });
-      this.changed();
-      return this.cornerSpot(v);
-    }
-    clearCornerSpot(v) {
-      const i = (this.state.cornerSpots || []).findIndex((c) => c.at === v);
-      if (i < 0) return false;
-      this.state.cornerSpots.splice(i, 1);
-      this.changed();
-      return true;
-    }
-
-    /** المسافات التي تحجزها الزوايا على جدار معيّن */
-    _cornerReserved(wallIdx) {
-      const out = [];
-      const n = this.state.walls.length;
-      const len = this.state.walls[wallIdx] ? this.state.walls[wallIdx].len : 0;
-      for (const c of this.state.cornerSpots || []) {
-        const { prev, next } = this.cornerWalls(c.at);
-        // الزاوية تقع عند بداية الجدار next ونهاية الجدار prev
-        if (next === wallIdx) out.push([0, Math.min(len, c.size)]);
-        if (prev === wallIdx) out.push([Math.max(0, len - c.size), len]);
-      }
-      return out;
-    }
-
     corners(p) {
       const a = rad(p.rot || 0), c = Math.cos(a), s = Math.sin(a);
       const hw = p.w / 2, hh = p.h / 2;
@@ -256,6 +205,8 @@
       for (let i = 0; i < ps.length; i++) {
         for (let j = i + 1; j < ps.length; j++) {
           const a = ps[i], b = ps[j];
+          // المساحة الحرة علامة على الأرض لا قطعة أثاث: ما يقع فوقها ليس تداخلاً
+          if (a.kind === 'free' || b.kind === 'free') continue;
           // الإكسسوارات (مخدات، مراكي...) توضع فوق الكنب بشكل طبيعي: لا يُعد ذلك تداخلاً
           if ((a.kind === 'acc') !== (b.kind === 'acc')) continue;
           // في وضع "طول الجدار كامل" يُسمح للقطع الملتصقة بجدارين مختلفين بمشاركة الزاوية
@@ -345,7 +296,6 @@
     removeWall(i) {
       const ws = this.state.walls;
       if (ws.length <= 3 || !ws[i]) return false;
-      const nBefore = ws.length;
       ws.splice(i, 1);
       for (const p of this.state.pieces) {
         if (p.wall == null) continue;
@@ -353,10 +303,6 @@
       }
       this.state.openings = this.state.openings.filter((o) => o.wall !== i);
       for (const o of this.state.openings) if (o.wall > i) o.wall--;
-      // الزوايا: الرأسان الملاصقان للجدار المحذوف يزولان، والباقي يُعاد ترقيمه
-      this.state.cornerSpots = (this.state.cornerSpots || [])
-        .filter((c) => c.at !== i && c.at !== (i + 1) % nBefore)
-        .map((c) => ({ ...c, at: c.at > i ? c.at - 1 : c.at }));
       // كنب زاوية فقد أحد ضلعيه: يُحذف كاملاً بدل ترك ذراع معلّق
       const orphan = new Set(this.state.pieces.filter((p) => p.group && p.wall == null).map((p) => p.group));
       if (orphan.size) this.state.pieces = this.state.pieces.filter((p) => !p.group || !orphan.has(p.group));
@@ -487,8 +433,6 @@
         if (r.smin < depth - 0.02 && r.smax > 0.02 && r.tmax > 0.02 && r.tmin < w.len - 0.02) occ.push([r.tmin, r.tmax]);
       }
       for (const o of this.state.openings) if (o.wall === wallIdx && o.blocks) occ.push([o.t - o.w / 2, o.t + o.w / 2]);
-      // الزوايا المحجوزة تمنع الفرش — وإلا أعادها "فرش الكل" وأفسد طلب العميل
-      for (const r of this._cornerReserved(wallIdx)) occ.push(r);
       return occ;
     }
 
@@ -516,61 +460,9 @@
       return this.addPiece(piece);
     }
 
-    /** كنب زاوية: قطعة واحدة منطقياً على ضلعين، مبنية من مستطيلين.
-        لا تُرسم كمضلّع L لأن كشف التداخل (SAT) صالح للأشكال المحدّبة فقط،
-        فالمقعّر يُنتج تحذيرات تداخل كاذبة. المستطيلان يحافظان على الرسم
-        والسحب والكشف كما هي، ويُجمعان في سطر تسعير واحد عبر group.
-        الذراعان يُقاسان على كل جدار ابتداءً من الزاوية. في وضع "خصم الزوايا"
-        يُقصَّر ذراع واحد بمقدار العمق، فيصير مجموع العرضين = أ + ب − العمق
-        وهو نفس عُرف التسعير القائم دون قاعدة جديدة. */
-    addCornerSofa(v, spec, armPrev, armNext) {
-      const g = this.geometry();
-      const { prev, next } = this.cornerWalls(v);
-      const wp = g.walls[prev], wn = g.walls[next];
-      if (!wp || !wn || !spec) return null;
-      const { depth, rest } = this._sofaSpec(spec);
-      const full = this.state.cornerMode === 'full';
-      const aNext = Math.min(wn.len, Math.max(0.3, +armNext || 1.2));
-      const aPrev = Math.min(wp.len, Math.max(0.3, +armPrev || 1.2));
-      // الذراع على الجدار prev ينتهي عند الزاوية (t = len)
-      const t0 = wp.len - aPrev;
-      const t1 = full ? wp.len : Math.max(t0 + 0.3, wp.len - depth);
-      const group = uid();
-      const armA = Object.assign({ id: uid(), kind: 'sofa' }, rest, { group, corner: v, w: round(aNext, 2), h: depth, wall: next, t: round(aNext / 2, 3), x: 0, y: 0, rot: 0 });
-      const armB = Object.assign({ id: uid(), kind: 'sofa' }, rest, { group, corner: v, w: round(t1 - t0, 2), h: depth, wall: prev, t: round((t0 + t1) / 2, 3), x: 0, y: 0, rot: 0 });
-      this._placeOnWall(armA, wn);
-      this._placeOnWall(armB, wp);
-      this._suspendHistory = true;
-      try { this.addPiece(armA); this.addPiece(armB); }
-      finally { this._suspendHistory = false; }
-      this.changed();
-      return group;
-    }
-
-    /** ضبط حالة زاوية كخطوة تراجع واحدة: 'none' عادية، 'spot' فاضية، 'sofa' كنب زاوية.
-        تُزال الحالة السابقة أولاً — للزاوية حالة واحدة فقط. */
-    setCornerState(v, kind, opts = {}) {
-      const n = this.state.walls.length;
-      if (!Number.isInteger(v) || v < 0 || v >= n) return false;
-      let ok = true;
-      this._suspendHistory = true;
-      try {
-        this.state.cornerSpots = (this.state.cornerSpots || []).filter((c) => c.at !== v);
-        const groups = new Set(this.state.pieces.filter((p) => p.group && p.corner === v).map((p) => p.group));
-        if (groups.size) this.state.pieces = this.state.pieces.filter((p) => !groups.has(p.group));
-        if (this.sel && this.sel.type === 'piece' && !this.piece(this.sel.id)) this.sel = null;
-        if (kind === 'spot') {
-          this.state.cornerSpots.push({ at: v, size: Math.min(3, Math.max(0.2, +opts.size || 0.6)), note: String(opts.note || '') });
-        } else if (kind === 'sofa') {
-          ok = !!this.addCornerSofa(v, opts.spec, opts.armPrev, opts.armNext);
-          this._suspendHistory = true;   // addCornerSofa يُعيدها false في نهايته
-        }
-      } finally { this._suspendHistory = false; }
-      this.changed();
-      return ok;
-    }
-
-    /** قطع كنب الزاوية المنتمية لمجموعة واحدة */
+    /** قطع كنب زاوية محفوظة من قبل، منتمية لمجموعة واحدة.
+        إنشاء كنب الزاوية أُزيل مع تبويب الزوايا، لكن ما حُفظ في طلبات سابقة
+        يبقى قطعاً على المخطط تُدار كأي كنبة، ويُجمع في سطر تسعير واحد. */
     groupPieces(group) { return this.state.pieces.filter((p) => p.group && p.group === group); }
 
     removeGroup(group) {
@@ -601,23 +493,37 @@
       return this.addPiece(Object.assign({ kind: 'sofa' }, rest, { x: cx, y: cy, w: Math.min(2, Math.max(0.5, (g.bb.maxX - g.bb.minX) * 0.4)), h: depth, rot: 0 }));
     }
 
-    addAccessory(item) {
+    /** أقرب موضع في وسط الغرفة يتسع لمستطيل w×h دون أن يركب قطعة قائمة */
+    _freeSpot(w, h) {
       const g = this.geometry();
-      const w = +item.w || 0.5, h = +item.h || 0.5;
       const cx0 = (g.bb.minX + g.bb.maxX) / 2, cy0 = (g.bb.minY + g.bb.maxY) / 2;
-      let pos = { x: cx0, y: cy0 };
       const stepX = w + 0.15, stepY = h + 0.15;
-      outer: for (let ring = 0; ring <= 6; ring++) {
+      for (let ring = 0; ring <= 6; ring++) {
         for (let dy = -ring; dy <= ring; dy++) {
           for (let dx = -ring; dx <= ring; dx++) {
             if (Math.max(Math.abs(dx), Math.abs(dy)) !== ring) continue;
             const cand = { x: cx0 + dx * stepX, y: cy0 + dy * stepY, w, h, rot: 0 };
             const poly = this.corners(cand);
-            if (!this.state.pieces.some((p) => Designer.polysOverlap(poly, this.corners(p)))) { pos = { x: cand.x, y: cand.y }; break outer; }
+            if (!this.state.pieces.some((p) => Designer.polysOverlap(poly, this.corners(p)))) return { x: cand.x, y: cand.y };
           }
         }
       }
+      return { x: cx0, y: cy0 };
+    }
+
+    addAccessory(item) {
+      const w = +item.w || 0.5, h = +item.h || 0.5;
+      const pos = this._freeSpot(w, h);
       return this.addPiece({ kind: 'acc', itemId: item.id, x: round(pos.x, 3), y: round(pos.y, 3), w, h, rot: 0, shape: item.shape || 'rect' });
+    }
+
+    /** مساحة حرة: مستطيل يُعلّم فراغاً في المجلس (ممر، طاولة، مدخل).
+        لا صنف له ولا سعر — لا يدخل جدول التسعير ولا الفاتورة، ويُكتب في أمر
+        التصنيع بمقاسه. مقاسه يُعدَّل من المفتّش بخلاف الإكسسوار المثبَّت من بطاقته. */
+    addFreeSpace(w = 1.5, h = 1) {
+      const ww = Math.max(0.2, +w || 1.5), hh = Math.max(0.2, +h || 1);
+      const pos = this._freeSpot(ww, hh);
+      return this.addPiece({ kind: 'free', x: round(pos.x, 3), y: round(pos.y, 3), w: ww, h: hh, rot: 0 });
     }
 
     /**
@@ -862,10 +768,12 @@
       return null;
     }
 
-    /** ترتيب الرسم: الكنب أولاً ثم الإكسسوارات فوقه */
+    /** ترتيب الرسم: المساحات الحرة أرضيةً، ثم الكنب، ثم الإكسسوارات فوقه */
     _drawOrder() {
       const ps = this.state.pieces;
-      return ps.filter((p) => p.kind !== 'acc').concat(ps.filter((p) => p.kind === 'acc'));
+      return ps.filter((p) => p.kind === 'free')
+        .concat(ps.filter((p) => p.kind !== 'free' && p.kind !== 'acc'))
+        .concat(ps.filter((p) => p.kind === 'acc'));
     }
 
     _hitPiece(pt, slop = 0) {
@@ -1181,48 +1089,6 @@
         ctx.beginPath(); q.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y))); ctx.closePath(); ctx.fill();
       }
 
-      // الزوايا المحجوزة (تُترك فاضية لطاولة خدمة)
-      for (const c of this.state.cornerSpots || []) {
-        const { prev, next } = this.cornerWalls(c.at);
-        const wp = g.walls[prev], wn = g.walls[next];
-        if (!wp || !wn) continue;
-        const o = g.pts[c.at % this.state.walls.length];
-        if (!o) continue;
-        // مربع الزاوية للداخل على امتداد الجدارين
-        const u = { x: wn.dir.x * c.size, y: wn.dir.y * c.size };          // على الجدار التالي
-        const vv = { x: -wp.dir.x * c.size, y: -wp.dir.y * c.size };       // رجوعاً على السابق
-        const quad = [P(o.x, o.y), P(o.x + u.x, o.y + u.y), P(o.x + u.x + vv.x, o.y + u.y + vv.y), P(o.x + vv.x, o.y + vv.y)];
-        ctx.save();
-        ctx.fillStyle = 'rgba(180, 83, 9, .10)';
-        ctx.beginPath(); quad.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y))); ctx.closePath(); ctx.fill();
-        ctx.setLineDash([5 * k, 4 * k]);
-        ctx.lineWidth = Math.max(1.2 * k, 0.02 * S);
-        ctx.strokeStyle = '#B45309';
-        ctx.stroke();
-        ctx.restore();
-        {
-          // الوسم يظهر في التصدير أيضاً: الورشة تحتاج أن تقرأ القيد لا أن تستنتجه.
-          // يُصغَّر الخط ليدخل في المربع ولا يُقصّ: القصّ يكسر اتصال الحروف العربية.
-          const cx = (quad[0].x + quad[2].x) / 2, cy = (quad[0].y + quad[2].y) / 2;
-          const side = c.size * S;
-          const label = 'زاوية فاضية', sizeTxt = `${round(c.size, 2)} م`;
-          let fs = Math.min(13 * (opt.export ? 1.2 : 1), side * 0.26);
-          ctx.save();
-          ctx.fillStyle = '#8A4A08';
-          ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-          ctx.font = `700 ${fs}px ${FONT}`;
-          const need = Math.max(ctx.measureText(label).width, ctx.measureText(sizeTxt).width);
-          if (need > side * 0.86) fs *= (side * 0.86) / need;
-          if (fs >= 5.5) {
-            ctx.font = `700 ${fs}px ${FONT}`;
-            ctx.fillText(label, cx, cy - fs * 0.62);
-            ctx.font = `${fs * 0.92}px ${FONT}`;
-            ctx.fillText(sizeTxt, cx, cy + fs * 0.62);
-          }
-          ctx.restore();
-        }
-      }
-
       // الفتحات
       for (const o of this.state.openings) {
         const w = g.walls[o.wall];
@@ -1325,7 +1191,17 @@
         const ph = p.h * S;
         const x0 = span.lx0 * S, x1 = span.lx1 * S, pw = Math.max(0, x1 - x0);
 
-        if (p.kind === 'sofa') {
+        if (p.kind === 'free') {
+          // المساحة الحرة قيد على الأرض لا قطعة: إطار متقطّع وتعبئة شفافة حتى
+          // يُقرأ ما تحتها، وتبقى مميّزة عن الأثاث في الطباعة بالأبيض والأسود.
+          ctx.fillStyle = 'rgba(90, 116, 134, .10)';
+          roundRect(ctx, -pw / 2, -ph / 2, pw, ph, Math.min(5, pw / 5, ph / 5)); ctx.fill();
+          ctx.setLineDash([6 * k, 4 * k]);
+          ctx.lineWidth = Math.max(1.2 * k, 0.02 * S);
+          ctx.strokeStyle = '#5A7486';
+          ctx.stroke();
+          ctx.setLineDash([]);
+        } else if (p.kind === 'sofa') {
           ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = Math.max(2, 0.06 * S); ctx.shadowOffsetY = Math.max(1, 0.02 * S);
           ctx.fillStyle = color;
           roundRect(ctx, x0, -ph / 2, pw, ph, Math.min(6, pw / 6, ph / 6));
@@ -1369,16 +1245,27 @@
         ctx.translate(cx, 0);
         const flip = p.rot > 90 && p.rot < 270;
         if (flip) ctx.rotate(Math.PI);
-        ctx.fillStyle = '#fff';
+        // نص المساحة الحرة داكن بلا ظل: تعبئتها فاتحة شفافة فالأبيض يختفي عليها
+        const isFree = p.kind === 'free';
+        ctx.fillStyle = isFree ? '#3F5666' : '#fff';
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2, ph * 0.36));
         ctx.font = `700 ${fs}px ${FONT}`;
-        ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 3 * k;
+        if (!isFree) { ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 3 * k; }
         // الكنب: الطول × العمق
         const dims = `${round(p.w, 2)} × ${round(p.h, 2)} م`;
         const label = p.kind === 'sofa' ? dims : (item.name || 'إكسسوار');
         const maxW = Math.max(pw, ph) - 6;
-        if (p.kind === 'sofa') {
+        if (isFree) {
+          // الاسم والمقاس معاً: المقاس هو ما يُعدَّل فيها، فلا يُخفى
+          if (ph > fs * 2.4 && pw > fs * 3) {
+            ctx.fillText(fitText(ctx, 'مساحة حرة', maxW), 0, -fs * 0.62);
+            ctx.font = `${fs * 0.92}px ${FONT}`;
+            ctx.fillText(fitText(ctx, dims, maxW), 0, fs * 0.66);
+          } else if (pw > fs * 1.5) {
+            ctx.fillText(fitText(ctx, dims, maxW), 0, 0);
+          }
+        } else if (p.kind === 'sofa') {
           // تظهر المواصفة على المخطط فقط عند تخصيصها لهذه القطعة بخلاف افتراضي الصنف
           const extra = this.opts.pieceSpecLabel ? (this.opts.pieceSpecLabel(p) || '') : '';
           const nm = fitText(ctx, (item.name || 'كنب') + (extra ? ` • ${extra}` : ''), maxW);

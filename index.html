@@ -278,7 +278,6 @@
                 <button role="tab" data-tab="room" class="active" aria-selected="true"><svg><use href="#i-home"/></svg>الغرفة</button>
                 <span class="ptabs-sep" aria-hidden="true"></span>
                 <button role="tab" data-tab="sofa" aria-selected="false" tabindex="-1"><svg><use href="#i-sofa"/></svg>الكنب</button>
-                <button role="tab" data-tab="corners" aria-selected="false" tabindex="-1"><svg><use href="#i-align"/></svg>الزوايا</button>
                 <button role="tab" data-tab="acc" aria-selected="false" tabindex="-1"><svg><use href="#i-pillow"/></svg>الإكسسوار</button>
               </div>
 
@@ -331,12 +330,6 @@
                     <p class="hint" id="cornerHint">لا تداخل: الزاوية تُحسب مرة واحدة للجدار الأطول، وتُخصم من الجدار المجاور.</p>
                   </div>
                 </details>
-              </div>
-
-              <div class="ptab" data-tab="corners" role="tabpanel" aria-label="الزوايا">
-                <p class="panel-lead">لكل زاوية حالة واحدة: <b>عادية</b>، أو <b>فاضية</b> تُترك لطاولة خدمة (تُخصم من الجدارين وتُكتب في الفاتورة وأمر التصنيع)، أو <b>كنب زاوية</b> بالتركيبة المختارة في تبويب الكنب.</p>
-                <p id="cornersWarn" class="warn" hidden>الجدران لا تُغلق الغرفة، فترقيم الزوايا قد لا يطابق الرسم.</p>
-                <div id="cornersList" class="corners-list"></div>
               </div>
 
               <div class="ptab" data-tab="acc" role="tabpanel" aria-label="الإكسسوار">
@@ -397,24 +390,18 @@
                   <tbody></tbody>
                 </table>
               </div>
-              <p class="hint">الخصم على مجموع الطلب، والضريبة تُحسب بعده. الأسعار تُثبَّت داخل الطلب عند الحفظ.</p>
+              <p class="hint">الضريبة تُحسب على مجموع الأصناف. الأسعار تُثبَّت داخل الطلب عند الحفظ.</p>
             </div>
             <aside class="totals" id="priceTotals" aria-label="ملخص التسعير">
               <h4>ملخص التسعير</h4>
-              <div class="t-row" id="grossRow" hidden><span>مجموع الأصناف</span><b id="priceGross" class="num">0</b></div>
-              <div class="t-row t-disc">
-                <span class="disc-ctl">الخصم
-                  <select id="discType" class="inline" aria-label="نوع الخصم"><option value="amount">مبلغ</option><option value="pct">نسبة ٪</option></select>
-                  <input id="discValue" type="number" class="inline rate" min="0" step="1" aria-label="قيمة الخصم" placeholder="0">
-                </span>
-                <b id="priceDisc" class="num">—</b>
-              </div>
               <div class="t-row t-sub"><span>المجموع قبل الضريبة</span><b id="priceSubtotal" class="num">0</b></div>
               <div class="t-row t-vat" id="vatRow">
                 <label class="inline-check"><input type="checkbox" id="vatEnabled" checked> الضريبة <input type="number" aria-label="نسبة الضريبة" inputmode="decimal" id="vatRate" class="inline rate" min="0" max="100" step="0.5" value="15"> %</label>
                 <b id="priceVat" class="num">0</b>
               </div>
               <div class="t-row t-total"><span>الإجمالي النهائي</span><b id="priceTotal" class="num">0</b></div>
+              <div class="t-row t-paid"><span>المدفوع</span><b id="pricePaid" class="num">0</b></div>
+              <div class="t-row t-rem" id="priceRemRow" data-state="none"><span>المتبقي</span><b id="priceRem" class="num">0</b></div>
             </aside>
           </div>
         </section>
@@ -610,13 +597,17 @@
           <button type="button" class="chip" data-stf="cancelled" aria-pressed="false"><i class="st-dot st-cancelled"></i>ملغي</button>
         </div>
         <button type="button" class="link-btn" id="ordClearFilters" hidden>مسح الفلاتر</button>
+        <span class="rmenu cols-menu" style="margin-inline-start:auto">
+          <button type="button" class="btn small ghost rmenu-btn" id="ordColsBtn" aria-haspopup="menu" aria-expanded="false" title="إظهار أو إخفاء الأعمدة"><svg><use href="#i-list"/></svg><span>الأعمدة</span></button>
+          <span class="rmenu-list" role="menu" data-keep hidden id="ordColsMenu"></span>
+        </span>
       </div>
       <p class="filter-note" id="ordersFilterNote" hidden></p>
       <div class="stats-row" id="ordersStats"></div>
       <div class="card table-card">
         <div class="table-wrap">
           <table class="table responsive" id="ordersTable">
-            <thead><tr><th>الطلب</th><th>العميل</th><th>المجموع</th><th data-admin>التكلفة</th><th data-admin title="المبيعات قبل الضريبة ناقص التكاليف">صافي الربح</th><th>المدفوع</th><th>المتبقي</th><th>التوصيل</th><th>الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <thead><tr><th class="c-no">الطلب</th><th class="c-cust">العميل</th><th class="c-total">المجموع</th><th class="c-cost" data-admin>التكلفة</th><th class="c-profit" data-admin title="المبيعات قبل الضريبة ناقص التكاليف">صافي الربح</th><th class="c-paid">المدفوع</th><th class="c-rem">المتبقي</th><th class="c-deliv">التوصيل</th><th class="c-status">الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -763,7 +754,9 @@
       </div>
       <p class="filter-note" id="biNote"></p>
 
-      <div class="stats-row kpis" id="biKpis"></div>
+      <!-- الأربعة الرئيسية في صف أول بحجم كامل، والمساندة في صف ثانٍ أصغر وأهدأ -->
+      <div class="stats-row kpis kpis-main" id="biKpis"></div>
+      <div class="stats-row kpis kpis-sub" id="biKpisSub"></div>
 
       <div id="biEmpty" class="card empty" hidden><span class="empty-ico"><svg><use href="#i-chart"/></svg></span><p>لا توجد طلبات في هذه الفترة</p>
         <div class="empty-actions"><button type="button" class="btn" id="biShowAll"><svg><use href="#i-calendar"/></svg> عرض كل الفترات</button></div></div>

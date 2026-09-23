@@ -96,7 +96,9 @@
       if (!same) openRowMenu(btn);
       return;
     }
-    // عنصر داخل القائمة: يعمل مستمعه الخاص أولاً (الحدث يصعد إلى هنا بعده) ثم تُغلق
+    // عنصر داخل القائمة: يعمل مستمعه الخاص أولاً (الحدث يصعد إلى هنا بعده) ثم تُغلق.
+    // قوائم data-keep (تبديل الأعمدة) تبقى مفتوحة ليُبدَّل أكثر من عمود بفتحة واحدة.
+    if (openMenu && e.target.closest('.rmenu-list[data-keep]') === openMenu.list) return;
     if (openMenu) closeRowMenu();
   });
   document.addEventListener('keydown', (e) => {
@@ -423,7 +425,7 @@
       design: Designer.emptyState(5, 4, settings().cornerMode || 'deduct'),
       priceOverrides: {}, manualRows: [], costs: {}, extraCosts: [],
       customer: { name: '', phone: '', address: '' },
-      deliveryDate: '', paid: 0, payments: [], discount: null, notes: '', attachments: emptyAttachments(),
+      deliveryDate: '', paid: 0, payments: [], notes: '', attachments: emptyAttachments(),
       vat: { enabled: settings().vatEnabled !== false, rate: num(settings().vatRate ?? 15) },
       createdBy: null, createdByName: '', createdAt: null, updatedAt: null,
       total: 0,
@@ -555,8 +557,9 @@
     return it && it.category === 'sofa' ? it : null;
   }
 
-  /** اسم القطعة ولونها وعمقها للمخطط — الكنبة تركيب لا صنف */
+  /** اسم القطعة ولونها وعمقها للمخطط — الكنبة تركيب لا صنف، والمساحة الحرة بلا صنف أصلاً */
   function pieceStyle(p) {
+    if (p && p.kind === 'free') return { name: 'مساحة حرة', color: '#5A7486' };
     if (!p || p.kind !== 'sofa') return null;
     const legacy = legacySofaItem(p);
     if (legacy) return legacy;
@@ -583,7 +586,6 @@
       setDirty(true);
       renderPricing();
       renderWalls();
-      renderCorners();
       syncCornerMode();
       updateOverlapWarn();
       updateUndoButtons();
@@ -625,71 +627,6 @@
     else if (e.key === 'End') i = tabs.length - 1;
     else i = (i + (e.key === 'ArrowLeft' ? 1 : -1) + tabs.length) % tabs.length;
     tabs[i].focus(); selectPanelTab(tabs[i]);
-  });
-
-  /* --- الزوايا: عادية / فاضية لطاولة خدمة / كنب زاوية ---
-     المحرّك يدعمها منذ مدة، لكن لم تكن لها أي واجهة فبقيت الميزة غير قابلة للاستعمال. */
-  function cornerKind(v) {
-    if (designer.cornerSpot(v)) return 'spot';
-    if (designer.state.pieces.some((p) => p.group && p.corner === v)) return 'sofa';
-    return 'none';
-  }
-  function renderCorners() {
-    const box = $('#cornersList');
-    if (!box) return;
-    const n = designer.state.walls.length;
-    const closed = designer.geometry().closed;
-    $('#cornersWarn').hidden = closed;
-    // لا يُعاد الرسم أثناء الكتابة في أحد الحقول: كان يمحو ما يكتبه المستخدم
-    if (box.contains(document.activeElement) && document.activeElement.tagName === 'INPUT') return;
-    box.innerHTML = Array.from({ length: n }, (_, v) => {
-      const { prev, next } = designer.cornerWalls(v);
-      const kind = cornerKind(v);
-      const spot = designer.cornerSpot(v);
-      const arms = designer.state.pieces.filter((p) => p.group && p.corner === v);
-      const armPrev = arms.find((p) => p.wall === prev), armNext = arms.find((p) => p.wall === next);
-      const opt = (k, label) => `<button type="button" data-ck="${k}" class="${kind === k ? 'active' : ''}" aria-pressed="${kind === k}">${label}</button>`;
-      return `
-        <div class="corner-row" data-v="${v}">
-          <div class="corner-title"><b>الزاوية ${v + 1}</b><small>جدار ${prev + 1} × جدار ${next + 1}</small></div>
-          <div class="segmented small" role="group" aria-label="حالة الزاوية ${v + 1}">
-            ${opt('none', 'عادية')}${opt('spot', 'فاضية')}${opt('sofa', 'كنب زاوية')}
-          </div>
-          ${kind === 'spot' ? `<label class="corner-field">مقاس الفراغ (م) <input type="number" step="0.05" min="0.2" max="3" data-cs="size" value="${Designer.util.round(spot.size, 2)}"></label>` : ''}
-          ${kind === 'sofa' ? `<div class="row2 corner-field">
-              <label>ذراع جدار ${prev + 1} (م) <input type="number" step="0.05" min="0.3" data-cs="armPrev" value="${Designer.util.round(armPrev ? armPrev.w : 1.2, 2)}"></label>
-              <label>ذراع جدار ${next + 1} (م) <input type="number" step="0.05" min="0.3" data-cs="armNext" value="${Designer.util.round(armNext ? armNext.w : 1.2, 2)}"></label>
-            </div>` : ''}
-        </div>`;
-    }).join('');
-    if (readOnly) $$('button, input', box).forEach((el) => { el.disabled = true; });
-  }
-  function applyCorner(v, kind) {
-    if (readOnly) return;
-    const row = $(`#cornersList .corner-row[data-v="${v}"]`);
-    const val = (k, d) => { const el = row && $(`[data-cs="${k}"]`, row); return el ? num(el.value) || d : d; };
-    if (kind === 'sofa') {
-      const spec = selectedSofaSpec();
-      if (!spec) return;
-      const ok = designer.setCornerState(v, 'sofa', { spec, armPrev: val('armPrev', 1.2), armNext: val('armNext', 1.2) });
-      if (!ok) toast('تعذّر وضع كنب الزاوية على هذين الجدارين', true);
-    } else if (kind === 'spot') {
-      designer.setCornerState(v, 'spot', { size: val('size', 0.6) });
-    } else {
-      designer.setCornerState(v, 'none');
-    }
-  }
-  $('#cornersList').addEventListener('click', (e) => {
-    const b = e.target.closest('button[data-ck]');
-    if (!b) return;
-    applyCorner(+b.closest('.corner-row').dataset.v, b.dataset.ck);
-  });
-  $('#cornersList').addEventListener('change', (e) => {
-    const inp = e.target.closest('input[data-cs]');
-    if (!inp) return;
-    const v = +inp.closest('.corner-row').dataset.v;
-    inp.blur();
-    applyCorner(v, cornerKind(v));
   });
 
   /* --- الغرفة والجدران --- */
@@ -769,13 +706,16 @@
     updateSofaPriceHint();
 
     const accs = activeItems('acc');
-    $('#accButtons').innerHTML = accs.length
-      ? accs.map((i) => `<button class="btn" data-acc="${i.id}"><span class="sw" style="background:${esc(i.color || '#888')}"></span>${esc(i.name)}</button>`).join('')
-      : '<span class="hint">لا توجد إكسسوارات. أضفها من صفحة الأصناف.</span>';
-    $$('#accButtons button').forEach((b) => b.addEventListener('click', () => {
+    // «مساحة حرة» مدمجة لا صنف لها في صفحة الأصناف: تُعلّم فراغاً في المجلس بلا سعر
+    $('#accButtons').innerHTML = '<button class="btn" data-free="1"><span class="sw sw-free"></span>مساحة حرة</button>'
+      + (accs.length
+        ? accs.map((i) => `<button class="btn" data-acc="${i.id}"><span class="sw" style="background:${esc(i.color || '#888')}"></span>${esc(i.name)}</button>`).join('')
+        : '<span class="hint">لا توجد إكسسوارات مسعّرة. أضفها من صفحة الأصناف.</span>');
+    $$('#accButtons button[data-acc]').forEach((b) => b.addEventListener('click', () => {
       const it = Store.getItem(b.dataset.acc);
       if (it) designer.addAccessory(it);
     }));
+    $('#accButtons button[data-free]').addEventListener('click', () => designer.addFreeSpace());
   }
 
   const SOFA_SEL = { wood: '#sofaWoodSel', fabric: '#sofaFabricSel', foam: '#sofaFoamSel' };
@@ -938,24 +878,28 @@
     } else {
       const p = info.piece;
       const isSofa = p.kind === 'sofa';
+      const isFree = p.kind === 'free';
+      // المساحة الحرة والكنب يُقاسان يدوياً؛ الإكسسوار وحده مقاسه مثبَّت من بطاقة صنفه
+      const canSize = isSofa || isFree;
       const legacy = legacySofaItem(p);
       // الكنبة تركيب من ثلاثة، فلا قائمة "صنف" لها. الإكسسوار صنف واحد كما كان.
-      const items = isSofa ? [] : activeItems('acc');
-      const curItem = isSofa ? (pieceStyle(p) || { name: 'كنب' }) : getItem(p.itemId);
+      const items = canSize ? [] : activeItems('acc');
+      const curItem = canSize ? (pieceStyle(p) || { name: 'كنب' }) : getItem(p.itemId);
       const opts = items.map((i) => `<option value="${i.id}">${esc(i.name)}</option>`);
-      if (!isSofa && !items.some((i) => i.id === p.itemId)) opts.unshift(`<option value="${esc(p.itemId)}">${esc(curItem.name)}</option>`);
+      if (!canSize && !items.some((i) => i.id === p.itemId)) opts.unshift(`<option value="${esc(p.itemId)}">${esc(curItem.name)}</option>`);
       html += `
-        <div class="insp-head"><b>${icon(isSofa ? 'sofa' : 'pillow')} ${esc(curItem.name)} <small id="inspWallLbl">${p.wall != null ? 'على جدار ' + (p.wall + 1) : 'قطعة حرة'}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
+        <div class="insp-head"><b>${icon(isSofa ? 'sofa' : isFree ? 'align' : 'pillow')} ${esc(curItem.name)} <small id="inspWallLbl">${p.wall != null ? 'على جدار ' + (p.wall + 1) : 'قطعة حرة'}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="insp-main">
-          ${isSofa ? '' : `<label>الصنف <select id="selItem">${opts.join('')}</select></label>`}
+          ${canSize ? '' : `<label>الصنف <select id="selItem">${opts.join('')}</select></label>`}
           ${isSofa && legacy ? `<p class="hint">هذه القطعة من طلب قديم مرتبط بصنف «${esc(legacy.name)}». اختر الخشب والقماش والإسفنج لتحويلها.</p>` : ''}
           ${isSofa ? SPECS.map((s) => `<label>${s.label} ${specSelect('sel_' + s.key, s, p[s.field] || '', '')}</label>`).join('') : ''}
         </div>
         <div class="row2">
-          <label>الطول (م) <input id="selW" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.w, 2)}" ${isSofa ? '' : 'readonly tabindex="-1"'}></label>
-          <label>${isSofa ? 'العمق' : 'العرض'} (م) <input id="selH" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.h, 2)}" ${isSofa ? '' : 'readonly tabindex="-1"'}></label>
+          <label>الطول (م) <input id="selW" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.w, 2)}" ${canSize ? '' : 'readonly tabindex="-1"'}></label>
+          <label>${isSofa ? 'العمق' : 'العرض'} (م) <input id="selH" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.h, 2)}" ${canSize ? '' : 'readonly tabindex="-1"'}></label>
         </div>
-        ${isSofa ? '' : '<p class="hint">مقاس الإكسسوار ثابت من بطاقة الصنف في صفحة «الأصناف». لتغييره، عدّل الصنف هناك أو اختر صنفاً آخر من القائمة أعلاه.</p>'}
+        ${isFree ? '<p class="hint">مساحة حرة تُعلّم فراغاً في المجلس. بلا سعر: لا تدخل جدول التسعير ولا الفاتورة، وتُكتب في أمر التصنيع بمقاسها.</p>' : ''}
+        ${canSize ? '' : '<p class="hint">مقاس الإكسسوار ثابت من بطاقة الصنف في صفحة «الأصناف». لتغييره، عدّل الصنف هناك أو اختر صنفاً آخر من القائمة أعلاه.</p>'}
         <div class="row2">
           <label>الزاوية° <input id="selRot" type="number" step="5" value="${Math.round(p.rot)}"></label>
           <label>ملاحظة <input id="selNote" value="${esc(p.note || '')}" placeholder="اختياري"></label>
@@ -1025,8 +969,8 @@
       const apply = () => {
         const p = designer.selectedPiece(); if (!p) return;
         const props = { rot: num($('#selRot', insp).value), note: $('#selNote', insp).value.trim() };
-        // الكنب يُقاس يدوياً؛ الإكسسوار مقاسه من بطاقة الصنف فلا يُرسل من الحقول
-        if (p.kind === 'sofa') { props.w = num($('#selW', insp).value); props.h = num($('#selH', insp).value); }
+        // الكنب والمساحة الحرة يُقاسان يدوياً؛ الإكسسوار مقاسه من بطاقة الصنف فلا يُرسل من الحقول
+        if (p.kind === 'sofa' || p.kind === 'free') { props.w = num($('#selW', insp).value); props.h = num($('#selH', insp).value); }
         SPECS.forEach((s) => { const el = $('#sel_' + s.key, insp); if (el) props[s.field] = el.value || ''; });
         const selIt = $('#selItem', insp);
         const it = selIt ? Store.getItem(selIt.value) : null;
@@ -1097,7 +1041,7 @@
           e.preventDefault();
           designer.select({ type: 'piece', id: ps[j].id });
           const p = ps[j];
-          $('#canvasLive').textContent = `${p.kind === 'sofa' ? 'كنب' : getItem(p.itemId).name} ${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.wall != null ? ' على جدار ' + (p.wall + 1) : ''}. الأسهم للتحريك، R للتدوير، Delete للحذف، Enter للخصائص.`;
+          $('#canvasLive').textContent = `${p.kind === 'sofa' ? 'كنب' : p.kind === 'free' ? 'مساحة حرة' : (getItem(p.itemId) || {}).name || 'إكسسوار'} ${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.wall != null ? ' على جدار ' + (p.wall + 1) : ''}. الأسهم للتحريك، R للتدوير، Delete للحذف، Enter للخصائص.`;
           return;
         }
         designer.select(null);
@@ -1210,26 +1154,14 @@
     (order.manualRows || []).forEach((r, idx) => {
       lines.push({ key: 'manual:' + idx, kind: 'manual', idx, name: r.name, sub: '', unit: r.unit || 'قطعة', qty: num(r.qty), price: money(r.price), basePrice: money(r.price), total: money(num(r.qty) * money(r.price)) });
     });
-    const gross = money(lines.reduce((s, l) => s + l.total, 0));
-    // الخصم على مجموع الطلب قبل الضريبة، والضريبة تُحسب على ما بعد الخصم (كما يشترط نظامها)
-    const discountAmount = discountOf(order.discount, gross);
-    const subtotal = money(gross - discountAmount);
+    // لا خصم على الطلب: مجموع الأصناف هو المجموع قبل الضريبة، والضريبة تُحسب عليه
+    const subtotal = money(lines.reduce((s, l) => s + l.total, 0));
     const vat = order.vat || { enabled: false, rate: 15 };
     const vatRate = vat.enabled ? Math.min(100, Math.max(0, num(vat.rate))) : 0;
     const vatAmount = money(subtotal * vatRate / 100);
     const total = money(subtotal + vatAmount);
-    return { lines, gross, discountAmount, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, total };
+    return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, total };
   }
-
-  /** قيمة الخصم: نسبة من المجموع أو مبلغ ثابت، ولا يتجاوز المجموع أبداً */
-  function discountOf(d, gross) {
-    if (!d || !num(d.value)) return 0;
-    const v = Math.max(0, num(d.value));
-    const amt = d.type === 'pct' ? money(gross * Math.min(100, v) / 100) : money(v);
-    return Math.min(gross, amt);
-  }
-  /** وصف الخصم للفاتورة وللسجل: «خصم 10٪» أو «خصم» */
-  const discountLabel = (d) => (d && d.type === 'pct' ? `خصم ${num(d.value)}٪` : 'خصم');
 
   /* ---------------- التكاليف والربح (للمدير فقط) ---------------- */
   /** من يرى التكاليف وصافي الربح ويعدّلهما */
@@ -1330,10 +1262,21 @@
   }
 
   function renderPricing() {
-    const { lines, total } = computeLines(cur);
+    const { lines, subtotal, vatEnabled, vatRate, vatAmount, total } = computeLines(cur);
     const tb = $('#priceTable tbody');
     if (!lines.length) {
-      tb.innerHTML = '<tr><td colspan="8" class="empty">لا أصناف بعد — أضف قطع الكنب أو الإكسسوارات في مرحلة التصميم لتظهر هنا مسعّرة، أو أضف صنفاً إضافياً.</td></tr>';
+      // حالة فارغة تخصّ التسعير نفسه: عنوان صريح وإجراءان، بلا تعليمات مرحلة التصميم
+      tb.innerHTML = `<tr><td colspan="8" class="empty">
+        <span class="empty-ico">${icon('tag')}</span>
+        <b>لا توجد أصناف للتسعير بعد</b>
+        <p>الكنب والإكسسوار يصلان من المخطط مسعّرين، ويمكن كتابة صنف إضافي هنا.</p>
+        <div class="empty-actions">
+          <button type="button" class="btn" id="priceGoDesign">${icon('arrow-r')} العودة إلى التصميم</button>
+          <button type="button" class="btn primary" id="priceAddItem">${icon('plus')} إضافة صنف</button>
+        </div></td></tr>`;
+      const goD = $('#priceGoDesign', tb), addI = $('#priceAddItem', tb);
+      if (goD) goD.addEventListener('click', () => showStage('design', { focus: true }));
+      if (addI) addI.addEventListener('click', () => $('#btnAddManual').click());
     } else {
       tb.innerHTML = lines.map((l, i) => {
         const overridden = l.kind !== 'manual' && Math.abs(l.price - l.basePrice) > 0.004;
@@ -1370,16 +1313,14 @@
         </tr>`;
       }).join('');
     }
-    const { subtotal, gross, discountAmount, vatEnabled, vatRate, vatAmount } = computeLines(cur);
-    $('#grossRow').hidden = !discountAmount;
-    $('#priceGross').textContent = `${fmt(gross)} ${currency()}`;
-    $('#priceDisc').textContent = discountAmount ? `− ${fmt(discountAmount)} ${currency()}` : '—';
-    // نوع الخصم يُضبط من الطلب فقط إن كان له خصم: وإلا بقي اختيار المستخدم (يختار «نسبة» ثم يكتب القيمة)
-    if (cur.discount) $('#discType').value = cur.discount.type === 'pct' ? 'pct' : 'amount';
-    if (document.activeElement !== $('#discValue')) $('#discValue').value = cur.discount && num(cur.discount.value) ? num(cur.discount.value) : '';
     $('#priceSubtotal').textContent = `${fmt(subtotal)} ${currency()}`;
     $('#priceVat').textContent = vatEnabled ? `${fmt(vatAmount)} ${currency()}` : '—';
     $('#priceTotal').textContent = `${fmt(total)} ${currency()}`;
+    // خلاصة الطلب كاملة في مكان واحد: المدفوع والمتبقي تحت الإجمالي مباشرة
+    const pPaid = paidOf(cur), pRem = total - pPaid;
+    $('#pricePaid').textContent = `${fmt(pPaid)} ${currency()}`;
+    $('#priceRem').textContent = `${fmt(pRem)} ${currency()}`;
+    $('#priceRemRow').dataset.state = total <= 0 ? 'none' : pRem > 0.004 ? 'due' : pRem < -0.004 ? 'over' : 'clear';
     $('#vatEnabled').checked = vatEnabled;
     $('#vatRate').value = num(cur.vat ? cur.vat.rate : vatRate);
     $('#vatRate').disabled = !vatEnabled;
@@ -1446,18 +1387,6 @@
     const inputs = $$('#priceTable input[data-k="name"]');
     if (inputs.length) inputs[inputs.length - 1].focus();
   });
-
-  /* --- الخصم على الطلب --- */
-  function readDiscount() {
-    const type = $('#discType').value === 'pct' ? 'pct' : 'amount';
-    let value = Math.max(0, num($('#discValue').value));
-    if (type === 'pct') value = Math.min(100, value);
-    else value = money(value);
-    cur.discount = value ? { type, value } : null;
-    setDirty(true); renderPricing();
-  }
-  $('#discType').addEventListener('change', readDiscount);
-  $('#discValue').addEventListener('change', readDiscount);
 
   /* --- ضريبة القيمة المضافة --- */
   const ensureVat = () => { if (!cur.vat) cur.vat = { enabled: false, rate: num(settings().vatRate ?? 15) }; return cur.vat; };
@@ -1897,7 +1826,6 @@
     $('#orderNotes').value = cur.notes || '';
     normalizePayments(cur);
     $('#payAmount').value = ''; $('#payNote').value = ''; $('#payDate').value = today();
-    $('#discType').value = (cur.discount && cur.discount.type === 'pct') ? 'pct' : 'amount';
     [$('#custName'), $('#custPhone'), $('#payAmount')].forEach((el) => setFieldError(el, ''));
     $('#custKnown').hidden = true;
     syncStatusChip();
@@ -1909,7 +1837,6 @@
     renderOrderMeta();
     closeInspector();
     renderWalls();
-    renderCorners();
     syncCornerMode();
     renderPricing();
     updateOverlapWarn();
@@ -1929,7 +1856,6 @@
     cur.attachments = normalizeAttachments(cur.attachments);
     // الطلبات القديمة المحفوظة بدون ضريبة تبقى كما هي
     cur.vat = cur.vat || { enabled: false, rate: num(settings().vatRate ?? 15) };
-    cur.discount = cur.discount || null;
     readOnly = !canEditOrder(cur);
     curVersions = new Set();
     ownVersion(cur.updatedAt);
@@ -1973,8 +1899,8 @@
     if (readOnly) { if (!silent) toast('هذا الطلب لموظف آخر: لا يمكن حفظ التعديلات', true); return false; }
     cur.design = designer.getState();
     normalizePayments(cur);
-    const { lines, total, subtotal, gross, discountAmount, vatAmount, vatRate } = computeLines(cur);
-    cur.subtotal = subtotal; cur.gross = gross; cur.discountAmount = discountAmount; cur.vatAmount = vatAmount; cur.vatRate = vatRate;
+    const { lines, total, subtotal, vatAmount, vatRate } = computeLines(cur);
+    cur.subtotal = subtotal; cur.vatAmount = vatAmount; cur.vatRate = vatRate;
     // التحقق يُكتب تحت الحقل نفسه، ويُنقل المستخدم إليه
     const nameErr = cur.customer.name.trim() ? '' : 'اسم العميل مطلوب لحفظ الطلب';
     const phErr = phoneError(cur.customer.phone);
@@ -2147,19 +2073,6 @@
     return `${ws.length} جدران`;
   }
 
-  /* الزاوية الفاضية قيد تصنيع لا تفصيل بصري: تُكتب نصاً في الفاتورة
-     حتى لا تعتمد الورشة على ملاحظة فراغ في الصورة. */
-  function cornerSpec(design) {
-    const spots = (design && design.cornerSpots) || [];
-    if (!spots.length) return '';
-    const n = (design.walls || []).length;
-    const txt = spots.slice().sort((a, b) => a.at - b.at).map((c) => {
-      const prev = ((c.at - 1 + n) % n) + 1, next = (c.at % n) + 1;
-      return `الزاوية ${c.at + 1} (جدار ${prev} × جدار ${next}) تُترك فاضية ${Designer.util.round(c.size, 2)} م`;
-    }).join('، ');
-    return `<b>الزوايا:</b> ${esc(txt)}<br>`;
-  }
-
   /* ---------------- رمز QR للفاتورة الضريبية المبسطة ----------------
      متطلبات الفوترة (المرحلة الأولى): رمز QR يحمل بصيغة TLV مشفّرة Base64 خمسة حقول:
      اسم البائع، الرقم الضريبي، وقت الإصدار، الإجمالي شامل الضريبة، مبلغ الضريبة.
@@ -2223,7 +2136,7 @@
   /** فاتورة العميل (أو عرض السعر) */
   function buildPrintDoc(order, qrSrc = '') {
     const img = designImage(order);
-    const { lines, total, gross, discountAmount, subtotal, vatEnabled, vatRate, vatAmount } = computeLines(order);
+    const { lines, total, subtotal, vatEnabled, vatRate, vatAmount } = computeLines(order);
     const paid = paidOf(order);
     const s = settings();
     const cur$ = esc(currency());
@@ -2260,11 +2173,9 @@
         </table>
       </div>
       <div class="inv-bottom">
-        <div class="inv-notes">${cornerSpec(order.design)}${order.notes ? `<b>ملاحظات:</b> ${esc(order.notes).replace(/\n/g, '<br>')}` : ''}${s.invoiceNote ? `${order.notes ? '<br>' : ''}<b>شروط:</b> ${esc(s.invoiceNote)}` : ''}${!order.notes && !s.invoiceNote ? '<b>ملاحظات:</b> —' : ''}</div>
+        <div class="inv-notes">${order.notes ? `<b>ملاحظات:</b> ${esc(order.notes).replace(/\n/g, '<br>')}` : ''}${s.invoiceNote ? `${order.notes ? '<br>' : ''}<b>شروط:</b> ${esc(s.invoiceNote)}` : ''}${!order.notes && !s.invoiceNote ? '<b>ملاحظات:</b> —' : ''}</div>
         ${qrSrc ? `<div class="inv-qr"><img src="${qrSrc}" alt="رمز الفاتورة الضريبية"><small>رمز الفاتورة الضريبية</small></div>` : ''}
         <div class="inv-totals">
-          ${discountAmount ? `<div><span>مجموع الأصناف</span><span class="num">${fmt(gross)} ${cur$}</span></div>
-          <div class="disc"><span>${esc(discountLabel(order.discount))}</span><span class="num">− ${fmt(discountAmount)} ${cur$}</span></div>` : ''}
           ${vatEnabled ? `<div><span>المجموع قبل الضريبة</span><span class="num">${fmt(subtotal)} ${cur$}</span></div>
           <div><span>ضريبة القيمة المضافة ${num(vatRate)}%</span><span class="num">${fmt(vatAmount)} ${cur$}</span></div>` : ''}
           <div class="total"><span>الإجمالي${vatEnabled ? ' شامل الضريبة' : ''}</span><span class="num">${fmt(total)} ${cur$}</span></div>
@@ -2274,7 +2185,7 @@
       </div>
       <div class="inv-foot">
         <div class="inv-sign"><i></i><span>توقيع العميل</span></div>
-        <div>${quote ? 'هذا عرض سعر وليس فاتورة' : `الحالة: ${esc(STATUS[order.status] || order.status)}`} • طريقة القياس: ${order.design.cornerMode === 'deduct' ? 'خصم الزوايا' : 'بطول الجدار'}</div>
+        <div>${quote ? 'هذا عرض سعر وليس فاتورة' : `الحالة: ${esc(STATUS[order.status] || order.status)}`} • طريقة القياس: ${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</div>
         <div class="inv-sign"><i></i><span>الموظف: ${esc(emp)}</span></div>
       </div>
     </div>`;
@@ -2300,6 +2211,9 @@
     const accs = {};
     pieces.filter((p) => p.kind === 'acc').forEach((p) => { accs[p.itemId] = (accs[p.itemId] || 0) + 1; });
     const accTxt = Object.entries(accs).map(([id, n]) => `${esc(getItem(id).name)} × ${n}`).join('، ');
+    // المساحات الحرة قيد على الأرض لا قطعة تُصنَّع: تُكتب بمقاسها حتى تلتزم بها الورشة
+    const freeTxt = pieces.filter((p) => p.kind === 'free')
+      .map((p) => `${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.note ? ` (${esc(p.note)})` : ''}`).join('، ');
     const manual = (order.manualRows || []).filter((r) => String(r.name || '').trim()).map((r) => `${esc(r.name)} (${esc(r.qty)} ${esc(r.unit || '')})`).join('، ');
     const meters = Designer.util.round(sofas.reduce((s, p) => s + num(p.w), 0), 2);
     const openings = (d.openings || []).map((o) => `${o.type === 'door' ? 'باب' : 'شباك'} ${Designer.util.round(o.w, 2)} م على جدار ${o.wall + 1}`).join('، ');
@@ -2325,8 +2239,8 @@
       </div>
       <div class="inv-bottom">
         <div class="inv-notes">
-          ${cornerSpec(d)}
           ${accTxt ? `<b>الإكسسوارات:</b> ${accTxt}<br>` : ''}
+          ${freeTxt ? `<b>مساحات حرة:</b> ${freeTxt}<br>` : ''}
           ${manual ? `<b>بنود إضافية:</b> ${manual}<br>` : ''}
           ${openings ? `<b>الأبواب والشبابيك:</b> ${esc(openings)}<br>` : ''}
           <b>ملاحظات:</b> ${order.notes ? esc(order.notes).replace(/\n/g, '<br>') : '—'}
@@ -2690,10 +2604,39 @@
     return list;
   }
 
+  /* ---------------- إظهار وإخفاء أعمدة جدول الطلبات ----------------
+     تفضيل عرض لهذا الجهاز فقط: يخفي الأعمدة الأقل أهمية ليتنفّس الجدول،
+     ولا يمسّ البيانات ولا يخرج من الجهاز. */
+  const ORD_COLS_KEY = 'majlis_order_cols';
+  const ORD_COLS = [
+    { k: 'cost', label: 'التكلفة', admin: true },
+    { k: 'profit', label: 'صافي الربح', admin: true },
+    { k: 'paid', label: 'المدفوع' },
+    { k: 'deliv', label: 'التوصيل' },
+  ];
+  let ordHidden = [];
+  try { const v = JSON.parse(localStorage.getItem(ORD_COLS_KEY) || '[]'); if (Array.isArray(v)) ordHidden = v; } catch (_) { /* ignore */ }
+
+  function renderOrdCols() {
+    $('#ordersTable').setAttribute('data-hide', ordHidden.join(' '));
+    const menu = $('#ordColsMenu');
+    menu.innerHTML = ORD_COLS.filter((c) => !c.admin || canSeeCosts()).map((c) => {
+      const on = !ordHidden.includes(c.k);
+      return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" aria-pressed="${on}" data-col="${c.k}">${icon('check')}<span>${c.label}</span></button>`;
+    }).join('');
+    $$('[data-col]', menu).forEach((b) => b.addEventListener('click', () => {
+      const k = b.dataset.col;
+      ordHidden = ordHidden.includes(k) ? ordHidden.filter((x) => x !== k) : ordHidden.concat(k);
+      try { localStorage.setItem(ORD_COLS_KEY, JSON.stringify(ordHidden)); } catch (_) { /* ignore */ }
+      renderOrdCols();
+    }));
+  }
+
   function renderOrders() {
     const f = ordFilters();
     const filtering = !!(f.q || f.from || f.to || f.statuses.size);
     let list = filteredOrders();
+    renderOrdCols();
 
     $$('#ordStatusChips .chip').forEach((c) => {
       const on = ordStatuses.has(c.dataset.stf);
@@ -2724,8 +2667,8 @@
       <div class="stat"><span>اكتمال التنفيذ</span><b>${list.filter((o) => o.status === 'done').length}</b></div>
       <div class="stat"><span>عروض أسعار مفتوحة</span><b>${list.filter((o) => o.status === 'quote').length}</b><small>لا تدخل في المبيعات</small></div>
       ${canSeeCosts() ? `
-      <div class="stat cost"><span>إجمالي التكاليف</span><b>${costed.length ? fmt(costSum) : '—'}</b><small>بتكلفة: ${costed.length}${noCost ? ` • بلا تكلفة: ${noCost}` : ''}</small></div>
-      <div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : ''}">${costed.length ? fmt(profitSum) : '—'}</b><small>${costed.length ? `هامش ${fmtQty(marginPct)}٪` : 'أدخل التكاليف لحساب الربح'}</small></div>` : ''}`;
+      <div class="stat cost"><span>إجمالي التكاليف</span><b class="${costed.length ? '' : 'is-na'}">${costed.length ? fmt(costSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">بتكلفة: ${costed.length}${noCost ? ` • بلا تكلفة: ${noCost}` : ''}</small></div>
+      <div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : 'is-na'}">${costed.length ? fmt(profitSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">${costed.length ? `هامش ${fmtQty(marginPct)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>` : ''}`;
 
     const tb = $('#ordersTable tbody');
     $('#ordersEmpty').hidden = list.length > 0;
@@ -2750,7 +2693,7 @@
       return `
       <tr data-status="${st}" class="${late ? 'is-late' : ''}">
         <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? ` • ${esc(o.createdByName)}` : ''}</span></td>
-        <td data-label="العميل" class="c-cust"><b>${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
+        <td data-label="العميل" class="c-cust"><b title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
         ${canSeeCosts() ? `
         <td data-label="التكلفة" class="num c-money c-cost">${cost === null ? dash : fmt(cost)}</td>
@@ -3440,8 +3383,6 @@
     const payTxt = (p) => `${money(p.amount) < 0 ? 'استرداد' : 'دفعة'} ${fmt(Math.abs(money(p.amount)))} ${PAY_METHODS[p.method] || ''}`.trim();
     np.filter((p) => p.id !== 'legacy' && !pp.some((q) => q.id === p.id)).forEach((p) => ch.push(`${payTxt(p)} (${fmtDate(p.at)})`));
     pp.filter((p) => p.id !== 'legacy' && !np.some((q) => q.id === p.id)).forEach((p) => ch.push(`حذف ${payTxt(p)} (${fmtDate(p.at)})`));
-    const pd0 = discountOf(prev.discount, num(prev.gross) || num(prev.subtotal)), nd0 = num(next.discountAmount);
-    if (JSON.stringify(prev.discount || null) !== JSON.stringify(next.discount || null)) ch.push(next.discount ? `${discountLabel(next.discount)}: ${fmt(nd0)}` : `إلغاء الخصم (كان ${fmt(pd0)})`);
     if (r2(prev.total) !== r2(next.total)) ch.push(`الإجمالي: من ${fmt(prev.total)} إلى ${fmt(next.total)}`);
     const pv = prev.vat || { enabled: false, rate: 0 }, nv = next.vat || { enabled: false, rate: 0 };
     if (!!pv.enabled !== !!nv.enabled) ch.push(nv.enabled ? `تفعيل الضريبة ${num(nv.rate)}%` : 'إلغاء الضريبة');
@@ -4043,7 +3984,7 @@
     const rows = s.rows;
     const mob = isMobile();
     const W = mob ? 430 : 1000, H = mob ? 290 : 280;
-    const padL = 10, padT = 16, padB = 34, padR = mob ? 58 : 72;
+    const padL = 10, padT = 16, padB = 38, padR = mob ? 62 : 78;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const vals = [];
     rows.forEach((b) => { vals.push(b.revenue); if (b.costed) vals.push(b.profit); });
@@ -4052,7 +3993,7 @@
     const step = plotW / rows.length;
     const cx = (i) => r2(padL + plotW - (i + 0.5) * step);
     const bw = Math.max(3, Math.min(mob ? 26 : 46, step * 0.6));
-    const every = Math.max(1, Math.ceil(rows.length / (mob ? 6 : 14)));
+    const every = Math.max(1, Math.ceil(rows.length / (mob ? 5 : 11)));
 
     // قيمة المحور فوق خطها لا تحتها: وإلا لاصقت تسميةُ أدنى خط تسمياتِ الفترات أسفله
     const grid = sc.ticks.map((t) => `<line class="grid" x1="${padL}" y1="${y(t)}" x2="${padL + plotW}" y2="${y(t)}"/><text x="${W - padR + 9}" y="${y(t) - 5}">${fmt(t)}</text>`).join('');
@@ -4499,13 +4440,16 @@
     const inPeriod = [...new Set(a.live.map(biCustKey).filter(Boolean))];
     const fresh = inPeriod.filter((k) => !p.from || firstSeen.get(k) >= p.from).length;
 
+    // الصف الأول: أرقام المال والحجم التي تُقرأ أولاً. الصف الثاني: مؤشرات مساندة.
     $('#biKpis').innerHTML = `
       <div class="stat"><span>المبيعات <small>(قبل الضريبة)</small></span><b>${fmt(a.revenue)}</b>${biDeltaTag(a.revenue, pv && pv.revenue)}</div>
-      <div class="stat profit"><span>صافي الربح</span><b class="${a.costed.length ? (a.profit < 0 ? 'neg' : 'pos') : ''}">${a.costed.length ? fmt(a.profit) : '—'}</b><small>${a.costed.length ? `هامش ${fmtQty(a.margin)}٪` : 'أدخل التكاليف لحسابه'}</small></div>
-      <div class="stat"><span>عدد الطلبات</span><b>${a.count}</b>${biDeltaTag(a.count, pv && pv.count)}</div>
-      <div class="stat"><span>متوسط قيمة الطلب</span><b>${fmt(a.avg)}</b>${biDeltaTag(a.avg, pv && pv.avg)}</div>
       <div class="stat"><span>المحصّل</span><b>${fmt(a.paid)}</b><small>${a.gross ? `${fmtQty(r2((a.paid / a.gross) * 100))}٪ من قيمة الطلبات` : '—'}</small></div>
       <div class="stat remaining"><span>المتبقي على العملاء</span><b>${fmt(a.remaining)}</b>${biDeltaTag(a.remaining, pv && pv.remaining, true)}</div>
+      <div class="stat"><span>عدد الطلبات</span><b>${a.count}</b>${biDeltaTag(a.count, pv && pv.count)}</div>`;
+
+    $('#biKpisSub').innerHTML = `
+      <div class="stat profit"><span>صافي الربح</span><b class="${a.costed.length ? (a.profit < 0 ? 'neg' : 'pos') : 'is-na'}">${a.costed.length ? fmt(a.profit) : '—'}</b><small class="${a.costed.length ? '' : 'na-note'}">${a.costed.length ? `هامش ${fmtQty(a.margin)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>
+      <div class="stat"><span>متوسط قيمة الطلب</span><b>${fmt(a.avg)}</b>${biDeltaTag(a.avg, pv && pv.avg)}</div>
       <div class="stat"><span>أمتار الكنب</span><b>${fmtQty(a.meters)}</b><small>${a.count ? `${fmtQty(r2(a.meters / a.count))} م لكل طلب` : '—'}</small></div>
       <div class="stat"><span>عملاء جدد</span><b>${fresh}</b><small>من ${inPeriod.length} عميل في الفترة</small></div>`;
 
@@ -4844,6 +4788,8 @@
   function nextStep(w) {
     const { st, saved, total, paid, quote } = w;
     if (readOnly) return { tone: 'lock', text: 'هذا الطلب لموظف آخر ومعروض للاطلاع فقط، ويمكن تصدير مستنداته.', go: 'export', btn: 'التصدير' };
+    // داخل التسعير لا تُعاد تعليمات التصميم حرفياً: الرسالة تُصاغ من زاوية المرحلة الحالية
+    if (st.design.cls === 'is-need' && curStage === 'price') return { text: 'التسعير يقرأ أصناف المخطط — أضف قطع الكنب أو الإكسسوار في التصميم، أو أضف صنفاً إضافياً من هذه المرحلة.', go: 'design', btn: 'التصميم' };
     if (st.design.cls === 'is-need') return { text: 'ابدأ بمقاسات الغرفة، ثم أضف الكنب والأبواب والشبابيك على المخطط.', go: 'design', btn: 'التصميم' };
     if (st.design.cls.includes('is-warn')) return { text: `راجع المخطط: ${st.design.sub}.`, go: 'design', btn: 'المخطط' };
     if (st.customer.cls === 'is-need') return { text: 'أدخل اسم العميل وجواله — الاسم مطلوب لحفظ الطلب.', go: 'customer', btn: 'بيانات العميل' };
