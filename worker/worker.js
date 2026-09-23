@@ -9,6 +9,7 @@
      GET  /api/me
      GET  /api/bootstrap        كل البيانات (settings, items, orders, activity*, users*)  * للمدير
      POST /api/sync             {items:{upsert,delete}, orders:{upsert,delete}, activity:{upsert,delete,clear}, settings}
+                                -> {ok, numbers:{orderId: رقم}}  أرقام الطلبات الجديدة تُمنح هنا
      POST /api/next-order-no    -> {number}
      POST /api/sync-order-seq   (مدير) بعد الاستيراد
      GET  /api/users            (مدير)
@@ -55,7 +56,7 @@ async function route(request, env, url) {
   const method = request.method;
   const body = (method === 'POST' || method === 'PUT') ? await request.json().catch(() => ({})) : {};
 
-  if (path === '/api/login' && method === 'POST') return login(env, body);
+  if (path === '/api/login' && method === 'POST') return login(env, body, request);
 
   const token = tokenOf(request);
   const user = await currentUser(env, token);
@@ -108,12 +109,44 @@ function requireAdmin(user) {
 
 const publicUser = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: !!u.active });
 
-async function login(env, body) {
+/* الحد من تخمين كلمات المرور: 5 محاولات فاشلة لاسم المستخدم أو 20 من نفس
+   العنوان خلال 15 دقيقة تُقفل الدخول 15 دقيقة. */
+const LOCK_MIN = 15;
+const LOCK_LIMITS = { u: 5, ip: 20 };
+
+async function loginLocked(env, keys) {
+  const rows = await env.DB.prepare(`SELECT k, until FROM login_fail WHERE k IN (${keys.map(() => '?').join(',')})`).bind(...keys).all();
+  const t = now();
+  const lock = rows.results.filter((r) => r.until && r.until > t).sort((a, b) => (a.until < b.until ? 1 : -1))[0];
+  return lock ? Math.max(1, Math.ceil((new Date(lock.until) - Date.now()) / 60000)) : 0;
+}
+
+async function loginFailed(env, keys) {
+  const t = now();
+  const windowStart = new Date(Date.now() - LOCK_MIN * 60000).toISOString();
+  const until = new Date(Date.now() + LOCK_MIN * 60000).toISOString();
+  for (const k of keys) {
+    const row = await env.DB.prepare('SELECT n, first_at FROM login_fail WHERE k = ?').bind(k).first();
+    // محاولة قديمة خارج النافذة لا تُحسب: يبدأ العدّ من جديد
+    const n = row && row.first_at > windowStart ? Number(row.n) + 1 : 1;
+    const first = row && row.first_at > windowStart ? row.first_at : t;
+    const limit = LOCK_LIMITS[k.split(':')[0]] || 5;
+    await env.DB.prepare('INSERT INTO login_fail (k, n, first_at, until) VALUES (?, ?, ?, ?) ON CONFLICT(k) DO UPDATE SET n = excluded.n, first_at = excluded.first_at, until = excluded.until')
+      .bind(k, n, first, n >= limit ? until : null).run();
+  }
+}
+
+async function login(env, body, request) {
   const username = String(body.username || '').trim().toLowerCase();
   const password = String(body.password || '');
+  const ip = (request && request.headers.get('CF-Connecting-IP')) || '';
+  const keys = ['u:' + username].concat(ip ? ['ip:' + ip] : []);
+  const mins = await loginLocked(env, keys);
+  if (mins) return { ok: false, error: 'locked', minutes: mins };
   const u = await env.DB.prepare('SELECT * FROM users WHERE lower(username) = ?').bind(username).first();
-  if (!u || !(await verifyPassword(password, u.password_hash))) return { ok: false, error: 'bad_credentials' };
+  if (!u || !(await verifyPassword(password, u.password_hash))) { await loginFailed(env, keys); return { ok: false, error: 'bad_credentials' }; }
   if (!u.active) return { ok: false, error: 'inactive' };
+  await env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind('u:' + username).run();
   const token = randomToken();
   const created = now();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();
@@ -121,7 +154,9 @@ async function login(env, body) {
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(created),
     env.DB.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').bind(token, u.id, created, expires),
   ]);
-  return { ok: true, token, user: publicUser(u) };
+  // كلمة المرور الافتراضية معروفة لكل من قرأ التوثيق: تُفرض تغييرها عند أول دخول
+  const mustChangePassword = username === 'admin' && password === 'admin';
+  return { ok: true, token, user: publicUser(u), mustChangePassword };
 }
 
 /* ------------------------------ البيانات ------------------------------ */
@@ -133,15 +168,22 @@ async function bootstrap(env, user) {
     env.DB.prepare('SELECT data FROM orders ORDER BY created_at').all(),
   ]);
   const out = {
+    // قدرات هذا الخادم: الواجهة الأحدث لا تعتمد على ميزة لم يُنشر خادمها بعد
+    features: { serverNumbers: true, costsHidden: true },
     user: publicUser(user),
     settings: settings ? safeParse(settings.data, {}) : {},
     items: items.results.map((r) => safeParse(r.data)),
-    orders: orders.results.map((r) => safeParse(r.data)),
+    // التكاليف والربح لا تُرسل للموظف: إخفاؤها في الواجهة وحدها يتركها مقروءة من أدوات المتصفح
+    orders: orders.results.map((r) => { const o = safeParse(r.data); return admin ? o : stripCosts(o); }),
     activity: [],
     users: [],
   };
   if (admin) {
-    const [act, users] = await Promise.all([env.DB.prepare('SELECT data FROM activity ORDER BY at').all(), listUsers(env)]);
+    // آخر 3000 حدث فقط: السجل ينمو بلا حد، وتحميله كاملاً مع كل مزامنة يُبطئها
+    const [act, users] = await Promise.all([
+      env.DB.prepare('SELECT data FROM (SELECT data, at FROM activity ORDER BY at DESC LIMIT 3000) ORDER BY at').all(),
+      listUsers(env),
+    ]);
     out.activity = act.results.map((r) => safeParse(r.data));
     out.users = users;
   }
@@ -168,9 +210,13 @@ async function sync(env, user, body) {
     for (let i = 0; i < ids.length; i += 50) {
       const chunk = ids.slice(i, i + 50);
       const rows = await env.DB.prepare(`SELECT id, created_by, data FROM orders WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
-      rows.results.forEach((r) => existing.set(r.id, { owner: r.created_by, updatedAt: (safeParse(r.data, {}) || {}).updatedAt || null }));
+      rows.results.forEach((r) => {
+        const data = safeParse(r.data, {}) || {};
+        existing.set(r.id, { owner: r.created_by, updatedAt: data.updatedAt || null, data });
+      });
     }
   }
+  const admin = user.role === 'admin';
 
   // ملكية الطلبات: الموظف يعدّل طلباته فقط، والمدير يعدّل الجميع وينقل الملكية
   if (user.role !== 'admin' && (od.upsert || []).length) {
@@ -192,18 +238,44 @@ async function sync(env, user, body) {
     }
   }
 
+  // رقم الطلب يُمنح هنا عند أول حفظ ناجح لا قبله: كان يُحجز بطلب مستقل، فكل حفظ
+  // يفشل بعده (انقطاع، خطأ) يترك فجوة في تسلسل أرقام الفواتير.
+  const numbers = {};
+  for (const o of od.upsert || []) {
+    if (existing.has(o.id) || (o.number !== null && o.number !== undefined && o.number !== '')) continue;
+    const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'order_no' RETURNING value").first();
+    if (!r) throw new HttpError(500, 'عدّاد أرقام الطلبات غير موجود — شغّل schema.sql');
+    numbers[o.id] = Number(r.value);
+  }
+
   (od.upsert || []).forEach((o) => {
     const rec = { ...o };
     delete rec._base;                              // حقل نقل لا يُخزَّن
+    if (numbers[rec.id] !== undefined) rec.number = numbers[rec.id];
+    // طلب جديد من موظف: مالكه هو مرسله دائماً، لا ما يدّعيه الطلب
+    if (!admin && !existing.has(rec.id)) { rec.createdBy = user.id; rec.createdByName = user.name; }
+    // التكاليف والأرباح للمدير وحده: لا تصل الموظف أصلاً (bootstrap يحذفها)، فما
+    // يرسله الموظف بلا تكاليف لا يعني أنها حُذفت — تُعاد من النسخة المخزّنة.
+    if (!admin) restoreCosts(rec, existing.has(rec.id) ? existing.get(rec.id).data : {});
+    // created_by يُحدَّث أيضاً: بدونه يبقى نقل الملكية في JSON فقط، ويرفض فحص الملكية
+    // (المبني على العمود) تعديلات المالك الجديد. COALESCE تحمي الطلبات القديمة بلا مالك.
     q(
-      'INSERT INTO orders (id, number, status, customer_name, created_by, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET number = excluded.number, status = excluded.status, customer_name = excluded.customer_name, data = excluded.data, updated_at = excluded.updated_at',
+      'INSERT INTO orders (id, number, status, customer_name, created_by, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET number = excluded.number, status = excluded.status, customer_name = excluded.customer_name, created_by = COALESCE(excluded.created_by, orders.created_by), data = excluded.data, updated_at = excluded.updated_at',
       rec.id, rec.number ?? null, rec.status ?? null, (rec.customer && rec.customer.name) || '', rec.createdBy ?? null, rec.createdAt ?? ts, JSON.stringify(rec), ts
     );
   });
   if (od.delete && od.delete.length) { requireAdmin(user); od.delete.forEach((id) => q('DELETE FROM orders WHERE id = ?', id)); }
 
   const ac = body.activity || {};
-  (ac.upsert || []).forEach((a) => q('INSERT INTO activity (id, at, data) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data', a.id, a.at || ts, JSON.stringify(a)));
+  // سجل التحديثات سجل تدقيق: الموظف يضيف أحداثاً باسمه فقط ولا يعدّل حدثاً موجوداً.
+  // المدير وحده يكتب فوقها (الاستيراد يعيد أحداث الجميع بأسمائهم الأصلية).
+  const staff = !admin;
+  (ac.upsert || []).forEach((a) => {
+    const rec = staff ? { ...a, userId: user.id, userName: user.name } : { ...a };
+    // حدث إنشاء طلب جديد يُكتب قبل أن يُعرف رقمه
+    if (rec.orderId && numbers[rec.orderId] !== undefined && !rec.orderNo) rec.orderNo = numbers[rec.orderId];
+    q(`INSERT INTO activity (id, at, data) VALUES (?, ?, ?) ON CONFLICT(id) DO ${staff ? 'NOTHING' : 'UPDATE SET data = excluded.data'}`, rec.id, rec.at || ts, JSON.stringify(rec));
+  });
   if (ac.clear) { requireAdmin(user); q('DELETE FROM activity'); }
   else if (ac.delete && ac.delete.length) { requireAdmin(user); ac.delete.forEach((id) => q('DELETE FROM activity WHERE id = ?', id)); }
 
@@ -213,7 +285,42 @@ async function sync(env, user, body) {
   }
 
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-  return { ok: true, applied: stmts.length };
+  return { ok: true, applied: stmts.length, numbers };
+}
+
+/* ------------------------------ إخفاء التكاليف عن الموظفين ------------------------------ */
+const COST_FIELDS = ['costs', 'costTotal', 'extraCosts', 'costUpdatedAt', 'costUpdatedByName'];
+
+/** نسخة الطلب كما تصل الموظف: بلا تكلفة ولا ربح */
+function stripCosts(o) {
+  if (!o || typeof o !== 'object') return o;
+  const r = { ...o };
+  COST_FIELDS.forEach((k) => delete r[k]);
+  if (Array.isArray(r.manualRows)) {
+    r.manualRows = r.manualRows.map((m) => {
+      if (!m || m.cost === undefined) return m;
+      const c = { ...m }; delete c.cost; return c;
+    });
+  }
+  return r;
+}
+
+/** إعادة تكاليف النسخة المخزّنة إلى ما أرسله الموظف (وإسقاط أي تكلفة ادّعاها) */
+function restoreCosts(rec, prev) {
+  COST_FIELDS.forEach((k) => { if (prev && prev[k] !== undefined) rec[k] = prev[k]; else delete rec[k]; });
+  const old = (prev && Array.isArray(prev.manualRows)) ? prev.manualRows : [];
+  if (Array.isArray(rec.manualRows)) {
+    rec.manualRows = rec.manualRows.map((m, i) => {
+      if (!m || typeof m !== 'object') return m;
+      const c = { ...m }; delete c.cost;
+      // الصنف الإضافي يُطابَق بمعرّفه، والقديم بلا معرّف بموضعه واسمه معاً
+      const src = (m.id && old.find((x) => x && x.id === m.id))
+        || (old[i] && old[i].name === m.name && (!old[i].id || old[i].id === m.id) ? old[i] : null);
+      if (src && src.cost !== undefined) c.cost = src.cost;
+      return c;
+    });
+  }
+  return rec;
 }
 
 /* ------------------------------ المستخدمون ------------------------------ */
@@ -266,6 +373,8 @@ async function deleteUser(env, me, id) {
 // عند أول تشغيل: إنشاء المستخدم admin / admin إن لم يوجد مستخدمون
 async function ensureSeed(env) {
   if (seeded) return;
+  // جدول جديد بعد النشر الأول: يُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS login_fail (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first_at TEXT NOT NULL, until TEXT)').run();
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {
     await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')

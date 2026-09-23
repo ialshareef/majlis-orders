@@ -55,6 +55,14 @@ CREATE TABLE IF NOT EXISTS activity (
 );
 CREATE INDEX IF NOT EXISTS activity_at_idx ON activity(at);
 
+-- محاولات الدخول الفاشلة (الحد من تخمين كلمات المرور). يُنشئه الـ Worker تلقائياً أيضاً.
+CREATE TABLE IF NOT EXISTS login_fail (
+  k        TEXT PRIMARY KEY,   -- u:<اسم المستخدم> أو ip:<العنوان>
+  n        INTEGER NOT NULL,
+  first_at TEXT NOT NULL,
+  until    TEXT
+);
+
 CREATE TABLE IF NOT EXISTS counters (
   key   TEXT PRIMARY KEY,
   value INTEGER NOT NULL

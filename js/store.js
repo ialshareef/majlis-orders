@@ -41,7 +41,8 @@
   }
 
   function defaultSettings() {
-    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct' };
+    // depositPct: نسبة العربون قبل بدء التنفيذ (0 = بلا تنبيه) • quoteDays: صلاحية عرض السعر
+    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, lastBackupAt: '' };
   }
 
   function normalizeSettings(s) {
@@ -121,7 +122,7 @@
       if (!u || u.password !== h) return { ok: false, error: 'bad_credentials' };
       if (u.active === false) return { ok: false, error: 'inactive' };
       sessionStorage.setItem('majlis_session', u.id);
-      return { ok: true, user: publicUser(u) };
+      return { ok: true, user: publicUser(u), mustChangePassword: u.username === 'admin' && password === 'admin' };
     },
 
     async restoreSession() {
@@ -160,7 +161,9 @@
       const data = JSON.parse(text);
       if (!data || !Array.isArray(data.items) || !Array.isArray(data.orders)) throw new Error('ملف غير صالح');
       if (!Array.isArray(data.users) || !data.users.length) data.users = this.db.users;
-      this.db = data;
+      // init() يقرأ من localStorage لا من this.db: تُكتب النسخة أولاً وإلا أعاد تحميل القديمة
+      try { localStorage.setItem(this.KEY, JSON.stringify(data)); }
+      catch (e) { throw new Error('مساحة التخزين لا تتسع لهذه النسخة'); }
       await this.init();
     },
 
@@ -233,6 +236,7 @@
       this.db.activity = Array.isArray(b.activity) ? b.activity.filter(Boolean) : [];
       this.db.users = Array.isArray(b.users) ? b.users : [];
       if (b.user) this.user = b.user;
+      this.features = b.features || {};
       this.snapshot();
     },
 
@@ -270,11 +274,21 @@
       const it = this._diff('items'); if (it.upsert.length || it.delete.length) payload.items = it;
       const od = this._diff('orders'); if (od.upsert.length || od.delete.length) payload.orders = od;
       const ac = this._diff('activity');
-      if (ac.upsert.length || ac.delete.length) payload.activity = (!this.db.activity.length && ac.delete.length) ? { upsert: [], clear: true } : ac;
+      // الحذف من السجل لا يكون إلا مسحاً كاملاً صريحاً. ما يسقط من الذاكرة بسبب
+      // سقف الـ 3000 حدث لا يعني حذفه من الخادم (كان يُحذف منه بصمت).
+      if (!this.db.activity.length && ac.delete.length) payload.activity = { upsert: [], clear: true };
+      else if (ac.upsert.length) payload.activity = { upsert: ac.upsert, delete: [] };
       if (JSON.stringify(this.db.settings) !== this.snap.settings) payload.settings = this.db.settings;
       if (!Object.keys(payload).length) return true;
       try {
-        await this.api('POST', '/api/sync', payload);
+        const r = await this.api('POST', '/api/sync', payload);
+        // أرقام الطلبات الجديدة يمنحها الخادم عند أول حفظ ناجح
+        const nums = (r && r.numbers) || {};
+        Object.keys(nums).forEach((id) => {
+          const o = this.db.orders.find((x) => x.id === id);
+          if (o) o.number = nums[id];
+          this.db.activity.forEach((a) => { if (a.orderId === id && !a.orderNo) a.orderNo = nums[id]; });
+        });
         this.snapshot();
         this.lastError = '';
         this.lastStatus = 0;
@@ -295,12 +309,12 @@
 
     async login(username, password) {
       const r = await this.api('POST', '/api/login', { username: String(username).trim(), password });
-      if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'bad_credentials' };
+      if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'bad_credentials', minutes: r && r.minutes };
       this.token = r.token;
       localStorage.setItem(this.TOKEN_KEY, r.token);
       this.user = r.user;
       await this.loadAll();
-      return { ok: true, user: r.user };
+      return { ok: true, user: r.user, mustChangePassword: !!r.mustChangePassword };
     },
 
     async restoreSession() { return this.user; },
@@ -358,6 +372,9 @@
   const Store = {
     get mode() { return backend.mode; },
     get isRemote() { return remote; },
+    /** رقم الطلب يمنحه الخادم عند أول حفظ — إن كان الخادم المنشور يدعم ذلك.
+        خادم أقدم (لم يُعَد نشره) لا يمنح أرقاماً، فيُحجز الرقم قبل الحفظ كما كان. */
+    get serverNumbers() { return remote && !!(Remote.features && Remote.features.serverNumbers); },
     get db() { return backend.db; },
     get lastError() { return backend.lastError || ''; },
     get lastStatus() { return backend.lastStatus || 0; },

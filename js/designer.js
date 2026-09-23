@@ -25,6 +25,9 @@
   const ROT_OFFSET = COARSE ? 40 : 30;
   // نفس خط الموقع: الكتابة داخل المخطط يجب ألا تبدو غريبة عن بقية الواجهة
   const FONT = "'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, Arial, sans-serif";
+  // لون التحديد: برونزي الهوية، ويُرسم فوق هالة بيضاء فيبقى واضحاً على أي لون قماش
+  const SEL = '#A5642C';
+  const SEL_ROT = '#5F7A45';
 
   class Designer {
     constructor(canvas, opts = {}) {
@@ -544,6 +547,29 @@
       return group;
     }
 
+    /** ضبط حالة زاوية كخطوة تراجع واحدة: 'none' عادية، 'spot' فاضية، 'sofa' كنب زاوية.
+        تُزال الحالة السابقة أولاً — للزاوية حالة واحدة فقط. */
+    setCornerState(v, kind, opts = {}) {
+      const n = this.state.walls.length;
+      if (!Number.isInteger(v) || v < 0 || v >= n) return false;
+      let ok = true;
+      this._suspendHistory = true;
+      try {
+        this.state.cornerSpots = (this.state.cornerSpots || []).filter((c) => c.at !== v);
+        const groups = new Set(this.state.pieces.filter((p) => p.group && p.corner === v).map((p) => p.group));
+        if (groups.size) this.state.pieces = this.state.pieces.filter((p) => !groups.has(p.group));
+        if (this.sel && this.sel.type === 'piece' && !this.piece(this.sel.id)) this.sel = null;
+        if (kind === 'spot') {
+          this.state.cornerSpots.push({ at: v, size: Math.min(3, Math.max(0.2, +opts.size || 0.6)), note: String(opts.note || '') });
+        } else if (kind === 'sofa') {
+          ok = !!this.addCornerSofa(v, opts.spec, opts.armPrev, opts.armNext);
+          this._suspendHistory = true;   // addCornerSofa يُعيدها false في نهايته
+        }
+      } finally { this._suspendHistory = false; }
+      this.changed();
+      return ok;
+    }
+
     /** قطع كنب الزاوية المنتمية لمجموعة واحدة */
     groupPieces(group) { return this.state.pieces.filter((p) => p.group && p.group === group); }
 
@@ -659,7 +685,10 @@
     removeSelected() {
       if (!this.sel) return;
       if (this.sel.type === 'piece') {
-        this.state.pieces = this.state.pieces.filter((p) => p.id !== this.sel.id);
+        // كنب الزاوية قطعة واحدة: حذف أحد ذراعيه كان يترك الآخر معلّقاً بلا زاوية
+        const p = this.piece(this.sel.id);
+        const group = p && p.group;
+        this.state.pieces = this.state.pieces.filter((q) => q.id !== this.sel.id && !(group && q.group === group));
         this.sel = null;
         if (this.opts.onSelect) this.opts.onSelect(null);
         this.changed();
@@ -674,6 +703,9 @@
       if (!p) return;
       const q = Object.assign({}, p, { id: uid() });
       delete q.wall; delete q.t;
+      // النسخة قطعة مستقلة: لو ورثت group لعُدّت ذراعاً ثالثاً لكنب الزاوية الأصلي
+      // (تُحسب معه قطعة واحدة في الفاتورة، ويُتجاهل تداخلها معه)
+      delete q.group; delete q.corner;
       q.x = p.x + 0.3; q.y = p.y + 0.3;
       this.addPiece(q);
     }
@@ -700,12 +732,15 @@
       n = Math.floor(+n || 0);
       if (!p || n < 2) return;
       const a = rad(p.rot), c = Math.cos(a), s = Math.sin(a);
-      const segW = round(p.w / n, 2);
-      const startX = -p.w / 2 + segW / 2;
+      // التقريب لكل قطعة كان يغيّر المجموع (3.2 ÷ 3 = 1.07 × 3 = 3.21 م) فيتغيّر السعر:
+      // القطع متساوية بكسرين، والأخيرة تأخذ الباقي حتى يبقى الطول الكلي كما هو
+      const exact = p.w / n;
+      const segW = round(exact, 2);
       const created = [];
       for (let k = 0; k < n; k++) {
-        const lx = startX + k * segW;
-        const q = Object.assign({}, p, { id: uid(), w: segW, x: round(p.x + lx * c, 3), y: round(p.y + lx * s, 3) });
+        const lx = -p.w / 2 + exact * (k + 0.5);
+        const w = k === n - 1 ? round(p.w - segW * (n - 1), 2) : segW;
+        const q = Object.assign({}, p, { id: uid(), w, x: round(p.x + lx * c, 3), y: round(p.y + lx * s, 3) });
         if (p.wall != null) q.t = round(p.t + lx, 3);
         created.push(q);
       }
@@ -1095,7 +1130,7 @@
       // شبكة كل 0.5 م
       const step = 0.5 * S;
       if (step > 7) {
-        ctx.strokeStyle = opt.export ? '#f2f2f2' : '#eef0f3';
+        ctx.strokeStyle = opt.export ? '#f2f2f2' : '#EFEBE4';
         ctx.lineWidth = 1;
         const startX = ((v.ox % step) + step) % step, startY = ((v.oy % step) + step) % step;
         ctx.beginPath();
@@ -1103,7 +1138,7 @@
         for (let y = startY; y < H; y += step) { ctx.moveTo(0, y); ctx.lineTo(W, y); }
         ctx.stroke();
         if (S > 40) {
-          ctx.strokeStyle = opt.export ? '#e8e8e8' : '#e3e6ea';
+          ctx.strokeStyle = opt.export ? '#e8e8e8' : '#E5DFD5';
           ctx.beginPath();
           const startX2 = ((v.ox % (step * 2)) + step * 2) % (step * 2), startY2 = ((v.oy % (step * 2)) + step * 2) % (step * 2);
           for (let x = startX2; x < W; x += step * 2) { ctx.moveTo(x, 0); ctx.lineTo(x, H); }
@@ -1113,7 +1148,7 @@
       }
 
       // الأرضية والجدران (السماكة للخارج، الخط الداخلي = المقاس المدخل)
-      const wallColor = '#3a3f45';
+      const wallColor = '#3B3530';
       const floorColor = '#faf6ee';
       if (g.closed && g.poly.length >= 3) {
         const path = new Path2D();
@@ -1142,7 +1177,7 @@
       if (selWall >= 0 && g.walls[selWall]) {
         const w = g.walls[selWall];
         const q = [P(w.A.x, w.A.y), P(w.B.x, w.B.y), P(w.B.x - w.n.x * WALL_T, w.B.y - w.n.y * WALL_T), P(w.A.x - w.n.x * WALL_T, w.A.y - w.n.y * WALL_T)];
-        ctx.fillStyle = '#2f80ed';
+        ctx.fillStyle = SEL;
         ctx.beginPath(); q.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y))); ctx.closePath(); ctx.fill();
       }
 
@@ -1203,7 +1238,7 @@
         ctx.beginPath(); q.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y))); ctx.closePath(); ctx.fill();
         ctx.save();
         ctx.lineWidth = Math.max(1.2 * k, 0.03 * S);
-        ctx.strokeStyle = isSel ? '#2f80ed' : (o.type === 'door' ? '#8a5a2b' : '#3d7fb3');
+        ctx.strokeStyle = isSel ? SEL : (o.type === 'door' ? '#8a5a2b' : '#5A7B8E');
         if (o.type === 'door') {
           // ضلفة الباب تفتح للداخل + قوس الفتح
           const hinge = pA;
@@ -1218,13 +1253,13 @@
           ctx.stroke();
           ctx.setLineDash([]);
           // عتبة
-          ctx.strokeStyle = isSel ? '#2f80ed' : '#b8b8b8';
+          ctx.strokeStyle = isSel ? SEL : '#BDB5A9';
           ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.stroke();
         } else {
           // شباك: خطان للزجاج داخل حزام الجدار
-          ctx.strokeStyle = isSel ? '#2f80ed' : '#7f8c8d';
+          ctx.strokeStyle = isSel ? SEL : '#858B8C';
           ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.moveTo(q[3].x, q[3].y); ctx.lineTo(q[2].x, q[2].y); ctx.stroke();
-          ctx.strokeStyle = isSel ? '#2f80ed' : '#3d7fb3';
+          ctx.strokeStyle = isSel ? SEL : '#5A7B8E';
           ctx.lineWidth = Math.max(1.5 * k, 0.05 * S);
           const m0 = P(pA.x + out.x / 2, pA.y + out.y / 2), m1 = P(pB.x + out.x / 2, pB.y + out.y / 2);
           ctx.beginPath(); ctx.moveTo(m0.x, m0.y); ctx.lineTo(m1.x, m1.y); ctx.stroke();
@@ -1243,8 +1278,8 @@
           ctx.font = `700 ${fs}px ${FONT}`;
           ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
           const tw = ctx.measureText(lab).width + 12;
-          ctx.fillStyle = '#2f80ed';
-          roundRect(ctx, lp.x - tw / 2, lp.y - fs * 0.8, tw, fs * 1.6, 5); ctx.fill();
+          ctx.fillStyle = SEL;
+          roundRect(ctx, lp.x - tw / 2, lp.y - fs * 0.8, tw, fs * 1.6, 2); ctx.fill();
           ctx.fillStyle = '#fff';
           ctx.fillText(lab, lp.x, lp.y);
         }
@@ -1262,13 +1297,13 @@
         const num = `جدار ${w.i + 1}`;
         const tw = ctx.measureText(txt).width, nw = ctx.measureText(num).width;
         const bw = Math.max(tw, nw) + 14 * k, bh = fs * 2.3;
-        ctx.fillStyle = w.i === selWall ? '#2f80ed' : 'rgba(255,255,255,0.92)';
-        roundRect(ctx, lp.x - bw / 2, lp.y - bh / 2, bw, bh, 6 * k); ctx.fill();
-        if (w.i !== selWall) { ctx.strokeStyle = '#dfe3e8'; ctx.lineWidth = k; ctx.stroke(); }
-        ctx.fillStyle = w.i === selWall ? '#fff' : '#111';
+        ctx.fillStyle = w.i === selWall ? SEL : 'rgba(255,255,255,0.94)';
+        roundRect(ctx, lp.x - bw / 2, lp.y - bh / 2, bw, bh, 2 * k); ctx.fill();
+        if (w.i !== selWall) { ctx.strokeStyle = '#E2DBD0'; ctx.lineWidth = k; ctx.stroke(); }
+        ctx.fillStyle = w.i === selWall ? '#fff' : '#2A2622';
         ctx.font = `700 ${fs}px ${FONT}`;
         ctx.fillText(txt, lp.x, lp.y - fs * 0.5);
-        ctx.fillStyle = w.i === selWall ? 'rgba(255,255,255,0.85)' : '#7a828c';
+        ctx.fillStyle = w.i === selWall ? 'rgba(255,255,255,0.85)' : '#7A6F63';
         ctx.font = `${fs * 0.78}px ${FONT}`;
         ctx.fillText(num, lp.x, lp.y + fs * 0.6);
       });
@@ -1366,26 +1401,30 @@
           ctx.save();
           ctx.beginPath(); cs.forEach((c, i) => (i ? ctx.lineTo(c.x, c.y) : ctx.moveTo(c.x, c.y))); ctx.closePath();
           ctx.lineWidth = 2;
-          if (isBad) { ctx.strokeStyle = '#e74c3c'; ctx.setLineDash([]); ctx.stroke(); }
-          if (isSel) { ctx.strokeStyle = '#2f80ed'; ctx.setLineDash([6, 4]); ctx.stroke(); }
+          if (isBad) { ctx.strokeStyle = '#C8412F'; ctx.setLineDash([]); ctx.stroke(); }
+          if (isSel) {
+            // هالة بيضاء تحت خط التحديد: يبقى ظاهراً فوق الأقمشة الداكنة والفاتحة معاً
+            ctx.strokeStyle = 'rgba(255,255,255,0.95)'; ctx.lineWidth = 5; ctx.setLineDash([]); ctx.stroke();
+            ctx.strokeStyle = SEL; ctx.lineWidth = 2.2; ctx.setLineDash([6, 4]); ctx.stroke();
+          }
           ctx.restore();
         }
         if (isSel) {
           const hs = this._handles(p, v);
           ctx.save();
-          ctx.strokeStyle = '#2f80ed'; ctx.lineWidth = 1.5; ctx.setLineDash([]);
+          ctx.strokeStyle = SEL; ctx.lineWidth = 1.5; ctx.setLineDash([]);
           ctx.beginPath(); ctx.moveTo(hs.top.x, hs.top.y); ctx.lineTo(hs.rotate.x, hs.rotate.y); ctx.stroke();
           if (Designer.canResize(p)) {
-            drawHandle(ctx, hs.resizeW, '#2f80ed', '↔');
-            drawHandle(ctx, hs.resizeH, '#2f80ed', '↕');
+            drawHandle(ctx, hs.resizeW, SEL, '↔');
+            drawHandle(ctx, hs.resizeH, SEL, '↕');
           }
-          drawHandle(ctx, hs.rotate, '#27ae60', '↻');
+          drawHandle(ctx, hs.rotate, SEL_ROT, '↻');
           ctx.restore();
         }
       });
 
       if (!g.closed && !opt.export) {
-        ctx.fillStyle = '#c0392b';
+        ctx.fillStyle = '#A23B2C';
         ctx.font = `12px ${FONT}`;
         ctx.textAlign = 'right'; ctx.textBaseline = 'top';
         ctx.fillText(`⚠ الجدران غير مغلقة (فجوة ${round(g.gap, 2)} م)`, W - 10, 8);
