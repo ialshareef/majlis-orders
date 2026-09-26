@@ -20,6 +20,12 @@
 <!-- خط واحد للموقع كله: IBM Plex Sans Arabic يغطي العربية واللاتينية والأرقام بتصميم واحد -->
 <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="css/style.css">
+<!-- تطبيق قابل للتثبيت (PWA) -->
+<link rel="manifest" href="manifest.json">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+<link rel="apple-touch-icon" href="icons/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 </head>
 <body class="booting">
 <script>
@@ -48,6 +54,7 @@
   <symbol id="i-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
   <symbol id="i-door" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M6 21V4h12v17"/><path d="M14 12h.01"/></symbol>
   <symbol id="i-window" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M12 4v16M4 12h16"/></symbol>
+  <symbol id="i-fire" viewBox="0 0 24 24"><path d="M12 2c1.5 2.5 3 4.5 3 7 0 3.31-2.69 6-6 6s-6-2.69-6-6c0-1.5.55-2.88 1.46-3.95C4.78 7.14 6.32 8.5 6.5 10c.25-.79.5-1.58.75-2.37C7.5 6.5 8.5 5.5 9 4c0 1.5.5 2.5 1.5 3.5C11.5 6.5 12 4 12 2z"/></symbol>
   <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></symbol>
   <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6L6 18M6 6l12 12"/></symbol>
   <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"/></symbol>
@@ -260,7 +267,6 @@
         <a href="#m-customer" data-stage="customer"><i class="sp-dot"><span>3</span><svg><use href="#i-check"/></svg></i><span class="sp-text"><b>العميل</b><small class="sp-sub"></small></span></a>
         <a href="#m-pay" data-stage="pay"><i class="sp-dot"><span>4</span><svg><use href="#i-check"/></svg></i><span class="sp-text"><b>الدفع</b><small class="sp-sub"></small></span></a>
         <a href="#m-export" data-stage="export"><i class="sp-dot"><span>5</span><svg><use href="#i-check"/></svg></i><span class="sp-text"><b>التصدير</b><small class="sp-sub"></small></span></a>
-        <a href="#m-att" data-stage="att"><i class="sp-dot"><span>6</span><svg><use href="#i-check"/></svg></i><span class="sp-text"><b>المرفقات</b><small class="sp-sub"></small></span></a>
       </nav>
 
       <div class="next-action" id="nextAction" role="status">
@@ -339,6 +345,7 @@
 
               <!-- خصائص العنصر المحدد: لوحة داخل الشريط الجانبي (وورقة سفلية في الجوال) -->
               <div id="inspector" class="inspector" hidden></div>
+              <button type="button" id="btnGoAtts" class="panel-atts" title="الانتقال إلى المرفقات أسفل التصميم"><svg><use href="#i-image"/></svg><span>المرفقات <small id="attsBadge" hidden></small></span></button>
             </aside>
 
             <div class="canvas-col">
@@ -347,6 +354,7 @@
                   <button class="tb-btn" id="tbAddSofa" title="إضافة كنب على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>كنب</span></button>
                   <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
                   <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
+                  <button class="tb-btn" id="tbAddMashab" title="إضافة مشب (مدفأة) على الجدار المحدد"><svg><use href="#i-fire"/></svg><span>مشب</span></button>
                   <button class="tb-btn" id="tbFillAll" title="فرش كل الجدران بالكنب"><svg><use href="#i-home"/></svg><span>فرش الكل</span></button>
                 </div>
                 <div class="tb-group tb-history" role="group" aria-label="التحرير">
@@ -370,6 +378,53 @@
                   <button class="tb-btn icon" id="tbZoomIn" title="تكبير"><svg><use href="#i-zoom-in"/></svg></button>
                   <button class="tb-btn icon" id="tbZoomOut" title="تصغير"><svg><use href="#i-zoom-out"/></svg></button>
                   <button class="tb-btn icon" id="tbFit" title="ملاءمة العرض"><svg><use href="#i-fit"/></svg></button>
+                </div>
+                <div id="wallInlineEdit" class="wall-inline" hidden>
+                  <input id="wallInlineLen" type="number" step="0.05" min="0.3" inputmode="decimal" aria-label="طول الجدار بالمتر">
+                  <span class="wall-inline-unit">م</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="atts-section">
+            <header class="stage-head">
+              <div class="sh-title"><div><h3>المرفقات <small>اختياري</small></h3><p>صورتان تُرفقان في فاتورة الطلب — مثل صورة القماش أو مخطط العميل. اسم المرفق اختياري.</p></div></div>
+            </header>
+            <div class="atts" id="attList">
+              <div class="att" data-att="0">
+                <label class="fld">
+                  <svg><use href="#i-pen"/></svg>
+                  <span class="fld-body"><b>اسم المرفق الأول (اختياري)</b><input class="att-title" maxlength="60" placeholder="مثال: صورة القماش"></span>
+                </label>
+                <div class="att-box">
+                  <input type="file" class="att-file" accept="image/*" hidden>
+                  <button type="button" class="att-pick">
+                    <img class="att-img" alt="" hidden>
+                    <span class="att-ph"><svg><use href="#i-image"/></svg><b>إرفاق صورة</b><small>اضغط لاختيار صورة من الجهاز</small></span>
+                  </button>
+                  <div class="att-bar" hidden>
+                    <span class="att-size num"></span>
+                    <button type="button" class="btn small att-replace"><svg><use href="#i-swap"/></svg> استبدال</button>
+                    <button type="button" class="btn small danger att-remove"><svg><use href="#i-trash"/></svg> إزالة</button>
+                  </div>
+                </div>
+              </div>
+              <div class="att" data-att="1">
+                <label class="fld">
+                  <svg><use href="#i-pen"/></svg>
+                  <span class="fld-body"><b>اسم المرفق الثاني (اختياري)</b><input class="att-title" maxlength="60" placeholder="مثال: مخطط العميل"></span>
+                </label>
+                <div class="att-box">
+                  <input type="file" class="att-file" accept="image/*" hidden>
+                  <button type="button" class="att-pick">
+                    <img class="att-img" alt="" hidden>
+                    <span class="att-ph"><svg><use href="#i-image"/></svg><b>إرفاق صورة</b><small>اضغط لاختيار صورة من الجهاز</small></span>
+                  </button>
+                  <div class="att-bar" hidden>
+                    <span class="att-size num"></span>
+                    <button type="button" class="btn small att-replace"><svg><use href="#i-swap"/></svg> استبدال</button>
+                    <button type="button" class="btn small danger att-remove"><svg><use href="#i-trash"/></svg> إزالة</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -431,6 +486,11 @@
                 <svg><use href="#i-pin"/></svg>
                 <span class="fld-body"><b>مكان التوصيل</b><textarea id="custAddress" rows="1" placeholder="المدينة، الحي، وصف الموقع"></textarea></span>
               </label>
+              <div class="maps-row">
+                <input id="custMapsUrl" type="url" inputmode="url" autocomplete="off" placeholder="رابط خرائط جوجل للموقع (اختياري)">
+                <button type="button" id="btnPickMap" class="btn small ghost" title="فتح خرائط جوجل لتحديد الموقع"><svg><use href="#i-pin"/></svg><span>تحديد الموقع</span></button>
+              </div>
+              <a id="custMapsLink" class="maps-link" href="#" target="_blank" rel="noopener" hidden><svg><use href="#i-pin"/></svg><span>فتح الموقع في خرائط جوجل</span></a>
               <label class="fld wide">
                 <svg><use href="#i-pen"/></svg>
                 <span class="fld-body"><b>ملاحظات</b><textarea id="orderNotes" rows="1" placeholder="أي تفاصيل إضافية عن الطلب"></textarea></span>
@@ -522,50 +582,6 @@
           <button id="btnExportPdf" class="btn primary lg export-main"><svg><use href="#i-file"/></svg> تصدير ومشاركة PDF</button>
         </section>
 
-        <!-- المرحلة 6: المرفقات -->
-        <section class="stage module" id="m-att" data-stage="att" aria-label="المرفقات" hidden>
-          <header class="stage-head">
-            <div class="sh-title"><span class="step-num">6</span><div><h3>المرفقات</h3><p>صورتان تُرفقان في فاتورة الطلب — مثل صورة القماش أو مخطط العميل. اسم المرفق اختياري.</p></div></div>
-          </header>
-          <div class="atts" id="attList">
-            <div class="att" data-att="0">
-              <label class="fld">
-                <svg><use href="#i-pen"/></svg>
-                <span class="fld-body"><b>اسم المرفق الأول (اختياري)</b><input class="att-title" maxlength="60" placeholder="مثال: صورة القماش"></span>
-              </label>
-              <div class="att-box">
-                <input type="file" class="att-file" accept="image/*" hidden>
-                <button type="button" class="att-pick">
-                  <img class="att-img" alt="" hidden>
-                  <span class="att-ph"><svg><use href="#i-image"/></svg><b>إرفاق صورة</b><small>اضغط لاختيار صورة من الجهاز</small></span>
-                </button>
-                <div class="att-bar" hidden>
-                  <span class="att-size num"></span>
-                  <button type="button" class="btn small att-replace"><svg><use href="#i-swap"/></svg> استبدال</button>
-                  <button type="button" class="btn small danger att-remove"><svg><use href="#i-trash"/></svg> إزالة</button>
-                </div>
-              </div>
-            </div>
-            <div class="att" data-att="1">
-              <label class="fld">
-                <svg><use href="#i-pen"/></svg>
-                <span class="fld-body"><b>اسم المرفق الثاني (اختياري)</b><input class="att-title" maxlength="60" placeholder="مثال: مخطط العميل"></span>
-              </label>
-              <div class="att-box">
-                <input type="file" class="att-file" accept="image/*" hidden>
-                <button type="button" class="att-pick">
-                  <img class="att-img" alt="" hidden>
-                  <span class="att-ph"><svg><use href="#i-image"/></svg><b>إرفاق صورة</b><small>اضغط لاختيار صورة من الجهاز</small></span>
-                </button>
-                <div class="att-bar" hidden>
-                  <span class="att-size num"></span>
-                  <button type="button" class="btn small att-replace"><svg><use href="#i-swap"/></svg> استبدال</button>
-                  <button type="button" class="btn small danger att-remove"><svg><use href="#i-trash"/></svg> إزالة</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
       </div>
 
       <footer class="stage-nav" id="stageNav">
@@ -607,7 +623,7 @@
       <div class="card table-card">
         <div class="table-wrap">
           <table class="table responsive" id="ordersTable">
-            <thead><tr><th class="c-no">الطلب</th><th class="c-cust">العميل</th><th class="c-total">المجموع</th><th class="c-cost" data-admin>التكلفة</th><th class="c-profit" data-admin title="المبيعات قبل الضريبة ناقص التكاليف">صافي الربح</th><th class="c-paid">المدفوع</th><th class="c-rem">المتبقي</th><th class="c-deliv">التوصيل</th><th class="c-status">الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <thead><tr><th class="c-no">الطلب</th><th class="c-cust">العميل</th><th class="c-total">المجموع</th><th class="c-cost" data-admin>التكلفة</th><th class="c-profit" data-admin title="المبيعات قبل الضريبة ناقص التكاليف">صافي الربح</th><th class="c-comm" data-admin title="عمولة البائع = النسبة × صافي الربح">العمولة</th><th class="c-paid">المدفوع</th><th class="c-rem">المتبقي</th><th class="c-deliv">التوصيل</th><th class="c-status">الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>
@@ -708,6 +724,7 @@
           <option value="update">تعديل طلب</option>
           <option value="status">تغيير الحالة</option>
           <option value="cost">تعديل التكاليف</option>
+          <option value="commission">نسبة البائع</option>
           <option value="owner">نقل الملكية</option>
           <option value="export">تصدير PDF</option>
           <option value="delete">حذف طلب</option>
@@ -796,7 +813,7 @@
             <div class="module-head"><h3>أداء الموظفين</h3></div>
             <div class="table-wrap">
               <table class="table responsive compact" id="biStaffTable">
-                <thead><tr><th>الموظف</th><th class="ta-end">الطلبات</th><th class="ta-end">المبيعات</th><th class="ta-end">صافي الربح</th><th class="ta-end">الهامش</th><th class="ta-end">متوسط الطلب</th><th class="ta-end">المتبقي</th></tr></thead>
+                <thead><tr><th>الموظف</th><th class="ta-end">الطلبات</th><th class="ta-end">المبيعات</th><th class="ta-end">صافي الربح</th><th class="ta-end">العمولة</th><th class="ta-end">المشاركة</th><th class="ta-end">الهامش</th><th class="ta-end">متوسط الطلب</th><th class="ta-end">المتبقي</th></tr></thead>
                 <tbody></tbody>
               </table>
             </div>
@@ -877,5 +894,13 @@
 <script src="js/store.js"></script>
 <script src="js/designer.js"></script>
 <script src="js/app.js"></script>
+<script>
+  // تسجيل الـ Service Worker ليعمل التطبيق دون اتصال ويُثبَّت على الجهاز
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', function () {
+      navigator.serviceWorker.register('sw.js').catch(function () {});
+    });
+  }
+</script>
 </body>
 </html>

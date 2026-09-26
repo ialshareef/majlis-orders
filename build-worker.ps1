@@ -26,7 +26,7 @@ function ConvertTo-JsString([string]$s) {
   return $sb.ToString()
 }
 
-$types = @{ '.html' = 'text/html; charset=utf-8'; '.css' = 'text/css; charset=utf-8'; '.js' = 'application/javascript; charset=utf-8'; '.svg' = 'image/svg+xml'; '.json' = 'application/json; charset=utf-8' }
+$types = @{ '.html' = 'text/html; charset=utf-8'; '.css' = 'text/css; charset=utf-8'; '.js' = 'application/javascript; charset=utf-8'; '.svg' = 'image/svg+xml'; '.json' = 'application/json; charset=utf-8'; '.png' = 'image/png'; '.webmanifest' = 'application/manifest+json' }
 
 # Files served by the Worker. config.js is generated (points the app at its own origin).
 $files = @(
@@ -34,16 +34,27 @@ $files = @(
   @{ url = '/css/style.css'; path = 'css\style.css' },
   @{ url = '/js/store.js';   path = 'js\store.js' },
   @{ url = '/js/designer.js';path = 'js\designer.js' },
-  @{ url = '/js/app.js';     path = 'js\app.js' }
+  @{ url = '/js/app.js';     path = 'js\app.js' },
+  @{ url = '/manifest.json'; path = 'manifest.json'; ct = 'application/manifest+json' },
+  @{ url = '/sw.js';         path = 'sw.js' },
+  @{ url = '/icons/icon-192.png';          path = 'icons\icon-192.png' },
+  @{ url = '/icons/icon-512.png';          path = 'icons\icon-512.png' },
+  @{ url = '/icons/icon-maskable-512.png'; path = 'icons\icon-maskable-512.png' }
 )
 
 $entries = New-Object System.Collections.Generic.List[string]
 foreach ($f in $files) {
   $full = Join-Path $root $f.path
   if (-not (Test-Path -LiteralPath $full)) { throw "Missing file: $($f.path)" }
-  $content = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
   $ext = [IO.Path]::GetExtension($full).ToLower()
-  $entries.Add((ConvertTo-JsString $f.url) + ':{ct:' + (ConvertTo-JsString $types[$ext]) + ',body:' + (ConvertTo-JsString $content) + '}')
+  $binary = ($ext -eq '.png')
+  if ($binary) {
+    $content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($full))
+  } else {
+    $content = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
+  }
+  $ct = if ($f.ct) { $f.ct } else { $types[$ext] }
+  $entries.Add((ConvertTo-JsString $f.url) + ':{ct:' + (ConvertTo-JsString $ct) + ',b64:' + ($(if ($binary) { '1' } else { '0' })) + ',body:' + (ConvertTo-JsString $content) + '}')
   Write-Host ("  + {0,-18} {1,8:N0} bytes" -f $f.url, $content.Length)
 }
 

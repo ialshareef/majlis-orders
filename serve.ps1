@@ -5,7 +5,11 @@ param([int]$Port = 8090, [switch]$NoOpen)
 
 $root = Split-Path -Parent $MyInvocation.MyCommand.Path
 $listener = New-Object System.Net.HttpListener
-$listener.Prefixes.Add("http://localhost:$Port/")
+# "http://+:$Port" يغطي الجهاز نفسه والجوال على نفس الشبكة معاً.
+# يتطلب حجزاً مسبقاً (netsh http add urlacl url=http://+:$Port/ user=...) أو صلاحية مدير،
+# وبدونهما نرجع إلى localhost فقط.
+try { $listener.Prefixes.Add("http://+:$Port/") }
+catch { $listener.Prefixes.Add("http://localhost:$Port/") }
 $listener.Start()
 Write-Host "Majlis Orders System running at: http://localhost:$Port/  (Ctrl+C to stop)"
 if (-not $NoOpen) { try { Start-Process "http://localhost:$Port/" } catch {} }

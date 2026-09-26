@@ -42,11 +42,14 @@
 
   function defaultSettings() {
     // depositPct: نسبة العربون قبل بدء التنفيذ (0 = بلا تنبيه) • quoteDays: صلاحية عرض السعر
-    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, lastBackupAt: '' };
+    // sellerRate: نسبة البائع • shareRate: نسبة المشاركة (لباقي البائعين والإدارة) • mandoubRate: نسبة المناديب
+    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, sellerRate: 10, shareRate: 5, mandoubRate: 5, lastBackupAt: '' };
   }
 
   function normalizeSettings(s) {
     const st = Object.assign(defaultSettings(), s || {});
+    // هجرة الحقل القديم othersRate إلى shareRate
+    if (s && s.othersRate !== undefined && s.shareRate === undefined) st.shareRate = s.othersRate;
     if (st.cornerMode === 'full' && !st.cornerModeChosen) st.cornerMode = 'deduct';
     if (!st.shopName || st.shopName === OLD_SHOP_NAME) st.shopName = 'أصالة نجد';
     return st;
@@ -183,6 +186,32 @@
     lastStatus: 0,   // 409 تعارض، -1 انقطاع اتصال، 0 لا خطأ
     cfg: null,
     TOKEN_KEY: 'majlis_token',
+    CACHE_KEY: 'majlis_remote_db_v1',
+
+    /** حفظ نسخة محلية (localStorage) لتشغيل دون اتصال ومزامنة لاحقاً */
+    saveCache() {
+      try {
+        localStorage.setItem(this.CACHE_KEY, JSON.stringify({ db: this.db, snap: this.snap, features: this.features || {}, user: this.user }));
+      } catch (_) { /* مساحة التخزين ممتلئة */ }
+    },
+    /** استعادة النسخة المحلية المخزّنة (تعمل دون اتصال) */
+    loadCache() {
+      try {
+        const raw = localStorage.getItem(this.CACHE_KEY);
+        if (!raw) return false;
+        const c = JSON.parse(raw);
+        if (!c || !c.db) return false;
+        this.db.settings = normalizeSettings(c.db.settings);
+        this.db.items = normalizeItems(Array.isArray(c.db.items) ? c.db.items.filter(Boolean) : []);
+        this.db.orders = Array.isArray(c.db.orders) ? c.db.orders.filter(Boolean) : [];
+        this.db.activity = Array.isArray(c.db.activity) ? c.db.activity.filter(Boolean) : [];
+        this.db.users = Array.isArray(c.db.users) ? c.db.users : [];
+        this.snap = c.snap || {};
+        this.features = c.features || {};
+        if (c.user) this.user = c.user;
+        return true;
+      } catch (_) { return false; }
+    },
 
     async api(method, path, body) {
       const headers = { 'Content-Type': 'application/json' };
@@ -215,14 +244,18 @@
     async init() {
       this.db = this.emptyDb();
       this.token = localStorage.getItem(this.TOKEN_KEY) || null;
+      this.loadCache();   // استعادة النسخة المحلية فوراً (تعمل دون اتصال)
+      if (!this.token) this.user = null;   // بلا رمز دخول: غير مسجّل
       if (this.token) {
         try {
           const r = await this.api('GET', '/api/me');
           if (r && r.user) { this.user = r.user; await this.loadAll(); }
           else { this.token = null; localStorage.removeItem(this.TOKEN_KEY); }
         } catch (e) {
-          console.warn('session restore failed', e);
+          // دون اتصال: نبقى على النسخة المحلية المخزّنة حتى تعود الشبكة
+          console.warn('session restore failed (offline?)', e);
           this.lastError = e.message;
+          this.lastStatus = e.offline ? -1 : 0;
         }
       }
       return this.db;
@@ -244,6 +277,7 @@
 
     snapshot() {
       this.snap = { items: mapOf(this.db.items), orders: mapOf(this.db.orders), activity: mapOf(this.db.activity), settings: JSON.stringify(this.db.settings) };
+      this.saveCache();
     },
 
     _diff(coll) {
@@ -270,6 +304,7 @@
     /** مزامنة التغييرات المحلية فقط (إضافة/تعديل/حذف) إلى الخادم */
     async save() {
       if (!this.user) { this.lastError = 'غير مسجّل الدخول'; return false; }
+      this.saveCache();   // التغييرات تُحفظ محلياً فوراً قبل محاولة المزامنة
       const payload = {};
       const it = this._diff('items'); if (it.upsert.length || it.delete.length) payload.items = it;
       const od = this._diff('orders'); if (od.upsert.length || od.delete.length) payload.orders = od;
@@ -303,6 +338,8 @@
 
     async refresh() {
       if (!this.user) return false;
+      // دفع أي تغييرات معلّقة أولاً، ثم سحب آخر نسخة من الخادم
+      await this.save();
       await this.loadAll();
       return true;
     },
@@ -323,6 +360,7 @@
       try { if (this.token) await this.api('POST', '/api/logout'); } catch (_) { /* ignore */ }
       this.token = null; this.user = null;
       localStorage.removeItem(this.TOKEN_KEY);
+      localStorage.removeItem(this.CACHE_KEY);
       this.db = this.emptyDb();
       this.snap = {};
     },

@@ -6,5 +6,5 @@
    - النسخة المنشورة تولّد إعداداتها تلقائياً ولا تتأثر بهذا الملف.
    ====================================================================== */
 window.APP_CONFIG = {
-  apiUrl: 'https://majlis-api.klopoor.workers.dev',
+  apiUrl: 'https://majlis-api.asalh-najd.workers.dev',
 };

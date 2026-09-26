@@ -332,7 +332,7 @@ async function listUsers(env) {
 async function saveUser(env, me, body, myToken) {
   const name = String(body.name || '').trim();
   const username = String(body.username || '').trim();
-  const role = body.role === 'admin' ? 'admin' : body.role === 'staff' ? 'staff' : null;
+  const role = body.role === 'admin' ? 'admin' : body.role === 'staff' ? 'staff' : body.role === 'mandoub' ? 'mandoub' : null;
   const active = body.active !== false;
   const password = body.password ? String(body.password) : '';
   if (!name || !username) throw new HttpError(400, 'الاسم واسم المستخدم مطلوبان');
@@ -415,7 +415,9 @@ function serveAsset(pathname) {
   const key = pathname === '/' ? '/index.html' : pathname.replace(/\/+$/, '');
   const a = ASSETS[key] || ASSETS[key + '/index.html'] || (key.includes('.') ? null : ASSETS['/index.html']);
   if (!a) return new Response('404', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
-  return new Response(a.body, {
+  let body = a.body;
+  if (a.b64) body = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
+  return new Response(body, {
     status: 200,
     headers: {
       'Content-Type': a.ct,

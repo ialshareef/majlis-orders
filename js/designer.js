@@ -42,6 +42,7 @@
       this.autoFit = true;
       this._hist = [];          // سجل التراجع/الإعادة (لقطات JSON)
       this._histIdx = -1;
+      this._lastTap = null;     // النقرة السابقة على جدار (لكشف اللمس المزدوج لوضع الكنب)
       this.view = { scale: 60, ox: 0, oy: 0 };
       this.cssW = 0; this.cssH = 0;
       this._bind();
@@ -323,12 +324,12 @@
       const g = this.geometry();
       const w = g.walls[wallIndex];
       if (!w) return null;
-      const width = Math.min(type === 'door' ? 0.9 : 1.2, w.len);
+      const width = Math.min(type === 'door' ? 0.9 : type === 'mashab' ? 1.0 : 1.2, w.len);
       // أول موضع حر على الجدار
       const occ = this.state.openings.filter((o) => o.wall === wallIndex).map((o) => [o.t - o.w / 2, o.t + o.w / 2]);
       const free = this._freeIntervals(w.len, occ, width).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
       const t = free.length ? (free[0][0] + free[0][1]) / 2 : w.len / 2;
-      const o = { id: uid(), wall: wallIndex, t: round(t, 3), w: width, type, blocks: type === 'door' };
+      const o = { id: uid(), wall: wallIndex, t: round(t, 3), w: width, type, blocks: type === 'door' || type === 'mashab', depth: type === 'mashab' ? 0.5 : 0 };
       this.state.openings.push(o);
       this.select({ type: 'opening', id: o.id });
       this.changed();
@@ -341,7 +342,7 @@
       const o = this.opening(id);
       if (!o) return;
       Object.assign(o, props);
-      if (props.type) o.type = props.type === 'window' ? 'window' : 'door';
+      if (props.type) o.type = ['door', 'window', 'mashab'].includes(props.type) ? props.type : 'door';
       this.syncAttached();
       this.changed();
     }
@@ -389,6 +390,15 @@
         return { x: c.x, y: c.y + 10, top: c.y - 10 };
       }
       return null;
+    }
+
+    /** موضع تسمية مقاس الجدار على الشاشة (بكسل CSS) لفتح التعديل المباشر فوقها في الجوال */
+    wallLabelPos(i, v = this.view) {
+      const g = this.geometry();
+      const w = g.walls[i];
+      if (!w) return null;
+      const off = WALL_T + 0.45;
+      return this.toScreen(w.mid.x - w.n.x * off, w.mid.y - w.n.y * off, v);
     }
 
     select(sel) {
@@ -823,6 +833,7 @@
       if (this.pointers.size === 2) {
         const pts = [...this.pointers.values()];
         this.drag = { mode: 'pinch', dist: Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y) || 1, mid: { x: (pts[0].x + pts[1].x) / 2, y: (pts[0].y + pts[1].y) / 2 } };
+        this._lastTap = null;
         return;
       }
       if (this.pointers.size > 2) return;
@@ -835,10 +846,11 @@
       const selP = this.selectedPiece();
       if (selP) {
         const h = this._hitHandle(selP, sx, sy, tol);
-        if (h) { this.drag = { mode: h, id: selP.id, orig: Object.assign({}, selP), moved: false }; return; }
+        if (h) { this._lastTap = null; this.drag = { mode: h, id: selP.id, orig: Object.assign({}, selP), moved: false }; return; }
       }
       const p = this._hitPiece(pt, touch ? 4 / this.view.scale : 0);
       if (p) {
+        this._lastTap = null;
         this.sel = { type: 'piece', id: p.id };
         this.drag = { mode: 'move', id: p.id, off: { x: p.x - pt.x, y: p.y - pt.y }, orig: Object.assign({}, p), moved: false };
         this.render();
@@ -847,6 +859,7 @@
       }
       const o = this._hitOpening(pt, touch ? 12 : 6);
       if (o) {
+        this._lastTap = null;
         this.sel = { type: 'opening', id: o.id };
         this.drag = { mode: 'opening', id: o.id, moved: false };
         this.render();
@@ -947,8 +960,22 @@
         const { sx, sy } = this._pos(e);
         const pt = this.toRoom(sx, sy);
         const o = this._hitOpening(pt, d.touch ? 12 : 6);
-        if (o) { this.select({ type: 'opening', id: o.id }); return; }
+        if (o) { this._lastTap = null; this.select({ type: 'opening', id: o.id }); return; }
         const wi = this._hitWall(sx, sy, d.touch ? 18 : 10);
+        // على اللمس لا يوجد حدث dblclick: نكشف اللمس المزدوج على الجدار بأنفسنا لوضع الكنب
+        if (wi >= 0 && d.touch) {
+          const now = Date.now();
+          const last = this._lastTap;
+          const isDouble = last && last.wall === wi && (now - last.time) < 350 && Math.hypot(last.x - sx, last.y - sy) < 40;
+          if (isDouble) {
+            this._lastTap = null;
+            if (this.opts.onWallDblClick) this.opts.onWallDblClick(wi);
+            return;
+          }
+          this._lastTap = { time: now, x: sx, y: sy, wall: wi };
+        } else if (wi < 0) {
+          this._lastTap = null;
+        }
         this.select(wi >= 0 ? { type: 'wall', index: wi } : null);
         return;
       }
@@ -1121,6 +1148,52 @@
           // عتبة
           ctx.strokeStyle = isSel ? SEL : '#BDB5A9';
           ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.stroke();
+        } else if (o.type === 'mashab') {
+          // مشب (مدفأة): بلوكات مستطيلة حمراء بزوايا مائلة (مشطوفة) بارزة داخل الغرفة
+          const d = w.dir, n = w.n;
+          const hearth = Math.max(0.15, +o.depth || 0.5);   // عمق الموقد داخل الغرفة (م)
+          const ch = 0.14;         // حجم الشطف للزوايا المائلة
+          const fw = o.w * 0.55;   // عرض فتحة النار
+          const fd = hearth * 0.5; // عمق فتحة النار
+          // رؤوس القاعدة المشطوفة (اتجاه عقارب الساعة)
+          const pts = [
+            q[0],
+            q[1],
+            P(pB.x + n.x * (hearth - ch), pB.y + n.y * (hearth - ch)),
+            P(pB.x + n.x * hearth - d.x * ch, pB.y + n.y * hearth - d.y * ch),
+            P(pA.x + n.x * hearth + d.x * ch, pA.y + n.y * hearth + d.y * ch),
+            P(pA.x + n.x * (hearth - ch), pA.y + n.y * (hearth - ch)),
+          ];
+          // القاعدة الحمراء
+          ctx.fillStyle = '#C0392B';
+          ctx.beginPath(); pts.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y))); ctx.closePath(); ctx.fill();
+          ctx.strokeStyle = isSel ? SEL : '#7E2C2A';
+          ctx.lineWidth = Math.max(1 * k, 0.03 * S);
+          ctx.stroke();
+          // خطوط البلوكات (طوب أحمر): أفقي في منتصف العمق وعمودي في منتصف العرض
+          ctx.strokeStyle = isSel ? SEL : '#8E3330';
+          ctx.lineWidth = Math.max(1 * k, 0.03 * S);
+          ctx.beginPath();
+          ctx.moveTo(P(pA.x + n.x * (hearth * 0.5), pA.y + n.y * (hearth * 0.5)).x, P(pA.x + n.x * (hearth * 0.5), pA.y + n.y * (hearth * 0.5)).y);
+          ctx.lineTo(P(pB.x + n.x * (hearth * 0.5), pB.y + n.y * (hearth * 0.5)).x, P(pB.x + n.x * (hearth * 0.5), pB.y + n.y * (hearth * 0.5)).y);
+          ctx.moveTo(P(pA.x + d.x * (o.w / 2), pA.y + d.y * (o.w / 2)).x, P(pA.x + d.x * (o.w / 2), pA.y + d.y * (o.w / 2)).y);
+          ctx.lineTo(P(pA.x + d.x * (o.w / 2) + n.x * hearth, pA.y + d.y * (o.w / 2) + n.y * hearth).x, P(pA.x + d.x * (o.w / 2) + n.x * hearth, pA.y + d.y * (o.w / 2) + n.y * hearth).y);
+          ctx.stroke();
+          // فتحة النار (داكنة) قرب الجدار
+          const dx0 = (o.w - fw) / 2, dx1 = (o.w + fw) / 2;
+          const fA = P(pA.x + d.x * dx0, pA.y + d.y * dx0);
+          const fB = P(pA.x + d.x * dx1, pA.y + d.y * dx1);
+          const fC = P(pA.x + d.x * dx1 + n.x * fd, pA.y + d.y * dx1 + n.y * fd);
+          const fD = P(pA.x + d.x * dx0 + n.x * fd, pA.y + d.y * dx0 + n.y * fd);
+          ctx.fillStyle = '#2A211B';
+          ctx.beginPath(); ctx.moveTo(fA.x, fA.y); ctx.lineTo(fB.x, fB.y); ctx.lineTo(fC.x, fC.y); ctx.lineTo(fD.x, fD.y); ctx.closePath(); ctx.fill();
+          // لهب في المنتصف
+          ctx.fillStyle = '#F5A623';
+          ctx.beginPath(); ctx.arc((fA.x + fC.x) / 2, (fA.y + fC.y) / 2, Math.max(2 * k, 0.06 * S), 0, Math.PI * 2); ctx.fill();
+          // خط منقط للداخل (يمنع الكنب)
+          ctx.strokeStyle = isSel ? SEL : '#C05621';
+          ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+          ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.stroke(); ctx.setLineDash([]);
         } else {
           // شباك: خطان للزجاج داخل حزام الجدار
           ctx.strokeStyle = isSel ? SEL : '#858B8C';
@@ -1137,7 +1210,7 @@
         }
         // تسمية (عند التحديد فقط، داخل الغرفة لتجنب تسميات الجدران)
         if (isSel) {
-          const lab = (o.type === 'door' ? 'باب' : 'شباك') + ' ' + round(o.w, 2) + ' م';
+          const lab = (o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك') + ' ' + round(o.w, 2) + ' م';
           const inset = o.type === 'door' ? o.w + 0.25 : 0.3;
           const lp = P(w.A.x + w.dir.x * o.t + w.n.x * inset, w.A.y + w.dir.y * o.t + w.n.y * inset);
           const fs = Math.max(10, Math.min(13, S * 0.2));

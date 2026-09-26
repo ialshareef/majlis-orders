@@ -8,6 +8,11 @@ worker/worker.bundle.js
 deploy/
 deploy.zip
 
+# تطبيق الأندرويد (Capacitor) — مولَّد
+node_modules/
+www/
+android/
+
 # إعدادات محلية للأدوات
 .claude/settings.local.json
 

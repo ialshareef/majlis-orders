@@ -46,7 +46,7 @@
     el.innerHTML = `<button class="btn block">عرض المزيد — ${shown} من ${matched}</button>`;
     el.querySelector('button').addEventListener('click', onMore);
   }
-  const ROLES = { admin: 'مدير', staff: 'موظف' };
+  const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -399,9 +399,9 @@
     '#m-customer input', '#m-customer select', '#m-customer textarea',
     '#orderStatus', '#m-pay input', '#m-pay select', '#btnAddPay', '#btnRefund', '#payQuick button',
     '#m-price input', '#m-price select', '#m-price button',
-    '#m-att input', '#m-att button',
+    '#attList input', '#attList button',
     '.designer-panel input', '.designer-panel select', '.designer-panel button',
-    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbFillAll', '#btnAddManual',
+    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbFillAll', '#btnAddManual', '#btnPickMap',
   ].join(', ');
 
   function applyOrderLock() {
@@ -424,7 +424,7 @@
       id: null, number: null, status: 'new',
       design: Designer.emptyState(5, 4, settings().cornerMode || 'deduct'),
       priceOverrides: {}, manualRows: [], costs: {}, extraCosts: [],
-      customer: { name: '', phone: '', address: '' },
+      customer: { name: '', phone: '', address: '', mapsUrl: '' },
       deliveryDate: '', paid: 0, payments: [], notes: '', attachments: emptyAttachments(),
       vat: { enabled: settings().vatEnabled !== false, rate: num(settings().vatRate ?? 15) },
       createdBy: null, createdByName: '', createdAt: null, updatedAt: null,
@@ -549,6 +549,10 @@
   let inspOpen = false;   // اللوحة مفتوحة؟ في الجوال لا تُفتح إلا بطلب صريح من المستخدم
   let inspAuto = false;   // فُتحت تلقائياً بالتحديد (الحاسوب): لا يُنقل التركيز إلى حقولها
   let lastSelKey = null;  // آخر عنصر محدد: الفتح التلقائي يكون عند تحديد عنصر جديد فقط
+  // عناصر تعديل طول الجدار المباشر (تُعلَّن قبل المصمم لأن onRender يُستدعى أثناء إنشائه)
+  const wallInlineBox = $('#wallInlineEdit');
+  const wallInlineInp = $('#wallInlineLen');
+  let wallInlineFocusTimer = null;   // تأخير التركيز حتى لا تفتح لوحة المفاتيح قبل اللمسة الثانية (الكنب)
 
   /** طلب قديم: قطعة كنب مرتبطة بصنف من فئة "كنب" ملغاة */
   function legacySofaItem(p) {
@@ -591,15 +595,16 @@
       updateUndoButtons();
     },
     onSelect(info) {
-      // على الحاسوب تعرض اللوحة الجانبية خصائص العنصر فور تحديده، فهي لا تحجب المخطط.
-      // تُفتح عند تحديد عنصر جديد فقط: من أغلقها بزر «تم» لا تعود إليه أثناء سحب العنصر نفسه.
+      // على الحاسوب تعرض اللوحة الجانبية خصائص القطعة أو الفتحة فور تحديدها، فهي لا تحجب المخطط.
+      // أما الجدار فتُعدَّل مقاساته مباشرة فوق تسميته (خانة فوق المخطط) في الحاسوب والجوال معاً.
+      // تُفتح اللوحة عند تحديد عنصر جديد فقط: من أغلقها بزر «تم» لا تعود إليه أثناء سحب العنصر نفسه.
       const k = selKey(info);
-      if (k && k !== lastSelKey && !isMobile() && !readOnly) { inspOpen = true; inspAuto = true; }
+      if (k && k !== lastSelKey && !isMobile() && !readOnly && (!info || info.type !== 'wall')) { inspOpen = true; inspAuto = true; }
       lastSelKey = k;
       renderInspector(info);
       syncWallSel();
     },
-    onRender() { positionInspector(); },
+    onRender() { positionInspector(); positionWallInline(); },
     onWallDblClick(i) { addSofaOnWall(i); },
   });
 
@@ -668,10 +673,59 @@
     $('#canvasHint').textContent = designer.sel ? 'اسحب للتحريك، والمقابض لتغيير المقاس والتدوير' : 'اضغط على جدار أو قطعة لتحديده';
     $('#canvasHint').hidden = false;
     syncEditBtn();
+    showWallInline(i);
   }
 
+  /* --- تعديل طول الجدار مباشرة فوق تسميته في المخطط (الجوال) --- */
+
+  function hideWallInline() {
+    if (wallInlineFocusTimer) { clearTimeout(wallInlineFocusTimer); wallInlineFocusTimer = null; }
+    if (!wallInlineBox.hidden) wallInlineBox.hidden = true;
+  }
+  function positionWallInline() {
+    if (wallInlineBox.hidden) return;
+    const pos = designer.wallLabelPos(+wallInlineInp.dataset.i || 0);
+    if (!pos) { hideWallInline(); return; }
+    wallInlineBox.style.left = pos.x + 'px';
+    wallInlineBox.style.top = pos.y + 'px';
+  }
+  function showWallInline(i) {
+    if (i < 0 || readOnly || inspOpen) { hideWallInline(); return; }
+    const w = designer.state.walls[i];
+    if (!w) { hideWallInline(); return; }
+    wallInlineInp.dataset.i = String(i);
+    if (document.activeElement !== wallInlineInp) wallInlineInp.value = Designer.util.round(w.len, 3);
+    wallInlineBox.hidden = false;
+    positionWallInline();
+    // يُؤجَّل التركيز قليلاً: اللمسة الثانية (لوضع الكنب) تكتمل قبل أن تفتح لوحة المفاتيح
+    wallInlineFocusTimer = setTimeout(() => {
+      wallInlineFocusTimer = null;
+      if (!wallInlineBox.hidden) { wallInlineInp.focus(); wallInlineInp.select(); }
+    }, 400);
+  }
+  wallInlineInp.addEventListener('change', () => {
+    const i = +wallInlineInp.dataset.i;
+    if (Number.isFinite(i) && designer.state.walls[i]) designer.setWallLength(i, num(wallInlineInp.value));
+  });
+  wallInlineInp.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); wallInlineInp.blur(); }
+    else if (e.key === 'Escape') {
+      e.preventDefault();
+      const i = +wallInlineInp.dataset.i;
+      if (Number.isFinite(i) && designer.state.walls[i]) wallInlineInp.value = Designer.util.round(designer.state.walls[i].len, 3);
+      hideWallInline();
+    } else if (e.key === 'Tab') {
+      hideWallInline();
+    }
+  });
+  wallInlineInp.addEventListener('blur', () => { hideWallInline(); });
+
   $('#btnApplyRect').addEventListener('click', () => {
-    designer.setRect(Math.max(0.5, num($('#roomW').value)), Math.max(0.5, num($('#roomH').value)));
+    let w = Math.max(0.5, num($('#roomW').value));
+    let h = Math.max(0.5, num($('#roomH').value));
+    // الجدار الأطول يُرسم أفقيًا (عرضاً) لتكون الصورة أوضح
+    if (h > w) { const t = w; w = h; h = t; }
+    designer.setRect(w, h);
     designer.fitView();
   });
   $('#btnAddWall').addEventListener('click', () => { const i = designer.addWall(); designer.select({ type: 'wall', index: i }); });
@@ -693,15 +747,17 @@
   function renderItemSelects() {
 
     // الكنبة تُركَّب من خشب وقماش وإسفنج — لا صنف واحد اسمه "كنب"
+    // كل قائمة تبدأ بـ«غير محدد» ولا يُختار أي افتراضي: يختار الموظف الثلاثة يدوياً
     SPECS.forEach((s) => {
       const sel = $('#sofa' + s.key.charAt(0).toUpperCase() + s.key.slice(1) + 'Sel');
       if (!sel) return;
       const list = activeItems(s.cat);
       const prev = sel.value;
-      sel.innerHTML = list.length
+      sel.innerHTML = `<option value="">غير محدد</option>` + (list.length
         ? list.map((i) => `<option value="${i.id}">${esc(i.name)} — ${fmt(i.price)} ${currency()}/م</option>`).join('')
-        : `<option value="">لا توجد أصناف ${esc(s.label)}</option>`;
-      if (list.some((i) => i.id === prev)) sel.value = prev;
+        : '');
+      if (prev && list.some((i) => i.id === prev)) sel.value = prev;
+      else sel.value = '';
     });
     updateSofaPriceHint();
 
@@ -720,7 +776,7 @@
 
   const SOFA_SEL = { wood: '#sofaWoodSel', fabric: '#sofaFabricSel', foam: '#sofaFoamSel' };
 
-  /** تركيبة الكنب المختارة: الثلاثة مطلوبة، وسعر المتر مجموع أسعارها */
+  /** تركيبة الكنب المختارة: يُسمح بتركيبة جزئية (خشب فقط مثلاً)، وسعر المتر مجموع ما اختير */
   function selectedSofaSpec(silent = false) {
     const spec = { depth: Math.max(0.3, num($('#sofaDepth').value) || 0.8) };
     const missing = [];
@@ -729,8 +785,9 @@
       if (!rec || rec.category !== s.cat) { missing.push(s.label); continue; }
       spec[s.field] = rec.id;
     }
-    if (missing.length) {
-      if (!silent) toast(`اختر ${missing.join(' و')} أولاً — أضفها من صفحة الأصناف`, true);
+    // الرسالة فقط حين لا يُختار أي مكوّن؛ اختيار الخشب وحده يكفي للفرش
+    if (missing.length === SPECS.length) {
+      if (!silent) toast('اختر مكوّناً واحداً على الأقل (الخشب أو القماش أو الإسفنج) — أضفه من صفحة الأصناف', true);
       return null;
     }
     return spec;
@@ -780,6 +837,7 @@
   $('#tbAddSofa').addEventListener('click', () => addSofaOnWall(targetWall()));
   $('#tbAddDoor').addEventListener('click', () => designer.addOpening(targetWall(), 'door'));
   $('#tbAddWindow').addEventListener('click', () => designer.addOpening(targetWall(), 'window'));
+  $('#tbAddMashab').addEventListener('click', () => designer.addOpening(targetWall(), 'mashab'));
   /* --- التراجع والإعادة --- */
   function updateUndoButtons() {
     $('#tbUndo').disabled = readOnly || !designer.canUndo();
@@ -800,6 +858,7 @@
     const info = designer.selectionInfo();
     if (!info) return;
     inspOpen = true;
+    hideWallInline();
     inspAuto = false;
     inspKey = null;   // فتح صريح: تُرسم اللوحة من جديد ويُنقل التركيز إلى أول حقل
     renderInspector(info);
@@ -862,17 +921,19 @@
           <button class="btn small primary" data-act="sofa">${icon('sofa')} كنب</button>
           <button class="btn small" data-act="door">${icon('door')} باب</button>
           <button class="btn small" data-act="window">${icon('window')} شباك</button>
+          <button class="btn small" data-act="mashab">${icon('fire')} مشب</button>
           <button class="btn small danger" data-act="delwall" ${nWalls <= 3 ? 'disabled' : ''} title="حذف الجدار">${icon('trash')}</button>
         </div>`;
     } else if (info.type === 'opening') {
       const o = info.opening;
       html += `
-        <div class="insp-head"><b>${icon(o.type === 'door' ? 'door' : 'window')} ${o.type === 'door' ? 'باب' : 'شباك'} <small>على جدار ${o.wall + 1}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
+        <div class="insp-head"><b>${icon(o.type === 'door' ? 'door' : o.type === 'mashab' ? 'fire' : 'window')} ${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك'} <small>على جدار ${o.wall + 1}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="row2">
-          <label>النوع <select id="inspType"><option value="door" ${o.type === 'door' ? 'selected' : ''}>باب</option><option value="window" ${o.type === 'window' ? 'selected' : ''}>شباك</option></select></label>
+          <label>النوع <select id="inspType"><option value="door" ${o.type === 'door' ? 'selected' : ''}>باب</option><option value="window" ${o.type === 'window' ? 'selected' : ''}>شباك</option><option value="mashab" ${o.type === 'mashab' ? 'selected' : ''}>مشب</option></select></label>
           <label>العرض (م) <input id="inspOW" type="number" step="0.05" min="0.3" value="${Designer.util.round(o.w, 2)}"></label>
         </div>
         <label>البُعد من بداية الجدار (م) <input id="inspOT" type="number" step="0.05" min="0" value="${Designer.util.round(o.t - o.w / 2, 2)}"></label>
+        <label ${o.type === 'mashab' ? '' : 'hidden'}>العمق داخل الغرفة (م) <input id="inspDepth" type="number" step="0.05" min="0.15" max="1" value="${Designer.util.round(o.depth || 0.5, 2)}"></label>
         <label class="check"><input id="inspBlocks" type="checkbox" ${o.blocks ? 'checked' : ''}> لا يوضع كنب أمامه</label>
         <div class="insp-actions"><button class="btn small danger" data-act="del">${icon('trash')} حذف</button></div>`;
     } else {
@@ -887,10 +948,12 @@
       const curItem = canSize ? (pieceStyle(p) || { name: 'كنب' }) : getItem(p.itemId);
       const opts = items.map((i) => `<option value="${i.id}">${esc(i.name)}</option>`);
       if (!canSize && !items.some((i) => i.id === p.itemId)) opts.unshift(`<option value="${esc(p.itemId)}">${esc(curItem.name)}</option>`);
+      // عدد قطع الإكسسوار نفسه في التصميم (لإضافة كمية يدوياً)
+      const accCount = (!canSize && curItem) ? designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === curItem.id).length : 0;
       html += `
         <div class="insp-head"><b>${icon(isSofa ? 'sofa' : isFree ? 'align' : 'pillow')} ${esc(curItem.name)} <small id="inspWallLbl">${p.wall != null ? 'على جدار ' + (p.wall + 1) : 'قطعة حرة'}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="insp-main">
-          ${canSize ? '' : `<label>الصنف <select id="selItem">${opts.join('')}</select></label>`}
+          ${canSize ? '' : `<div class="row2"><label>الصنف <select id="selItem">${opts.join('')}</select></label><label>الكمية <input id="selQty" type="number" min="1" step="1" value="${accCount}" inputmode="numeric"></label></div>`}
           ${isSofa && legacy ? `<p class="hint">هذه القطعة من طلب قديم مرتبط بصنف «${esc(legacy.name)}». اختر الخشب والقماش والإسفنج لتحويلها.</p>` : ''}
           ${isSofa ? SPECS.map((s) => `<label>${s.label} ${specSelect('sel_' + s.key, s, p[s.field] || '', '')}</label>`).join('') : ''}
         </div>
@@ -927,10 +990,11 @@
     const active = document.activeElement;
     const setIf = (id, v) => { const el = $('#' + id, insp); if (el && el !== active) el.value = v; };
     if (info.type === 'wall') { setIf('inspLen', Designer.util.round(info.wall.len, 3)); setIf('inspAng', info.wall.angle); }
-    else if (info.type === 'opening') { const o = info.opening; setIf('inspOW', Designer.util.round(o.w, 2)); setIf('inspOT', Designer.util.round(o.t - o.w / 2, 2)); }
+    else if (info.type === 'opening') { const o = info.opening; setIf('inspOW', Designer.util.round(o.w, 2)); setIf('inspOT', Designer.util.round(o.t - o.w / 2, 2)); setIf('inspDepth', o.depth != null ? Designer.util.round(o.depth, 2) : 0.5); }
     else {
       const p = info.piece;
       setIf('selW', Designer.util.round(p.w, 2)); setIf('selH', Designer.util.round(p.h, 2)); setIf('selRot', Math.round(p.rot));
+      if (p.kind === 'acc') { const it = getItem(p.itemId); setIf('selQty', it ? designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id).length : 0); }
       const lbl = $('#inspWallLbl', insp); if (lbl) lbl.textContent = p.wall != null ? 'على جدار ' + (p.wall + 1) : 'قطعة حرة';
     }
   }
@@ -952,6 +1016,7 @@
         if (a === 'sofa') addSofaOnWall(i);
         else if (a === 'door') designer.addOpening(i, 'door');
         else if (a === 'window') designer.addOpening(i, 'window');
+        else if (a === 'mashab') designer.addOpening(i, 'mashab');
         else if (a === 'delwall') { if (designer.removeWall(i)) { designer.select(null); toast('تم حذف الجدار'); } }
       }));
     } else if (info.type === 'opening') {
@@ -960,10 +1025,15 @@
         const o = designer.opening(id); if (!o) return;
         const w = Math.max(0.3, num($('#inspOW', insp).value));
         const start = Math.max(0, num($('#inspOT', insp).value));
-        designer.updateOpening(id, { type: $('#inspType', insp).value, w, t: start + w / 2, blocks: $('#inspBlocks', insp).checked });
+        const props = { type: $('#inspType', insp).value, w, t: start + w / 2, blocks: $('#inspBlocks', insp).checked };
+        const depthEl = $('#inspDepth', insp);
+        if (depthEl && props.type === 'mashab') props.depth = Math.min(1, Math.max(0.15, num(depthEl.value) || 0.5));
+        designer.updateOpening(id, props);
         renderInspector(designer.selectionInfo());
       };
-      ['inspType', 'inspOW', 'inspOT', 'inspBlocks'].forEach((k) => { const el = $('#' + k, insp); el.addEventListener('change', apply); if (el.tagName === 'INPUT' && el.type !== 'checkbox') onEnter(el, apply); });
+      ['inspOW', 'inspOT', 'inspBlocks', 'inspDepth'].forEach((k) => { const el = $('#' + k, insp); if (!el) return; el.addEventListener('change', apply); if (el.tagName === 'INPUT' && el.type !== 'checkbox') onEnter(el, apply); });
+      // تغيير النوع يعيد رسم اللوحة كاملة لإظهار/إخفاء حقل العمق
+      $('#inspType', insp).addEventListener('change', () => { inspKey = null; apply(); });
       $('[data-act="del"]', insp).addEventListener('click', () => { designer.removeOpening(id); designer.select(null); });
     } else {
       const apply = () => {
@@ -987,6 +1057,17 @@
       };
       ['selItem', 'selW', 'selH', 'selRot', 'selNote'].concat(SPECS.map((s) => 'sel_' + s.key))
         .forEach((k) => { const el = $('#' + k, insp); if (!el) return; el.addEventListener('change', apply); if (el.tagName === 'INPUT') onEnter(el, apply); });
+      // كمية الإكسسوار: إضافة/إزالة قطع من الصنف نفسه
+      const qtyEl = $('#selQty', insp);
+      if (qtyEl) {
+        const applyQty = () => {
+          const p = designer.selectedPiece();
+          const it = p ? getItem(p.itemId) : null;
+          if (it) designer.setAccessoryCount(it, Math.max(1, Math.round(num(qtyEl.value)) || 1));
+        };
+        qtyEl.addEventListener('change', applyQty);
+        onEnter(qtyEl, applyQty);
+      }
       $$('[data-act]', insp).forEach((b) => b.addEventListener('click', () => {
         const a = b.dataset.act;
         if (a === 'align') designer.alignSelectedToWall();
@@ -1254,6 +1335,45 @@
     return c === null ? null : money(orderRevenue(o) - c);
   }
 
+  /** نسبة عمولة البائع للطلب: قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
+  function sellerRateOf(o) {
+    const v = o && o.sellerRate;
+    if (v !== undefined && v !== null && v !== '') return num(v);
+    return num(settings().sellerRate);
+  }
+  /** نسبة المشاركة (لباقي البائعين والإدارة): قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
+  function shareRateOf(o) {
+    const v = o && (o.shareRate !== undefined ? o.shareRate : o.othersRate);
+    if (v !== undefined && v !== null && v !== '') return num(v);
+    return num(settings().shareRate);
+  }
+  /** نسبة عمولة المناديب للطلب: قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
+  function mandoubRateOf(o) {
+    const v = o && o.mandoubRate;
+    if (v !== undefined && v !== null && v !== '') return num(v);
+    return num(settings().mandoubRate);
+  }
+  /** هل منشئ الطلب مندوباً؟ المندوب فئة مستقلة عن البائعين لا يشاركهم ولا يشاركونه */
+  function isMandoub(o) {
+    const u = Store.getUser(o && o.createdBy);
+    return !!(u && u.role === 'mandoub');
+  }
+  /** النسبة التي تُطبَّق على صاحب الطلب: المندوب يأخذ نسبة المناديب، والبائع نسبة البائع */
+  function orderOwnerRate(o) {
+    return isMandoub(o) ? mandoubRateOf(o) : sellerRateOf(o);
+  }
+  /** عمولة صاحب الطلب = نسبته × صافي الربح، أو null إن لم تُدخل التكاليف */
+  function orderCommission(o) {
+    const p = orderProfit(o);
+    return p === null ? null : money(p * orderOwnerRate(o) / 100);
+  }
+  /** مبلغ المشاركة الذي يُخصم من مبيعات البائع لصالح باقي البائعين والإدارة (لا يُخصم من المناديب) */
+  function orderShareAmount(o) {
+    if (isMandoub(o)) return 0;
+    const p = orderProfit(o);
+    return p === null ? 0 : money(p * shareRateOf(o) / 100);
+  }
+
   /** تحديث إجمالي التكلفة المخزّن في الطلب (يُحذف الحقل إن لم تبقَ أي تكلفة) */
   function syncCostTotal(o) {
     const info = computeCosts(o);
@@ -1404,7 +1524,33 @@
     if (id === 'custName' || id === 'custPhone') setFieldError($('#' + id), '');
     if (id === 'custAddress' || id === 'orderNotes') autoGrow($('#' + id));
     if (id === 'deliveryDate') syncDeliveryEcho();
+    if (id === 'custAddress') syncMapsLink();
   }));
+
+  /* ---------------- موقع التوصيل في خرائط جوجل ----------------
+     يفتح الموظف الخرائط ليحدّد الموقع، ويصير مكان التوصيل رابطاً
+     يُفتح في خرائط جوجل ليقود السائق إليه عند التسليم. */
+  function mapsSearchUrl(address) {
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(address || '').trim());
+  }
+  function syncMapsLink() {
+    const el = $('#custMapsLink');
+    const pinned = String(cur.customer.mapsUrl || '').trim();
+    const addr = String(cur.customer.address || '').trim();
+    const href = pinned || (addr ? mapsSearchUrl(addr) : '');
+    if (href) { el.href = href; el.hidden = false; }
+    else el.hidden = true;
+  }
+  $('#btnPickMap').addEventListener('click', () => {
+    const addr = $('#custAddress').value.trim();
+    const url = addr ? mapsSearchUrl(addr) : 'https://www.google.com/maps';
+    window.open(url, '_blank', 'noopener');
+  });
+  $('#custMapsUrl').addEventListener('input', () => {
+    cur.customer.mapsUrl = $('#custMapsUrl').value.trim();
+    setDirty(true);
+    syncMapsLink();
+  });
 
   /* ---------------- التحقق داخل الحقل ----------------
      كان الخطأ رسالة عابرة تختفي بعد ثانيتين. صار يُكتب تحت الحقل نفسه بإطار أحمر،
@@ -1492,7 +1638,7 @@
     if (!cur.customer.name && c.name) { cur.customer.name = c.name; $('#custName').value = c.name; filled = true; }
     if (!cur.customer.phone && c.phone) { cur.customer.phone = c.phone; $('#custPhone').value = c.phone; filled = true; }
     if (!cur.customer.address && c.address) { cur.customer.address = c.address; $('#custAddress').value = c.address; autoGrow($('#custAddress')); filled = true; }
-    if (filled) setDirty(true);
+    if (filled) { setDirty(true); syncMapsLink(); }
     known.hidden = false;
     known.innerHTML = `${icon('user')} <span>عميل سابق: <b>${others.length}</b> ${others.length === 1 ? 'طلب' : others.length === 2 ? 'طلبان' : 'طلبات'}${c.remaining > 0.5 ? ` • <b class="warn-text">متبقٍّ عليه ${fmt(c.remaining)} ${esc(currency())}</b>` : ''}${filled ? ' • أُكملت بياناته' : ''}</span>`;
   }
@@ -1766,6 +1912,9 @@
       $('.att-pick', slot).setAttribute('aria-label', a.src ? `تغيير صورة ${a.name || 'المرفق ' + (i + 1)}` : `إرفاق صورة للمرفق ${i + 1}`);
       img.alt = a.src ? (a.name || `مرفق ${i + 1}`) : '';
     });
+    const filled = filledAttachments(cur).length;
+    const badge = $('#attsBadge');
+    if (badge) { badge.textContent = filled || ''; badge.hidden = !filled; }
   }
 
   async function pickAttachment(i, file) {
@@ -1789,6 +1938,11 @@
       slot.dataset.busy = '';
     }
   }
+
+  $('#btnGoAtts').addEventListener('click', () => {
+    const el = $('#attList');
+    if (el) el.scrollIntoView({ behavior: smoothScroll(), block: 'start' });
+  });
 
   $('#attList').addEventListener('click', (e) => {
     const slot = e.target.closest('.att');
@@ -1821,6 +1975,7 @@
     $('#custName').value = cur.customer.name || '';
     $('#custPhone').value = cur.customer.phone || '';
     $('#custAddress').value = cur.customer.address || '';
+    $('#custMapsUrl').value = cur.customer.mapsUrl || '';
     $('#deliveryDate').value = cur.deliveryDate || '';
     $('#orderStatus').value = cur.status || 'new';
     $('#orderNotes').value = cur.notes || '';
@@ -1830,6 +1985,7 @@
     $('#custKnown').hidden = true;
     syncStatusChip();
     syncDeliveryEcho();
+    syncMapsLink();
     autoGrow($('#custAddress'));
     autoGrow($('#orderNotes'));
     renderAttachments();
@@ -1853,6 +2009,7 @@
     cur.costs = cur.costs || {};
     cur.extraCosts = cur.extraCosts || [];
     cur.customer = cur.customer || { name: '', phone: '', address: '' };
+    if (!cur.customer.mapsUrl) cur.customer.mapsUrl = '';
     cur.attachments = normalizeAttachments(cur.attachments);
     // الطلبات القديمة المحفوظة بدون ضريبة تبقى كما هي
     cur.vat = cur.vat || { enabled: false, rate: num(settings().vatRate ?? 15) };
@@ -2216,7 +2373,7 @@
       .map((p) => `${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.note ? ` (${esc(p.note)})` : ''}`).join('، ');
     const manual = (order.manualRows || []).filter((r) => String(r.name || '').trim()).map((r) => `${esc(r.name)} (${esc(r.qty)} ${esc(r.unit || '')})`).join('، ');
     const meters = Designer.util.round(sofas.reduce((s, p) => s + num(p.w), 0), 2);
-    const openings = (d.openings || []).map((o) => `${o.type === 'door' ? 'باب' : 'شباك'} ${Designer.util.round(o.w, 2)} م على جدار ${o.wall + 1}`).join('، ');
+    const openings = (d.openings || []).map((o) => `${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك'} ${Designer.util.round(o.w, 2)} م على جدار ${o.wall + 1}`).join('، ');
     return `
     <div class="inv work ${sofas.length > 12 ? 'dense' : ''}">
       ${invHead('أمر تصنيع', order.number ? '#' + order.number : 'مسودة')}
@@ -2611,6 +2768,7 @@
   const ORD_COLS = [
     { k: 'cost', label: 'التكلفة', admin: true },
     { k: 'profit', label: 'صافي الربح', admin: true },
+    { k: 'comm', label: 'العمولة', admin: true },
     { k: 'paid', label: 'المدفوع' },
     { k: 'deliv', label: 'التوصيل' },
   ];
@@ -2683,6 +2841,7 @@
       const rem = num(o.total) - num(o.paid);
       const cost = orderCost(o);
       const profit = orderProfit(o);
+      const comm = orderCommission(o);
       const dash = '<span class="hint">—</span>';
       // المعرّف يصل من الخادم كما كتبه أي عميل: يُهرَّب قبل وضعه في سمة
       const oid = esc(o.id);
@@ -2697,7 +2856,8 @@
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
         ${canSeeCosts() ? `
         <td data-label="التكلفة" class="num c-money c-cost">${cost === null ? dash : fmt(cost)}</td>
-        <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? '' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : ''}
+        <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? '' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>
+        <td data-label="العمولة" class="num c-money c-comm">${comm === null ? dash : fmt(comm)}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
         <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
@@ -2707,6 +2867,7 @@
           ${rowMenu([
             menuItem(`data-print="${oid}"`, 'file', 'تصدير PDF ومشاركته'),
             canSeeCosts() ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
+            canSeeCosts() ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
             isAdmin() ? menuItem(`data-owner="${oid}"`, 'swap', 'نقل ملكية الطلب') : '',
             isAdmin() ? '<hr>' + menuItem(`data-delo="${oid}"`, 'trash', 'حذف الطلب', true) : '',
           ], `إجراءات الطلب ${esc(o.number || '')}`)}
@@ -2723,6 +2884,7 @@
     }));
     $$('[data-print]', tb).forEach((b) => b.addEventListener('click', () => shareOrder(find(b.dataset.print))));
     $$('[data-cost]', tb).forEach((b) => b.addEventListener('click', () => costForm(find(b.dataset.cost))));
+    $$('[data-comm]', tb).forEach((b) => b.addEventListener('click', () => commissionForm(find(b.dataset.comm))));
     $$('[data-owner]', tb).forEach((b) => b.addEventListener('click', () => transferOwner(find(b.dataset.owner))));
     $$('[data-delo]', tb).forEach((b) => b.addEventListener('click', async () => {
       const o = find(b.dataset.delo);
@@ -3012,6 +3174,81 @@
         toast(`حُفظت تكاليف الطلب #${o.number} — صافي الربح ${fmt(after.profit)}`);
       };
     }, 'drawer wide');
+  }
+
+  /** نافذة تعديل نسب عمولة الطلب (تحسب على صافي الربح) */
+  function commissionForm(o) {
+    if (!o || !canSeeCosts()) return;
+    const profit = orderProfit(o);
+    const cur$ = esc(currency());
+    const seller = esc(o.createdByName || 'غير محدد');
+    const isMan = isMandoub(o);
+    const actor = isMan ? 'المندوب' : 'البائع';
+    const ownerRate = orderOwnerRate(o);
+    const shareRate = shareRateOf(o);
+    const ownerLabel = isMan ? 'نسبة المناديب' : 'نسبة البائع';
+    const shareField = isMan ? '' : `<label>نسبة المشاركة (لباقي البائعين والإدارة) % <input id="commShare" type="number" min="0" max="100" step="0.5" value="${shareRate}"></label>`;
+    openModal(`نسبة العمولة — الطلب #${o.number}`, `
+      <p class="hint">العميل <b>${esc(o.customer?.name || '—')}</b> • ${actor} <b>${seller}</b> • صافي الربح ${profit === null ? 'غير محدد (أدخل التكاليف أولاً)' : `<b class="num">${fmt(profit)}</b> ${cur$}`}</p>
+      <div class="row2">
+        <label>${ownerLabel} % <input id="commOwner" type="number" min="0" max="100" step="0.5" value="${ownerRate}"></label>
+        ${shareField}
+      </div>
+      ${isMan ? '<p class="hint">المندوب خارج الشركة: عمولته مستقلة ولا تُشارك مع الفريق الداخلي.</p>' : '<p class="hint">نسبة المشاركة تُوزَّع بالتساوي على باقي البائعين والإدارة في آخر الشهر.</p>'}
+      <div class="cost-sum" id="commSum"></div>
+      <p id="commErr" class="error"></p>
+      <div class="btn-row"><button class="btn" id="commCancel">إلغاء</button><button class="btn primary" id="commOk">${icon('save')} حفظ</button></div>`, (b) => {
+      const inp = $('#commOwner', b);
+      const inpShare = isMan ? null : $('#commShare', b);
+      const recalc = () => {
+        const r = Math.min(100, Math.max(0, num(inp.value)));
+        const rs = inpShare ? Math.min(100, Math.max(0, num(inpShare.value))) : 0;
+        const amt = profit === null ? null : money(profit * r / 100);
+        const sh = profit === null ? 0 : money(profit * rs / 100);
+        const rows = [
+          `<div class="stat"><span>صافي الربح</span><b>${profit === null ? '—' : fmt(profit)}</b></div>`,
+          `<div class="stat"><span>${ownerLabel}</span><b>${fmtQty(r)}٪</b></div>`,
+          `<div class="stat"><span>عمولة ${isMan ? 'المندوب' : 'البائع'}</span><b>${amt === null ? '—' : fmt(amt)}</b></div>`,
+        ];
+        if (!isMan) {
+          rows.push(`<div class="stat"><span>نسبة المشاركة</span><b>${fmtQty(rs)}٪</b></div>`);
+          rows.push(`<div class="stat"><span>مبلغ المشاركة</span><b>${profit === null ? '—' : fmt(sh)}</b></div>`);
+        }
+        $('#commSum', b).innerHTML = rows.join('');
+      };
+      inp.addEventListener('input', recalc);
+      if (inpShare) inpShare.addEventListener('input', recalc);
+      recalc();
+      $('#commCancel', b).onclick = closeModal;
+      $('#commOk', b).onclick = async () => {
+        const r = Math.min(100, Math.max(0, num(inp.value)));
+        const rs = inpShare ? Math.min(100, Math.max(0, num(inpShare.value))) : 0;
+        const before = JSON.parse(JSON.stringify(o));
+        const prevOwner = orderOwnerRate(o);
+        const prevShare = shareRateOf(o);
+        if (isMan) { o.mandoubRate = r; delete o.sellerRate; }
+        else { o.sellerRate = r; o.shareRate = rs; }
+        o.updatedAt = Store.now(); o.updatedByName = currentUser.name;
+        const details = [`${ownerLabel}: من ${fmtQty(prevOwner)}٪ إلى ${fmtQty(r)}٪`];
+        if (!isMan) details.push(`نسبة المشاركة: من ${fmtQty(prevShare)}٪ إلى ${fmtQty(rs)}٪`);
+        const ev = logActivity('commission', o, details);
+        if (!(await Store.save())) {
+          const i = db().orders.findIndex((x) => x.id === o.id);
+          if (i >= 0) db().orders[i] = before;
+          if (ev) db().activity = db().activity.filter((x) => x.id !== ev.id);
+          $('#commErr', b).textContent = 'فشل الحفظ: ' + Store.lastError;
+          return;
+        }
+        if (cur.id === o.id) {
+          if (isMan) { cur.mandoubRate = o.mandoubRate; }
+          else { cur.sellerRate = o.sellerRate; cur.shareRate = o.shareRate; }
+          ownVersion(o.updatedAt);
+        }
+        closeModal();
+        renderOrders();
+        toast(isMan ? `حُفظت نسبة المندوب ${fmtQty(r)}٪` : `حُفظت النسب — البائع ${fmtQty(r)}٪ • المشاركة ${fmtQty(rs)}٪`);
+      };
+    }, 'drawer');
   }
 
   $('#ordSearch').addEventListener('input', () => { ordersShown = PAGE_STEP; renderOrders(); });
@@ -3318,10 +3555,10 @@
         <label>${user ? 'كلمة مرور جديدة (اتركها فارغة للإبقاء)' : 'كلمة المرور'} <input id="uPass" type="password" autocomplete="new-password"></label>
       </div>
       <div class="row2">
-        <label>الدور <select id="uRole"><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>موظف</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير</option></select></label>
+        <label>الدور <select id="uRole"><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>موظف</option><option value="mandoub" ${u.role === 'mandoub' ? 'selected' : ''}>مندوب</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير</option></select></label>
         <label>الحالة <select id="uActive"><option value="1" ${u.active !== false ? 'selected' : ''}>نشط</option><option value="0" ${u.active === false ? 'selected' : ''}>موقوف</option></select></label>
       </div>
-      <p class="hint">المدير يستطيع إدارة الأصناف والمستخدمين وحذف الطلبات. الموظف يستطيع إنشاء الطلبات وتعديلها واستعراضها.</p>
+      <p class="hint">المدير يستطيع إدارة الأصناف والمستخدمين وحذف الطلبات. الموظف يستطيع إنشاء الطلبات وتعديلها واستعراضها. المندوب مثل الموظف لكنه فئة مستقلة تُحسب عمولته بنسبة المناديب لا بنسبة البائع.</p>
       <p id="uErr" class="error"></p>
       <div class="btn-row"><button class="btn" id="uCancel">إلغاء</button><button class="btn primary" id="uSave">حفظ</button></div>`, (b) => {
       $('#uCancel', b).onclick = closeModal;
@@ -3349,7 +3586,7 @@
   $('#btnAddUser').addEventListener('click', () => userForm(null));
 
   /* ---------------- سجل تحديثات الطلبات (مدير) ---------------- */
-  const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب' };
+  const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب' };
   const ACTION_CLASS = { create: 'st-new', update: 'st-progress', status: '', cost: 'st-progress', owner: 'st-new', export: 'st-delivered', delete: 'st-cancelled' };
   const localDate = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const localTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -3578,6 +3815,13 @@
             <label>العربون المطلوب قبل التنفيذ % <input id="sDeposit" type="number" min="0" max="100" step="5" value="${num(s.depositPct ?? 25)}"><small class="hint">يُطلب تأكيد عند بدء تنفيذ طلب مدفوعه أقل. 0 = بلا تنبيه.</small></label>
             <label>صلاحية عرض السعر (أيام) <input id="sQuoteDays" type="number" min="1" max="90" step="1" value="${num(s.quoteDays) || 7}"></label>
           </div>
+          <div class="row2">
+            <label>نسبة عمولة البائع % <input id="sSellerRate" type="number" min="0" max="100" step="0.5" value="${num(s.sellerRate ?? 10)}"><small class="hint">تُطبَّق افتراضياً على طلبات البائع، ويمكن تغييرها لكل طلب من زر «نسبة البائع».</small></label>
+            <label>نسبة عمولة المناديب % <input id="sMandoubRate" type="number" min="0" max="100" step="0.5" value="${num(s.mandoubRate ?? 5)}"><small class="hint">نسبة مستقلة للمناديب (خارج الشركة)، لا تُشارك مع الفريق الداخلي.</small></label>
+          </div>
+          <div class="row2">
+            <label>نسبة المشاركة (باقي البائعين والإدارة) % <input id="sShareRate" type="number" min="0" max="100" step="0.5" value="${num(s.shareRate ?? 5)}"><small class="hint">تُخصم من مبيعات البائع وتُوزَّع بالتساوي على الفريق الداخلي آخر الشهر.</small></label>
+          </div>
         </div>
       </section>
       <div class="set-save">
@@ -3624,6 +3868,7 @@
         currency: $('#sCur', b).value.trim() || 'ر.س', invoiceNote: $('#sInvNote', b).value.trim(), cornerMode: $('#sCorner', b).value, cornerModeChosen: true,
         vatNumber: $('#sVatNo', b).value.trim(), vatRate: Math.min(100, Math.max(0, num($('#sVatRate', b).value))), vatEnabled: $('#sVatOn', b).checked,
         depositPct: Math.min(100, Math.max(0, num($('#sDeposit', b).value))), quoteDays: Math.min(90, Math.max(1, Math.round(num($('#sQuoteDays', b).value) || 7))),
+        sellerRate: Math.min(100, Math.max(0, num($('#sSellerRate', b).value))), mandoubRate: Math.min(100, Math.max(0, num($('#sMandoubRate', b).value))), shareRate: Math.min(100, Math.max(0, num($('#sShareRate', b).value))),
       });
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');
       const ok = await Store.save();
@@ -3955,6 +4200,8 @@
       remaining: sum(live, (o) => Math.max(0, num(o.total) - num(o.paid))),
       cost: sum(costed, orderCost),
       profit, costedRevenue,
+      commission: sum(costed, orderCommission),
+      share: sum(costed, orderShareAmount),
       margin: costedRevenue > 0 ? r2((profit / costedRevenue) * 100) : 0,
       avg: live.length ? money(revenue / live.length) : 0,
       meters: r2(live.reduce((s, o) => s + biMeters(o), 0)),
@@ -4106,14 +4353,29 @@
     const g = new Map();
     a.live.forEach((o) => {
       const k = o.createdBy || 'none';
-      const e = g.get(k) || { name: o.createdByName || 'غير محدد', count: 0, revenue: 0, profit: 0, costedRev: 0, costed: 0, paid: 0, remaining: 0 };
+      const e = g.get(k) || { name: o.createdByName || 'غير محدد', count: 0, revenue: 0, profit: 0, costedRev: 0, costed: 0, paid: 0, remaining: 0, commission: 0 };
       e.count++;
       e.revenue += orderRevenue(o);
       e.paid += num(o.paid);
       e.remaining += Math.max(0, num(o.total) - num(o.paid));
       const pr = orderProfit(o);
       if (pr !== null) { e.profit += pr; e.costedRev += orderRevenue(o); e.costed++; }
+      const cm = orderCommission(o);
+      if (cm !== null) e.commission += cm;
       g.set(k, e);
+    });
+
+    // المشاركة: حصة متساوية لكل داخلي نشط (موظف أو مدير) من مجموع مبالغ المشاركة
+    const internal = db().users.filter((u) => u.active !== false && (u.role === 'staff' || u.role === 'admin'));
+    let sharePool = 0;
+    a.costed.forEach((o) => { sharePool += orderShareAmount(o); });
+    const perShare = internal.length ? money(sharePool / internal.length) : 0;
+
+    // صف لكل داخلي نشط حتى لو لم يُنشئ طلبات في الفترة
+    internal.forEach((u) => { if (!g.has(u.id)) g.set(u.id, { name: u.name, count: 0, revenue: 0, profit: 0, costedRev: 0, costed: 0, paid: 0, remaining: 0, commission: 0 }); });
+    g.forEach((e, k) => {
+      const isInternal = internal.some((u) => u.id === k);
+      e.share = isInternal ? perShare : 0;
     });
     return [...g.values()].sort((x, y) => y.revenue - x.revenue);
   }
@@ -4238,10 +4500,12 @@
         <td data-label="الطلبات" class="num">${e.count}</td>
         <td data-label="المبيعات" class="num">${fmt(money(e.revenue))}</td>
         <td data-label="صافي الربح" class="num ${e.costed ? (e.profit < 0 ? 'neg' : 'pos') : ''}">${e.costed ? fmt(money(e.profit)) : '<span class="hint">—</span>'}</td>
+        <td data-label="العمولة" class="num ${e.commission < 0 ? 'neg' : 'pos'}">${e.commission ? fmt(money(e.commission)) : '<span class="hint">—</span>'}</td>
+        <td data-label="المشاركة" class="num ${e.share < 0 ? 'neg' : 'pos'}">${e.share ? fmt(money(e.share)) : '<span class="hint">—</span>'}</td>
         <td data-label="الهامش" class="num">${e.costed && e.costedRev > 0 ? fmtQty(r2((e.profit / e.costedRev) * 100)) + '٪' : '<span class="hint">—</span>'}</td>
         <td data-label="متوسط الطلب" class="num">${fmt(money(e.revenue / e.count))}</td>
         <td data-label="المتبقي" class="num">${fmt(money(e.remaining))}</td>
-      </tr>`).join('') || '<tr><td colspan="7" class="empty">لا توجد طلبات في هذه الفترة</td></tr>';
+      </tr>`).join('') || '<tr><td colspan="9" class="empty">لا توجد طلبات في هذه الفترة</td></tr>';
   }
 
   function biRenderCustomers(a) {
@@ -4449,6 +4713,7 @@
 
     $('#biKpisSub').innerHTML = `
       <div class="stat profit"><span>صافي الربح</span><b class="${a.costed.length ? (a.profit < 0 ? 'neg' : 'pos') : 'is-na'}">${a.costed.length ? fmt(a.profit) : '—'}</b><small class="${a.costed.length ? '' : 'na-note'}">${a.costed.length ? `هامش ${fmtQty(a.margin)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>
+      <div class="stat"><span>إجمالي العمولات</span><b class="${a.costed.length ? 'pos' : 'is-na'}">${a.costed.length ? fmt(money(a.commission + a.share)) : '—'}</b><small>${a.costed.length ? `عمولات ${fmt(a.commission)} + مشاركة ${fmt(a.share)}` : ''}</small></div>
       <div class="stat"><span>متوسط قيمة الطلب</span><b>${fmt(a.avg)}</b>${biDeltaTag(a.avg, pv && pv.avg)}</div>
       <div class="stat"><span>أمتار الكنب</span><b>${fmtQty(a.meters)}</b><small>${a.count ? `${fmtQty(r2(a.meters / a.count))} م لكل طلب` : '—'}</small></div>
       <div class="stat"><span>عملاء جدد</span><b>${fresh}</b><small>من ${inPeriod.length} عميل في الفترة</small></div>`;
@@ -4524,6 +4789,7 @@
     push('قيمة الطلبات مع الضريبة', a.gross);
     push('إجمالي التكاليف', a.costed.length ? a.cost : '');
     push('صافي الربح', a.costed.length ? a.profit : '');
+    push('إجمالي العمولات', a.costed.length ? money(a.commission + a.share) : '');
     push('هامش الربح ٪', a.costed.length ? a.margin : '');
     push('المحصّل', a.paid);
     push('المتبقي على العملاء', a.remaining);
@@ -4535,8 +4801,8 @@
     biSeries(a.live, p).rows.forEach((b) => push(b.label, b.revenue, b.costed ? b.profit : '', b.orders));
     push('');
     push('أداء الموظفين');
-    push('الموظف', 'الطلبات', 'المبيعات', 'صافي الربح', 'الهامش ٪', 'متوسط الطلب', 'المتبقي');
-    biStaffRows(a).forEach((e) => push(e.name, e.count, money(e.revenue), e.costed ? money(e.profit) : '', e.costed && e.costedRev ? r2((e.profit / e.costedRev) * 100) : '', money(e.revenue / e.count), money(e.remaining)));
+    push('الموظف', 'الطلبات', 'المبيعات', 'صافي الربح', 'العمولة', 'المشاركة', 'الهامش ٪', 'متوسط الطلب', 'المتبقي');
+    biStaffRows(a).forEach((e) => push(e.name, e.count, money(e.revenue), e.costed ? money(e.profit) : '', e.commission ? money(e.commission) : '', e.share ? money(e.share) : '', e.costed && e.costedRev ? r2((e.profit / e.costedRev) * 100) : '', money(e.revenue / e.count), money(e.remaining)));
     push('');
     push('العملاء');
     push('العميل', 'الجوال', 'الطلبات', 'المبيعات', 'المتبقي', 'آخر طلب');
@@ -4682,8 +4948,8 @@
      يقول ما أُنجز وما ينقص، والملخص الثابت يبقي العميل والحالة والمبالغ والتسليم
      ظاهرة، و«الخطوة التالية» تقترح الإجراء المطلوب الآن. كل ذلك قراءة من الطلب
      نفسه: لا حقل جديد يُحفظ ولا منطق يتغيّر. */
-  const STAGES = ['design', 'price', 'customer', 'pay', 'export', 'att'];
-  const STAGE_LABEL = { design: 'التصميم', price: 'التسعير', customer: 'بيانات العميل', pay: 'الدفع', export: 'التصدير', att: 'المرفقات' };
+  const STAGES = ['design', 'price', 'customer', 'pay', 'export'];
+  const STAGE_LABEL = { design: 'التصميم', price: 'التسعير', customer: 'بيانات العميل', pay: 'الدفع', export: 'التصدير' };
   let curStage = 'design';
 
   /** إن كان رأس المرحلة فوق حافة الشاشة (بعد تمرير طويل) يُعاد إليه */
@@ -4752,7 +5018,6 @@
     const phoneBad = !!phoneError(cur.customer && cur.customer.phone);
     const closed = designer.geometry().closed;
     const overlaps = designer.overlaps().size;
-    const atts = filledAttachments(cur).length;
     const saved = !!(cur.id && cur.number && !dirty);
     const cu = currency();
     const st = {};
@@ -4780,7 +5045,6 @@
     st.export = saved ? { cls: 'is-done', sub: 'جاهز للمشاركة' }
       : { cls: '', sub: !cur.id ? 'بعد حفظ الطلب' : dirty ? 'احفظ التعديلات أولاً' : 'بانتظار رقم الطلب' };
 
-    st.att = atts ? { cls: 'is-done', sub: atts === 1 ? 'صورة واحدة' : 'صورتان' } : { cls: 'is-optional', sub: 'اختياري' };
     return { st, saved, total, paid, quote, name };
   }
 

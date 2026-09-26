@@ -1,0 +1,11 @@
+{
+  "appId": "com.asalhnajd.majlis",
+  "appName": "Asalah Najd",
+  "webDir": "www",
+  "server": {
+    "androidScheme": "https"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}
