@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.4';
+  const APP_VERSION = '1.0.5';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -2666,6 +2666,28 @@
     openExternal(`https://wa.me/${ph}?text=${encodeURIComponent(waCaption(order, kind, p))}`);
   }
 
+  /** تحويل blob إلى base64 */
+  function blobToBase64(blob) {
+    return new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result).split(',')[1]);
+      r.onerror = () => rej(new Error('تعذّر قراءة الملف'));
+      r.readAsDataURL(blob);
+    });
+  }
+
+  /** مشاركة أصلية داخل تطبيق أندرويد (Capacitor Share): تحفظ الملف وترسله عبر قائمة المشاركة مع النص */
+  async function sharePdfNative(blob, fileName, text) {
+    const P = (window.Capacitor && window.Capacitor.Plugins) || {};
+    if (!P.Filesystem || !P.Share) return false;
+    try {
+      const data = await blobToBase64(blob);
+      const w = await P.Filesystem.writeFile({ path: fileName, data, directory: 'CACHE' });
+      await P.Share.share({ title: fileName, text, files: [w.uri] });
+      return true;
+    } catch (_) { return false; }
+  }
+
   /** نافذة التصدير والمشاركة لأي مستند: فاتورة، أمر تصنيع، سند */
   // keepPrintArea معرّف أعلى الملف (يقرؤه closeModal)
   function docModal(order, kind, payment = null) {
@@ -2691,7 +2713,7 @@
       <p id="pdfState" class="pdf-state" role="status">${icon('clock')} جاري تجهيز ملف PDF…</p>
       <div class="share-actions">
         <button class="btn primary block lg" id="shWa" disabled>${icon('whatsapp')} مشاركة الملف عبر واتساب</button>
-        ${phone ? `<button class="btn block" id="shChat">${icon('whatsapp')} إرسال إلى محادثة ${esc(cname || 'العميل')}</button>` : ''}
+        ${phone ? `<button class="btn block" id="shChat">${icon('whatsapp')} فتح محادثة ${esc(cname || 'العميل')} (بالملخص)</button>` : ''}
         <button class="btn block" id="shSave" disabled>${icon('download')} حفظ الملف على الجهاز</button>
         <button class="btn block ghost" id="shPrint" disabled>${icon('print')} طباعة</button>
       </div>
@@ -2733,19 +2755,21 @@
           if (overflow) note.innerHTML = `<span class="warn-text">${icon('alert')} المحتوى كثير على صفحة واحدة وقد يُقصّ آخر الجدول. راجع الملف قبل إرساله، أو قسّم الأصناف الإضافية.</span>`;
           btnWa.disabled = false; btnSave.disabled = false;
           btnSave.onclick = () => downloadBlob(blob, fileName);
-          // إرسال الملف عبر واتساب (مع الملخص ورقم الطلب) — يُستخدم بزرّي المشاركة ومحادثة العميل
-          const sendViaWhatsapp = () => {
-            const canFiles = navigator.canShare && navigator.canShare({ files: [pdfFile] });
-            if (canFiles) {
-              navigator.share({ files: [pdfFile], title: fileName, text: waCaption(order, curKind, payment) })
+          const caption = waCaption(order, curKind, payment);
+          const sendViaWhatsapp = async () => {
+            // 1) مشاركة أصلية داخل تطبيق أندرويد: ترسل ملف PDF فعلاً مع الملخص
+            if (await sharePdfNative(blob, fileName, caption)) { closeModal(); toast('تمت المشاركة'); return; }
+            // 2) متصفح يدعم مشاركة الملفات
+            if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
+              navigator.share({ files: [pdfFile], title: fileName, text: caption })
                 .then(() => { closeModal(); toast('تمت المشاركة'); })
                 .catch((e) => { if (e && e.name !== 'AbortError') toast('تعذّرت المشاركة: ' + e.message, true); });
-            } else {
-              // جهاز لا يدعم مشاركة الملفات: يُحفظ الملف وتُفتح محادثة العميل لإرفاقه
-              downloadBlob(blob, fileName);
-              if (phone) openCustomerChat(order, curKind, payment);
-              note.innerHTML = `هذا المتصفح لا يدعم إرسال الملف مباشرة. حُفظ <b>${esc(fileName)}</b> في مجلد التنزيلات، أرفقه في محادثة ${esc(cname || 'العميل')}.`;
+              return;
             }
+            // 3) متصفح لا يدعم مشاركة الملفات: يُحفظ الملف وتُفتح محادثة العميل لإرفاقه
+            downloadBlob(blob, fileName);
+            if (phone) openCustomerChat(order, curKind, payment);
+            note.innerHTML = `هذا المتصفح لا يدعم إرسال الملف مباشرة. حُفظ <b>${esc(fileName)}</b> في مجلد التنزيلات، أرفقه في محادثة ${esc(cname || 'العميل')}.`;
           };
           btnWa.onclick = sendViaWhatsapp;
           const btnChat = $('#shChat', b);
