@@ -28,7 +28,7 @@ git push origin main
   ```powershell
   git tag v<الرقم الجديد>; git push origin v<الرقم الجديد>
   ```
-- ملف APK: `asalh-najd.apk`
+- ملف APK: `asalh-najd-<الإصدار>.apk` (مثال: `asalh-najd-1.0.6.apk` — اسم الملف يتضمّن رقم الإصدار للتمييز).
 - المستودع: `https://github.com/ialshareef/majlis-orders`
 - الإصدارات: `https://github.com/ialshareef/majlis-orders/releases`
 

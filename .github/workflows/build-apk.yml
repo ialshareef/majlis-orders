@@ -16,6 +16,15 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Set version
+        id: ver
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -68,27 +77,27 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
-          mv app/build/outputs/apk/debug/app-debug.apk app/build/outputs/apk/debug/asalh-najd.apk
+          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/asalh-najd-${{ steps.ver.outputs.version }}.apk"
 
       - name: Build release AAB (Play Store)
         run: |
           cd android
           ./gradlew bundleRelease
           AAB=$(find app/build/outputs/bundle/release -name '*.aab' | head -1)
-          mv "$AAB" app/build/outputs/bundle/release/asalh-najd.aab
+          mv "$AAB" "app/build/outputs/bundle/release/asalh-najd-${{ steps.ver.outputs.version }}.aab"
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: majlis-apk
-          path: android/app/build/outputs/apk/debug/asalh-najd.apk
+          path: android/app/build/outputs/apk/debug/asalh-najd-${{ steps.ver.outputs.version }}.apk
           if-no-files-found: error
 
       - name: Upload AAB artifact
         uses: actions/upload-artifact@v4
         with:
           name: majlis-aab
-          path: android/app/build/outputs/bundle/release/asalh-najd.aab
+          path: android/app/build/outputs/bundle/release/asalh-najd-${{ steps.ver.outputs.version }}.aab
           if-no-files-found: warn
 
       - name: Delete old release
@@ -102,8 +111,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            android/app/build/outputs/apk/debug/asalh-najd.apk
-            android/app/build/outputs/bundle/release/asalh-najd.aab
+            android/app/build/outputs/apk/debug/asalh-najd-${{ steps.ver.outputs.version }}.apk
+            android/app/build/outputs/bundle/release/asalh-najd-${{ steps.ver.outputs.version }}.aab
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

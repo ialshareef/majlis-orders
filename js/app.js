@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.5';
+  const APP_VERSION = '1.0.6';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
