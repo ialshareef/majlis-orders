@@ -285,10 +285,13 @@
       this.changed();
     }
 
-    addWall() {
+    addWall(len, angle) {
       const ws = this.state.walls;
       const last = ws[ws.length - 1];
-      ws.push({ len: 2, angle: norm360((last ? last.angle : 0) + 90) });
+      ws.push({
+        len: Math.max(0.3, round(+len || 2, 3)),
+        angle: angle != null ? norm360(+angle || 0) : norm360((last ? last.angle : 0) + 90),
+      });
       this.syncAttached();
       this.changed();
       return ws.length - 1;
@@ -823,10 +826,17 @@
     }
 
     _down(e) {
-      if (this.scrollTouch && e.pointerType === 'touch') return;
       if (e.pointerType === 'mouse' && e.button !== 0) return;
-      e.preventDefault();
       const { sx, sy } = this._pos(e);
+      const touch = e.pointerType === 'touch';
+      // وضع التمرير (الجوال): لا نلتقط المؤشر كي تمرّ الصفحة طبيعياً، لكن نرصد
+      // النقرة السريعة (بلا سحب) لتحديد الجدار أو الفتحة وتعديل مقاسه مباشرة.
+      if (this.scrollTouch && touch) {
+        this.pointers.set(e.pointerId, { x: sx, y: sy });
+        this.drag = { mode: 'tap', sx, sy, touch: true, scrollTap: true, viewOnly: !this.interactive, last: { x: sx, y: sy } };
+        return;
+      }
+      e.preventDefault();
       try { this.canvas.setPointerCapture(e.pointerId); } catch (_) { /* ignore */ }
       this.pointers.set(e.pointerId, { x: sx, y: sy });
 
@@ -838,7 +848,6 @@
       }
       if (this.pointers.size > 2) return;
 
-      const touch = e.pointerType === 'touch';
       // وضع العرض فقط: السحب يحرّك المشهد ولا يعدّل شيئاً
       if (!this.interactive) { this.drag = { mode: 'tap', sx, sy, touch, viewOnly: true, last: { x: sx, y: sy } }; return; }
       const tol = touch ? 24 : HANDLE_R + 5;
@@ -885,6 +894,11 @@
         this.zoomAt(dist / d.dist, mid.x, mid.y);
         this.panBy(mid.x - d.mid.x, mid.y - d.mid.y);
         d.dist = dist; d.mid = mid;
+        return;
+      }
+      if (d.scrollTap) {
+        // سحب بدل النقرة: تمرير الصفحة طبيعي بلا تحديد
+        if (Math.hypot(sx - d.sx, sy - d.sy) > 10) d.cancelled = true;
         return;
       }
       if (d.mode === 'tap') {
@@ -957,6 +971,8 @@
       this.drag = null;
       if (d.mode === 'tap') {
         if (d.viewOnly) return;
+        // نقرة سريعة في وضع التمرير: تُلغى إن سُحبت (تمرير) أو أُلغيت من المتصفح
+        if (d.scrollTap && (d.cancelled || e.type === 'pointercancel')) return;
         const { sx, sy } = this._pos(e);
         const pt = this.toRoom(sx, sy);
         const o = this._hitOpening(pt, d.touch ? 12 : 6);

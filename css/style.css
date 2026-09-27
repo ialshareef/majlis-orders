@@ -1453,6 +1453,8 @@ body.modal-open { overflow: hidden; }
 .modal-body > .hint:first-child { margin-top: 0; }
 .modal-body h3 { margin: 4px 0 10px; }
 .modal-body hr { margin: 22px 0; }
+.modal-body .qty-prompt label { font-size: .92rem; color: var(--ink-2); }
+.modal-body .qty-prompt input { min-height: 46px; font-size: 1.15rem; font-weight: 600; text-align: center; margin-top: 6px; }
 
 /* اللوحة الجانبية: تنزلق من الطرف الأيسر (نهاية السطر في RTL) */
 .modal.drawer { justify-content: flex-end; align-items: stretch; padding: 0; }

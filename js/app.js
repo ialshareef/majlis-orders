@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.9';
+  const APP_VERSION = '1.0.10';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -404,7 +404,7 @@
     '#m-price input', '#m-price select', '#m-price button',
     '#attList input', '#attList button',
     '.designer-panel input', '.designer-panel select', '.designer-panel button',
-    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbFillAll', '#btnAddManual', '#btnPickMap',
+    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddWall', '#tbFillAll', '#btnAddManual', '#btnPickMap',
   ].join(', ');
 
   function applyOrderLock() {
@@ -731,7 +731,34 @@
     designer.setRect(w, h);
     designer.fitView();
   });
-  $('#btnAddWall').addEventListener('click', () => { const i = designer.addWall(); designer.select({ type: 'wall', index: i }); });
+
+  /** إضافة زاوية (جدار) للغرفة غير المستطيلة مع كتابة الطول والاتجاه مباشرة */
+  function addWallWithSize() {
+    const last = designer.state.walls[designer.state.walls.length - 1];
+    const defAngle = Designer.util.norm360((last ? last.angle : 0) + 90);
+    openModal('إضافة زاوية', `
+      <div class="row2">
+        <label>الطول (م) <input id="nwLen" type="number" step="0.05" min="0.3" value="2" inputmode="decimal"></label>
+        <label>الاتجاه° <input id="nwAng" type="number" step="5" value="${defAngle}" inputmode="decimal"></label>
+      </div>
+      <p class="hint">الاتجاه: 0 يمين، 90 أسفل، 180 يسار، 270 أعلى. يمكن تعديله لاحقاً من «الجدران بالتفصيل».</p>
+      <div class="btn-row"><button class="btn" id="nwCancel">إلغاء</button><button class="btn primary" id="nwOk">${icon('plus')} إضافة الزاوية</button></div>`, (b) => {
+        const lenEl = $('#nwLen', b);
+        $('#nwCancel', b).onclick = closeModal;
+        const apply = () => {
+          const i = designer.addWall(lenEl.value, $('#nwAng', b).value);
+          closeModal();
+          designer.select({ type: 'wall', index: i });
+          toast(`أُضيف جدار ${i + 1} بطول ${Designer.util.round(designer.state.walls[i].len, 2)} م`);
+        };
+        $('#nwOk', b).onclick = apply;
+        lenEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+        setTimeout(() => { lenEl.focus(); lenEl.select(); }, 80);
+      });
+  }
+
+  $('#btnAddWall').addEventListener('click', addWallWithSize);
+  $('#tbAddWall').addEventListener('click', addWallWithSize);
   $('#wallSel').addEventListener('change', () => designer.select({ type: 'wall', index: +$('#wallSel').value }));
 
   /* --- طريقة القياس --- */
@@ -747,6 +774,30 @@
   $$('#cornerMode button').forEach((b) => b.addEventListener('click', () => designer.setCornerMode(b.dataset.v)));
 
   /* --- الكنب --- */
+  /** إضافة إكسسوار مع اختيار الكمية مباشرة: نافذة صغيرة تحدد العدد الكلي للصنف */
+  function addAccessoryWithQty(item) {
+    const have = designer.state.pieces.filter((p) => p.kind === 'acc' && p.itemId === item.id).length;
+    openModal(`إضافة ${item.name}`, `
+      <div class="qty-prompt">
+        <label>الكمية (العدد الكلي في التصميم) <input id="accQty" type="number" min="1" max="${ACC_MAX}" step="1" inputmode="numeric" value="${have ? have + 1 : 1}"></label>
+        <div class="btn-row">
+          <button class="btn" id="accCancel">إلغاء</button>
+          <button class="btn primary" id="accOk">إضافة</button>
+        </div>
+      </div>`, (b) => {
+        const inp = $('#accQty', b);
+        $('#accCancel', b).onclick = closeModal;
+        const apply = () => {
+          const n = Math.max(1, Math.min(ACC_MAX, Math.round(num(inp.value)) || 1));
+          closeModal();
+          designer.setAccessoryCount(item, n);
+        };
+        $('#accOk', b).onclick = apply;
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+        setTimeout(() => { inp.focus(); inp.select(); }, 80);
+      });
+  }
+
   function renderItemSelects() {
 
     // الكنبة تُركَّب من خشب وقماش وإسفنج — لا صنف واحد اسمه "كنب"
@@ -772,7 +823,7 @@
         : '<span class="hint">لا توجد إكسسوارات مسعّرة. أضفها من صفحة الأصناف.</span>');
     $$('#accButtons button[data-acc]').forEach((b) => b.addEventListener('click', () => {
       const it = Store.getItem(b.dataset.acc);
-      if (it) designer.addAccessory(it);
+      if (it) addAccessoryWithQty(it);
     }));
     $('#accButtons button[data-free]').addEventListener('click', () => designer.addFreeSpace());
   }
