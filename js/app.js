@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.6';
+  const APP_VERSION = '1.0.7';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -2688,6 +2688,17 @@
     } catch (_) { return false; }
   }
 
+  /** حفظ أصلي لملف PDF على الجهاز داخل تطبيق أندرويد (WebView لا يدعم تنزيل <a download>) */
+  async function savePdfNative(blob, fileName) {
+    const P = (window.Capacitor && window.Capacitor.Plugins) || {};
+    if (!P.Filesystem) return false;
+    try {
+      const data = await blobToBase64(blob);
+      await P.Filesystem.writeFile({ path: fileName, data, directory: 'DOCUMENTS', recursive: true });
+      return true;
+    } catch (_) { return false; }
+  }
+
   /** نافذة التصدير والمشاركة لأي مستند: فاتورة، أمر تصنيع، سند */
   // keepPrintArea معرّف أعلى الملف (يقرؤه closeModal)
   function docModal(order, kind, payment = null) {
@@ -2754,7 +2765,10 @@
           state.innerHTML = `${icon('check')} الملف جاهز: <b>${esc(fileName)}</b> (${kb} كيلوبايت)`;
           if (overflow) note.innerHTML = `<span class="warn-text">${icon('alert')} المحتوى كثير على صفحة واحدة وقد يُقصّ آخر الجدول. راجع الملف قبل إرساله، أو قسّم الأصناف الإضافية.</span>`;
           btnWa.disabled = false; btnSave.disabled = false;
-          btnSave.onclick = () => downloadBlob(blob, fileName);
+          btnSave.onclick = async () => {
+            if (await savePdfNative(blob, fileName)) { toast(`تم حفظ ${fileName} في مستندات الجهاز`); return; }
+            downloadBlob(blob, fileName);
+          };
           const caption = waCaption(order, curKind, payment);
           const sendViaWhatsapp = async () => {
             // 1) مشاركة أصلية داخل تطبيق أندرويد: ترسل ملف PDF فعلاً مع الملخص
