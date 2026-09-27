@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.7';
+  const APP_VERSION = '1.0.8';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -1590,7 +1590,7 @@
   $('#btnPickMap').addEventListener('click', () => {
     const addr = $('#custAddress').value.trim();
     const url = addr ? mapsSearchUrl(addr) : 'https://www.google.com/maps';
-    window.open(url, '_blank', 'noopener');
+    openExternal(url);
   });
   $('#custMapsUrl').addEventListener('input', () => {
     cur.customer.mapsUrl = $('#custMapsUrl').value.trim();
@@ -2615,12 +2615,24 @@
     }
   }
 
-  function downloadBlob(blob, name) {
+  function browserDownload(blob, name) {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+  }
+  /** تنزيل/حفظ ملف: في تطبيق أندرويد يُحفظ عبر Filesystem (WebView لا يدعم a.download) */
+  function downloadBlob(blob, name) {
+    const P = (window.Capacitor && window.Capacitor.Plugins) || {};
+    if (P.Filesystem) {
+      blobToBase64(blob)
+        .then((data) => P.Filesystem.writeFile({ path: name, data, directory: 'DOCUMENTS', recursive: true }))
+        .then(() => toast(`حُفظ ${name} في مستندات الجهاز`))
+        .catch(() => browserDownload(blob, name));
+      return;
+    }
+    browserDownload(blob, name);
   }
 
   /** توحيد رقم الجوال السعودي إلى صيغة 9665xxxxxxxx */
@@ -2653,8 +2665,9 @@
   }
 
 
-  /** فتح رابط خارجي بتبويب جديد (أكثر موثوقية من window.open مع مانع النوافذ) */
+  /** فتح رابط خارجي: في تطبيق أندرويد يُفتح بالمتصفح الخارجي (وإلا window.open لا يعمل) */
   function openExternal(url) {
+    if (window.Capacitor) { window.open(url, '_system'); return; }
     const a = document.createElement('a');
     a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
     document.body.appendChild(a); a.click(); a.remove();
@@ -2732,6 +2745,8 @@
 
       const state = $('#pdfState', b);
       const btnWa = $('#shWa', b), btnSave = $('#shSave', b), btnPrint = $('#shPrint', b);
+      // الطباعة لا تعمل داخل تطبيق أندرويد (WebView): يُخفى الزرّ ويُستعاض عنه بالحفظ/المشاركة
+      if (window.Capacitor) btnPrint.hidden = true;
       const note = $('#shNote', b);
       const defaultNote = () => (curKind === 'workshop'
         ? 'أمر التصنيع للورشة: المقاسات والمواصفات والقيود بلا أي سعر. لا تُرسله للعميل.'
@@ -3982,11 +3997,7 @@
     const rows = [['التاريخ', 'الوقت', 'الموظف', 'رقم الطلب', 'العميل', 'الإجراء', 'التفاصيل'].map(cell).join(',')];
     list.forEach((e) => rows.push([localDate(e.at), localTime(e.at), e.userName || '', e.orderNo || '', e.customer || '', ACTIONS[e.action] || e.action, (e.details || []).join(' | ')].map(cell).join(',')));
     const blob = new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = `orders-activity-${today()}.csv`;
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    downloadBlob(blob, `orders-activity-${today()}.csv`);
   });
 
   $('#btnActClear').addEventListener('click', async () => {
@@ -5057,11 +5068,7 @@
     push('العميل', 'الجوال', 'الطلبات', 'المبيعات', 'المتبقي', 'آخر طلب');
     biCustRows(a).forEach((e) => push(e.name, e.phone, e.count, money(e.revenue), money(e.remaining), e.last));
     const blob = new Blob(['﻿' + rows.join('\r\n')], { type: 'text/csv;charset=utf-8' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `bi-report-${p.from || 'all'}_${p.to || today()}.csv`;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(link.href), 2000);
+    downloadBlob(blob, `bi-report-${p.from || 'all'}_${p.to || today()}.csv`);
   }
 
   $$('#biRangeChips .chip').forEach((c) => c.addEventListener('click', () => { biRange = c.dataset.rg; renderBI(); }));
