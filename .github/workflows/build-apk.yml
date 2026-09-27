@@ -57,6 +57,11 @@ jobs:
       - name: Generate app icons & splash
         run: npx @capacitor/assets generate --android
 
+      - name: Configure version (versionCode/versionName)
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
+        run: node configure-version.js
+
       - name: Configure release signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -64,20 +69,20 @@ jobs:
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
-          if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
-            printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
-            node configure-signing.js
-          else
-            echo "No signing secrets found; release will be unsigned."
+          if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "::error::Missing KEYSTORE_BASE64 secret. Add the signing secrets to GitHub, then push the tag again."
+            exit 1
           fi
+          echo "$KEYSTORE_BASE64" | base64 -d > android/app/release.keystore
+          printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
+          node configure-signing.js
 
-      - name: Build debug APK
+      - name: Build release APK (signed, for direct download)
         run: |
           cd android
           chmod +x gradlew
-          ./gradlew assembleDebug
-          mv app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/asalh-najd-${{ steps.ver.outputs.version }}.apk"
+          ./gradlew assembleRelease
+          mv app/build/outputs/apk/release/app-release.apk "app/build/outputs/apk/release/asalh-najd-${{ steps.ver.outputs.version }}.apk"
 
       - name: Build release AAB (Play Store)
         run: |
@@ -90,7 +95,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: majlis-apk
-          path: android/app/build/outputs/apk/debug/asalh-najd-${{ steps.ver.outputs.version }}.apk
+          path: android/app/build/outputs/apk/release/asalh-najd-${{ steps.ver.outputs.version }}.apk
           if-no-files-found: error
 
       - name: Upload AAB artifact
@@ -111,7 +116,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: |
-            android/app/build/outputs/apk/debug/asalh-najd-${{ steps.ver.outputs.version }}.apk
+            android/app/build/outputs/apk/release/asalh-najd-${{ steps.ver.outputs.version }}.apk
             android/app/build/outputs/bundle/release/asalh-najd-${{ steps.ver.outputs.version }}.aab
           generate_release_notes: true
         env:
