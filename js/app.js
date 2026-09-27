@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.3';
+  const APP_VERSION = '1.0.4';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -2691,7 +2691,7 @@
       <p id="pdfState" class="pdf-state" role="status">${icon('clock')} جاري تجهيز ملف PDF…</p>
       <div class="share-actions">
         <button class="btn primary block lg" id="shWa" disabled>${icon('whatsapp')} مشاركة الملف عبر واتساب</button>
-        ${phone ? `<button class="btn block" id="shChat">${icon('whatsapp')} فتح محادثة ${esc(cname || 'العميل')}</button>` : ''}
+        ${phone ? `<button class="btn block" id="shChat">${icon('whatsapp')} إرسال إلى محادثة ${esc(cname || 'العميل')}</button>` : ''}
         <button class="btn block" id="shSave" disabled>${icon('download')} حفظ الملف على الجهاز</button>
         <button class="btn block ghost" id="shPrint" disabled>${icon('print')} طباعة</button>
       </div>
@@ -2733,7 +2733,8 @@
           if (overflow) note.innerHTML = `<span class="warn-text">${icon('alert')} المحتوى كثير على صفحة واحدة وقد يُقصّ آخر الجدول. راجع الملف قبل إرساله، أو قسّم الأصناف الإضافية.</span>`;
           btnWa.disabled = false; btnSave.disabled = false;
           btnSave.onclick = () => downloadBlob(blob, fileName);
-          btnWa.onclick = () => {
+          // إرسال الملف عبر واتساب (مع الملخص ورقم الطلب) — يُستخدم بزرّي المشاركة ومحادثة العميل
+          const sendViaWhatsapp = () => {
             const canFiles = navigator.canShare && navigator.canShare({ files: [pdfFile] });
             if (canFiles) {
               navigator.share({ files: [pdfFile], title: fileName, text: waCaption(order, curKind, payment) })
@@ -2746,6 +2747,9 @@
               note.innerHTML = `هذا المتصفح لا يدعم إرسال الملف مباشرة. حُفظ <b>${esc(fileName)}</b> في مجلد التنزيلات، أرفقه في محادثة ${esc(cname || 'العميل')}.`;
             }
           };
+          btnWa.onclick = sendViaWhatsapp;
+          const btnChat = $('#shChat', b);
+          if (btnChat) btnChat.onclick = sendViaWhatsapp;
         } catch (err) {
           if (my !== run) return;
           state.className = 'pdf-state err';
