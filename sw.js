@@ -1,9 +1,9 @@
 /* ======================================================================
    Service Worker — يجعل التطبيق يعمل دون اتصال ويُثبَّت على الجهاز.
-   - يخزّن الملفات الثابتة (واجهة) ويخدمها من الكاش.
+   - الشبكة أولاً: تعكس التحديثات فوراً، والكاش احتياطي عند انقطاع الاتصال.
    - لا يخزّن طلبات /api/* (بيانات حيّة من الخادم).
    ====================================================================== */
-const CACHE = 'majlis-v1';
+const CACHE = 'majlis-v2';
 const ASSETS = [
   '/',
   '/index.html',
@@ -38,15 +38,14 @@ self.addEventListener('fetch', (e) => {
   if (url.origin !== self.location.origin) return;
 
   e.respondWith(
-    caches.match(req).then((cached) => {
-      const network = fetch(req).then((res) => {
+    fetch(req)
+      .then((res) => {
         if (res && res.ok) {
           const clone = res.clone();
           caches.open(CACHE).then((c) => c.put(req, clone));
         }
         return res;
-      }).catch(() => cached);
-      return cached || network;
-    })
+      })
+      .catch(() => caches.match(req).then((cached) => cached || Response.error()))
   );
 });
