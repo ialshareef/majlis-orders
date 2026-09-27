@@ -325,8 +325,13 @@ function restoreCosts(rec, prev) {
 
 /* ------------------------------ المستخدمون ------------------------------ */
 async function listUsers(env) {
-  const r = await env.DB.prepare('SELECT id, username, name, role, active, created_at FROM users ORDER BY created_at').all();
-  return r.results.map((u) => ({ id: u.id, username: u.username, name: u.name, role: u.role, active: !!u.active, createdAt: u.created_at }));
+  const r = await env.DB.prepare('SELECT id, username, name, role, active, created_at, parent_id, rate, parent_rate FROM users ORDER BY created_at').all();
+  return r.results.map((u) => ({
+    id: u.id, username: u.username, name: u.name, role: u.role, active: !!u.active, createdAt: u.created_at,
+    parentId: u.parent_id || null,
+    rate: u.rate == null ? null : Number(u.rate),
+    parentRate: u.parent_rate == null ? null : Number(u.parent_rate),
+  }));
 }
 
 async function saveUser(env, me, body, myToken) {
@@ -335,6 +340,9 @@ async function saveUser(env, me, body, myToken) {
   const role = body.role === 'admin' ? 'admin' : body.role === 'staff' ? 'staff' : body.role === 'mandoub' ? 'mandoub' : null;
   const active = body.active !== false;
   const password = body.password ? String(body.password) : '';
+  const parentId = body.parentId || null;
+  const rate = body.rate == null || body.rate === '' ? null : Math.max(0, Math.min(100, Number(body.rate)));
+  const parentRate = body.parentRate == null || body.parentRate === '' ? null : Math.max(0, Math.min(100, Number(body.parentRate)));
   if (!name || !username) throw new HttpError(400, 'الاسم واسم المستخدم مطلوبان');
   if (!role) throw new HttpError(400, 'دور غير صالح');
   const dup = await env.DB.prepare('SELECT id FROM users WHERE lower(username) = ? AND id IS NOT ?').bind(username.toLowerCase(), body.id || null).first();
@@ -342,15 +350,15 @@ async function saveUser(env, me, body, myToken) {
 
   if (!body.id) {
     if (password.length < 4) throw new HttpError(400, 'كلمة المرور 4 أحرف فأكثر');
-    await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .bind(uid(), username, name, await hashPassword(password), role, active ? 1 : 0, now()).run();
+    await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at, parent_id, rate, parent_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(uid(), username, name, await hashPassword(password), role, active ? 1 : 0, now(), parentId, rate, parentRate).run();
   } else {
     const admins = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").bind(body.id).first();
     if (Number(admins.n) === 0 && (role !== 'admin' || !active)) throw new HttpError(400, 'لا يمكن إزالة صلاحية آخر مدير أو إيقافه');
     if (password && password.length < 4) throw new HttpError(400, 'كلمة المرور 4 أحرف فأكثر');
     const stmts = [];
-    if (password) stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, password_hash = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, await hashPassword(password), body.id));
-    else stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, body.id));
+    if (password) stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, password_hash = ?, parent_id = ?, rate = ?, parent_rate = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, await hashPassword(password), parentId, rate, parentRate, body.id));
+    else stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, parent_id = ?, rate = ?, parent_rate = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, parentId, rate, parentRate, body.id));
     // إنهاء الجلسات الأخرى عند تغيير كلمة المرور أو الإيقاف
     if (password || !active) stmts.push(env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').bind(body.id, myToken || ''));
     await env.DB.batch(stmts);
@@ -373,8 +381,12 @@ async function deleteUser(env, me, id) {
 // عند أول تشغيل: إنشاء المستخدم admin / admin إن لم يوجد مستخدمون
 async function ensureSeed(env) {
   if (seeded) return;
-  // جدول جديد بعد النشر الأول: يُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
+  // جداول وأعمدة جديدة بعد النشر الأول: تُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS login_fail (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first_at TEXT NOT NULL, until TEXT)').run();
+  // أعمدة المندوب (هيكل متعدد المستويات ونسب العمولة)
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_id TEXT').run().catch(() => {});
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN rate REAL').run().catch(() => {});
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_rate REAL').run().catch(() => {});
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {
     await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')

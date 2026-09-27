@@ -12,7 +12,10 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT NOT NULL,
   role          TEXT NOT NULL DEFAULT 'staff',
   active        INTEGER NOT NULL DEFAULT 1,
-  created_at    TEXT NOT NULL
+  created_at    TEXT NOT NULL,
+  parent_id     TEXT,
+  rate          REAL,
+  parent_rate   REAL
 );
 
 CREATE TABLE IF NOT EXISTS sessions (

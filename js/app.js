@@ -270,7 +270,7 @@
   });
 
   /* ---------------- التنقل ---------------- */
-  const ADMIN_PAGES = ['items', 'users', 'activity', 'bi', 'settings'];
+  const ADMIN_PAGES = ['items', 'users', 'activity', 'bi', 'settings', 'mandoubs'];
   function showPage(name) {
     if (ADMIN_PAGES.includes(name) && !isAdmin()) name = 'order';
     $$('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
@@ -288,7 +288,8 @@
     if (name === 'activity') renderActivity();
     if (name === 'bi') renderBI();
     if (name === 'settings') renderSettings();
-    if (['orders', 'customers', 'activity', 'items', 'users', 'bi'].includes(name)) syncFromServer();
+    if (name === 'mandoubs') renderMandoubs();
+    if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'mandoubs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
     if (name === 'order') requestAnimationFrame(() => { designer.resize(); positionInspector(); });
@@ -1347,31 +1348,74 @@
     if (v !== undefined && v !== null && v !== '') return num(v);
     return num(settings().shareRate);
   }
-  /** نسبة عمولة المناديب للطلب: قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
-  function mandoubRateOf(o) {
-    const v = o && o.mandoubRate;
+  /** مستوى المندوب في الهيكل: 1 = مباشر للمحل، وكل مستوى يتبع مندوباً في المستوى السابق */
+  function mandoubLevelOf(userId, seen) {
+    seen = seen || new Set();
+    if (!userId || seen.has(userId)) return 0;
+    seen.add(userId);
+    const u = Store.getUser(userId);
+    if (!u || u.role !== 'mandoub') return 0;
+    if (!u.parentId) return 1;
+    const pl = mandoubLevelOf(u.parentId, seen);
+    return pl ? pl + 1 : 1;
+  }
+  /** نسبة المندوب (صاحب الطلب) من صافي ربح طلباته */
+  function mandoubOwnerRateOf(u) {
+    const v = u && u.rate;
     if (v !== undefined && v !== null && v !== '') return num(v);
     return num(settings().mandoubRate);
   }
-  /** هل منشئ الطلب مندوباً؟ المندوب فئة مستقلة عن البائعين لا يشاركهم ولا يشاركونه */
+  /** نسبة المندوب الأعلى المباشر من طلبات من يتبعه */
+  function mandoubParentRateOf(u) {
+    const v = u && u.parentRate;
+    if (v !== undefined && v !== null && v !== '') return num(v);
+    return num(settings().mandoubParentRate);
+  }
+  /** هل منشئ الطلب مندوباً؟ */
   function isMandoub(o) {
     const u = Store.getUser(o && o.createdBy);
     return !!(u && u.role === 'mandoub');
   }
-  /** النسبة التي تُطبَّق على صاحب الطلب: المندوب يأخذ نسبة المناديب، والبائع نسبة البائع */
+  /** المندوب المباشر الأعلى لصاحب الطلب، أو null */
+  function mandoubParentOf(o) {
+    if (!isMandoub(o)) return null;
+    const u = Store.getUser(o.createdBy);
+    return (u && u.parentId) ? Store.getUser(u.parentId) : null;
+  }
+  /** النسبة التي تُطبَّق على صاحب الطلب: المندوب يأخذ نسبته، والبائع نسبة البائع */
   function orderOwnerRate(o) {
-    return isMandoub(o) ? mandoubRateOf(o) : sellerRateOf(o);
+    if (isMandoub(o)) return mandoubOwnerRateOf(Store.getUser(o.createdBy));
+    return sellerRateOf(o);
   }
   /** عمولة صاحب الطلب = نسبته × صافي الربح، أو null إن لم تُدخل التكاليف */
   function orderCommission(o) {
     const p = orderProfit(o);
     return p === null ? null : money(p * orderOwnerRate(o) / 100);
   }
-  /** مبلغ المشاركة الذي يُخصم من مبيعات البائع لصالح باقي البائعين والإدارة (لا يُخصم من المناديب) */
+  /** عمولة المندوب الأعلى المباشر من طلب تابعه، أو null */
+  function orderParentCommission(o) {
+    if (!isMandoub(o) || !mandoubParentOf(o)) return null;
+    const u = Store.getUser(o.createdBy);
+    const p = orderProfit(o);
+    return p === null ? null : money(p * mandoubParentRateOf(u) / 100);
+  }
+  /** حصة موظفي المحل من الطلب (البائع والمندوب معاً) */
   function orderShareAmount(o) {
-    if (isMandoub(o)) return 0;
     const p = orderProfit(o);
     return p === null ? 0 : money(p * shareRateOf(o) / 100);
+  }
+  /** لقطة نسب العمولة على الطلب عند اعتماده، حتى لا يؤثر تعديل النسب لاحقاً في الطلبات السابقة */
+  function snapshotOrderCommission(o) {
+    const owner = Store.getUser(o && o.createdBy);
+    const isMan = !!(owner && owner.role === 'mandoub');
+    const parent = (isMan && owner.parentId) ? Store.getUser(owner.parentId) : null;
+    o.commRates = {
+      ownerRate: isMan ? mandoubOwnerRateOf(owner) : sellerRateOf(o),
+      parentId: parent ? parent.id : null,
+      parentRate: (isMan && parent) ? mandoubParentRateOf(owner) : null,
+      shareRate: shareRateOf(o),
+    };
+    return o.commRates;
   }
 
   /** تحديث إجمالي التكلفة المخزّن في الطلب (يُحذف الحقل إن لم تبقَ أي تكلفة) */
@@ -2112,6 +2156,8 @@
     }
     cur.updatedAt = nowIso;
     cur.updatedByName = currentUser.name;
+    // لقطة نسب العمولة عند الاعتماد: لا تتأثر طلبات سابقة بتعديل النسب لاحقاً
+    snapshotOrderCommission(cur);
     // وقت آخر تغيير للحالة: عليه تقوم تنبيهات المراحل، ويُشتق من الطلب نفسه
     // لا من سجل التحديثات لأن السجل لا يصل الموظفين في الوضع السحابي.
     if (!prev || (prev.status || 'new') !== (cur.status || 'new')) {
@@ -3585,6 +3631,157 @@
   }
   $('#btnAddUser').addEventListener('click', () => userForm(null));
 
+  /* ---------------- إدارة المناديب (مدير) ---------------- */
+  const mandoubUsers = () => db().users.filter((u) => u.role === 'mandoub');
+  const mandoubName = (id) => { const u = Store.getUser(id); return u ? u.name : '—'; };
+
+  function mandoubDescendants(id, out) {
+    out = out || [];
+    mandoubUsers().forEach((m) => { if (m.parentId === id) { out.push(m.id); mandoubDescendants(m.id, out); } });
+    return out;
+  }
+
+  /** تفصيل عمولات طلب من لقطة نسبه (أو النسب الحالية إن لم تكن هناك لقطة) */
+  function orderCommBreakdown(o) {
+    const p = orderProfit(o);
+    if (p === null) return null;
+    const owner = Store.getUser(o.createdBy);
+    const isMan = !!(owner && owner.role === 'mandoub');
+    const parent = (isMan && owner && owner.parentId) ? Store.getUser(owner.parentId) : null;
+    const r = o.commRates || {
+      ownerRate: isMan ? mandoubOwnerRateOf(owner) : sellerRateOf(o),
+      parentId: parent ? parent.id : null,
+      parentRate: (isMan && parent) ? mandoubParentRateOf(owner) : null,
+      shareRate: shareRateOf(o),
+    };
+    const rows = [];
+    rows.push({ who: owner ? owner.name : 'المندوب', rate: r.ownerRate, amount: money(p * r.ownerRate / 100), userId: o.createdBy });
+    if (r.parentId) {
+      const par = Store.getUser(r.parentId);
+      rows.push({ who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId });
+    }
+    rows.push({ who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null });
+    return { profit: p, rows };
+  }
+
+  function renderMandoubs() {
+    if (!isAdmin()) return;
+    const list = mandoubUsers();
+    const level1 = list.filter((m) => !m.parentId).length;
+    const unassigned = list.filter((m) => !m.active).length;
+    const activeMandoub = list.filter((m) => m.active !== false);
+
+    // إحصاءات
+    $('#mandoubStats').innerHTML = `
+      <div class="stat"><span>إجمالي المناديب</span><b>${list.length}</b></div>
+      <div class="stat"><span>مباشرون للمحل (المستوى الأول)</span><b>${level1}</b></div>
+      <div class="stat"><span>مفعّلون</span><b>${activeMandoub.length}</b></div>
+      <div class="stat"><span>غير مفعّلين</span><b>${unassigned}</b></div>`;
+
+    // قائمة المناديب
+    const tb = $('#mandoubTable tbody');
+    tb.innerHTML = list.map((m) => {
+      const lvl = mandoubLevelOf(m.id);
+      return `<tr>
+        <td data-label="الاسم"><b>${esc(m.name)}</b>${m.username ? `<span class="sub ltr">${esc(m.username)}</span>` : ''}</td>
+        <td data-label="المستوى" class="num">${lvl || '—'}</td>
+        <td data-label="المندوب الأعلى">${m.parentId ? esc(mandoubName(m.parentId)) : '<span class="hint">مباشر للمحل</span>'}</td>
+        <td data-label="نسبته" class="num">${fmtQty(mandoubOwnerRateOf(m))}٪</td>
+        <td data-label="نسبة الأعلى" class="num">${m.parentId ? fmtQty(mandoubParentRateOf(m)) + '٪' : '<span class="hint">—</span>'}</td>
+        <td data-label="الحالة"><label class="status-chip sm" data-status="${m.active !== false ? 'new' : 'cancelled'}"><i class="status-dot"></i>${m.active !== false ? 'مفعّل' : 'غير مفعّل'}</label></td>
+        <td class="row-actions"><button class="btn small" data-medit="${esc(m.id)}">${icon('pen')} إدارة</button></td>
+      </tr>`;
+    }).join('');
+    $('#mandoubEmpty').hidden = list.length > 0;
+    $$('[data-medit]', tb).forEach((b) => b.addEventListener('click', () => mandoubForm(Store.getUser(b.dataset.medit))));
+
+    // الهيكل التنظيمي
+    const roots = list.filter((m) => !m.parentId);
+    const treeHtml = (id) => {
+      const children = list.filter((m) => m.parentId === id);
+      return `<li><span class="node"><b>${esc(mandoubName(id))}</b><small>مستوى ${mandoubLevelOf(id)}</small></span>${children.length ? '<ul>' + children.map((c) => treeHtml(c.id)).join('') + '</ul>' : ''}</li>`;
+    };
+    $('#mandoubTree').innerHTML = roots.length
+      ? '<ul class="tree">' + roots.map((r) => treeHtml(r.id)).join('') + '</ul>'
+      : '<p class="hint">لا يوجد هيكل بعد — أسند مندوباً للمحل (مستوى أول) أو لمندوب آخر.</p>';
+
+    // سجل العمولات (طلبات المناديب فقط، المرتبة بالأحدث)
+    const manOrders = db().orders.filter((o) => isMandoub(o) && orderProfit(o) !== null).slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const logTb = $('#mandoubLogTable tbody');
+    const logRows = [];
+    manOrders.slice(0, 200).forEach((o) => {
+      const bd = orderCommBreakdown(o);
+      bd.rows.forEach((r) => logRows.push({ order: o, ...r }));
+    });
+    logTb.innerHTML = logRows.length ? logRows.map((r) => `
+      <tr>
+        <td data-label="الطلب" class="num">#${esc(r.order.number || '—')}</td>
+        <td data-label="صافي الربح" class="num">${fmt(r.profit)}</td>
+        <td data-label="المستفيد">${esc(r.who)}</td>
+        <td data-label="النسبة" class="num">${fmtQty(r.rate)}٪</td>
+        <td data-label="المبلغ" class="num">${fmt(r.amount)}</td>
+      </tr>`).join('') : '<tr><td colspan="5" class="empty">لا توجد عمولات محسوبة بعد (تحتاج طلبات مناديب بتكاليف مسجّلة).</td></tr>';
+    $('#mandoubLogNote').textContent = manOrders.length ? `يعرض آخر 200 سطر من عمولات ${manOrders.length} طلب مناديب. النسب مأخوذة من لقطة كل طلب عند اعتماده.` : '';
+  }
+
+  function mandoubForm(m) {
+    if (!m || !isAdmin()) return;
+    const others = mandoubUsers().filter((x) => x.id !== m.id);
+    const excl = new Set([m.id, ...mandoubDescendants(m.id)]);
+    const parentOpts = `<option value="">مباشر للمحل (المستوى الأول)</option>` + others
+      .filter((x) => !excl.has(x.id))
+      .map((x) => `<option value="${esc(x.id)}" ${m.parentId === x.id ? 'selected' : ''}>${esc(x.name)}</option>`).join('');
+    openModal(`إدارة المندوب — ${esc(m.name)}`, `
+      <p class="hint">المستوى الحالي: <b>${mandoubLevelOf(m.id) || '—'}</b> • الحالة: <b>${m.active !== false ? 'مفعّل' : 'غير مفعّل'}</b></p>
+      <label>المندوب الأعلى <select id="mParent">${parentOpts}</select></label>
+      <p class="hint">يُحدد المستوى تلقائياً: المندوب المسند تحت مستوى ثانٍ يصبح من المستوى الثالث وهكذا.</p>
+      <div class="row2">
+        <label>نسبة المندوب من صافي ربح طلباته % <input id="mRate" type="number" min="0" max="100" step="0.5" value="${mandoubOwnerRateOf(m)}"></label>
+        <label>نسبة المندوب الأعلى المباشر % <input id="mParentRate" type="number" min="0" max="100" step="0.5" value="${mandoubParentRateOf(m)}"></label>
+      </div>
+      <label class="check"><input id="mActive" type="checkbox" ${m.active !== false ? 'checked' : ''}> مفعّل لاستقبال الطلبات واحتساب العمولات</label>
+      <p id="mErr" class="error"></p>
+      <div class="btn-row"><button class="btn" id="mCancel">إلغاء</button><button class="btn primary" id="mSave">${icon('save')} حفظ</button></div>`, (b) => {
+      $('#mCancel', b).onclick = closeModal;
+      $('#mSave', b).onclick = async () => {
+        const parentId = $('#mParent', b).value || null;
+        const rate = Math.min(100, Math.max(0, num($('#mRate', b).value)));
+        const parentRate = Math.min(100, Math.max(0, num($('#mParentRate', b).value)));
+        const active = $('#mActive', b).checked;
+        try {
+          await Store.saveUser({ id: m.id, name: m.name, username: m.username, role: 'mandoub', active, parentId, rate, parentRate }, '');
+        } catch (e) { $('#mErr', b).textContent = e.message; return; }
+        closeModal(); renderUsers(); renderMandoubs();
+        toast('تم حفظ إعدادات المندوب');
+      };
+    }, 'drawer');
+  }
+
+  $('#btnMandoubDefaults').addEventListener('click', () => {
+    if (!isAdmin()) return;
+    const s = settings();
+    openModal('الإعدادات الافتراضية لعمولات المناديب', `
+      <p class="hint">تُطبَّق كقيم افتراضية عند إنشاء مندوب جديد، ويمكن تجاوزها لكل مندوب من قائمة المناديب.</p>
+      <div class="row2">
+        <label>نسبة المندوب (صاحب الطلب) % <input id="dMandoubRate" type="number" min="0" max="100" step="0.5" value="${num(s.mandoubRate ?? 5)}"></label>
+        <label>نسبة المندوب الأعلى المباشر % <input id="dMandoubParentRate" type="number" min="0" max="100" step="0.5" value="${num(s.mandoubParentRate ?? 5)}"></label>
+      </div>
+      <label>حصة موظفي المحل % <input id="dShareRate" type="number" min="0" max="100" step="0.5" value="${num(s.shareRate ?? 5)}"></label>
+      <div class="btn-row"><button class="btn" id="dCancel">إلغاء</button><button class="btn primary" id="dSave">${icon('save')} حفظ</button></div>`, (b) => {
+      $('#dCancel', b).onclick = closeModal;
+      $('#dSave', b).onclick = async () => {
+        Object.assign(settings(), {
+          mandoubRate: Math.min(100, Math.max(0, num($('#dMandoubRate', b).value))),
+          mandoubParentRate: Math.min(100, Math.max(0, num($('#dMandoubParentRate', b).value))),
+          shareRate: Math.min(100, Math.max(0, num($('#dShareRate', b).value))),
+        });
+        if (!(await Store.save())) { toast('فشل الحفظ: ' + Store.lastError, true); return; }
+        closeModal(); renderMandoubs();
+        toast('تم حفظ الإعدادات الافتراضية');
+      };
+    }, 'drawer');
+  });
+
   /* ---------------- سجل تحديثات الطلبات (مدير) ---------------- */
   const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب' };
   const ACTION_CLASS = { create: 'st-new', update: 'st-progress', status: '', cost: 'st-progress', owner: 'st-new', export: 'st-delivered', delete: 'st-cancelled' };
@@ -4860,6 +5057,7 @@
       else if (active === 'page-items') draw('items', renderItems);
       else if (active === 'page-users') draw('users', renderUsers);
       else if (active === 'page-bi') draw('bi', renderBI);
+      else if (active === 'page-mandoubs') draw('mandoubs', renderMandoubs);
       draw('itemSelects', renderItemSelects);
       draw('permissions', applyPermissions);
       draw('notifications', renderNotifications);

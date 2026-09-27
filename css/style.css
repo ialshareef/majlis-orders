@@ -1371,6 +1371,18 @@ body[data-page="order"] main { padding-top: 10px; }
 .atts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
 .atts-section { margin-top: 20px; }
 .atts-section h3 small { color: var(--ink-3); font-weight: 400; font-size: .78rem; margin-inline-start: 6px; }
+
+/* هيكل المناديب التنظيمي */
+.mandoub-tree { padding: 4px 0; }
+.mandoub-tree ul.tree, .mandoub-tree ul.tree ul { list-style: none; padding-inline-start: 22px; }
+.mandoub-tree ul.tree > li { position: relative; }
+.mandoub-tree .node {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 6px 12px; margin: 2px 0;
+  background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r);
+}
+.mandoub-tree .node b { font-weight: 600; }
+.mandoub-tree .node small { color: var(--ink-3); font-size: .75rem; }
 .att { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .att-box { position: relative; }
 .att-pick {

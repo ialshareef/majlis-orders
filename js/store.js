@@ -43,7 +43,7 @@
   function defaultSettings() {
     // depositPct: نسبة العربون قبل بدء التنفيذ (0 = بلا تنبيه) • quoteDays: صلاحية عرض السعر
     // sellerRate: نسبة البائع • shareRate: نسبة المشاركة (لباقي البائعين والإدارة) • mandoubRate: نسبة المناديب
-    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, sellerRate: 10, shareRate: 5, mandoubRate: 5, lastBackupAt: '' };
+    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, sellerRate: 10, shareRate: 5, mandoubRate: 5, mandoubParentRate: 5, lastBackupAt: '' };
   }
 
   function normalizeSettings(s) {
@@ -142,13 +142,14 @@
     },
 
     async saveUser(data, password) {
+      const extra = { parentId: data.parentId || null, rate: data.rate, parentRate: data.parentRate };
       if (data.id) {
         const u = this.getUser(data.id);
         if (!u) throw new Error('المستخدم غير موجود');
-        Object.assign(u, { name: data.name, username: data.username, role: data.role, active: data.active });
+        Object.assign(u, { name: data.name, username: data.username, role: data.role, active: data.active }, extra);
         if (password) u.password = await hash(password);
       } else {
-        this.db.users.push({ id: uid(), createdAt: now(), name: data.name, username: data.username, role: data.role, active: data.active, password: await hash(password) });
+        this.db.users.push(Object.assign({ id: uid(), createdAt: now(), name: data.name, username: data.username, role: data.role, active: data.active, password: await hash(password) }, extra));
       }
       if (!(await this.save())) throw new Error(this.lastError);
     },
@@ -372,7 +373,7 @@
     },
 
     async saveUser(data, password) {
-      const r = await this.api('POST', '/api/users', { id: data.id || null, name: data.name, username: data.username, password: password || '', role: data.role, active: data.active !== false });
+      const r = await this.api('POST', '/api/users', { id: data.id || null, name: data.name, username: data.username, password: password || '', role: data.role, active: data.active !== false, parentId: data.parentId || null, rate: data.rate, parentRate: data.parentRate });
       this.db.users = r.users || this.db.users;
       if (this.user && data.id === this.user.id) this.user = Object.assign({}, this.user, { name: data.name, username: data.username, role: data.role });
     },

@@ -183,6 +183,7 @@
         <button type="button" data-page="users" data-admin title="المستخدمون"><svg><use href="#i-users"/></svg><span>المستخدمون</span></button>
         <button type="button" data-page="activity" data-admin title="سجل التحديثات"><svg><use href="#i-clock"/></svg><span>سجل التحديثات</span></button>
         <button type="button" data-page="bi" data-admin title="ذكاء الأعمال"><svg><use href="#i-chart"/></svg><span>ذكاء الأعمال</span></button>
+        <button type="button" data-page="mandoubs" data-admin title="إدارة المناديب"><svg><use href="#i-users"/></svg><span>إدارة المناديب</span></button>
         <button type="button" data-page="settings" id="btnSettings" data-admin title="الإعدادات والنسخ الاحتياطي"><svg><use href="#i-settings"/></svg><span>الإعدادات والنسخ الاحتياطي</span></button>
       </nav>
       <div class="sb-foot">
@@ -863,6 +864,43 @@
         <div class="ph-title"><h2>الإعدادات والنسخ الاحتياطي</h2><p>بيانات المحل والفاتورة، والافتراضيات للطلبات الجديدة، ونسخ البيانات.</p></div>
       </header>
       <div id="settingsBody" class="settings"></div>
+    </section>
+
+    <!-- ============ إدارة المناديب (مدير) ============ -->
+    <section id="page-mandoubs" class="page">
+      <header class="page-head">
+        <div class="ph-title"><h2>إدارة المناديب</h2><p>هيكل متعدد المستويات واحتساب العمولات من صافي ربح كل طلب.</p></div>
+        <div class="actions"><button type="button" class="btn" id="btnMandoubDefaults"><svg><use href="#i-settings"/></svg> الإعدادات الافتراضية</button></div>
+      </header>
+
+      <div class="stats-row" id="mandoubStats"></div>
+
+      <div class="card module">
+        <div class="module-head"><h3>قائمة المناديب</h3></div>
+        <div class="table-wrap">
+          <table class="table responsive" id="mandoubTable">
+            <thead><tr><th>الاسم</th><th>المستوى</th><th>المندوب الأعلى</th><th>نسبته</th><th>نسبة الأعلى</th><th>الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="mandoubEmpty" class="empty" hidden><span class="empty-ico"><svg><use href="#i-users"/></svg></span><p>لا يوجد مناديب بعد — أضف مستخدماً بدور «مندوب» من صفحة المستخدمين.</p></div>
+      </div>
+
+      <div class="card module">
+        <div class="module-head"><h3>الهيكل التنظيمي</h3></div>
+        <div id="mandoubTree" class="mandoub-tree"></div>
+      </div>
+
+      <div class="card module">
+        <div class="module-head"><h3>سجل العمولات</h3></div>
+        <div class="table-wrap">
+          <table class="table responsive" id="mandoubLogTable">
+            <thead><tr><th>الطلب</th><th>صافي الربح</th><th>المستفيد</th><th>النسبة</th><th>المبلغ</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint" id="mandoubLogNote"></p>
+      </div>
     </section>
   </main>
 
