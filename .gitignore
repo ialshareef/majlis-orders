@@ -13,6 +13,11 @@ node_modules/
 www/
 android/
 
+# مفاتيح التوقيع — لا تُرفع أبداً
+*.keystore
+*.jks
+keystore.properties
+
 # إعدادات محلية للأدوات
 .claude/settings.local.json
 
