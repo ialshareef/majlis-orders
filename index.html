@@ -457,6 +457,7 @@
                 <b id="priceVat" class="num">0</b>
               </div>
               <div class="t-row t-total"><span>الإجمالي النهائي</span><b id="priceTotal" class="num">0</b></div>
+              <div class="t-row t-disc" id="discRow" data-state="none"><span>الخصم</span><b id="priceDiscount" class="num">0</b></div>
               <div class="t-row t-paid"><span>المدفوع</span><b id="pricePaid" class="num">0</b></div>
               <div class="t-row t-rem" id="priceRemRow" data-state="none"><span>المتبقي</span><b id="priceRem" class="num">0</b></div>
             </aside>
@@ -512,6 +513,9 @@
 
           <div class="pay" id="payBlock" data-state="none">
             <div class="pay-summary">
+              <div class="pay-discount">
+                <label>الخصم (ر.س) <input id="payDiscount" type="number" min="0" step="1" inputmode="decimal" placeholder="0" autocomplete="off"></label>
+              </div>
               <div class="pay-figs">
                 <div class="pay-fig">
                   <span id="payTotalLbl">الإجمالي</span>

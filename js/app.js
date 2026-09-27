@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.8';
+  const APP_VERSION = '1.0.9';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -428,7 +428,7 @@
       design: Designer.emptyState(5, 4, settings().cornerMode || 'deduct'),
       priceOverrides: {}, manualRows: [], costs: {}, extraCosts: [],
       customer: { name: '', phone: '', address: '', mapsUrl: '' },
-      deliveryDate: '', paid: 0, payments: [], notes: '', attachments: emptyAttachments(),
+      deliveryDate: '', paid: 0, payments: [], notes: '', attachments: emptyAttachments(), discount: 0,
       vat: { enabled: settings().vatEnabled !== false, rate: num(settings().vatRate ?? 15) },
       createdBy: null, createdByName: '', createdAt: null, updatedAt: null,
       total: 0,
@@ -1238,13 +1238,14 @@
     (order.manualRows || []).forEach((r, idx) => {
       lines.push({ key: 'manual:' + idx, kind: 'manual', idx, name: r.name, sub: '', unit: r.unit || 'قطعة', qty: num(r.qty), price: money(r.price), basePrice: money(r.price), total: money(num(r.qty) * money(r.price)) });
     });
-    // لا خصم على الطلب: مجموع الأصناف هو المجموع قبل الضريبة، والضريبة تُحسب عليه
+    // الخصم (مبلغ ثابت) يُخصم من الإجمالي النهائي بعد الضريبة
     const subtotal = money(lines.reduce((s, l) => s + l.total, 0));
     const vat = order.vat || { enabled: false, rate: 15 };
     const vatRate = vat.enabled ? Math.min(100, Math.max(0, num(vat.rate))) : 0;
     const vatAmount = money(subtotal * vatRate / 100);
-    const total = money(subtotal + vatAmount);
-    return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, total };
+    const discount = money(order.discount || 0);
+    const total = money(subtotal + vatAmount - discount);
+    return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, discount, total };
   }
 
   /* ---------------- التكاليف والربح (للمدير فقط) ---------------- */
@@ -1327,9 +1328,10 @@
 
   /** المبيعات قبل الضريبة: أساس حساب الربح (الطلبات القديمة تُشتق من المجموع) */
   function orderRevenue(o) {
-    if (o.subtotal !== undefined && o.subtotal !== null) return money(o.subtotal);
+    const discount = money(o.discount || 0);
+    if (o.subtotal !== undefined && o.subtotal !== null) return money(money(o.subtotal) - discount);
     const rate = (o.vat && o.vat.enabled) ? num(o.vatRate != null ? o.vatRate : o.vat.rate) : 0;
-    return money(num(o.total) / (1 + rate / 100));
+    return money(num(o.total) / (1 + rate / 100) - discount);
   }
 
   /** صافي ربح الطلب، أو null إن لم تُدخل تكاليفه */
@@ -1428,7 +1430,7 @@
   }
 
   function renderPricing() {
-    const { lines, subtotal, vatEnabled, vatRate, vatAmount, total } = computeLines(cur);
+    const { lines, subtotal, vatEnabled, vatRate, vatAmount, discount, total } = computeLines(cur);
     const tb = $('#priceTable tbody');
     if (!lines.length) {
       // حالة فارغة تخصّ التسعير نفسه: عنوان صريح وإجراءان، بلا تعليمات مرحلة التصميم
@@ -1482,6 +1484,8 @@
     $('#priceSubtotal').textContent = `${fmt(subtotal)} ${currency()}`;
     $('#priceVat').textContent = vatEnabled ? `${fmt(vatAmount)} ${currency()}` : '—';
     $('#priceTotal').textContent = `${fmt(total)} ${currency()}`;
+    $('#discRow').dataset.state = discount > 0.004 ? 'show' : 'none';
+    $('#priceDiscount').textContent = discount > 0.004 ? `- ${fmt(discount)} ${currency()}` : '—';
     // خلاصة الطلب كاملة في مكان واحد: المدفوع والمتبقي تحت الإجمالي مباشرة
     const pPaid = paidOf(cur), pRem = total - pPaid;
     $('#pricePaid').textContent = `${fmt(pPaid)} ${currency()}`;
@@ -1770,6 +1774,7 @@
     const paid = paidOf(cur);
     cur.paid = paid;
     const rem = total - paid;
+    $('#payDiscount').value = num(cur.discount || 0);
     // العملة في العنوان لا بجانب كل رقم: يوفّر عرضاً ويمنع قصّ الأرقام في الجوال
     const cu = currency();
     $('#payTotalLbl').textContent = `الإجمالي (${cu})`;
@@ -1878,6 +1883,13 @@
   $('#btnRefund').addEventListener('click', () => addPayment(true));
   $('#payAmount').addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addPayment(false); } });
   $('#payAmount').addEventListener('input', () => setFieldError($('#payAmount'), ''));
+
+  $('#payDiscount').addEventListener('input', () => {
+    cur.discount = Math.max(0, money($('#payDiscount').value));
+    setDirty(true);
+    renderPricing();
+    renderPayment();
+  });
 
   $('#payList').addEventListener('click', async (e) => {
     const del = e.target.closest('[data-paydel]');
@@ -2056,6 +2068,7 @@
     cur.extraCosts = cur.extraCosts || [];
     cur.customer = cur.customer || { name: '', phone: '', address: '' };
     if (!cur.customer.mapsUrl) cur.customer.mapsUrl = '';
+    if (cur.discount == null) cur.discount = 0;
     cur.attachments = normalizeAttachments(cur.attachments);
     // الطلبات القديمة المحفوظة بدون ضريبة تبقى كما هي
     cur.vat = cur.vat || { enabled: false, rate: num(settings().vatRate ?? 15) };
@@ -2341,7 +2354,7 @@
   /** فاتورة العميل (أو عرض السعر) */
   function buildPrintDoc(order, qrSrc = '') {
     const img = designImage(order);
-    const { lines, total, subtotal, vatEnabled, vatRate, vatAmount } = computeLines(order);
+    const { lines, total, subtotal, vatEnabled, vatRate, vatAmount, discount } = computeLines(order);
     const paid = paidOf(order);
     const s = settings();
     const cur$ = esc(currency());
@@ -2383,6 +2396,7 @@
         <div class="inv-totals">
           ${vatEnabled ? `<div><span>المجموع قبل الضريبة</span><span class="num">${fmt(subtotal)} ${cur$}</span></div>
           <div><span>ضريبة القيمة المضافة ${num(vatRate)}%</span><span class="num">${fmt(vatAmount)} ${cur$}</span></div>` : ''}
+          ${discount > 0.004 ? `<div><span>الخصم</span><span class="num">- ${fmt(discount)} ${cur$}</span></div>` : ''}
           <div class="total"><span>الإجمالي${vatEnabled ? ' شامل الضريبة' : ''}</span><span class="num">${fmt(total)} ${cur$}</span></div>
           ${quote ? '' : `<div><span>المدفوع${nPays > 1 ? ` (${nPays} دفعات)` : ''}</span><span class="num">${fmt(paid)} ${cur$}</span></div>
           <div class="rem"><span>المتبقي</span><span class="num">${fmt(total - paid)} ${cur$}</span></div>`}
