@@ -47,6 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
+  const APP_VERSION = '1.0.3';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -289,6 +290,7 @@
     if (name === 'bi') renderBI();
     if (name === 'settings') renderSettings();
     if (name === 'mandoubs') renderMandoubs();
+    if (name === 'about') renderAbout();
     if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'mandoubs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
@@ -3781,6 +3783,14 @@
       };
     }, 'drawer');
   });
+
+  /* ---------------- عن التطبيق ---------------- */
+  function renderAbout() {
+    const s = settings();
+    const nm = $('#aboutShopName'); if (nm) nm.textContent = s.shopName || 'أصالة نجد';
+    const yr = $('#aboutYear'); if (yr) yr.textContent = new Date().getFullYear();
+    const v = $('#aboutVersion'); if (v) v.textContent = APP_VERSION;
+  }
 
   /* ---------------- سجل تحديثات الطلبات (مدير) ---------------- */
   const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب' };

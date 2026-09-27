@@ -45,6 +45,9 @@ jobs:
       - name: Sync web assets
         run: npx cap sync android
 
+      - name: Generate app icons & splash
+        run: npx @capacitor/assets generate --android
+
       - name: Configure release signing
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}

@@ -1383,6 +1383,17 @@ body[data-page="order"] main { padding-top: 10px; }
 }
 .mandoub-tree .node b { font-weight: 600; }
 .mandoub-tree .node small { color: var(--ink-3); font-size: .75rem; }
+
+/* صفحة عن التطبيق */
+.about-card { text-align: center; padding: 34px 24px; }
+.about-card h3 { font-size: 1.5rem; margin: 14px 0 6px; }
+.about-sub { color: var(--ink-3); max-width: 48ch; margin: 0 auto 22px; line-height: 1.75; }
+.about-meta { display: grid; gap: 10px; max-width: 440px; margin: 0 auto 18px; text-align: start; }
+.about-meta > div { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 11px 15px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r); }
+.about-meta dt { color: var(--ink-3); font-size: .85rem; }
+.about-meta dd { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.about-meta a { color: var(--accent); text-decoration: none; }
+.about-meta a:hover { text-decoration: underline; }
 .att { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .att-box { position: relative; }
 .att-pick {
