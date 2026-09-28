@@ -73,6 +73,24 @@
 
   const publicUser = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: u.active !== false });
   const mapOf = (arr) => { const m = new Map(); (arr || []).forEach((x) => m.set(x.id, JSON.stringify(x))); return m; };
+  /** فحص الاستيراد قبل أي استبدال: معرّفات مكررة/ناقصة وأرقام طلبات مكررة تُرفض
+      قبل لمس البيانات الحالية — الاستيراد مدمّر وصريح ولا رجعة تلقائية فيه. */
+  function checkImportIds(data) {
+    const ids = new Set(), nums = new Set(), itemIds = new Set();
+    for (const o of data.orders) {
+      if (!o || typeof o.id !== 'string' || !o.id || ids.has(o.id)) throw new Error('ملف غير صالح: معرّفات طلبات مكررة أو ناقصة');
+      ids.add(o.id);
+      const n = o.number;
+      if (n !== null && n !== undefined && n !== '') {
+        if (nums.has(n)) throw new Error('ملف غير صالح: أرقام طلبات مكررة');
+        nums.add(n);
+      }
+    }
+    for (const i of (data.items || [])) {
+      if (!i || typeof i.id !== 'string' || !i.id || itemIds.has(i.id)) throw new Error('ملف غير صالح: معرّفات أصناف مكررة');
+      itemIds.add(i.id);
+    }
+  }
 
   /* ======================= الوضع المحلي ======================= */
   const Local = {
@@ -119,6 +137,8 @@
 
     async refresh() { return false; },
 
+    async fetchLatest() { return false; },
+
     async login(username, password) {
       const u = this.db.users.find((x) => x.username.toLowerCase() === String(username).trim().toLowerCase());
       const h = await hash(password);
@@ -164,7 +184,12 @@
     async importJSON(text) {
       const data = JSON.parse(text);
       if (!data || !Array.isArray(data.items) || !Array.isArray(data.orders)) throw new Error('ملف غير صالح');
+      checkImportIds(data);
       if (!Array.isArray(data.users) || !data.users.length) data.users = this.db.users;
+      // عدّاد الأرقام المحلي لا يرجع للخلف: أعلى رقم في الملف هو الحد الأدنى
+      const maxNo = data.orders.reduce((m, o) => Math.max(m, Number(o && o.number) || 0), 0);
+      data.seq = data.seq || {};
+      data.seq.order = Math.max(Number(data.seq.order) || 0, 1000, maxNo);
       // init() يقرأ من localStorage لا من this.db: تُكتب النسخة أولاً وإلا أعاد تحميل القديمة
       try { localStorage.setItem(this.KEY, JSON.stringify(data)); }
       catch (e) { throw new Error('مساحة التخزين لا تتسع لهذه النسخة'); }
@@ -189,10 +214,17 @@
     TOKEN_KEY: 'majlis_token',
     CACHE_KEY: 'majlis_remote_db_v1',
 
-    /** حفظ نسخة محلية (localStorage) لتشغيل دون اتصال ومزامنة لاحقاً */
+    /** حفظ نسخة محلية (localStorage) لتشغيل دون اتصال ومزامنة لاحقاً.
+        خرائط اللقطة تُسوَّق كمصفوفات: JSON يحوّل Map إلى {} فيضيع الأساس
+        ويتعطّل أول حفظ بعد إعادة التحميل (prev.get ليست دالة). */
     saveCache() {
+      const serMap = (m) => (m instanceof Map ? [...m] : []);
       try {
-        localStorage.setItem(this.CACHE_KEY, JSON.stringify({ db: this.db, snap: this.snap, features: this.features || {}, user: this.user }));
+        localStorage.setItem(this.CACHE_KEY, JSON.stringify({
+          db: this.db,
+          snap: { items: serMap(this.snap.items), orders: serMap(this.snap.orders), activity: serMap(this.snap.activity), settings: this.snap.settings },
+          features: this.features || {}, user: this.user,
+        }));
       } catch (_) { /* مساحة التخزين ممتلئة */ }
     },
     /** استعادة النسخة المحلية المخزّنة (تعمل دون اتصال) */
@@ -207,7 +239,10 @@
         this.db.orders = Array.isArray(c.db.orders) ? c.db.orders.filter(Boolean) : [];
         this.db.activity = Array.isArray(c.db.activity) ? c.db.activity.filter(Boolean) : [];
         this.db.users = Array.isArray(c.db.users) ? c.db.users : [];
-        this.snap = c.snap || {};
+        // إحياء آمن: مخازن قديمة بصيغة {} تُقرأ كخرائط فارغة (إعادة دفع كاملة آمنة الاتجاه)
+        const deMap = (v) => new Map(Array.isArray(v) ? v : []);
+        const cs = (c.snap && typeof c.snap === 'object') ? c.snap : {};
+        this.snap = { items: deMap(cs.items), orders: deMap(cs.orders), activity: deMap(cs.activity), settings: (typeof cs.settings === 'string' ? cs.settings : null) };
         this.features = c.features || {};
         if (c.user) this.user = c.user;
         return true;
@@ -281,9 +316,40 @@
       this.saveCache();
     },
 
+    /** لقطة ما أقرّه الخادم من حمولة مرسلة (لا من القاعدة الحية): إدخال/تعديل/حذف
+        لكل مجموعة، مع إسقاط حقل النقل _base. الإعدادات من الحية (تُعدَّل من نافذة
+        تُوقف المزامنة التلقائية، فلا سباق عليها). */
+    _snapshotSent(payload) {
+      const s = this.snap;
+      if (payload.items) {
+        s.items = s.items || new Map();
+        for (const r of (payload.items.upsert || [])) s.items.set(r.id, JSON.stringify(r));
+        for (const id of (payload.items.delete || [])) s.items.delete(id);
+      }
+      if (payload.orders) {
+        s.orders = s.orders || new Map();
+        for (const r of (payload.orders.upsert || [])) {
+          const c = Object.assign({}, r);
+          delete c._base;
+          s.orders.set(c.id, JSON.stringify(c));
+        }
+        for (const id of (payload.orders.delete || [])) s.orders.delete(id);
+      }
+      if (payload.activity) {
+        s.activity = s.activity || new Map();
+        if (payload.activity.clear) s.activity = new Map();
+        else {
+          for (const r of (payload.activity.upsert || [])) s.activity.set(r.id, JSON.stringify(r));
+          for (const id of (payload.activity.delete || [])) s.activity.delete(id);
+        }
+      }
+      if (payload.settings) s.settings = JSON.stringify(this.db.settings);
+      this.saveCache();
+    },
+
     _diff(coll) {
       const cur = mapOf(this.db[coll]);
-      const prev = this.snap[coll] || new Map();
+      const prev = (this.snap[coll] instanceof Map) ? this.snap[coll] : new Map();
       const upsert = [], del = [];
       cur.forEach((json, id) => {
         if (prev.get(id) === json) return;
@@ -302,8 +368,19 @@
       return { upsert, delete: del };
     },
 
-    /** مزامنة التغييرات المحلية فقط (إضافة/تعديل/حذف) إلى الخادم */
+    _saveChain: null,   // تسلسل الحفظ: حفظان متزامنان لا يتداخلان فيتداخل الترتيب
+    /** مزامنة التغييرات المحلية فقط (إضافة/تعديل/حذف) إلى الخادم.
+        الطلبات المتزامنة تُصفَّر: الثاني ينتظر الأول، فالفائز الأخير هو الأحدث دائماً. */
     async save() {
+      const prev = this._saveChain || Promise.resolve();
+      let release;
+      const gate = new Promise((res) => { release = res; });
+      this._saveChain = prev.then(() => gate);
+      await prev.catch(() => {});
+      try { return await this._saveOnce(); }
+      finally { release(); }
+    },
+    async _saveOnce() {
       if (!this.user) { this.lastError = 'غير مسجّل الدخول'; return false; }
       this.saveCache();   // التغييرات تُحفظ محلياً فوراً قبل محاولة المزامنة
       const payload = {};
@@ -318,14 +395,21 @@
       if (!Object.keys(payload).length) return true;
       try {
         const r = await this.api('POST', '/api/sync', payload);
-        // أرقام الطلبات الجديدة يمنحها الخادم عند أول حفظ ناجح
+        // أرقام الطلبات الجديدة يمنحها الخادم عند أول حفظ ناجح — على الحيّ وعلى المُرسَل معاً
         const nums = (r && r.numbers) || {};
+        const applyNums = (o) => { if (o && nums[o.id] !== undefined) o.number = nums[o.id]; };
         Object.keys(nums).forEach((id) => {
           const o = this.db.orders.find((x) => x.id === id);
           if (o) o.number = nums[id];
           this.db.activity.forEach((a) => { if (a.orderId === id && !a.orderNo) a.orderNo = nums[id]; });
         });
-        this.snapshot();
+        for (const o of ((payload.orders && payload.orders.upsert) || [])) applyNums(o);
+        for (const a of ((payload.activity && payload.activity.upsert) || [])) {
+          if (a.orderId && nums[a.orderId] !== undefined && !a.orderNo) a.orderNo = nums[a.orderId];
+        }
+        // اللقطة = ما أقرّه الخادم فعلاً (الحمولة المُرسلة)، لا قاعدة البيانات الحية
+        // التي قد تكون تغيّرت أثناء الطيران — وإلا ابتُلع التعديل الأحدث بصمت
+        this._snapshotSent(payload);
         this.lastError = '';
         this.lastStatus = 0;
         return true;
@@ -339,9 +423,31 @@
 
     async refresh() {
       if (!this.user) return false;
-      // دفع أي تغييرات معلّقة أولاً، ثم سحب آخر نسخة من الخادم
-      await this.save();
-      await this.loadAll();
+      // دفع أي تغييرات معلّقة أولاً، ولا يُجلَب فوقها شيء إن فشل الدفع (C1):
+      // شبكة مقطوعة أو 409 أو أي خطأ يُبقي النسخة المحلية ولا يعتبرها متزامنة
+      const ok = await this.save();
+      if (!ok) return false;
+      try { await this.loadAll(); }
+      catch (e) {
+        console.error(e);
+        this.lastError = e.message;
+        this.lastStatus = e.status || (e.offline ? -1 : 0);
+        return false;
+      }
+      return true;
+    },
+
+    /** جلب نسخة الخادم فقط بلا دفع — لحل التعارض حيث الدفع مرفوض أصلاً (409).
+        تُستخدم عمداً هنا فقط؛ أي مسار آخر يحتاج الجلب بعد دفع ناجح يستعمل refresh(). */
+    async fetchLatest() {
+      if (!this.user) return false;
+      try { await this.loadAll(); }
+      catch (e) {
+        console.error(e);
+        this.lastError = e.message;
+        this.lastStatus = e.status || (e.offline ? -1 : 0);
+        return false;
+      }
       return true;
     },
 
@@ -390,6 +496,7 @@
     async importJSON(text) {
       const data = JSON.parse(text);
       if (!data || !Array.isArray(data.items) || !Array.isArray(data.orders)) throw new Error('ملف غير صالح');
+      checkImportIds(data);
       this.db.items = data.items;
       this.db.orders = data.orders;
       this.db.activity = Array.isArray(data.activity) ? data.activity : this.db.activity;
@@ -422,6 +529,7 @@
     init: () => backend.init(),
     save: () => backend.save(),
     refresh: () => backend.refresh(),
+    fetchLatest: () => backend.fetchLatest(),
     login: (u, p) => backend.login(u, p),
     restoreSession: () => backend.restoreSession(),
     logout: () => backend.logout(),

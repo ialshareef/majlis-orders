@@ -10,11 +10,25 @@
   const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
   const r2 = (v) => Math.round(num(v) * 100) / 100;
-  /** كل مبلغ في النظام عدد صحيح بلا كسور: تقريب للأقرب (12.49 ← 12 و12.50 ← 13) */
-  const money = (v) => Math.round(num(v));
-  const fmt = (v) => money(v).toLocaleString('en-US');
+  /** الوحدة الداخلية هللة (0.01): كل مبلغ يُقرَّب لهللتين في الحساب (10.50 تبقى 10.50).
+      البيانات القديمة الصحيحة تبقى صحيحة (10 ← 10.00). الفصل: money للحساب، fmt للعرض.
+      ‎+1e-9‎ يصحح خطأ التمثيل الثنائي عند حدود النصف تماماً (مثل 1.005←1.01 بدل 1.00)؛
+      أصغر بكثير من أي فرق حقيقي، وآمن للمبالغ الواقعية (أقل من الملايين). */
+  const money = (v) => Math.round((num(v) + 1e-9) * 100) / 100;
+  const fmt = (v) => money(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   /** الكميات بالمتر والنسب المئوية تبقى بكسرين */
   const fmtQty = (v) => r2(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  /** رقم صارم للسياقات المالية: يرفض النصوص الجزئية ("10abc") وNaN وInfinity.
+      يُرجع null عند الرفض (لا يُخمَّن صفراً) — والقرار للسياق (خطأ حقلي/تجاهل).
+      num() العامة تُترك كما هي (103 مواضع بين هندسة وواجهة) لتفادي كسر غير مالي. */
+  function strictNum(v) {
+    if (typeof v === 'number') return Number.isFinite(v) ? v : null;
+    const s = String(v ?? '').trim();
+    if (!s) return null;
+    if (!/^[+-]?(\d+(\.\d+)?|\.\d+)([eE][+-]?\d+)?$/.test(s)) return null;
+    const n = Number(s);
+    return Number.isFinite(n) ? n : null;
+  }
   const today = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const pad2 = (n) => String(n).padStart(2, '0');
   // التواريخ تُعرض بالتوقيت المحلي (القيم المخزنة ISO بتوقيت UTC، وتواريخ التوصيل نص YYYY-MM-DD)
@@ -131,7 +145,14 @@
   $('#toast').addEventListener('click', () => { clearTimeout(toastTimer); $('#toast').className = 'toast'; });
 
   let modalReturnFocus = null;
+  let modalLocked = false;     // نافذة إجبارية (كلمة المرور الأولية): لا تُغلق بزر X ولا بالخارج ولا بـ Escape
   let keepPrintArea = false;   // زر «طباعة» يُبقي المستند في منطقة الطباعة حتى تنتهي
+  /** قفل/فتح النافذة العامة. المقفلة تُغلق برمجياً فقط (بعد إتمام الخطوة الإجبارية). */
+  function lockModal(on) {
+    modalLocked = on === true;
+    const x = $('#modalClose');
+    if (x) x.hidden = modalLocked;
+  }
   /** cls: صنف إضافي على النافذة (مثل wide للجداول العريضة)، يُزال عند الإغلاق */
   function openModal(title, bodyHtml, onMount, cls = '') {
     modalReturnFocus = document.activeElement;
@@ -152,15 +173,15 @@
     if (modalReturnFocus && modalReturnFocus.isConnected) modalReturnFocus.focus({preventScroll:true});
   }
   $('#modal').addEventListener('keydown', e => {
-    if (e.key === 'Escape') { e.preventDefault(); const cancel = $('#cNo'); if (cancel) cancel.click(); else closeModal(); }
+    if (e.key === 'Escape') { e.preventDefault(); if (modalLocked) return; const cancel = $('#cNo'); if (cancel) cancel.click(); else closeModal(); }
     if (e.key !== 'Tab') return;
     const controls = [...$('#modal').querySelectorAll('button,input,select,textarea,a[href]')].filter(el => !el.disabled && el.getClientRects().length);
     const first = controls[0], last = controls[controls.length - 1];
     if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
   });
-  $('#modalClose').addEventListener('click', closeModal);
-  $('#modal').addEventListener('click', (e) => { if (e.target === $('#modal')) closeModal(); });
+  $('#modalClose').addEventListener('click', () => { if (!modalLocked) closeModal(); });
+  $('#modal').addEventListener('click', (e) => { if (e.target === $('#modal') && !modalLocked) closeModal(); });
 
   /** نافذة تأكيد. danger=false لتنبيه يُتابَع عادةً (زر أساسي لا أحمر) */
   function confirmDlg(title, msg, okLabel = 'تأكيد', danger = true) {
@@ -225,32 +246,37 @@
       return;
     }
     $('#loginPass').value = '';
+    // كلمة المرور الأولية: بوابة إجبارية قبل دخول التطبيق — لا يدخل النظام قبل تغييرها
+    if (r.mustChangePassword) { forcePasswordChange(r.user, () => enterApp(r.user)); return; }
     enterApp(r.user);
-    if (r.mustChangePassword) setTimeout(forcePasswordChange, 700);
   });
 
-  /* كلمة المرور الافتراضية admin/admin منشورة في التوثيق: لا يُترك النظام عليها.
-     كانت شاشة الدخول تعرضها لأي زائر، وصارت تُطلب بدلها عند أول دخول. */
-  function forcePasswordChange() {
-    if (!currentUser) return;
-    openModal('غيّر كلمة المرور الافتراضية', `
-      <p>أنت تستخدم كلمة المرور الافتراضية <b>admin</b>، وهي معروفة لكل من قرأ دليل النظام. اختر كلمة مرور جديدة قبل المتابعة.</p>
+  /* الحساب بكلمة مرور أولية لا يدخل التطبيق قبل تغييرها: خطوة onboarding مؤقتة
+     بلا زر تجاوز ولا إغلاق (X/الخارج/Escape)، ولا تُكشف الكلمة الأولية في أي رسالة.
+     من غيّر كلمته سابقاً لا يمر من هنا أصلاً (mustChangePassword=false). */
+  function forcePasswordChange(pendingUser, onDone) {
+    if (!pendingUser) return;
+    lockModal(true);
+    openModal('إنشاء كلمة مرور جديدة', `
+      <p>هذا الحساب ما زال يستخدم كلمة المرور الأولية. اختر كلمة مرور جديدة قبل المتابعة — لن تتمكن من استخدام النظام قبل ذلك.</p>
       <label>كلمة المرور الجديدة <input id="fpNew" type="password" autocomplete="new-password" minlength="6"></label>
       <label>تأكيد كلمة المرور <input id="fpNew2" type="password" autocomplete="new-password"></label>
       <p id="fpErr" class="error" role="alert"></p>
-      <div class="btn-row"><button class="btn" id="fpLater">لاحقاً</button><button class="btn primary" id="fpOk">${icon('lock')} حفظ كلمة المرور</button></div>`, (b) => {
-      $('#fpLater', b).onclick = () => { closeModal(); toast('تذكير: كلمة المرور ما زالت الافتراضية — غيّرها من صفحة المستخدمين', 'info'); };
+      <div class="btn-row"><button class="btn primary" id="fpOk">${icon('lock')} حفظ والدخول</button></div>`, (b) => {
       $('#fpOk', b).onclick = async () => {
         const p1 = $('#fpNew', b).value, p2 = $('#fpNew2', b).value;
         const err = $('#fpErr', b);
         if (p1.length < 6) { err.textContent = 'كلمة المرور 6 أحرف فأكثر'; return; }
-        if (p1 === 'admin') { err.textContent = 'اختر كلمة مرور غير الافتراضية'; return; }
         if (p1 !== p2) { err.textContent = 'كلمتا المرور غير متطابقتين'; return; }
-        const u = Store.getUser(currentUser.id) || currentUser;
-        try { await Store.saveUser({ id: currentUser.id, name: u.name, username: u.username, role: u.role, active: true }, p1); }
-        catch (e) { err.textContent = e.message; return; }
+        // المقارنة في الكود فقط: تمنع إعادة استخدام الكلمة الأولية المعروفة دون كشفها في أي رسالة
+        if (p1 === 'admin') { err.textContent = 'اختر كلمة مرور مختلفة'; return; }
+        const u = Store.getUser(pendingUser.id) || pendingUser;
+        try { await Store.saveUser({ id: pendingUser.id, name: u.name, username: u.username, role: u.role, active: true }, p1); }
+        catch (e) { err.textContent = e.message || 'تعذر الحفظ'; return; }
+        lockModal(false);
         closeModal();
-        toast('تم تغيير كلمة المرور');
+        toast('تم إنشاء كلمة المرور');
+        if (onDone) onDone();
       };
       requestAnimationFrame(() => { const el = $('#fpNew', b); if (el) el.focus(); });
     });
@@ -392,10 +418,11 @@
   let readOnly = false;   // الطلب مملوك لموظف آخر: عرض فقط
 
   /** الموظف يعدّل طلباته فقط، والمدير يعدّل الجميع */
-  function canEditOrder(o) {
-    if (!o || !o.createdBy) return true;
-    return isAdmin() || o.createdBy === currentUser.id;
-  }
+function canEditOrder(o) {
+  if (!o || !o.id) return true;   // طلب جديد لم يُحفظ: الإنشاء للجميع
+  if (!o.createdBy) return isAdmin();   // بلا مالك (قديم): المدير فقط، لا يُفتح لأي موظف
+  return isAdmin() || o.createdBy === currentUser.id;
+}
 
   /** قفل/فتح كل عناصر تحرير الطلب حسب الملكية */
   const LOCKABLE = [
@@ -429,7 +456,7 @@
       priceOverrides: {}, manualRows: [], costs: {}, extraCosts: [],
       customer: { name: '', phone: '', address: '', mapsUrl: '' },
       deliveryDate: '', paid: 0, payments: [], notes: '', attachments: emptyAttachments(), discount: 0,
-      vat: { enabled: settings().vatEnabled !== false, rate: num(settings().vatRate ?? 15) },
+      vat: vatDefaults(),
       createdBy: null, createdByName: '', createdAt: null, updatedAt: null,
       total: 0,
     };
@@ -1289,14 +1316,16 @@
     (order.manualRows || []).forEach((r, idx) => {
       lines.push({ key: 'manual:' + idx, kind: 'manual', idx, name: r.name, sub: '', unit: r.unit || 'قطعة', qty: num(r.qty), price: money(r.price), basePrice: money(r.price), total: money(num(r.qty) * money(r.price)) });
     });
-    // الخصم (مبلغ ثابت) يُخصم من الإجمالي النهائي بعد الضريبة
+    // الخصم BEFORE VAT (سياسة معتمدة): الخاضع = subtotal − discount، والضريبة عليه.
+    // الصلاحية تُفرض عند الإدخال والحفظ (0<=discount<=subtotal)؛ هنا حماية عرض فقط.
     const subtotal = money(lines.reduce((s, l) => s + l.total, 0));
-    const vat = order.vat || { enabled: false, rate: 15 };
+    const vat = order.vat || { enabled: false, rate: vatDefaults().rate };
     const vatRate = vat.enabled ? Math.min(100, Math.max(0, num(vat.rate))) : 0;
-    const vatAmount = money(subtotal * vatRate / 100);
     const discount = money(order.discount || 0);
-    const total = money(subtotal + vatAmount - discount);
-    return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, discount, total };
+    const taxable = money(Math.max(0, subtotal - Math.max(0, discount)));
+    const vatAmount = money(taxable * vatRate / 100);
+    const total = money(taxable + vatAmount);
+    return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, discount, taxable, total };
   }
 
   /* ---------------- التكاليف والربح (للمدير فقط) ---------------- */
@@ -1333,8 +1362,9 @@
 
   /**
    * تكاليف الطلب وربحه.
-   * الربح = المبيعات قبل الضريبة − (تكاليف الأصناف + التكاليف الإضافية).
+   * الربح = الإيراد (المبيعات قبل الضريبة صافية الخصم، calcRevenue) − التكاليف.
    * الضريبة تُحصَّل للدولة وليست إيراداً فلا تدخل الحساب.
+   * أرباح الأسطر تبقى على إجمالي السطر (الخصم على مستوى الطلب لا يُوزَّع على الأسطر).
    */
   function computeCosts(order) {
     const { lines, subtotal, vatEnabled, total } = computeLines(order);
@@ -1351,12 +1381,13 @@
     const extras = extraCosts(order);
     const extrasCost = money(extras.reduce((s, e) => s + e.amount, 0));
     const costTotal = money(linesCost + extrasCost);
-    const profit = money(subtotal - costTotal);
+    const revenue = calcRevenue(subtotal, order.discount);
+    const profit = calcProfit(revenue, costTotal);
     return {
-      rows, subtotal, vatEnabled, total, costTotal, profit,
+      rows, subtotal, revenue, vatEnabled, total, costTotal, profit,
       linesCost, extras, extrasCost,
       entered: filled.length + extras.length, missing: rows.length - filled.length,
-      margin: subtotal > 0 ? r2((profit / subtotal) * 100) : 0,
+      margin: revenue > 0 && profit !== null ? r2((profit / revenue) * 100) : 0,
     };
   }
 
@@ -1377,18 +1408,41 @@
     return v;
   }
 
-  /** المبيعات قبل الضريبة: أساس حساب الربح (الطلبات القديمة تُشتق من المجموع) */
+  /** السياسة المركزية للضريبة: المعدل الافتراضي للطلبات *الجديدة* من الإعدادات.
+      الطلبات المحفوظة تحتفظ بمعدلها (snapshot في vat/vatRate) ولا تتأثر بتغيير
+      الإعداد لاحقاً — لا يُعاد حساب طلب قديم تلقائياً. القيمة الاحتياطية للحالات
+      الشاذة فقط (إعدادات مفقودة)، وليست مصدراً للحساب. */
+  const VAT_POLICY = { fallbackRate: 15 };
+  function vatDefaults() {
+    return { enabled: settings().vatEnabled !== false, rate: num(settings().vatRate ?? VAT_POLICY.fallbackRate) };
+  }
+  /** مصدر واحد لنسبة الضريبة المحفوظة: الحقل الصريح أولاً ثم كائن الضريبة (طلبات قديمة).
+      بلا migration — قراءة فقط بترتيب ثابت بدل المزج بين o.vatRate وo.vat.rate في كل موضع. */
+  function vatRateOf(o) {
+    if (o && o.vatRate !== undefined && o.vatRate !== null) return num(o.vatRate);
+    return num(o && o.vat ? o.vat.rate : 0);
+  }
+  /** الإيراد = المبيعات قبل الضريبة صافية الخصم. التعريف الوحيد المعتمد (C9). */
+  function calcRevenue(subtotal, discount) {
+    return money(money(subtotal) - money(discount || 0));
+  }
+  /** الربح = الإيراد − التكلفة. التعريف الوحيد المعتمد (C9)؛ null تعني بلا تكاليف مدخلة. */
+  function calcProfit(revenue, cost) {
+    return cost === null || cost === undefined ? null : money(revenue - cost);
+  }
+  /** المبيعات قبل الضريبة: أساس حساب الربح.
+      الطلبات القديمة بلا subtotal تُشتق من المجموع بعكس معادلة computeLines
+      (total = taxable×(1+rate) حيث taxable = subtotal−discount)، أي الإيراد
+      = total/(1+rate) مباشرة بلا طرح إضافي (C10). */
   function orderRevenue(o) {
-    const discount = money(o.discount || 0);
-    if (o.subtotal !== undefined && o.subtotal !== null) return money(money(o.subtotal) - discount);
-    const rate = (o.vat && o.vat.enabled) ? num(o.vatRate != null ? o.vatRate : o.vat.rate) : 0;
-    return money(num(o.total) / (1 + rate / 100) - discount);
+    if (o.subtotal !== undefined && o.subtotal !== null) return calcRevenue(o.subtotal, o.discount);
+    const rate = (o.vat && o.vat.enabled) ? vatRateOf(o) : 0;
+    return money(num(o.total) / (1 + rate / 100));
   }
 
   /** صافي ربح الطلب، أو null إن لم تُدخل تكاليفه */
   function orderProfit(o) {
-    const c = orderCost(o);
-    return c === null ? null : money(orderRevenue(o) - c);
+    return calcProfit(orderRevenue(o), orderCost(o));
   }
 
   /** نسبة عمولة البائع للطلب: قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
@@ -1538,7 +1592,7 @@
     $('#discRow').dataset.state = discount > 0.004 ? 'show' : 'none';
     $('#priceDiscount').textContent = discount > 0.004 ? `- ${fmt(discount)} ${currency()}` : '—';
     // خلاصة الطلب كاملة في مكان واحد: المدفوع والمتبقي تحت الإجمالي مباشرة
-    const pPaid = paidOf(cur), pRem = total - pPaid;
+    const pPaid = paidOf(cur), pRem = remainingOf(total, pPaid);
     $('#pricePaid').textContent = `${fmt(pPaid)} ${currency()}`;
     $('#priceRem').textContent = `${fmt(pRem)} ${currency()}`;
     $('#priceRemRow').dataset.state = total <= 0 ? 'none' : pRem > 0.004 ? 'due' : pRem < -0.004 ? 'over' : 'clear';
@@ -1610,7 +1664,7 @@
   });
 
   /* --- ضريبة القيمة المضافة --- */
-  const ensureVat = () => { if (!cur.vat) cur.vat = { enabled: false, rate: num(settings().vatRate ?? 15) }; return cur.vat; };
+    const ensureVat = () => { if (!cur.vat) cur.vat = { enabled: false, rate: vatDefaults().rate }; return cur.vat; };
   $('#vatEnabled').addEventListener('change', () => { ensureVat().enabled = $('#vatEnabled').checked; setDirty(true); renderPricing(); });
   $('#vatRate').addEventListener('change', () => { ensureVat().rate = Math.min(100, Math.max(0, num($('#vatRate').value))); setDirty(true); renderPricing(); });
 
@@ -1631,25 +1685,42 @@
   /* ---------------- موقع التوصيل في خرائط جوجل ----------------
      يفتح الموظف الخرائط ليحدّد الموقع، ويصير مكان التوصيل رابطاً
      يُفتح في خرائط جوجل ليقود السائق إليه عند التسليم. */
-  function mapsSearchUrl(address) {
-    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(address || '').trim());
-  }
-  function syncMapsLink() {
-    const el = $('#custMapsLink');
-    const pinned = String(cur.customer.mapsUrl || '').trim();
-    const addr = String(cur.customer.address || '').trim();
-    const href = pinned || (addr ? mapsSearchUrl(addr) : '');
-    if (href) { el.href = href; el.hidden = false; }
-    else el.hidden = true;
-  }
+   function mapsSearchUrl(address) {
+     return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(String(address || '').trim());
+   }
+   /* رابط خارجي آمن: https فقط. التحليل عبر URL() لا regex، فأي scheme آخر
+      (javascript:, data:, blob:, file:, …) أو نص غير صالح يُرفض بإرجاع ''. */
+   function safeExternalUrl(raw) {
+     const v = String(raw || '').trim();
+     if (!v) return '';
+     let u;
+     try { u = new URL(v); } catch (_) { return ''; }
+     if (u.protocol !== 'https:') return '';
+     return u.href;
+   }
+   function syncMapsLink() {
+     const el = $('#custMapsLink');
+     const pinned = safeExternalUrl(cur.customer.mapsUrl);
+     const addr = String(cur.customer.address || '').trim();
+     const href = pinned || (addr ? mapsSearchUrl(addr) : '');
+     if (href) { el.href = href; el.hidden = false; }
+     else { el.removeAttribute('href'); el.hidden = true; }
+   }
   $('#btnPickMap').addEventListener('click', () => {
     const addr = $('#custAddress').value.trim();
     const url = addr ? mapsSearchUrl(addr) : 'https://www.google.com/maps';
     openExternal(url);
   });
   $('#custMapsUrl').addEventListener('input', () => {
-    cur.customer.mapsUrl = $('#custMapsUrl').value.trim();
-    setDirty(true);
+    const raw = $('#custMapsUrl').value.trim();
+    // يُخزَّن الرابط فقط إن كان https صالحاً (أو فارغاً للمسح)؛ غير ذلك خطأ تحت الحقل ولا يُحفظ
+    if (!raw || safeExternalUrl(raw)) {
+      cur.customer.mapsUrl = safeExternalUrl(raw);
+      setFieldError($('#custMapsUrl'), '');
+      setDirty(true);
+    } else {
+      setFieldError($('#custMapsUrl'), 'رابط غير صالح — الصق رابط https كاملاً');
+    }
     syncMapsLink();
   });
 
@@ -1711,7 +1782,7 @@
       const d = o.createdAt || '';
       if (d >= c.last) { c.last = d; c.name = o.customer.name || c.name; c.phone = o.customer.phone || c.phone; c.address = o.customer.address || c.address; }
       if (o.status === 'quote') c.quotes++;
-      if (isSale(o)) { c.sales += orderRevenue(o); c.remaining += Math.max(0, num(o.total) - num(o.paid)); }
+      if (isSale(o)) { c.sales += orderRevenue(o); c.remaining += remainingOf(o.total, o.paid); }
     });
     return m;
   }
@@ -1819,12 +1890,15 @@
     return o.payments;
   }
   const paidOf = (o) => (Array.isArray(o.payments) ? money(o.payments.reduce((s, p) => s + money(p.amount), 0)) : money(o.paid));
+  /** المتبقي = الإجمالي − المدفوع، بلا تقييد بالصفر: السالب دفعة زائدة تُظهرها الشارة والحالة.
+      الدفع الزائد مسموح (دفعة مقدمة) ولا يُمنع هنا — التعريف الوحيد المعتمد (F4). */
+  const remainingOf = (total, paid) => money(num(total) - num(paid));
 
   function renderPayment() {
     const total = cur.total || 0;
     const paid = paidOf(cur);
     cur.paid = paid;
-    const rem = total - paid;
+    const rem = remainingOf(total, paid);
     $('#payDiscount').value = num(cur.discount || 0);
     // العملة في العنوان لا بجانب كل رقم: يوفّر عرضاً ويمنع قصّ الأرقام في الجوال
     const cu = currency();
@@ -1891,15 +1965,20 @@
     if (readOnly) $$('[data-paydel]', box).forEach((b) => { b.disabled = true; });
   }
 
-  /* المبلغ يُكتب بفواصل أو بأرقام هندية: يُقرأ رقماً صحيحاً */
-  const readAmount = (v) => money(latinDigits(v).replace(/[,\s٬]/g, ''));
+  /* المبلغ يُكتب بفواصل أو بأرقام هندية: يُقرأ رقماً صحيحاً، وnull عند الإدخال المشوَّه
+     ("10abc") بدل تخمين جزء منه — القرار عند الاستدعاء (خطأ حقلي). */
+  const readAmount = (v) => {
+    const s = latinDigits(v).replace(/[,\s٬]/g, '').trim();
+    const n = strictNum(s);
+    return n === null ? null : money(n);
+  };
 
   /* اختصارات الدفعة: تملأ خانة المبلغ فقط ولا تسجّل شيئاً قبل الضغط على «تسجيل» */
   $('#payQuick').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-pay]');
     if (!btn || readOnly) return;
     const total = cur.total || 0;
-    const rem = Math.max(0, total - paidOf(cur));
+    const rem = Math.max(0, remainingOf(total, paidOf(cur)));
     const k = btn.dataset.pay;
     const v = k === 'rem' ? rem : k === 'dep' ? money(total * num(settings().depositPct) / 100) : money(total * num(k));
     $('#payAmount').value = v || '';
@@ -1910,6 +1989,7 @@
     if (readOnly) return;
     const el = $('#payAmount');
     const amt = readAmount(el.value);
+    if (amt === null) { setFieldError(el, 'مبلغ غير صالح — أدخل أرقاماً فقط'); el.focus(); return; }
     if (!amt || amt < 0) { setFieldError(el, 'أدخل مبلغاً أكبر من صفر'); el.focus(); return; }
     if (refund && amt > paidOf(cur)) { setFieldError(el, `لا يمكن استرداد أكثر من المدفوع (${fmt(paidOf(cur))})`); el.focus(); return; }
     setFieldError(el, '');
@@ -1936,7 +2016,15 @@
   $('#payAmount').addEventListener('input', () => setFieldError($('#payAmount'), ''));
 
   $('#payDiscount').addEventListener('input', () => {
-    cur.discount = Math.max(0, money($('#payDiscount').value));
+    const raw = latinDigits($('#payDiscount').value).trim();
+    if (!raw) { cur.discount = 0; setFieldError($('#payDiscount'), ''); setDirty(true); renderPricing(); renderPayment(); return; }
+    const n = strictNum(raw);
+    if (n === null || n < 0) { setFieldError($('#payDiscount'), 'خصم غير صالح — أدخل أرقاماً فقط'); return; }
+    // سياسة معتمدة: 0<=discount<=subtotal (لا سالب ولا تجاوز للمجموع)
+    const cap = computeLines(cur).subtotal;
+    if (money(n) > cap) { setFieldError($('#payDiscount'), `الخصم لا يتجاوز مجموع الأصناف (${fmt(cap)} ${currency()})`); return; }
+    setFieldError($('#payDiscount'), '');
+    cur.discount = money(n);
     setDirty(true);
     renderPricing();
     renderPayment();
@@ -2118,11 +2206,13 @@
     cur.costs = cur.costs || {};
     cur.extraCosts = cur.extraCosts || [];
     cur.customer = cur.customer || { name: '', phone: '', address: '' };
-    if (!cur.customer.mapsUrl) cur.customer.mapsUrl = '';
-    if (cur.discount == null) cur.discount = 0;
+    // تعقيم القيم القديمة (محلية/مخزّنة): أي رابط غير https يُسقط ولا يُعرض قابلاً للنقر
+    cur.customer.mapsUrl = safeExternalUrl(cur.customer.mapsUrl);
+    if (cur.discount == null || cur.discount === '') cur.discount = 0;
+    else cur.discount = money(cur.discount);
     cur.attachments = normalizeAttachments(cur.attachments);
     // الطلبات القديمة المحفوظة بدون ضريبة تبقى كما هي
-    cur.vat = cur.vat || { enabled: false, rate: num(settings().vatRate ?? 15) };
+    cur.vat = cur.vat || { enabled: false, rate: vatDefaults().rate };
     readOnly = !canEditOrder(cur);
     curVersions = new Set();
     ownVersion(cur.updatedAt);
@@ -2166,19 +2256,27 @@
     if (readOnly) { if (!silent) toast('هذا الطلب لموظف آخر: لا يمكن حفظ التعديلات', true); return false; }
     cur.design = designer.getState();
     normalizePayments(cur);
+    cur.discount = money(cur.discount || 0);
     const { lines, total, subtotal, vatAmount, vatRate } = computeLines(cur);
     cur.subtotal = subtotal; cur.vatAmount = vatAmount; cur.vatRate = vatRate;
     // التحقق يُكتب تحت الحقل نفسه، ويُنقل المستخدم إليه
     const nameErr = cur.customer.name.trim() ? '' : 'اسم العميل مطلوب لحفظ الطلب';
     const phErr = phoneError(cur.customer.phone);
+    const discErr = cur.discount < 0 || cur.discount > subtotal ? 'الخصم يجب أن يكون بين صفر ومجموع الأصناف' : '';
     setFieldError($('#custName'), nameErr);
     setFieldError($('#custPhone'), phErr);
-    if (nameErr || phErr) {
+    setFieldError($('#payDiscount'), discErr);
+    if (nameErr || phErr || discErr) {
       if (!silent) {
-        toast(nameErr || phErr, true);
-        showStage('customer');
-        $('#m-customer').scrollIntoView({ behavior: smoothScroll(), block: 'nearest' });
-        (nameErr ? $('#custName') : $('#custPhone')).focus({ preventScroll: true });
+        toast(nameErr || phErr || discErr, true);
+        if (discErr && !nameErr && !phErr) {
+          showStage('pay');
+          $('#payDiscount').focus({ preventScroll: true });
+        } else {
+          showStage('customer');
+          $('#m-customer').scrollIntoView({ behavior: smoothScroll(), block: 'nearest' });
+          (nameErr ? $('#custName') : $('#custPhone')).focus({ preventScroll: true });
+        }
       }
       return false;
     }
@@ -2197,7 +2295,7 @@
     cur.extraCosts = extraCosts(cur);
     syncCostTotal(cur);
     cur.total = total;
-    cur.remaining = money(total - num(cur.paid));
+    cur.remaining = remainingOf(total, cur.paid);
     const nowIso = Store.now();
     if (!cur.id) {
       // سحابياً يمنح الخادم الرقم عند أول حفظ ناجح، فلا يضيع رقم بحفظ فاشل
@@ -2265,14 +2363,13 @@
   /* تعارض: عُدِّل الطلب من جهاز آخر بعد فتحنا له. نعرض الفروق ونترك القرار للموظف. */
   async function resolveConflict(localCopy) {
     let remote = null;
-    try {
-      await Store.refresh();
-      remote = db().orders.find((o) => o.id === localCopy.id) || null;
-      setNetState('ok');
-    } catch (e) {
-      toast('تعذّر جلب نسخة الخادم: ' + e.message, true);
+    // جلب فقط (بلا دفع): الدفع هنا مرفوض أصلاً (409)، وrefresh() الجديد يُجهض الجلب عند فشله
+    if (!(await Store.fetchLatest())) {
+      toast('تعذّر جلب نسخة الخادم: ' + (Store.lastError || ''), true);
       return;
     }
+    remote = db().orders.find((o) => o.id === localCopy.id) || null;
+    setNetState('ok');
     const who = (remote && remote.updatedByName) || 'موظف آخر';
     const when = remote && remote.updatedAt ? fmtDateTime(remote.updatedAt) : '';
     const ch = remote ? diffOrder(remote, localCopy) : [];
@@ -2445,12 +2542,12 @@
         <div class="inv-notes">${order.notes ? `<b>ملاحظات:</b> ${esc(order.notes).replace(/\n/g, '<br>')}` : ''}${s.invoiceNote ? `${order.notes ? '<br>' : ''}<b>شروط:</b> ${esc(s.invoiceNote)}` : ''}${!order.notes && !s.invoiceNote ? '<b>ملاحظات:</b> —' : ''}</div>
         ${qrSrc ? `<div class="inv-qr"><img src="${qrSrc}" alt="رمز الفاتورة الضريبية"><small>رمز الفاتورة الضريبية</small></div>` : ''}
         <div class="inv-totals">
-          ${vatEnabled ? `<div><span>المجموع قبل الضريبة</span><span class="num">${fmt(subtotal)} ${cur$}</span></div>
-          <div><span>ضريبة القيمة المضافة ${num(vatRate)}%</span><span class="num">${fmt(vatAmount)} ${cur$}</span></div>` : ''}
+          <div><span>المجموع قبل الخصم</span><span class="num">${fmt(subtotal)} ${cur$}</span></div>
           ${discount > 0.004 ? `<div><span>الخصم</span><span class="num">- ${fmt(discount)} ${cur$}</span></div>` : ''}
+          ${vatEnabled ? `<div><span>ضريبة القيمة المضافة ${num(vatRate)}%</span><span class="num">${fmt(vatAmount)} ${cur$}</span></div>` : ''}
           <div class="total"><span>الإجمالي${vatEnabled ? ' شامل الضريبة' : ''}</span><span class="num">${fmt(total)} ${cur$}</span></div>
           ${quote ? '' : `<div><span>المدفوع${nPays > 1 ? ` (${nPays} دفعات)` : ''}</span><span class="num">${fmt(paid)} ${cur$}</span></div>
-          <div class="rem"><span>المتبقي</span><span class="num">${fmt(total - paid)} ${cur$}</span></div>`}
+          <div class="rem"><span>المتبقي</span><span class="num">${fmt(remainingOf(total, paid))} ${cur$}</span></div>`}
         </div>
       </div>
       <div class="inv-foot">
@@ -2732,6 +2829,8 @@
 
   /** فتح رابط خارجي: في تطبيق أندرويد يُفتح بالمتصفح الخارجي (وإلا window.open لا يعمل) */
   function openExternal(url) {
+    // بوابة مركزية: لا يُفتح أي رابط خارجي غير https صالح
+    if (!safeExternalUrl(url)) { toast('رابط غير صالح', true); return; }
     if (window.Capacitor) { window.open(url, '_system'); return; }
     const a = document.createElement('a');
     a.href = url; a.target = '_blank'; a.rel = 'noopener noreferrer';
@@ -3008,7 +3107,7 @@
     const matched = list.length;
     list = list.slice(0, ordersShown);
     tb.innerHTML = list.map((o) => {
-      const rem = num(o.total) - num(o.paid);
+      const rem = remainingOf(o.total, o.paid);
       const cost = orderCost(o);
       const profit = orderProfit(o);
       const comm = orderCommission(o);
@@ -3179,7 +3278,7 @@
         const raw = String(inp.value).trim();
         if (raw === '') return null;
         const v = parseFloat(raw);
-        return Number.isFinite(v) && v >= 0 ? Math.round(v) : NaN;
+        return Number.isFinite(v) && v >= 0 ? Math.round(v * 100) / 100 : NaN;
       };
 
       /* --- البنود الإضافية: تُدار كقائمة محلية ثم تُحفظ مع الطلب --- */
@@ -3256,8 +3355,8 @@
         extrasCost = money(extrasCost);
 
         costTotal = money(linesCost + extrasCost);
-        const profit = money(info.subtotal - costTotal);
-        const margin = info.subtotal > 0 ? r2((profit / info.subtotal) * 100) : 0;
+        const profit = calcProfit(info.revenue, costTotal);
+        const margin = info.revenue > 0 && profit !== null ? r2((profit / info.revenue) * 100) : 0;
         const missing = inputs.length - filled;
         const anyCost = filled > 0 || extrasCount > 0;
         // بلا أي تكلفة لا يوجد ربح يُحسب: إظهار المبيعات كاملة كربح مضلّل
@@ -3759,9 +3858,13 @@
   const mandoubUsers = () => db().users.filter((u) => u.role === 'mandoub');
   const mandoubName = (id) => { const u = Store.getUser(id); return u ? u.name : '—'; };
 
-  function mandoubDescendants(id, out) {
+  function mandoubDescendants(id, out, seen) {
+    // مقاومة الدورات: أي بيانات شاذة (أب ذاتي أو دورة) تُحتوى بدل تعليق الصفحة
     out = out || [];
-    mandoubUsers().forEach((m) => { if (m.parentId === id) { out.push(m.id); mandoubDescendants(m.id, out); } });
+    seen = seen || new Set([id]);
+    mandoubUsers().forEach((m) => {
+      if (m.parentId === id && !seen.has(m.id)) { seen.add(m.id); out.push(m.id); mandoubDescendants(m.id, out, seen); }
+    });
     return out;
   }
 
@@ -4125,7 +4228,7 @@
           <label>شروط تظهر في الفاتورة (اختياري) <input id="sInvNote" value="${esc(s.invoiceNote || '')}" placeholder="مثال: العربون غير مسترد، مدة التنفيذ 10 أيام"></label>
           <div class="row2">
             <label>الرقم الضريبي <input id="sVatNo" value="${esc(s.vatNumber || '')}" class="ltr"></label>
-            <label>نسبة ضريبة القيمة المضافة % <input id="sVatRate" type="number" min="0" max="100" step="0.5" value="${num(s.vatRate ?? 15)}"></label>
+            <label>نسبة ضريبة القيمة المضافة % <input id="sVatRate" type="number" min="0" max="100" step="0.5" value="${num(s.vatRate ?? VAT_POLICY.fallbackRate)}"></label>
           </div>
           <label class="inline-check"><input id="sVatOn" type="checkbox" ${s.vatEnabled !== false ? 'checked' : ''}> تفعيل الضريبة افتراضياً في الطلبات الجديدة (يمكن إلغاؤها لكل طلب)</label>
         </div>
@@ -4522,7 +4625,7 @@
       revenue,
       gross: sum(live, (o) => o.total),
       paid: sum(live, (o) => o.paid),
-      remaining: sum(live, (o) => Math.max(0, num(o.total) - num(o.paid))),
+      remaining: sum(live, (o) => remainingOf(o.total, o.paid)),
       cost: sum(costed, orderCost),
       profit, costedRevenue,
       commission: sum(costed, orderCommission),
@@ -4682,7 +4785,7 @@
       e.count++;
       e.revenue += orderRevenue(o);
       e.paid += num(o.paid);
-      e.remaining += Math.max(0, num(o.total) - num(o.paid));
+      e.remaining += remainingOf(o.total, o.paid);
       const pr = orderProfit(o);
       if (pr !== null) { e.profit += pr; e.costedRev += orderRevenue(o); e.costed++; }
       const cm = orderCommission(o);
@@ -4712,7 +4815,7 @@
       const e = g.get(k) || { name: (o.customer && o.customer.name) || '—', phone: (o.customer && o.customer.phone) || '', count: 0, revenue: 0, remaining: 0, last: '' };
       e.count++;
       e.revenue += orderRevenue(o);
-      e.remaining += Math.max(0, num(o.total) - num(o.paid));
+      e.remaining += remainingOf(o.total, o.paid);
       const d = ordDate(o);
       if (d > e.last) { e.last = d; e.name = (o.customer && o.customer.name) || e.name; }
       g.set(k, e);
@@ -5168,11 +5271,12 @@
       adoptServerNumber();
       const before = cur.id ? db().orders.find((o) => o.id === cur.id) : null;
       const beforeUpdated = before ? before.updatedAt : null;
-      await Store.refresh();
+      const synced = await Store.refresh();
       // الجلب نجح، وما بعده عرض فقط: خطأ في رسم شاشة واحدة كان يُحسب انقطاع
       // مزامنة فيقلب الشارة إلى «تعذّر التحديث» ويُسقط بقية التحديثات معه.
       // لذا تُعلن الحالة هنا، ويُعزل كل رسم عن جاره.
-      setNetState('ok');
+      // refresh() لا يجلب فوق تعديلات معلّقة: الفشل يُبقي المحلي ويُعلَن (لا «محدّث» زائفة)
+      setNetState(synced ? 'ok' : (Store.lastStatus === -1 ? 'off' : 'err'));
       const draw = (label, fn) => { try { fn(); } catch (err) { console.error('render failed:', label, err); } };
       const active = ($('.page.active') || {}).id || '';
       if (active === 'page-orders') draw('orders', renderOrders);

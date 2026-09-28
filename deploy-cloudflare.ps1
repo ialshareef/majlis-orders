@@ -111,8 +111,12 @@ $metaFile = Join-Path $env:TEMP 'majlis-worker-metadata.json'
 
 if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { Fail 'curl.exe not found on this machine.' }
 $uploadUrl = "$API/accounts/$AccountId/workers/scripts/$WorkerName"
-$resp = & curl.exe -s -X PUT $uploadUrl -H "Authorization: Bearer $token" -F "metadata=@$metaFile;filename=metadata.json;type=application/json" -F "worker.js=@$bundle;filename=worker.js;type=application/javascript+module"
+# التخويل عبر ملف مؤقت بدل سطر الأوامر حتى لا يظهر الرمز في قائمة العمليات
+$headerFile = Join-Path $env:TEMP 'majlis-worker-auth.txt'
+[IO.File]::WriteAllText($headerFile, "Authorization: Bearer $token", (New-Object Text.UTF8Encoding($false)))
+$resp = & curl.exe -s -X PUT $uploadUrl -H "@$headerFile" -F "metadata=@$metaFile;filename=metadata.json;type=application/json" -F "worker.js=@$bundle;filename=worker.js;type=application/javascript+module"
 Remove-Item -LiteralPath $metaFile -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath $headerFile -Force -ErrorAction SilentlyContinue
 try { $r = $resp | ConvertFrom-Json } catch { Fail "Unexpected response from Cloudflare:
     $resp" }
 if (-not $r.success) { Fail ('Worker upload failed: ' + (ErrText $r.errors)) }
@@ -147,7 +151,7 @@ Write-Host ''
 Write-Host '==================================================================' -ForegroundColor Green
 Write-Host '  DEPLOYED' -ForegroundColor Green
 Write-Host ("  URL   : $appUrl") -ForegroundColor Green
-Write-Host '  Login : admin / admin   (change the password right away)' -ForegroundColor Green
+Write-Host '  Login : admin   (a new password is required on first login)' -ForegroundColor Green
 Write-Host '==================================================================' -ForegroundColor Green
 Write-Host '  To update later: run this script again.' -ForegroundColor DarkGray
 Write-Host '  For safety: delete the .cf-token file when done.' -ForegroundColor DarkGray

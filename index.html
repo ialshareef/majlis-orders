@@ -451,7 +451,7 @@
             </div>
             <aside class="totals" id="priceTotals" aria-label="ملخص التسعير">
               <h4>ملخص التسعير</h4>
-              <div class="t-row t-sub"><span>المجموع قبل الضريبة</span><b id="priceSubtotal" class="num">0</b></div>
+              <div class="t-row t-sub"><span>المجموع قبل الخصم</span><b id="priceSubtotal" class="num">0</b></div>
               <div class="t-row t-vat" id="vatRow">
                 <label class="inline-check"><input type="checkbox" id="vatEnabled" checked> الضريبة <input type="number" aria-label="نسبة الضريبة" inputmode="decimal" id="vatRate" class="inline rate" min="0" max="100" step="0.5" value="15"> %</label>
                 <b id="priceVat" class="num">0</b>
@@ -493,7 +493,7 @@
                 <input id="custMapsUrl" type="url" inputmode="url" autocomplete="off" placeholder="رابط خرائط جوجل للموقع (اختياري)">
                 <button type="button" id="btnPickMap" class="btn small ghost" title="فتح خرائط جوجل لتحديد الموقع"><svg><use href="#i-pin"/></svg><span>تحديد الموقع</span></button>
               </div>
-              <a id="custMapsLink" class="maps-link" href="#" target="_blank" rel="noopener" hidden><svg><use href="#i-pin"/></svg><span>فتح الموقع في خرائط جوجل</span></a>
+              <a id="custMapsLink" class="maps-link" href="#" target="_blank" rel="noopener noreferrer" hidden><svg><use href="#i-pin"/></svg><span>فتح الموقع في خرائط جوجل</span></a>
               <label class="fld wide">
                 <svg><use href="#i-pen"/></svg>
                 <span class="fld-body"><b>ملاحظات</b><textarea id="orderNotes" rows="1" placeholder="أي تفاصيل إضافية عن الطلب"></textarea></span>

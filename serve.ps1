@@ -14,18 +14,61 @@ $listener.Start()
 Write-Host "Majlis Orders System running at: http://localhost:$Port/  (Ctrl+C to stop)"
 if (-not $NoOpen) { try { Start-Process "http://localhost:$Port/" } catch {} }
 
-$types = @{ '.html'='text/html; charset=utf-8'; '.css'='text/css; charset=utf-8'; '.js'='application/javascript; charset=utf-8'; '.json'='application/json; charset=utf-8'; '.png'='image/png'; '.svg'='image/svg+xml'; '.ico'='image/x-icon'; '.md'='text/plain; charset=utf-8' }
+$types = @{ '.html'='text/html; charset=utf-8'; '.css'='text/css; charset=utf-8'; '.js'='application/javascript; charset=utf-8'; '.json'='application/json; charset=utf-8'; '.png'='image/png'; '.svg'='image/svg+xml'; '.ico'='image/x-icon'; '.webmanifest'='application/manifest+json'; '.sql'='text/plain; charset=utf-8' }
+
+# قائمة سماح صريحة لما يُخدم (التطبيق + صفحتا الاختبار وما تجلبانه):
+#  ملفات الجذر: index.html, config.js, sw.js, manifest.json
+#  المجلدات: css/ js/ icons/ assets/ test/ worker/
+# السلوك المتوقع:
+#  GET /, /index.html, /js/app.js, /worker/schema.sql, /test/local-test.html => يعمل
+#  GET /.cf-token, /.env, /*.token, /*.keystore, /keystore.properties      => 404
+#  GET /../README.md, /%2e%2e/.., /..%252f.., أي مسار فيه .. أو مقطع يبدأ بنقطة => 404
+#  أي امتداد خارج القائمة (مثل .ps1 أو .md) => 404
+$rootFiles = @('index.html', 'config.js', 'sw.js', 'manifest.json')
+$rootDirs  = @('css/', 'js/', 'icons/', 'assets/', 'test/', 'worker/')
+
+function Test-AllowedPath([string]$rawPath) {
+  # فكّ الترميز تكرارياً لالتقاط %252e وأمثاله، ثم ارفض أي .. أو مقطع نقطي
+  $p = $rawPath
+  for ($i = 0; $i -lt 3; $i++) {
+    $d = [Uri]::UnescapeDataString($p)
+    if ($d -eq $p) { break }
+    $p = $d
+  }
+  if ($p.IndexOf([char]0) -ge 0) { return $null }
+  $segs = $p.Split('/', [StringSplitOptions]::RemoveEmptyEntries)
+  foreach ($s in $segs) {
+    if ($s -eq '.' -or $s -eq '..' -or $s.StartsWith('.')) { return $null }
+  }
+  $rel = ($segs -join '/')
+  if (-not $rel) { $rel = 'index.html' }
+  # أسماء سرية تُرفض دائماً (دفاع إضافي فوق القائمة)
+  $base = Split-Path -Leaf $rel
+  if ($base -eq '.env' -or $base -eq '.cf-token' -or $base -eq 'keystore.properties' -or $base -like '*.token' -or $base -like '*.keystore' -or $base -like '*.jks') { return $null }
+  # ملف جذر؟
+  if ($rel -notlike '*/*') {
+    foreach ($f in $rootFiles) { if ($rel -eq $f) { return $rel } }
+    return $null
+  }
+  # داخل مجلد مسموح؟
+  $okDir = $false
+  foreach ($d in $rootDirs) { if ($rel.StartsWith($d, [StringComparison]::OrdinalIgnoreCase)) { $okDir = $true; break } }
+  if (-not $okDir) { return $null }
+  # امتداد مسموح؟
+  $ext = [IO.Path]::GetExtension($rel).ToLower()
+  if (-not $types.ContainsKey($ext)) { return $null }
+  return $rel
+}
 
 while ($listener.IsListening) {
   try {
     $ctx = $listener.GetContext()
-    $path = [Uri]::UnescapeDataString($ctx.Request.Url.AbsolutePath)
-    if ($path -eq '/') { $path = '/index.html' }
-    $file = Join-Path $root ($path -replace '/', '\')
-    if ((Test-Path -LiteralPath $file -PathType Leaf) -and ((Resolve-Path -LiteralPath $file).Path).StartsWith($root)) {
+    $rel = Test-AllowedPath $ctx.Request.Url.AbsolutePath
+    $file = if ($rel) { Join-Path $root ($rel -replace '/', '\') } else { $null }
+    if ($file -and (Test-Path -LiteralPath $file -PathType Leaf) -and ((Resolve-Path -LiteralPath $file).Path).StartsWith($root, [StringComparison]::OrdinalIgnoreCase)) {
       $bytes = [IO.File]::ReadAllBytes($file)
       $ext = [IO.Path]::GetExtension($file).ToLower()
-      $ctx.Response.ContentType = if ($types[$ext]) { $types[$ext] } else { 'application/octet-stream' }
+      $ctx.Response.ContentType = $types[$ext]
       $ctx.Response.Headers.Add('Cache-Control', 'no-cache')
       $ctx.Response.ContentLength64 = $bytes.Length
       $ctx.Response.OutputStream.Write($bytes, 0, $bytes.Length)

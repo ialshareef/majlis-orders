@@ -190,10 +190,110 @@ async function bootstrap(env, user) {
   return out;
 }
 
+/* ------------------------------ التحقق المالي ------------------------------
+   فحص الشكل قبل أي كتابة: أرقام حقيقية محدودة فقط — يُرفض NaN وInfinity
+   والنصوص الجزئية مثل "10abc" (JSON يحوّل NaN إلى null فيُرفض حيث يلزم رقم).
+   السياسات المعتمدة هنا: لا سالب في الأسعار/الكميات/التكاليف/الخصم/النسب،
+   والخصم بين صفر والمجموع. إشارة مبلغ الدفعة وحدها مسموحة (الاسترداد سالب). */
+const isFinNum = (v) => typeof v === 'number' && Number.isFinite(v);
+const isOptNum = (v) => v === undefined || v === null || v === '' || isFinNum(v);
+const isOptNonNeg = (v) => v === undefined || v === null || v === '' || (isFinNum(v) && v >= 0);
+const finErr = (f) => { throw new HttpError(400, 'قيمة مالية غير صالحة: ' + f); };
+
+function checkOrderFin(o) {
+  if (!o || typeof o !== 'object' || typeof o.id !== 'string' || !o.id) finErr('order.id');
+  if (!(o.number === null || o.number === undefined || o.number === '' ||
+        (isFinNum(o.number) && Number.isInteger(o.number) && o.number >= 0))) finErr('order.number');
+  for (const f of ['subtotal', 'vatAmount', 'total', 'paid', 'remaining', 'costTotal', 'vatRate']) {
+    if (!isOptNum(o[f])) finErr('order.' + f);
+  }
+  // الخصم والنسب: أرقام غير سالبة، والخصم لا يتجاوز المجموع عند توفره
+  for (const f of ['sellerRate', 'shareRate', 'othersRate']) {
+    if (!isOptNonNeg(o[f])) finErr('order.' + f);
+  }
+  if (o.discount !== undefined && o.discount !== null && o.discount !== '') {
+    if (!isFinNum(o.discount) || o.discount < 0) finErr('order.discount');
+    if (isFinNum(o.subtotal) && o.discount > o.subtotal) finErr('order.discount');
+  }
+  if (o.vat !== undefined && o.vat !== null) {
+    if (typeof o.vat !== 'object' || !isOptNum(o.vat.rate)) finErr('order.vat');
+  }
+  if (o.customer !== undefined && o.customer !== null) {
+    if (typeof o.customer !== 'object') finErr('order.customer');
+    else for (const f of ['name', 'phone', 'address', 'mapsUrl']) {
+      const v = o.customer[f];
+      if (v !== undefined && v !== null && typeof v !== 'string') finErr('order.customer.' + f);
+    }
+  }
+  if (o.payments !== undefined && o.payments !== null) {
+    if (!Array.isArray(o.payments)) finErr('order.payments');
+    else for (const p of o.payments) {
+      if (!p || typeof p !== 'object' || typeof p.id !== 'string') finErr('order.payments[]');
+      if (!isFinNum(p.amount)) finErr('order.payments.amount');
+    }
+  }
+  if (o.manualRows !== undefined && o.manualRows !== null) {
+    if (!Array.isArray(o.manualRows)) finErr('order.manualRows');
+    else for (const r of o.manualRows) {
+      if (!r || typeof r !== 'object' || !isOptNonNeg(r.qty) || !isOptNonNeg(r.price) || !isOptNonNeg(r.cost)) finErr('order.manualRows');
+    }
+  }
+  if (o.costs !== undefined && o.costs !== null) {
+    if (typeof o.costs !== 'object') finErr('order.costs');
+    else for (const k of Object.keys(o.costs)) { if (!isOptNonNeg(o.costs[k])) finErr('order.costs'); }
+  }
+  if (o.extraCosts !== undefined && o.extraCosts !== null) {
+    if (!Array.isArray(o.extraCosts)) finErr('order.extraCosts');
+    else for (const e of o.extraCosts) {
+      if (!e || typeof e !== 'object' || !isOptNonNeg(e.amount)) finErr('order.extraCosts');
+    }
+  }
+  if (o.commRates !== undefined && o.commRates !== null) {
+    if (typeof o.commRates !== 'object') finErr('order.commRates');
+    else {
+      for (const f of ['ownerRate', 'parentRate', 'shareRate']) if (!isOptNonNeg(o.commRates[f])) finErr('order.commRates.' + f);
+      const pid = o.commRates.parentId;
+      if (pid !== undefined && pid !== null && typeof pid !== 'string') finErr('order.commRates.parentId');
+    }
+  }
+  for (const f of ['updatedAt', 'createdAt']) {
+    if (o[f] !== undefined && o[f] !== null && typeof o[f] !== 'string') finErr('order.' + f);
+  }
+}
+
+function checkItemFin(i) {
+  if (!i || typeof i !== 'object' || typeof i.id !== 'string' || !i.id) finErr('item.id');
+  if (i.price !== undefined && !(isFinNum(i.price) && i.price >= 0)) finErr('item.price');
+  for (const f of ['w', 'h', 'depth']) {
+    if (i[f] !== undefined && i[f] !== null && !(isFinNum(i[f]) && i[f] >= 0)) finErr('item.' + f);
+  }
+}
+
+/* ذرية التدقيق (Phase 3.1): الطفرة الخاضعة للتدقيق وسجلها في نفس دفعة D1.
+   استدعاء batch() واحد ذري (الكل أو لا شيء): فشل إدراج السجل يُسقط العملية
+   الأساسية معه، فلا يوجد أبداً «طلب محفوظ بلا سجل». عبر المقاطع (50 بياناً)
+   لا ضمان عابر — حفظ الطلب الواحد (~3-10 بيانات) دائماً داخل مقطع واحد. */
 async function sync(env, user, body) {
   const ts = now();
   const stmts = [];
   const q = (sql, ...args) => stmts.push(env.DB.prepare(sql).bind(...args));
+
+  // تحقق شكلي أولاً: أي حمولة مالية فاسدة تُرفض قبل منح الأرقام وقبل أي كتابة
+  const it0 = body.items || {}, od0 = body.orders || {}, ac0 = body.activity || {};
+  (it0.upsert || []).forEach(checkItemFin);
+  (od0.upsert || []).forEach(checkOrderFin);
+  for (const id of [...(it0.delete || []), ...(od0.delete || []), ...(ac0.delete || [])]) {
+    if (typeof id !== 'string') finErr('delete id');
+  }
+  for (const a of (ac0.upsert || [])) {
+    if (!a || typeof a.id !== 'string' || typeof a.at !== 'string') finErr('activity');
+  }
+  if (body.settings) {
+    for (const f of ['vatRate', 'depositPct', 'quoteDays', 'sellerRate', 'shareRate', 'mandoubRate', 'mandoubParentRate']) {
+      const v = body.settings[f];
+      if (v !== undefined && v !== null && !(isFinNum(v) && v >= 0)) finErr('settings.' + f);
+    }
+  }
 
   const it = body.items || {};
   if ((it.upsert && it.upsert.length) || (it.delete && it.delete.length)) {
@@ -222,8 +322,27 @@ async function sync(env, user, body) {
   if (user.role !== 'admin' && (od.upsert || []).length) {
     for (const o of od.upsert) {
       const row = existing.get(o.id);
-      if (row && row.owner && row.owner !== user.id) throw new HttpError(403, `لا يمكنك تعديل الطلب ${o.number ? '#' + o.number : ''} لأنه من إنشاء موظف آخر`);
+      // طلب بلا مالك (قديم): المدير فقط — لا يصبح تلقائياً قابلاً للتعديل من أي موظف
+      if (row && row.owner !== user.id) throw new HttpError(403, `لا يمكنك تعديل الطلب ${o.number ? '#' + o.number : ''} لأنه من إنشاء موظف آخر`);
       if (o.createdBy && o.createdBy !== user.id) throw new HttpError(403, 'لا يمكن نسب الطلب إلى موظف آخر');
+    }
+  }
+
+  // أرقام صريحة (طلبات قائمة): لا رقمين متماثلين لطلبين مختلفين — لا في الدفعة ولا في المخزّن
+  const explicit = (od.upsert || []).filter((o) => o.number !== null && o.number !== undefined && o.number !== '');
+  if (explicit.length) {
+    const seenNums = new Map();
+    for (const o of explicit) {
+      if (seenNums.has(o.number) && seenNums.get(o.number) !== o.id) throw new HttpError(400, 'رقم طلب مكرر في الدفعة');
+      seenNums.set(o.number, o.id);
+    }
+    const nums = [...new Set(explicit.map((o) => o.number))];
+    for (let i = 0; i < nums.length; i += 50) {
+      const chunk = nums.slice(i, i + 50);
+      const rows = await env.DB.prepare(`SELECT id, number FROM orders WHERE number IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
+      for (const r of rows.results) {
+        if (!explicit.some((o) => o.id === r.id)) throw new HttpError(400, `رقم الطلب ${r.number} مستخدم في طلب آخر`);
+      }
     }
   }
 
@@ -284,6 +403,7 @@ async function sync(env, user, body) {
     q('INSERT INTO settings (id, data, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', JSON.stringify(body.settings), ts);
   }
 
+  // الدفعة الواحدة ذرية: أي فشل (بما فيه سجل التدقيق) يُسقط العملية كلها قبل أي كتابة
   for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
   return { ok: true, applied: stmts.length, numbers };
 }
@@ -345,6 +465,22 @@ async function saveUser(env, me, body, myToken) {
   const parentRate = body.parentRate == null || body.parentRate === '' ? null : Math.max(0, Math.min(100, Number(body.parentRate)));
   if (!name || !username) throw new HttpError(400, 'الاسم واسم المستخدم مطلوبان');
   if (!role) throw new HttpError(400, 'دور غير صالح');
+  // سلامة شجرة المناديب (server-side ولا يعتمد على الواجهة): لا أب ذاتي، لا دورة، لا أب مجهول
+  if (parentId) {
+    if (body.id && parentId === body.id) throw new HttpError(400, 'لا يمكن أن يكون المستخدم أباً لنفسه');
+    const prow = await env.DB.prepare('SELECT parent_id FROM users WHERE id = ?').bind(parentId).first();
+    if (!prow) throw new HttpError(400, 'المندوب الأعلى المحدد غير موجود');
+    const seen = new Set([body.id || null, parentId]);
+    let cur = prow.parent_id || null, guard = 0;
+    while (cur) {
+      if (cur === body.id || seen.has(cur)) throw new HttpError(400, 'تعيين الأب هذا يُنشئ دورة في شجرة المناديب');
+      seen.add(cur);
+      if (++guard > 1000) throw new HttpError(400, 'تعيين الأب هذا يُنشئ دورة في شجرة المناديب');
+      const r = await env.DB.prepare('SELECT parent_id FROM users WHERE id = ?').bind(cur).first();
+      if (!r) break;
+      cur = r.parent_id || null;
+    }
+  }
   const dup = await env.DB.prepare('SELECT id FROM users WHERE lower(username) = ? AND id IS NOT ?').bind(username.toLowerCase(), body.id || null).first();
   if (dup) throw new HttpError(400, 'اسم المستخدم مستخدم من قبل');
 
@@ -379,17 +515,24 @@ async function deleteUser(env, me, id) {
 
 /* ------------------------------ التهيئة الأولى ------------------------------ */
 // عند أول تشغيل: إنشاء المستخدم admin / admin إن لم يوجد مستخدمون
+/* خطأ "العمود موجود" متوقع عند التهيئة المتزامنة؛ أي خطأ آخر حقيقي ويُرمى */
+function ignoreExistsColumn(e) {
+  if (/duplicate column|already exists/i.test(String((e && e.message) || e || ''))) return;
+  throw e;
+}
 async function ensureSeed(env) {
   if (seeded) return;
   // جداول وأعمدة جديدة بعد النشر الأول: تُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS login_fail (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first_at TEXT NOT NULL, until TEXT)').run();
   // أعمدة المندوب (هيكل متعدد المستويات ونسب العمولة)
-  await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_id TEXT').run().catch(() => {});
-  await env.DB.prepare('ALTER TABLE users ADD COLUMN rate REAL').run().catch(() => {});
-  await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_rate REAL').run().catch(() => {});
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_id TEXT').run().catch(ignoreExistsColumn);
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN rate REAL').run().catch(ignoreExistsColumn);
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_rate REAL').run().catch(ignoreExistsColumn);
+  // إدراج مشروط لا متزامن آمن: طلبان باردان معاً لا ينتجان مديرين مكررين ولا خطأ
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {
-    await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES (?, ?, ?, ?, ?, 1, ?)')
+    await env.DB.prepare(`INSERT INTO users (id, username, name, password_hash, role, active, created_at)
+      SELECT ?, ?, ?, ?, ?, 1, ? WHERE NOT EXISTS (SELECT 1 FROM users)`)
       .bind(uid(), 'admin', 'مدير النظام', await hashPassword('admin'), 'admin', now()).run();
   }
   seeded = true;
