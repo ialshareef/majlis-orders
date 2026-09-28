@@ -47,7 +47,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.11';
+  const APP_VERSION = '1.0.12';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -5248,22 +5248,16 @@
     caretPending = null;
     if (el && el === e.target && document.activeElement === el) caretToEnd(el);
   }, true);
-  let canvasEditing = false;
-  function setCanvasEditing(editing) {
-    canvasEditing = editing;
-    const touchLayout = isMobile() || isCoarse;
-    designer.scrollTouch = touchLayout && !editing;
-    designer.canvas.style.touchAction = designer.scrollTouch ? 'pan-y pinch-zoom' : 'none';
-    $('#btnCanvasMode').setAttribute('aria-pressed', String(editing));
-    $('#btnCanvasMode').textContent = editing ? 'إنهاء التحرير' : 'تحرير المخطط';
-    $('#canvasModeHint').textContent = editing ? 'اسحب القطع • كبّر المخطط بإصبعين' : 'اسحب بإصبعك لتمرير الصفحة';
-    $('.canvas-wrap').classList.toggle('editing', editing);
-    if (!editing) designer.select(null);
-  }
-  $('#btnCanvasMode').addEventListener('click', () => setCanvasEditing(!canvasEditing));
-  window.addEventListener('resize', () => setCanvasEditing(canvasEditing));
+  /* المخطط يُحرَّر باللمس مباشرة دائماً بلا زر تبديل: إصبع واحد يحرّك القطع أو
+     يمرّر الصفحة من الفراغ، وإصبعان يزيحان ويكبّران المخطط. */
+  const CANVAS_HINT = isMobile() || isCoarse
+    ? 'اسحب بإصبع واحد لتحريك القطع، أو على الفراغ لتمرير الصفحة • اضغط على جدار لتغيير طوله • إصبعان للتكبير'
+    : 'اسحب القطع لتحريكها • اضغط على جدار لتغيير طوله • Ctrl+عجلة الفأرة للتكبير';
+  const canvasHintEl = $('#canvasModeHint');
+  if (canvasHintEl) canvasHintEl.textContent = CANVAS_HINT;
+  const canvasKeysEl = $('#canvasKeys');
+  if (canvasKeysEl) canvasKeysEl.textContent = `${CANVAS_HINT}. Tab وShift+Tab للتنقل بين القطع، الأسهم للتحريك، R للتدوير، Delete للحذف، Enter لفتح الخصائص، Esc لإلغاء التحديد.`;
   prepareControls();
-  setCanvasEditing(false);
   $$('#panelTabs button').forEach(b => b.setAttribute('aria-pressed', String(b.classList.contains('active'))));
   /* ---------------- مسار العمل: مراحل الطلب ----------------
      الطلب يُعرض مرحلة واحدة في كل مرة بدل الأقسام الستة دفعة واحدة. مؤشر المراحل
@@ -5289,7 +5283,7 @@
   function showStage(name, opts = {}) {
     if (!STAGES.includes(name)) name = 'design';
     // مغادرة التصميم: يُلغى التحديد حتى لا تبقى ورقة الخصائص أو اختصارات لوحة المفاتيح على عنصر مخفي
-    if (curStage === 'design' && name !== 'design') { designer.select(null); setCanvasEditing(false); }
+    if (curStage === 'design' && name !== 'design') { designer.select(null); }
     const changed = name !== curStage;
     curStage = name;
     $$('.stages > .stage').forEach((s) => {
