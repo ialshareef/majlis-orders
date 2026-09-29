@@ -923,6 +923,13 @@
             <div><dt>البريد الإلكتروني</dt><dd><a id="aboutEmail" class="ltr" href="mailto:alshareefawaz@gmail.com">alshareefawaz@gmail.com</a></dd></div>
             <div><dt>الإصدار</dt><dd id="aboutVersion" class="num">—</dd></div>
           </dl>
+          <div class="update-box" id="updateBox">
+            <button type="button" class="btn block" id="btnCheckUpdate">التحقق من وجود تحديث</button>
+            <p class="hint" id="updateStatus" role="status" aria-live="polite"></p>
+            <div class="progress" id="updateProgress" hidden role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="updateProgressBar"></span></div>
+            <p class="hint" id="updateProgressLabel" hidden></p>
+            <button type="button" class="btn primary block" id="btnDownloadUpdate" hidden>Download &amp; Install</button>
+          </div>
           <p class="hint">© <span id="aboutYear"></span> Fawaz Al-sharif — جميع الحقوق محفوظة.</p>
         </div>
       </div>
@@ -956,6 +963,7 @@
 <script src="config.js"></script>
 <script src="js/store.js"></script>
 <script src="js/designer.js"></script>
+<script src="js/update.js"></script>
 <script src="js/app.js"></script>
 <script>
   // تسجيل الـ Service Worker ليعمل التطبيق دون اتصال ويُثبَّت على الجهاز

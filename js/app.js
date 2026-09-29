@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.12';
+  const APP_VERSION = '1.0.13';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4015,6 +4015,29 @@ function canEditOrder(o) {
     const nm = $('#aboutShopName'); if (nm) nm.textContent = s.shopName || 'أصالة نجد';
     const yr = $('#aboutYear'); if (yr) yr.textContent = new Date().getFullYear();
     const v = $('#aboutVersion'); if (v) v.textContent = APP_VERSION;
+    // فحص تحديث التطبيق (يدوي فقط): يعمل متى توفرت js/update.js وخادم بعيد
+    try {
+      if (window.AppUpdate && typeof window.AppUpdate.versionCodeOf === 'function') {
+        window.AppUpdate.initBox({
+          current: { versionName: APP_VERSION, versionCode: window.AppUpdate.versionCodeOf(APP_VERSION) },
+          els: {
+            check: $('#btnCheckUpdate'), status: $('#updateStatus'),
+            progress: $('#updateProgress'), bar: $('#updateProgressBar'),
+            label: $('#updateProgressLabel'), dl: $('#btnDownloadUpdate'),
+          },
+          notify: (ev) => { if (ev === 'installed') refreshServiceWorker(); },
+        });
+      }
+    } catch (_) { /* فشل ربط التحديث لا يمنع عرض الصفحة */ }
+  }
+
+  /** بعد تثبيت تحديث: حدّث الـ Service Worker ليقدّم النسخة الجديدة فوراً */
+  function refreshServiceWorker() {
+    try {
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.getRegistrations().then((rs) => rs.forEach((r) => r.update().catch(() => {})));
+      }
+    } catch (_) { /* noop */ }
   }
 
   /* ---------------- سجل تحديثات الطلبات (مدير) ---------------- */

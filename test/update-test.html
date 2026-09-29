@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>APK Update Tests</title>
+</head>
+<body>
+<div id="box"></div>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات تحديث APK — تعمل على الكود الحقيقي (js/update.js + worker/worker.js).
+   التشغيل: python -m http.server 8091 (من جذر المشروع) ثم فتح
+   http://localhost:8091/test/update-test.html بمتصفح headless.
+   النتيجة في #testResult (PASS n/n أو FAIL) وتفاصيلها في #testLog. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+
+var results = [];
+function log(m) { document.getElementById('testLog').textContent += m + '\n'; }
+function ok(name) { results.push([name, true]); log('PASS ' + name); }
+function fail(name, why) { results.push([name, false]); log('FAIL ' + name + ' :: ' + why); }
+function waitFor(cond, ms) {
+  ms = ms || 4000;
+  var t0 = Date.now();
+  return new Promise(function (res, rej) {
+    (function poll() {
+      var v = null;
+      try { v = cond(); } catch (e) { /* retry */ }
+      if (v) return res(v);
+      if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+      setTimeout(poll, 50);
+    })();
+  });
+}
+function loadFreshUpdate() {
+  return new Promise(function (res, rej) {
+    var s = document.createElement('script');
+    s.src = '../js/update.js?fresh=' + Date.now() + Math.random();
+    s.onload = function () { res(window.AppUpdate); };
+    s.onerror = function () { rej(new Error('cannot load update.js')); };
+    document.head.appendChild(s);
+  });
+}
+function buildBox() {
+  var box = document.getElementById('box');
+  box.innerHTML = '<button id="btnCheckUpdate"></button><p id="updateStatus"></p>' +
+    '<div id="updateProgress" hidden><span id="updateProgressBar"></span></div>' +
+    '<p id="updateProgressLabel" hidden></p>' +
+    '<button id="btnDownloadUpdate" hidden></button>';
+  return {
+    check: box.querySelector('#btnCheckUpdate'),
+    status: box.querySelector('#updateStatus'),
+    progress: box.querySelector('#updateProgress'),
+    bar: box.querySelector('#updateProgressBar'),
+    label: box.querySelector('#updateProgressLabel'),
+    dl: box.querySelector('#btnDownloadUpdate'),
+  };
+}
+var realFetch = window.fetch.bind(window);
+var fetchCalls = [];
+function stubFetch(handler) {
+  fetchCalls = [];
+  window.fetch = function (input, init) {
+    var url = typeof input === 'string' ? input : input.url;
+    fetchCalls.push(url);
+    return handler(url, init);
+  };
+}
+function jsonRes(obj) {
+  return Promise.resolve(new Response(JSON.stringify(obj), { status: 200, headers: { 'Content-Type': 'application/json' } }));
+}
+var ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
+function metaFor(vcode, vname, sha) {
+  return { versionName: vname, versionCode: vcode, apkUrl: ALLOW + 'v' + vname + '/asalh-najd-' + vname + '.apk', sha256: sha, mandatory: false };
+}
+var blobUrls = 0;
+var _createObjectURL = URL.createObjectURL.bind(URL);
+URL.createObjectURL = function (o) { blobUrls++; return _createObjectURL(o); };
+
+async function sha256hex(bytes) {
+  var d = await crypto.subtle.digest('SHA-256', bytes);
+  return Array.from(new Uint8Array(d)).map(function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+}
+
+(async function run() {
+  try {
+    // T0: الوحدة محمّلة بواجهتها كاملة
+    var U0 = await loadFreshUpdate();
+    if (U0 && U0.checkForUpdate && U0.downloadVerifiedApk && U0.installApk && U0.validUpdateMeta && U0.versionCodeOf && U0.initBox) ok('T0 api-surface');
+    else fail('T0 api-surface', 'missing exports');
+
+    // T0b: معادلة versionCode مطابقة لـ configure-version.js
+    if (U0.versionCodeOf('1.0.13') === 10013 && U0.versionCodeOf('1.0.12') === 10012 && U0.versionCodeOf('2.3.4') === 20304) ok('T0b versionCode');
+    else fail('T0b versionCode', 'formula mismatch');
+
+    // T1: endpoint العامل حقيقي: عام، بلا DB، الشكل سليم
+    try {
+      var mod = await import('../worker/worker.js');
+      var r = await mod.default.fetch(new Request('https://x.test/api/app-update'), {});
+      var b = await r.json();
+      var u = b && b.update;
+      var shapeOk = r.status === 200 && b.ok === true && u &&
+        u.versionName === '1.0.13' && u.versionCode === 10013 &&
+        typeof u.apkUrl === 'string' && u.apkUrl.indexOf(ALLOW) === 0 &&
+        (u.sha256 === null || /^[0-9a-f]{64}$/.test(u.sha256)) &&
+        typeof u.mandatory === 'boolean';
+      if (shapeOk) ok('T1 worker-endpoint-public');
+      else fail('T1 worker-endpoint-public', 'bad shape: ' + JSON.stringify(b).slice(0, 300));
+      var rp = await mod.default.fetch(new Request('https://x.test/api/app-update', { method: 'POST', body: '{}' }), {});
+      var bp = await rp.json().catch(function () { return null; });
+      if (!(rp.status === 200 && bp && bp.update)) ok('T1b post-not-update');
+      else fail('T1b post-not-update', 'POST must not return metadata');
+    } catch (e) { fail('T1 worker-endpoint-public', e.message); }
+
+    var CUR = { versionName: '1.0.12', versionCode: 10012 };
+    var APK_BYTES = new TextEncoder().encode('fake-apk-payload-for-checksum-test-0123456789');
+    var APK_SHA = await sha256hex(APK_BYTES);
+
+    // T2: لا يوجد تحديث (نفس الإصدار)
+    try {
+      var U = await loadFreshUpdate(), els = buildBox(), notes = [];
+      window.APP_CONFIG = { apiUrl: 'https://srv.test' };
+      stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10012, '1.0.12', APK_SHA) }); });
+      U.initBox({ current: CUR, els: els, notify: function (e) { notes.push(e); } });
+      els.check.click();
+      await waitFor(function () { return els.status.textContent.indexOf('latest version') >= 0 && !els.check.disabled; });
+      if (els.dl.hidden && notes[0] === 'latest') ok('T2 latest-version');
+      else fail('T2 latest-version', els.status.textContent);
+    } catch (e) { fail('T2 latest-version', e.message); }
+
+    // T3: تحديث متاح + لا تنزيل تلقائي
+    var U3 = null, els3 = null, META3 = metaFor(10013, '1.0.13', APK_SHA);
+    try {
+      U3 = await loadFreshUpdate(); els3 = buildBox();
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return Promise.resolve(new Response(APK_BYTES));
+        return jsonRes({ ok: true, update: META3 });
+      });
+      U3.initBox({ current: CUR, els: els3, notify: function () {} });
+      els3.check.click();
+      await waitFor(function () { return !els3.dl.hidden && !els3.check.disabled; });
+      var autoDl = fetchCalls.some(function (u) { return u.indexOf('.apk') >= 0; });
+      if (els3.status.textContent.indexOf('1.0.13') >= 0 && els3.dl.textContent.indexOf('Download') >= 0 && !autoDl) ok('T3 available-no-autodl');
+      else fail('T3 available-no-autodl', els3.status.textContent + ' autodl=' + autoDl);
+    } catch (e) { fail('T3 available-no-autodl', e.message); }
+
+    // T4: الخادم غير متصل
+    try {
+      var U4 = await loadFreshUpdate(), els4 = buildBox();
+      stubFetch(function () { return Promise.reject(new Error('net down')); });
+      U4.initBox({ current: CUR, els: els4, notify: function () {} });
+      els4.check.click();
+      await waitFor(function () { return /الاتصال|الوصول/.test(els4.status.textContent) && !els4.check.disabled; });
+      if (els4.dl.hidden) ok('T4 endpoint-offline');
+      else fail('T4 endpoint-offline', els4.status.textContent);
+    } catch (e) { fail('T4 endpoint-offline', e.message); }
+
+    // T5: بيانات فاسدة
+    try {
+      var U5 = await loadFreshUpdate(), els5 = buildBox();
+      stubFetch(function () { return jsonRes({ ok: true, update: { versionName: '', versionCode: 'x' } }); });
+      U5.initBox({ current: CUR, els: els5, notify: function () {} });
+      els5.check.click();
+      await waitFor(function () { return /غير صالحة/.test(els5.status.textContent) && !els5.check.disabled; });
+      if (els5.dl.hidden) ok('T5 invalid-metadata');
+      else fail('T5 invalid-metadata', els5.status.textContent);
+    } catch (e) { fail('T5 invalid-metadata', e.message); }
+
+    // T6: رابط http مرفوض
+    try {
+      var U6 = await loadFreshUpdate(), els6 = buildBox();
+      var bad = metaFor(10013, '1.0.13', APK_SHA); bad.apkUrl = 'http://evil.test/app.apk';
+      stubFetch(function () { return jsonRes({ ok: true, update: bad }); });
+      U6.initBox({ current: CUR, els: els6, notify: function () {} });
+      els6.check.click();
+      await waitFor(function () { return /غير صالحة/.test(els6.status.textContent) && !els6.check.disabled; });
+      if (els6.dl.hidden) ok('T6 http-url-rejected');
+      else fail('T6 http-url-rejected', els6.status.textContent);
+    } catch (e) { fail('T6 http-url-rejected', e.message); }
+
+    // T7: عدم تطابق البصمة = حذف وعدم فتح
+    try {
+      var U7 = await loadFreshUpdate(), els7 = buildBox();
+      blobUrls = 0;
+      var wrong = metaFor(10013, '1.0.13', 'a'.repeat(64));
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return Promise.resolve(new Response(APK_BYTES));
+        return jsonRes({ ok: true, update: wrong });
+      });
+      U7.initBox({ current: CUR, els: els7, notify: function () {} });
+      els7.check.click();
+      await waitFor(function () { return !els7.dl.hidden && !els7.check.disabled; });
+      els7.dl.click();
+      await waitFor(function () { return /سلامة الملف/.test(els7.status.textContent) && !els7.dl.disabled; });
+      if (blobUrls === 0) ok('T7 checksum-mismatch');
+      else fail('T7 checksum-mismatch', 'installer opened despite mismatch');
+    } catch (e) { fail('T7 checksum-mismatch', e.message); }
+
+    // T8: تطابق البصمة = تنزيل + تقدم + فتح
+    try {
+      var U8 = await loadFreshUpdate(), els8 = buildBox();
+      blobUrls = 0;
+      var prog = [];
+      var origDl = U8.downloadVerifiedApk;
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return Promise.resolve(new Response(APK_BYTES));
+        return jsonRes({ ok: true, update: META3 });
+      });
+      U8.initBox({ current: CUR, els: els8, notify: function () {} });
+      els8.check.click();
+      await waitFor(function () { return !els8.dl.hidden && !els8.check.disabled; });
+      // راقب التقدم عبر تغليف الدالة الأصلية
+      var realDl = U8.downloadVerifiedApk;
+      var blob = await realDl(META3, function (l, t) { prog.push([l, t]); });
+      if (blob && blob.size === APK_BYTES.length && prog.length >= 1) ok('T8a verified-download-progress');
+      else fail('T8a verified-download-progress', 'size/progress');
+      var how = await U8.installApk(blob, 't.apk');
+      if (how === 'browser' && blobUrls === 1) ok('T8b installer-opened');
+      else fail('T8b installer-opened', how + ' urls=' + blobUrls);
+    } catch (e) { fail('T8 checksum-match', e.message); }
+
+    // T9: حماية downgrade (خادم أقدم)
+    try {
+      var U9 = await loadFreshUpdate(), els9 = buildBox();
+      stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10010, '1.0.10', APK_SHA) }); });
+      U9.initBox({ current: CUR, els: els9, notify: function () {} });
+      els9.check.click();
+      await waitFor(function () { return els9.status.textContent.indexOf('latest version') >= 0 && !els9.check.disabled; });
+      if (els9.dl.hidden) ok('T9 downgrade-blocked');
+      else fail('T9 downgrade-blocked', els9.status.textContent);
+    } catch (e) { fail('T9 downgrade-blocked', e.message); }
+
+    // T10: غياب البصمة = إتاحة مرئية لكن التنزيل مرفوض (fail-closed)
+    try {
+      var U10 = await loadFreshUpdate(), els10 = buildBox();
+      blobUrls = 0;
+      var nosha = metaFor(10013, '1.0.13', null);
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return Promise.resolve(new Response(APK_BYTES));
+        return jsonRes({ ok: true, update: nosha });
+      });
+      U10.initBox({ current: CUR, els: els10, notify: function () {} });
+      els10.check.click();
+      await waitFor(function () { return !els10.dl.hidden && !els10.check.disabled; });
+      els10.dl.click();
+      await waitFor(function () { return /بصمة/.test(els10.status.textContent) && !els10.dl.disabled; });
+      if (blobUrls === 0) ok('T10 no-sha-fail-closed');
+      else fail('T10 no-sha-fail-closed', 'downloaded without sha');
+    } catch (e) { fail('T10 no-sha-fail-closed', e.message); }
+
+    // T11: قاعدة الـ API من الإعداد + وضع محلي بلا خادم
+    try {
+      var U11 = await loadFreshUpdate(), els11 = buildBox();
+      window.APP_CONFIG = { apiUrl: 'https://majlis-api-staging.asalh-najd.workers.dev/' };
+      stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10012, '1.0.12', APK_SHA) }); });
+      U11.initBox({ current: CUR, els: els11, notify: function () {} });
+      els11.check.click();
+      await waitFor(function () { return els11.status.textContent.indexOf('latest version') >= 0 && !els11.check.disabled; });
+      var usedStaging = fetchCalls.length === 1 && fetchCalls[0].indexOf('https://majlis-api-staging.asalh-najd.workers.dev/api/app-update') === 0;
+      window.APP_CONFIG = { apiUrl: '' };
+      var U12 = await loadFreshUpdate(), els12 = buildBox();
+      stubFetch(function () { return jsonRes({}); });
+      U12.initBox({ current: CUR, els: els12, notify: function () {} });
+      els12.check.click();
+      await waitFor(function () { return /نسخة الخادم/.test(els12.status.textContent) && !els12.check.disabled; });
+      if (usedStaging && fetchCalls.length === 0) ok('T11 api-base-and-local');
+      else fail('T11 api-base-and-local', 'staging=' + usedStaging + ' calls=' + fetchCalls.length);
+    } catch (e) { fail('T11 api-base-and-local', e.message); }
+
+    // T12: فحص صياغة app.js (تنفيذ صفري — parse فقط)
+    try {
+      var txt = await (await realFetch('../js/app.js')).text();
+      // eslint-disable-next-line no-new-func
+      new Function(txt);
+      ok('T12 appjs-syntax');
+    } catch (e) { fail('T12 appjs-syntax', String(e && e.message).slice(0, 200)); }
+  } catch (e) {
+    fail('harness', e.message);
+  } finally {
+    window.fetch = realFetch;
+    var passed = results.filter(function (r) { return r[1]; }).length;
+    var failed = results.filter(function (r) { return !r[1]; }).length;
+    var noErr = window.TEST_ERRORS.length === 0;
+    var verdict = (failed === 0 && noErr) ? ('PASS ' + passed + '/' + results.length) : 'FAIL';
+    if (!noErr) log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | '));
+    document.getElementById('testResult').textContent = verdict;
+    document.title = verdict;
+    log('---- ' + verdict + ' ----');
+  }
+})();
+</script>
+</body>
+</html>

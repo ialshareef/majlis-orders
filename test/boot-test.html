@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Boot Regression Test</title>
+</head>
+<body>
+<iframe id="app" src="../index.html" style="width:100%;height:600px"></iframe>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبار انحدار إقلاع التطبيق الكامل داخل iframe (نفس المصدر).
+   يتحقق: لا أخطاء JS، صفحة الدخول ظهرت، عناصر About الجديدة موجودة،
+   ووحدة AppUpdate محمّلة ومربوطة. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('parent: ' + (e.message || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var done = function (verdict) {
+    document.getElementById('testResult').textContent = verdict;
+    document.title = verdict;
+    log('---- ' + verdict + ' ----');
+  };
+  var frame = document.getElementById('app');
+  var errs = [];
+  try {
+    // التقط نافذة الـ iframe مبكراً قبل اكتمال تحميل سكربتاته
+    var w0 = frame.contentWindow;
+    w0.onerror = function (msg) { errs.push('onerror: ' + msg); };
+  } catch (e) { errs.push('attach: ' + e.message); }
+  var t0 = Date.now();
+  (function poll() {
+    var doc = null;
+    try { doc = frame.contentDocument; } catch (e) { /* cross-origin? no */ }
+    var ready = doc && doc.querySelector && (doc.querySelector('#login') || doc.querySelector('#app') || doc.querySelector('.login-card'));
+    if (ready && Date.now() - t0 > 6000) {
+      var checks = [];
+      try {
+        var w = frame.contentWindow;
+        checks.push(['no-js-errors', errs.length === 0, errs.join(' | ').slice(0, 300)]);
+        checks.push(['update-js-loaded', !!(w.AppUpdate && w.AppUpdate.checkForUpdate), typeof w.AppUpdate]);
+        checks.push(['btn-check', !!doc.querySelector('#btnCheckUpdate'), 'missing #btnCheckUpdate']);
+        checks.push(['update-status', !!doc.querySelector('#updateStatus'), 'missing #updateStatus']);
+        checks.push(['btn-download', !!doc.querySelector('#btnDownloadUpdate'), 'missing #btnDownloadUpdate']);
+        checks.push(['progress-bar', !!doc.querySelector('#updateProgressBar'), 'missing bar']);
+        checks.push(['about-version-el', !!doc.querySelector('#aboutVersion'), 'missing #aboutVersion']);
+      } catch (e) { checks.push(['dom-access', false, e.message]); }
+      var bad = checks.filter(function (c) { return !c[1]; });
+      checks.forEach(function (c) { log((c[1] ? 'PASS ' : 'FAIL ') + 'boot-' + c[0] + (c[1] ? '' : ' :: ' + c[2])); });
+      var parentBad = window.TEST_ERRORS.length > 0;
+      if (parentBad) log('PARENT ERRORS: ' + window.TEST_ERRORS.join(' | '));
+      done(bad.length === 0 && !parentBad ? 'PASS ' + checks.length + '/' + checks.length : 'FAIL');
+      return;
+    }
+    if (Date.now() - t0 > 25000) { log('FAIL boot-timeout'); done('FAIL'); return; }
+    setTimeout(poll, 300);
+  })();
+})();
+</script>
+</body>
+</html>

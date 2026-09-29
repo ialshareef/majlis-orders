@@ -34,6 +34,7 @@ $files = @(
   @{ url = '/css/style.css'; path = 'css\style.css' },
   @{ url = '/js/store.js';   path = 'js\store.js' },
   @{ url = '/js/designer.js';path = 'js\designer.js' },
+  @{ url = '/js/update.js';  path = 'js\update.js' },
   @{ url = '/js/app.js';     path = 'js\app.js' },
   @{ url = '/manifest.json'; path = 'manifest.json'; ct = 'application/manifest+json' },
   @{ url = '/sw.js';         path = 'sw.js' },

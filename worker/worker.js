@@ -3,9 +3,10 @@
    - يُلصق كاملاً في محرر الـ Worker في لوحة Cloudflare
    - يحتاج ربط قاعدة D1 باسم المتغيّر: DB   (Settings > Bindings > D1 database)
    - متغيّرات اختيارية: ALLOWED_ORIGIN (نطاق الواجهة بدل *)، PBKDF2_ITER (افتراضي 20000)
-   المسارات:
-     POST /api/login            {username, password}  -> {ok, token, user}
-     POST /api/logout
+    المسارات:
+      GET  /api/app-update       بيانات تحديث التطبيق (عام: بلا دخول وبلا قاعدة)
+      POST /api/login            {username, password}  -> {ok, token, user}
+      POST /api/logout
      GET  /api/me
      GET  /api/bootstrap        كل البيانات (settings, items, orders, activity*, users*)  * للمدير
      POST /api/sync             {items:{upsert,delete}, orders:{upsert,delete}, activity:{upsert,delete,clear}, settings}
@@ -33,6 +34,11 @@ export default {
     const url = new URL(request.url);
     const cors = corsHeaders(request, env);
     if (request.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
+    // فحص تحديث التطبيق: عام تماماً — بلا جلسة، وبلا قاعدة D1 (لا قراءة ولا كتابة
+    // لأي بيانات، ولا تهيئة)، فيعمل قبل الدخول ولا يتعطل بغياب الربط.
+    if (request.method === 'GET' && url.pathname.replace(/\/+$/, '') === '/api/app-update') {
+      return json({ ok: true, update: appUpdateMeta(env) }, 200, cors);
+    }
     if (!url.pathname.startsWith('/api/')) {
       if (ASSETS) return serveAsset(url.pathname);
       return json({ ok: true, service: 'majlis-api', hint: 'ضع هذا الرابط في config.js (apiUrl)' }, 200, cors);
@@ -85,6 +91,45 @@ async function route(request, env, url) {
   if (mUser && method === 'DELETE') { requireAdmin(user); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
 
   throw new HttpError(404, 'المسار غير موجود');
+}
+
+/* ------------------------------ بيانات تحديث التطبيق ------------------------------
+   المصدر الرسمي الوحيد لملف APK هو إصدارات GitHub لهذا المستودع (HTTPS).
+   الأولوية لمتغيرات البيئة (تُضبط من لوحة Cloudflare دون إعادة نشر):
+     APP_UPDATE_VERSION  اسم الإصدار (مثال 1.0.13)
+     APP_UPDATE_CODE     رقم البناء (مثال 10013)
+     APP_UPDATE_URL      رابط APK (يجب أن يكون ضمن مسار الإصدارات الرسمي)
+     APP_UPDATE_SHA256   بصمة SHA-256 للملف (64 خانة hex)
+   وإلا تُستخدم قيم افتراضية مضمّنة تشير إلى أحدث إصدار معلوم.
+   fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
+   فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
+const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
+const UPDATE_FALLBACK_VERSION = '1.0.13';
+
+function versionCodeOfName(v) {
+  const p = String(v || '').split('.').map((n) => parseInt(n, 10));
+  if (p.length >= 2 && p.every((n) => Number.isInteger(n) && n >= 0)) {
+    return p[0] * 10000 + (p[1] || 0) * 100 + (p[2] || 0);
+  }
+  return 1;
+}
+
+function appUpdateMeta(env) {
+  const e = env || {};
+  const versionName = String(e.APP_UPDATE_VERSION || UPDATE_FALLBACK_VERSION).trim() || UPDATE_FALLBACK_VERSION;
+  let versionCode = Number(e.APP_UPDATE_CODE);
+  if (!Number.isInteger(versionCode) || versionCode < 1) versionCode = versionCodeOfName(versionName);
+  let apkUrl = String(e.APP_UPDATE_URL || '').trim() ||
+    (UPDATE_APK_ALLOW + 'v' + versionName + '/asalh-najd-' + versionName + '.apk');
+  if (!apkUrl.startsWith(UPDATE_APK_ALLOW)) apkUrl = '';
+  const sha = String(e.APP_UPDATE_SHA256 || '').trim().toLowerCase();
+  return {
+    versionName,
+    versionCode,
+    apkUrl,
+    sha256: /^[0-9a-f]{64}$/.test(sha) ? sha : null,
+    mandatory: false,
+  };
 }
 
 /* ------------------------------ الجلسات ------------------------------ */

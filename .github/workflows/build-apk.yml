@@ -77,6 +77,9 @@ jobs:
           printf 'storeFile=release.keystore\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n' "$KEYSTORE_PASSWORD" "$KEY_ALIAS" "$KEY_PASSWORD" > android/keystore.properties
           node configure-signing.js
 
+      - name: Configure install permission (APK self-update via system installer)
+        run: node configure-install-permission.js
+
       - name: Build release APK (signed, for direct download)
         run: |
           cd android

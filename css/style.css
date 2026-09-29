@@ -1401,6 +1401,14 @@ body[data-page="order"] main { padding-top: 10px; }
 .about-meta dd { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .about-meta a { color: var(--accent); text-decoration: none; }
 .about-meta a:hover { text-decoration: underline; }
+/* فحص تحديث التطبيق (صفحة عن التطبيق) */
+.update-box { max-width: 440px; margin: 0 auto 18px; text-align: start; }
+.update-box .btn.block { margin-top: 0; }
+.update-box .hint { min-height: 1.6em; margin: 8px 2px 0; }
+.update-box .hint[data-kind="err"] { color: var(--danger, #b42318); font-weight: 600; }
+.update-box .hint[data-kind="ok"] { color: var(--ok, #1c7a3d); font-weight: 600; }
+.update-box .progress { height: 10px; margin-top: 10px; overflow: hidden; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-soft); }
+.update-box .progress > span { display: block; height: 100%; width: 0; background: var(--accent); transition: width .2s; }
 .att { display: grid; gap: 10px; min-width: 0; align-content: start; }
 .att-box { position: relative; }
 .att-pick {
