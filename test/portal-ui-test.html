@@ -73,7 +73,19 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       });
       t('touch-44', small.length === 0, small.slice(0, 5).join('|'));
       // هيكل المصمم موجود ومخفي
-      t('wizard-dom', !!q('#pSteps') && !!q('#pCanvas') && !!q('#pPanel') && !!q('#pTools') && !!q('#pSheet'), 'wizard');
+      t('wizard-dom', !!q('#pSteps') && !!q('#pCanvas') && !!q('#pPanel') && !!q('#pSheet') && !!q('.p-zoombar'), 'wizard');
+      // خمس مراحل مسماة + لا شباك في واجهة العميل
+      var ph0 = await get('/portal.html');
+      t('steps-5', (ph0.match(/data-step=/g) || []).length === 0, 'steps built by JS');
+      var pjs0 = await get('/js/portal.js');
+      var stepIds = (pjs0.match(/id: '(room|openings|majlis|furn|review)'/g) || []).length;
+      t('steps-named', stepIds === 5 && pjs0.indexOf('الأثاث والإكسسوارات') >= 0, '5 named steps');
+      t('no-window-add', ph0.indexOf('شباك') < 0 && pjs0.indexOf("data-t=\"window\"") < 0 && pjs0.indexOf("<option value=\"window\"") < 0, 'no window add UI');
+      t('no-global-toolbar', ph0.indexOf('id="pTools"') < 0 && ph0.indexOf('id="pReview"') < 0, 'no toolbar/review view');
+      t('zoom-outside', ph0.indexOf('p-zoombar') >= 0 && ph0.indexOf('zoom-ctl') < 0, 'zoom outside canvas');
+      t('column-ui', pjs0.indexOf("data-add=\"column\"") >= 0 && pjs0.indexOf('addColumn') >= 0, 'column');
+      t('qty-ui', pjs0.indexOf('psQty') >= 0 && pjs0.indexOf('p-qty') >= 0, 'qty');
+      t('review-step', pjs0.indexOf('renderReviewPanel') >= 0 && pjs0.indexOf('pActPdf') >= 0 && pjs0.indexOf('pActWa') >= 0, 'review actions');
       t('done-dom', !!q('#pDesignNo') && !!q('#pPdf') && !!q('#pShareWa') && !!q('#pContactBtn'), 'done');
       t('look-dom', !!q('#pLookNo') && !!q('#pLookImg'), 'look');
       // RTL + viewport

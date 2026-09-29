@@ -65,7 +65,6 @@
       <h3 class="p-step-title" id="pStepTitle"></h3>
       <div id="pPanel"></div>
     </section>
-    <div class="p-tools" id="pTools" role="toolbar" aria-label="أدوات الإضافة"></div>
     <div class="canvas-wrap p-canvas">
       <canvas id="pCanvas" aria-label="مخطط الغرفة"></canvas>
     </div>
@@ -80,28 +79,6 @@
     <button type="button" class="btn ghost" id="pUndo"><svg><use href="#p-undo"/></svg> تراجع</button>
     <button type="button" class="btn primary block" id="pFinish">مراجعة وإنهاء التصميم</button>
   </footer>
-</main>
-
-<!-- ============ المراجعة ============ -->
-<main id="pReview" class="p-view" hidden>
-  <header class="p-bar">
-    <button type="button" class="icon-btn" id="pBack2" aria-label="رجوع للتصميم"><svg><use href="#p-arrow"/></svg></button>
-    <b>مراجعة التصميم</b>
-    <span></span>
-  </header>
-  <div class="p-stage-narrow">
-    <div class="card module">
-      <img id="pPreviewImg" class="p-preview" alt="معاينة المخطط">
-      <dl class="p-facts" id="pFacts"></dl>
-      <div class="fields">
-        <label class="fld wide"><span class="fld-body"><b>الاسم (اختياري)</b><input id="pName" maxlength="60" placeholder="اسمك الكريم" autocomplete="name"></span></label>
-        <label class="fld wide"><span class="fld-body"><b>رقم الجوال (اختياري)</b><input id="pPhone" type="tel" inputmode="tel" placeholder="05xxxxxxxx" autocomplete="tel"></span></label>
-      </div>
-      <p class="hint">يمكنك الإنهاء بدون بيانات — تُطلب بيانات التواصل لاحقًا فقط إن أردت أن نتصل بك.</p>
-      <button type="button" class="btn primary block lg" id="pSubmitDesign">إنهاء وإصدار رقم التصميم</button>
-      <p class="error" id="pReviewErr" role="alert"></p>
-    </div>
-  </div>
 </main>
 
 <!-- ============ تم ============ -->

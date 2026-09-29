@@ -179,6 +179,12 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var o = JSON.parse(ordRow[0].values[0][0]);
       t('S14-nofinance', Array.isArray(o.payments) && o.payments.length === 0 && o.total === 0 && !('commission' in o) && !('revenue' in o) && !('profit' in o) && o.design && o.design.pieces.length === 1 && o.customer.name === 'أحمد محمد', 'order ok');
 
+      // column: نوع صالح يُقبل، ونوع مجهول يُرفض
+      var colBad = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: { walls: [{ len: 5, angle: 0 }], pieces: [{ kind: 'pillar', w: 1, h: 1 }] } } });
+      t('S-column-bad', colBad.status === 400, colBad.status);
+      var colOk = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: { walls: [{ len: 5, angle: 0 }], pieces: [{ kind: 'column', x: 2, y: 2, w: 0.6, h: 0.6, rot: 0 }] } } });
+      var colGet = await call('GET', '/api/portal/design', { designToken: tokA });
+      t('S-column-ok', colOk.status === 200 && (colGet.body.design.pieces || []).some(function (x) { return x.kind === 'column'; }), colOk.status);
       // seating: قيمة فاسدة تُرفض، والصالحة تُحفظ وتُسترجع
       var seatBad = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: { walls: [{ len: 5, angle: 0 }], pieces: [{ kind: 'sofa', w: 2, h: 0.8, seating: 'palace' }] } } });
       t('S-seating-bad', seatBad.status === 400, seatBad.status);

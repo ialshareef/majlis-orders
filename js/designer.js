@@ -184,6 +184,17 @@
       return { tmin, tmax, smin, smax };
     }
 
+    /** داخل مضلّع الغرفة؟ (ray casting — للغرف المغلقة فقط) */
+    static pointInPoly(pt, poly) {
+      if (!poly || poly.length < 3) return true;
+      let inside = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i], b = poly[j];
+        if ((a.y > pt.y) !== (b.y > pt.y) && pt.x < ((b.x - a.x) * (pt.y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+      }
+      return inside;
+    }
+
     static polysOverlap(a, b) {
       for (const poly of [a, b]) {
         for (let i = 0; i < poly.length; i++) {
@@ -642,6 +653,7 @@
       const p = this.selectedPiece();
       if (!p) return;
       p.x = round(p.x + dx, 3); p.y = round(p.y + dy, 3);
+      this._clampToRoom(p, this.geometry());
       this._trySnapToWall(p, this.geometry(), 0.12);
       this.changed();
     }
@@ -781,12 +793,92 @@
       return null;
     }
 
-    /** ترتيب الرسم: المساحات الحرة أرضيةً، ثم الكنب، ثم الإكسسوارات فوقه */
+    /** ترتيب الرسم: المساحات الحرة أرضيةً، ثم الأعمدة (إنشائية تحت الأثاث)، ثم الكنب، ثم الإكسسوارات فوقه */
     _drawOrder() {
       const ps = this.state.pieces;
       return ps.filter((p) => p.kind === 'free')
-        .concat(ps.filter((p) => p.kind !== 'free' && p.kind !== 'acc'))
+        .concat(ps.filter((p) => p.kind === 'column'))
+        .concat(ps.filter((p) => p.kind !== 'free' && p.kind !== 'acc' && p.kind !== 'column'))
         .concat(ps.filter((p) => p.kind === 'acc'));
+    }
+
+    /** الأعمدة: عناصر إنشائية داخل الغرفة — يمنع أي أثاث فوقها */
+    addColumn(w = 0.6, h = 0.6) {
+      const g = this.geometry();
+      const ww = Math.max(0.2, +w || 0.6), hh = Math.max(0.2, +h || 0.6);
+      const cx = (g.bb.minX + g.bb.maxX) / 2, cy = (g.bb.minY + g.bb.maxY) / 2;
+      const p = { kind: 'column', x: round(cx, 3), y: round(cy, 3), w: ww, h: hh, rot: 0 };
+      this._clampToRoom(p, g);
+      return this.addPiece(p);
+    }
+
+    overlapsColumn(p, excludeId = null) {
+      if (!p) return false;
+      const me = this.corners(p);
+      return this.state.pieces.some((c) => c.kind === 'column' && c.id !== excludeId && Designer.polysOverlap(me, this.corners(c)));
+    }
+
+    /** إبقاء مركز القطعة داخل مستطيل الغرفة (لا تخرج من اللوحة بصمت) */
+    _clampToRoom(p, g = this.geometry(), margin = 0.05) {
+      const bb = g.bb;
+      p.x = round(clamp(p.x, bb.minX + margin, Math.max(bb.minX + margin, bb.maxX - margin)), 3);
+      p.y = round(clamp(p.y, bb.minY + margin, Math.max(bb.minY + margin, bb.maxY - margin)), 3);
+      return p;
+    }
+
+    /** شبكة مواضع حرة داخل الغرفة: تتجنب الأعمدة والجدران والقطع.
+        kind='acc' يُسمح له فوق الكنب (وسائد طبيعية) لا فوق الأعمدة.
+        يعيد حتى n موضعاً — قد يكون أقل إن ضاقت المساحة، ولا يخرج شيء أبداً. */
+    findSpots(w, h, n, kind = '') {
+      const g = this.geometry();
+      const bb = g.bb;
+      const closed = !!g.closed;
+      const step = Math.max(0.15, Math.min(w, h) / 2);
+      const cands = [];
+      for (let x = bb.minX + w / 2; x <= bb.maxX - w / 2 + 1e-9; x += step) {
+        for (let y = bb.minY + h / 2; y <= bb.maxY - h / 2 + 1e-9; y += step) {
+          cands.push({ x: round(x, 3), y: round(y, 3) });
+        }
+      }
+      const cx = (bb.minX + bb.maxX) / 2, cy = (bb.minY + bb.maxY) / 2;
+      cands.sort((a, b) => (Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)));
+      // مناطق الفتحات المانعة (باب/مشب: منطقة حركة) تُحسب كمستطيلات محظورة
+      const blockRects = [];
+      for (const o of this.state.openings) {
+        if (!o || o.blocks === false) continue;
+        const w = g.walls[o.wall];
+        if (!w) continue;
+        const cx = w.A.x + w.dir.x * o.t + w.n.x * 0.45;
+        const cy = w.A.y + w.dir.y * o.t + w.n.y * 0.45;
+        blockRects.push({ x: cx, y: cy, w: (o.w || 0.9) + 0.3, h: 0.9 });
+      }
+      const blockHit = (corners) => blockRects.some((b) => {
+        const bhw = b.w / 2, bhh = b.h / 2;
+        return corners.some((pt) => Math.abs(pt.x - b.x) <= bhw && Math.abs(pt.y - b.y) <= bhh);
+      });
+      const out = [];
+      const taken = [];
+      const m = 0.06; // تسامح ملامسة الجدار: المركز داخل المضلع والزوايا ضمن الحدود +6سم
+      for (const c of cands) {
+        if (out.length >= n) break;
+        const trial = { x: c.x, y: c.y, w, h, rot: 0 };
+        const corners = this.corners(trial);
+        if (closed) {
+          if (!Designer.pointInPoly({ x: c.x, y: c.y }, g.poly)) continue;
+          if (!corners.every((pt) => pt.x >= bb.minX - m && pt.x <= bb.maxX + m && pt.y >= bb.minY - m && pt.y <= bb.maxY + m)) continue;
+        }
+        if (this.overlapsColumn(trial)) continue;
+        if (blockHit(corners)) continue;
+        const hit = this.state.pieces.concat(taken).some((p) => {
+          if (p.kind === 'free') return false;
+          if (kind === 'acc' && p.kind === 'sofa') return false; // الوسائد فوق الكنب طبيعية
+          return Designer.polysOverlap(corners, this.corners(p));
+        });
+        if (hit) continue;
+        taken.push(trial);
+        out.push({ x: c.x, y: c.y });
+      }
+      return out;
     }
 
     _hitPiece(pt, slop = 0) {
@@ -926,6 +1018,7 @@
       if (d.mode === 'move') {
         p.x = round(snap(pt.x + d.off.x), 3);
         p.y = round(snap(pt.y + d.off.y), 3);
+        this._clampToRoom(p, g);
         this._trySnapToWall(p, g);
       } else if (d.mode === 'resizeW') {
         const l = this.toLocal(o, pt);
@@ -990,6 +1083,18 @@
         return;
       }
       if (d.mode === 'pan') return;
+      // منع الإفلات فوق عمود أو خارج الغرفة: يُعاد العنصر لمكانه ولا يُفقد بصمت
+      if (d.moved && d.mode === 'move') {
+        const mp = this.piece(d.id);
+        if (mp) {
+          const gg = this.geometry();
+          const outside = gg.closed && !Designer.pointInPoly({ x: mp.x, y: mp.y }, gg.poly);
+          if (this.overlapsColumn(mp) || outside) {
+            mp.x = d.orig.x; mp.y = d.orig.y;
+            if (this.opts.onRevert) { try { this.opts.onRevert(this.overlapsColumn(mp) ? 'column' : 'outside'); } catch (_) { /* noop */ } }
+          }
+        }
+      }
       if (d.moved) this.changed();
     }
 
@@ -1311,6 +1416,16 @@
               roundRect(ctx, x, -ph / 2 + back + 3, pw / n - 6, ph - back - 6, 3); ctx.fill();
             }
           }
+        } else if (p.kind === 'column') {
+          // العامود: كتلة إنشائية مخططة لا تُبنى فوقها قطع
+          ctx.fillStyle = '#9aa0a6';
+          roundRect(ctx, -pw / 2, -ph / 2, pw, ph, Math.min(4, pw / 6, ph / 6)); ctx.fill();
+          ctx.strokeStyle = '#5f6368'; ctx.lineWidth = Math.max(1.2 * k, 0.02 * S); ctx.stroke();
+          ctx.strokeStyle = 'rgba(255,255,255,0.55)'; ctx.lineWidth = 1;
+          const step = Math.max(4, pw / 6);
+          for (let lx = -pw / 2 + step; lx < pw / 2; lx += step) {
+            ctx.beginPath(); ctx.moveTo(lx, -ph / 2); ctx.lineTo(lx, ph / 2); ctx.stroke();
+          }
         } else {
           ctx.shadowColor = 'rgba(0,0,0,0.15)'; ctx.shadowBlur = Math.max(2, 0.05 * S);
           ctx.fillStyle = color;
@@ -1337,7 +1452,7 @@
         if (!isFree) { ctx.shadowColor = 'rgba(0,0,0,0.5)'; ctx.shadowBlur = 3 * k; }
         // الكنب: الطول × العمق
         const dims = `${round(p.w, 2)} × ${round(p.h, 2)} م`;
-        const label = p.kind === 'sofa' ? dims : (item.name || 'إكسسوار');
+        const label = p.kind === 'sofa' ? dims : p.kind === 'column' ? 'عامود' : (item.name || 'إكسسوار');
         const maxW = Math.max(pw, ph) - 6;
         if (isFree) {
           // الاسم والمقاس معاً: المقاس هو ما يُعدَّل فيها، فلا يُخفى

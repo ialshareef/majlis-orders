@@ -2359,6 +2359,9 @@ body.portal { background: var(--bg); }
 .p-tools .tb-row { display: flex; gap: 8px; }
 .p-tools .tb-btn { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: .82rem; white-space: nowrap; }
 .p-step-title { font-size: 1.02rem; margin: 0 0 4px; }
+.p-addrow { display: flex; gap: 8px; flex-wrap: wrap; }
+.p-addrow .btn { flex: 1 1 28%; min-height: 44px; white-space: nowrap; }
+.p-subhead { font-size: .92rem; margin: 12px 0 2px; }
 .p-accgrid { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
 .p-accgrid .btn { flex: none; min-height: 44px; padding-inline: 16px; }
 .p-zoombar { display: flex; gap: 8px; }

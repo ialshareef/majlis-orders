@@ -141,9 +141,9 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.18';
-// بصمة asalh-najd-1.0.18.apk (إصدار GitHub v1.0.18، بناء CI الموقّع)
-const UPDATE_FALLBACK_SHA256 = 'b7570d1e8d6e4682d0fa98e2fbc2026ef0d1f224c70add47e12bf715eb2b8eb8';
+const UPDATE_FALLBACK_VERSION = '1.0.19';
+// بصمة asalh-najd-1.0.19.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+const UPDATE_FALLBACK_SHA256 = '';
 
 function versionCodeOfName(v) {
   const p = String(v || '').split('.').map((n) => parseInt(n, 10));
@@ -325,7 +325,7 @@ function checkDesign(d) {
   if (d.pieces !== undefined) {
     if (!Array.isArray(d.pieces) || d.pieces.length > 200) bad();
     for (const p of d.pieces) {
-      if (!p || typeof p !== 'object' || !['sofa', 'acc', 'free'].includes(p.kind)) bad();
+      if (!p || typeof p !== 'object' || !['sofa', 'acc', 'free', 'column'].includes(p.kind)) bad();
       if (p.kind === 'sofa' && p.seating !== undefined && !['floor', 'sofa', 'arabic', 'raised'].includes(p.seating)) bad();
       for (const f of ['w', 'h']) if (!isNum(p[f]) || p[f] < 0.1 || p[f] > 30) bad();
       for (const f of ['x', 'y', 'rot']) if (p[f] !== undefined && !isNum(p[f])) bad();

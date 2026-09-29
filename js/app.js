@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.18';
+  const APP_VERSION = '1.0.19';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -1082,12 +1082,13 @@ function canEditOrder(o) {
       const p = info.piece;
       const isSofa = p.kind === 'sofa';
       const isFree = p.kind === 'free';
-      // المساحة الحرة والكنب يُقاسان يدوياً؛ الإكسسوار وحده مقاسه مثبَّت من بطاقة صنفه
-      const canSize = isSofa || isFree;
+      const isColumn = p.kind === 'column';
+      // المساحة الحرة والكنب والعامود تُقاس يدوياً؛ الإكسسوار وحده مقاسه مثبَّت من بطاقة صنفه
+      const canSize = isSofa || isFree || isColumn;
       const legacy = legacySofaItem(p);
       // الكنبة تركيب من ثلاثة، فلا قائمة "صنف" لها. الإكسسوار صنف واحد كما كان.
       const items = canSize ? [] : activeItems('acc');
-      const curItem = canSize ? (pieceStyle(p) || { name: 'كنب' }) : getItem(p.itemId);
+      const curItem = isColumn ? { name: 'عامود' } : canSize ? (pieceStyle(p) || { name: 'كنب' }) : getItem(p.itemId);
       const opts = items.map((i) => `<option value="${i.id}">${esc(i.name)}</option>`);
       if (!canSize && !items.some((i) => i.id === p.itemId)) opts.unshift(`<option value="${esc(p.itemId)}">${esc(curItem.name)}</option>`);
       // عدد قطع الإكسسوار نفسه في التصميم (لإضافة كمية يدوياً)
@@ -1268,7 +1269,7 @@ function canEditOrder(o) {
           e.preventDefault();
           designer.select({ type: 'piece', id: ps[j].id });
           const p = ps[j];
-          $('#canvasLive').textContent = `${p.kind === 'sofa' ? 'كنب' : p.kind === 'free' ? 'مساحة حرة' : (getItem(p.itemId) || {}).name || 'إكسسوار'} ${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.wall != null ? ' على جدار ' + (p.wall + 1) : ''}. الأسهم للتحريك، R للتدوير، Delete للحذف، Enter للخصائص.`;
+          $('#canvasLive').textContent = `${p.kind === 'sofa' ? 'كنب' : p.kind === 'free' ? 'مساحة حرة' : p.kind === 'column' ? 'عامود' : (getItem(p.itemId) || {}).name || 'إكسسوار'} ${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.wall != null ? ' على جدار ' + (p.wall + 1) : ''}. الأسهم للتحريك، R للتدوير، Delete للحذف، Enter للخصائص.`;
           return;
         }
         designer.select(null);
