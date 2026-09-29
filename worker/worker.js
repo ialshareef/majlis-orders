@@ -105,8 +105,8 @@ async function route(request, env, url) {
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.16';
-// بصمة asalh-najd-1.0.16.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
-const UPDATE_FALLBACK_SHA256 = '';
+// بصمة asalh-najd-1.0.16.apk (إصدار GitHub v1.0.16، بناء CI الموقّع)
+const UPDATE_FALLBACK_SHA256 = '4a053ee767eaeb8cc1c79ba0bf743d3bba25d4944640ccfebea438d9eac4918b';
 
 function versionCodeOfName(v) {
   const p = String(v || '').split('.').map((n) => parseInt(n, 10));
