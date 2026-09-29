@@ -84,7 +84,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // B5/C6: تنبيه عدم الاتصال
     t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
     // الإصدار
-    t('ver-1-0-20', app.indexOf("APP_VERSION = '1.0.20'") >= 0, 'version');
+    t('ver-1-0-21', app.indexOf("APP_VERSION = '1.0.21'") >= 0, 'version');
   }
 
   async function partB() {
@@ -159,6 +159,17 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     await waitFor(function () { return !document.querySelector('#app').hidden; }, 240000);
     log('partB: app-visible');
     t('B-login-ok', true);
+    // روابط About: قيم من نفس الأصل + نسخ/مشاركة بتغذية راجعة
+    document.querySelector('button[data-page="about"]').click();
+    await waitFor(function () { return document.querySelector('#page-about').classList.contains('active'); });
+    var cInp = document.querySelector('#customerLink'), sInp = document.querySelector('#staffLink');
+    t('B-links-urls', cInp && sInp && cInp.value.endsWith('/customer-design') && !sInp.value.endsWith('/customer-design') && cInp.value.indexOf('http') === 0, (cInp && cInp.value) + ' | ' + (sInp && sInp.value));
+    document.querySelector('#btnCopyCustomer').click();
+    await waitFor(function () { return document.querySelector('#toast').textContent.indexOf('نسخ') >= 0; });
+    t('B-links-copy', true);
+    document.querySelector('#btnShareCustomer').click();
+    await waitFor(function () { return document.querySelector('#toast').textContent.length > 0; });
+    t('B-links-share', true);
     // زر إظهار كلمة المرور (قبل الدخول كان ظاهراً — نتحقق من وجوده وسلوكه على نسخة جديدة؟ نكتفي بالوجود هنا)
     // صفحة الطلب: الشريط السفلي مخفي على الجوال
     var cs = getComputedStyle(document.querySelector('#btnNewOrder'));

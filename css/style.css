@@ -2405,6 +2405,21 @@ body.portal { background: var(--bg); }
 .p-contact { text-align: start; border-top: 1px solid var(--line-soft); padding-top: 14px; margin-top: 6px; display: grid; gap: 10px; }
 .p-contact[hidden] { display: none; }
 
+/* روابط الوصول السريع (صفحة عن التطبيق) */
+.links-box { max-width: 440px; margin: 0 auto 18px; text-align: start; display: grid; gap: 12px; }
+.links-box h4 { font-size: .95rem; margin: 0; text-align: center; }
+.link-row { display: grid; gap: 8px; padding: 12px 14px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r); }
+.link-head { display: flex; align-items: baseline; gap: 8px; font-weight: 700; font-size: .9rem; }
+.link-head small { font-weight: 400; color: var(--ink-3); font-size: .76rem; }
+.link-actions { display: flex; gap: 6px; }
+.link-actions input { flex: 1; min-width: 0; min-height: 44px; font-size: .8rem; background: var(--input-bg); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 0 10px; }
+.link-actions .btn { min-height: 44px; flex: none; }
+@media (max-width: 400px) {
+  .link-actions { flex-wrap: wrap; }
+  .link-actions input { flex: 1 1 100%; }
+  .link-actions .btn { flex: 1; }
+}
+
 /* عارض تصميم العميل (موظفون) */
 .des-view { display: grid; gap: 12px; }
 .des-canvasbar { display: flex; gap: 8px; flex-wrap: wrap; }

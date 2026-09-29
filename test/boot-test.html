@@ -44,6 +44,9 @@ window.addEventListener('error', function (e) { window.TEST_ERRORS.push('parent:
         checks.push(['btn-download', !!doc.querySelector('#btnDownloadUpdate'), 'missing #btnDownloadUpdate']);
         checks.push(['progress-bar', !!doc.querySelector('#updateProgressBar'), 'missing bar']);
         checks.push(['about-version-el', !!doc.querySelector('#aboutVersion'), 'missing #aboutVersion']);
+        checks.push(['about-links', !!doc.querySelector('#linksBox') && !!doc.querySelector('#customerLink') && !!doc.querySelector('#staffLink'), 'missing links']);
+        checks.push(['about-linkbtns', ['btnOpenCustomer', 'btnCopyCustomer', 'btnShareCustomer', 'btnOpenStaff', 'btnCopyStaff', 'btnShareStaff'].every(function (id) { return !!doc.querySelector('#' + id); }), 'missing link buttons']);
+        checks.push(['about-nohardcode', (doc.querySelector('#customerLink').getAttribute('value') || '') === '' && !/https?:\/\/[a-z0-9.-]+\/customer-design/.test(doc.querySelector('#page-about').innerHTML), 'hardcoded url']);
       } catch (e) { checks.push(['dom-access', false, e.message]); }
       var bad = checks.filter(function (c) { return !c[1]; });
       checks.forEach(function (c) { log((c[1] ? 'PASS ' : 'FAIL ') + 'boot-' + c[0] + (c[1] ? '' : ' :: ' + c[2])); });

@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.20';
+  const APP_VERSION = '1.0.21';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4331,6 +4331,53 @@ function canEditOrder(o) {
         });
       }
     } catch (_) { /* فشل ربط التحديث لا يمنع عرض الصفحة */ }
+    // روابط الوصول السريع: تُبنى من نفس الأصل (تعمل إنتاج/تجريبي/محلي بلا hard-code)
+    try { wireAccessLinks(); } catch (_) { /* noop */ }
+  }
+
+  /** روابط العميل والموظفين: فتح/نسخ/مشاركة (Web Share API مع بديل النسخ) */
+  let linksWired = false;
+  function wireAccessLinks() {
+    const box = $('#linksBox');
+    if (!box || linksWired) return;
+    const origin = window.location.origin;
+    const urls = { customerLink: origin + '/customer-design', staffLink: origin + '/' };
+    Object.entries(urls).forEach(([id, url]) => {
+      const inp = document.getElementById(id);
+      if (inp) inp.value = url;
+    });
+    const open = (id) => { const u = document.getElementById(id).value; window.open(u, '_blank', 'noopener'); };
+    const copy = async (id) => {
+      const u = document.getElementById(id).value;
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(u);
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = u; ta.style.position = 'fixed'; ta.style.opacity = '0';
+          document.body.appendChild(ta); ta.select();
+          document.execCommand('copy'); ta.remove();
+        }
+        toast('تم نسخ الرابط');
+      } catch (_) { toast('تعذّر النسخ — انسخ الرابط يدوياً', true); }
+    };
+    const share = async (id, title) => {
+      const u = document.getElementById(id).value;
+      try {
+        if (navigator.share) { await navigator.share({ title, url: u }); return; }
+        throw new Error('no-share');
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;
+        await copy(id);
+      }
+    };
+    const bind = (btn, fn) => { const b = document.getElementById(btn); if (b) b.onclick = fn; };
+    bind('btnOpenCustomer', () => open('customerLink'));
+    bind('btnCopyCustomer', () => copy('customerLink'));
+    bind('btnShareCustomer', () => share('customerLink', 'واجهة العميل — مصمم المجالس'));
+    bind('btnOpenStaff', () => open('staffLink'));
+    bind('btnCopyStaff', () => copy('staffLink'));
+    bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'));
+    linksWired = true;
   }
 
   /** بعد تثبيت تحديث: حدّث الـ Service Worker ليقدّم النسخة الجديدة فوراً */
