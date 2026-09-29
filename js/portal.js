@@ -504,6 +504,9 @@
         + (ops.length ? ops.map(function (o) {
           var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
           return '<div class="p-wallrow"><span>' + onm + ' — جدار ' + (o.wall + 1) + '</span>'
+            + '<span class="p-opw"><button type="button" class="btn" data-opwminus="' + esc(o.id) + '" aria-label="تضييق">−</button>'
+            + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-opw="' + esc(o.id) + '" value="' + o.w + '" aria-label="عرض ' + onm + '">'
+            + '<button type="button" class="btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع">+</button></span>'
             + '<button type="button" class="icon-btn" data-opdel="' + esc(o.id) + '" aria-label="حذف"><svg><use href="#p-trash"/></svg></button></div>';
         }).join('') : '')
         + (cols.length ? cols.map(function (c) {
@@ -514,6 +517,28 @@
         + '</div>';
       $$('button[data-add]', box).forEach(function (b) {
         b.addEventListener('click', function () { addOpeningOf(b.dataset.add); renderPanel(); });
+      });
+      var opSetW = function (id, v) {
+        v = Math.max(0.3, Math.round(v * 10) / 10);
+        dz.updateOpening(id, { w: v });
+        var inp = box.querySelector('input[data-opw="' + id + '"]');
+        if (inp && document.activeElement !== inp) inp.value = v;
+        markDirty();
+      };
+      $$('button[data-opwminus]', box).forEach(function (b) {
+        b.addEventListener('click', function () {
+          var inp = box.querySelector('input[data-opw="' + b.dataset.opwminus + '"]');
+          opSetW(b.dataset.opwminus, (parseFloat(inp.value) || 0) - 0.1);
+        });
+      });
+      $$('button[data-opwplus]', box).forEach(function (b) {
+        b.addEventListener('click', function () {
+          var inp = box.querySelector('input[data-opw="' + b.dataset.opwplus + '"]');
+          opSetW(b.dataset.opwplus, (parseFloat(inp.value) || 0) + 0.1);
+        });
+      });
+      $$('input[data-opw]', box).forEach(function (inp) {
+        inp.addEventListener('change', function () { opSetW(inp.dataset.opw, parseFloat(inp.value)); });
       });
       $$('button[data-opdel]', box).forEach(function (b) {
         b.addEventListener('click', function () {
@@ -580,7 +605,8 @@
   function renderSheet(info) {
     var sh = $('#pSheet');
     var dz = S.designer;
-    if (!dz || !info) { sh.hidden = true; sh.innerHTML = ''; return; }
+    if (!dz || !info) { sh.hidden = true; sh.innerHTML = ''; sh.removeAttribute('data-compact'); return; }
+    var wasHidden = sh.hidden;
     var html = '<span class="sheet-grip"></span>';
     if (info.type === 'wall') {
       html += '<div class="insp-head"><b>جدار ' + (info.index + 1) + '</b><button class="btn small" data-close>تم</button></div>'
@@ -590,9 +616,13 @@
     } else if (info.type === 'opening') {
       var o = info.opening;
       var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
-      html += '<div class="insp-head"><b>' + onm + '</b><button class="btn small" data-close>تم</button></div>'
-        + '<label>العرض (م)<input id="psOW" type="number" step="0.05" min="0.2" inputmode="decimal" value="' + o.w + '"></label>'
-        + '<button type="button" class="btn block danger" data-del>حذف</button>';
+      // مدمج: سطر واحد (عنوان + عرض + تم) وصف حذف نصي — لا يغطي الرسم
+      html += '<div class="opsheet"><b>' + onm + '</b>'
+        + '<span class="p-qty op-qty"><button type="button" class="btn" data-owminus aria-label="تضييق">−</button>'
+        + '<input id="psOW" type="number" step="0.1" min="0.3" inputmode="decimal" aria-label="العرض بالمتر" value="' + o.w + '">'
+        + '<button type="button" class="btn" data-owplus aria-label="توسيع">+</button></span>'
+        + '<button type="button" class="btn small" data-close>تم</button>'
+        + '<button type="button" class="link-btn danger-text" data-del>حذف</button></div>';
     } else {
       var p = info.piece;
       var nm = pieceLabel(p);
@@ -619,6 +649,18 @@
     }
     sh.innerHTML = html;
     sh.hidden = false;
+    // محرر الفتحات مدمج: يُعلَّم لتصغير الورقة، وتُمرَّر المنطقة للرسم عند أول فتح
+    if (info.type === 'opening') {
+      sh.setAttribute('data-compact', '1');
+      if (wasHidden) {
+        var cvw = document.querySelector('.p-canvas');
+        if (cvw && cvw.scrollIntoView) {
+          try { cvw.scrollIntoView({ block: 'nearest' }); } catch (_) { /* noop */ }
+        }
+      }
+    } else {
+      sh.removeAttribute('data-compact');
+    }
     var close = $('[data-close]', sh);
     if (close) close.onclick = function () { dz.select(null); renderSheet(null); };
     var bindNum = function (sel, fn) {
@@ -628,6 +670,18 @@
     bindNum('#psLen', function (v) { dz.setWallLength(info.index, Math.max(0.3, v || 0.3)); });
     bindNum('#psAng', function (v) { dz.setWallAngle(info.index, v || 0); });
     bindNum('#psOW', function (v) { dz.updateOpening(info.opening.id, { w: Math.max(0.2, v || 0.5) }); });
+    var owStep = function (d) {
+      if (!info.opening) return;
+      var el = $('#psOW', sh);
+      var v = Math.max(0.3, Math.round(((parseFloat(el.value) || 0) + d) * 10) / 10);
+      el.value = v;
+      dz.updateOpening(info.opening.id, { w: v });
+      markDirty();
+    };
+    var owm = $('[data-owminus]', sh);
+    if (owm) owm.onclick = function () { owStep(-0.1); };
+    var owp = $('[data-owplus]', sh);
+    if (owp) owp.onclick = function () { owStep(0.1); };
     bindNum('#psW', function (v) { dz.updateSelected({ w: Math.max(0.2, v || 0.2) }); });
     bindNum('#psH', function (v) { dz.updateSelected({ h: Math.max(0.2, v || 0.2) }); });
     var dw = $('[data-delwall]', sh);

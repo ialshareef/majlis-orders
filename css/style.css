@@ -1987,6 +1987,8 @@ body.modal-open { overflow: hidden; }
     animation: sheet-up .26s var(--ease) backwards;
   }
   .inspector .sheet-grip { display: block; width: 44px; height: 4px; border-radius: 2px; background: var(--line-strong); margin: 0 auto 8px; }
+  /* محرر الفتحات مدمج: محتواه سطر واحد تقريباً فلا يحتاج ارتفاع الورقة الكامل */
+  .inspector[data-kind="opening"] { max-height: 250px; }
   .inspector .insp-head { position: sticky; top: -8px; z-index: 2; background: var(--surface); padding-top: 6px; }
   .inspector .insp-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .inspector .insp-actions .btn { padding-inline: 6px; }
@@ -2380,9 +2382,21 @@ body.portal { background: var(--bg); }
 .p-wallrow span { flex: 1; font-size: .86rem; }
 .p-wallrow input { width: 90px; min-height: 44px; text-align: center; }
 .p-wallrow .icon-btn { width: 44px; height: 44px; flex: none; }
+.p-opw { display: flex; gap: 4px; align-items: stretch; margin-inline-start: auto; }
+.p-opw .btn { width: 40px; min-height: 44px; flex: none; }
+.p-opw input { width: 64px; min-height: 44px; text-align: center; }
 .p-accgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 .p-accgrid .btn { min-height: 44px; }
 .p-sheet .insp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+/* محرر الفتحات المدمج: شريط واحد مدمج لا يغطي الرسم */
+.p-sheet[data-compact="1"] { max-height: 190px; padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
+.opsheet { display: flex; align-items: center; gap: 8px; }
+.opsheet b { flex: none; font-size: .92rem; }
+.opsheet .op-qty { flex: 1; display: flex; gap: 6px; align-items: stretch; }
+.opsheet .op-qty .btn { flex: none; width: 44px; min-height: 44px; }
+.opsheet .op-qty input { flex: 1; min-width: 0; min-height: 44px; text-align: center; }
+.opsheet .btn.small { flex: none; min-height: 44px; }
+.danger-text { color: var(--danger); font-weight: 600; min-height: 44px; }
 .p-sheet .p-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .p-sheet .btn { min-height: 44px; }
 .p-footbar {

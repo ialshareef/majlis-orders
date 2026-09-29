@@ -170,6 +170,45 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var bb0 = P.designer().geometry().bb;
       t('F-column', col0.x >= bb0.minX && col0.x <= bb0.maxX && col0.y >= bb0.minY && col0.y <= bb0.maxY, 'column inside room');
 
+      // D2: محرر الفتحات المدمج — سطر واحد لا يغطي الرسم
+      P.designer().select(null);
+      await waitFor(function () { return q('#pSheet').hidden; }, 60000);
+      (function () {
+        var dz = P.designer();
+        var mop = P.state().openings.filter(function (o) { return o.type === 'mashab'; })[0];
+        if (!mop) throw new Error('no mashab to select');
+        dz.select({ type: 'opening', id: mop.id });
+      })();
+      await waitFor(function () { return q('#pSheet .opsheet'); }, 60000);
+      t('D2-compact', q('#pSheet').dataset.compact === '1', 'compact attr');
+      var shR = q('#pSheet').getBoundingClientRect();
+      t('D2-small', shR.height <= 230, 'sheetH=' + Math.round(shR.height));
+      await waitFor(function () {
+        var c = q('#pCanvas').getBoundingClientRect(), s = q('#pSheet').getBoundingClientRect();
+        return Math.max(0, Math.min(c.bottom, s.top) - Math.max(c.top, 0)) > 80;
+      }, 30000);
+      var cvR2 = q('#pCanvas').getBoundingClientRect(), shR2 = q('#pSheet').getBoundingClientRect();
+      t('D2-visible', true, 'visibleCanvas=' + Math.round(Math.max(0, Math.min(cvR2.bottom, shR2.top) - Math.max(cvR2.top, 0))));
+      var wBefore2 = P.state().openings.filter(function (o) { return o.type === 'mashab'; })[0].w;
+      q('#pSheet [data-owplus]').click();
+      await waitFor(function () {
+        return P.state().openings.filter(function (o) { return o.type === 'mashab'; })[0].w > wBefore2;
+      }, 60000);
+      t('D2-stepper', true);
+      step(1);
+      await waitFor(function () { return q('#pPanel input[data-opw]'); }, 60000);
+      var pwBefore = P.state().openings.filter(function (o) { return o.type === 'mashab'; })[0].w;
+      q('#pPanel [data-opwplus]').click();
+      await waitFor(function () {
+        return P.state().openings.filter(function (o) { return o.type === 'mashab'; })[0].w > pwBefore;
+      }, 60000);
+      t('D2-panel', true);
+      P.designer().select({ type: 'opening', id: P.state().openings.filter(function (o) { return o.type === 'mashab'; })[0].id });
+      await waitFor(function () { return q('#pSheet .opsheet [data-del]'); }, 60000);
+      q('#pSheet .opsheet [data-del]').click();
+      await waitFor(function () { return P.state().openings.length === 0; }, 60000);
+      t('D2-delete', true);
+
       // E: إكسسوار + كمية 5 حقيقية
       step(3);
       await waitFor(function () { return q('#pPanel button[data-acc]'); });

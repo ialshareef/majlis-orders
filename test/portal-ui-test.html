@@ -88,6 +88,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('no-global-toolbar', ph0.indexOf('id="pTools"') < 0 && ph0.indexOf('id="pReview"') < 0, 'no toolbar/review view');
       t('zoom-outside', ph0.indexOf('p-zoombar') >= 0 && ph0.indexOf('zoom-ctl') < 0, 'zoom outside canvas');
       t('column-ui', pjs0.indexOf("data-add=\"column\"") >= 0 && pjs0.indexOf('addColumn') >= 0, 'column');
+      // محرر الفتحات المدمج: سطر واحد + steppers، وبلا زر حذف عريض
+      t('op-compact', pjs0.indexOf('opsheet') >= 0 && pjs0.indexOf('data-owminus') >= 0 && pjs0.indexOf('data-owplus') >= 0 && pjs0.indexOf('data-compact') >= 0, 'compact sheet');
+      t('op-panel-stepper', pjs0.indexOf('data-opwminus') >= 0 && pjs0.indexOf('data-opwplus') >= 0 && pjs0.indexOf('data-opw="') >= 0, 'panel steppers');
+      t('op-no-blockdel', pjs0.indexOf('btn block danger" data-del>') < 0, 'no block delete in portal sheet');
       t('qty-ui', pjs0.indexOf('psQty') >= 0 && pjs0.indexOf('p-qty') >= 0, 'qty');
       t('review-step', pjs0.indexOf('renderReviewPanel') >= 0 && pjs0.indexOf('pActPdf') >= 0 && pjs0.indexOf('pActWa') >= 0, 'review actions');
       t('done-dom', !!q('#pDesignNo') && !!q('#pPdf') && !!q('#pShareWa') && !!q('#pContactBtn'), 'done');

@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.21';
+  const APP_VERSION = '1.0.22';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -1120,6 +1120,7 @@ function canEditOrder(o) {
         ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     }
     insp.innerHTML = html;
+    try { insp.dataset.kind = (info && info.type) || ''; } catch (_) { /* noop */ }
     prepareControls(insp);
     insp.hidden = false;
     document.body.classList.toggle('inspector-open', isMobile());
@@ -4335,13 +4336,19 @@ function canEditOrder(o) {
     try { wireAccessLinks(); } catch (_) { /* noop */ }
   }
 
+  /* روابط الوصول الرسمية الثابتة (من إعداد النشر: Worker majlis-api + مستودع ialshareef/majlis-orders).
+     ثابتة عمداً: لا تتغير بين المحلي والتجريبي والإنتاج، ولا تُبنى من location.origin. */
+  const ACCESS_LINKS = {
+    customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design',
+    staff: 'https://majlis-api.asalh-najd.workers.dev/',
+  };
+
   /** روابط العميل والموظفين: فتح/نسخ/مشاركة (Web Share API مع بديل النسخ) */
   let linksWired = false;
   function wireAccessLinks() {
     const box = $('#linksBox');
     if (!box || linksWired) return;
-    const origin = window.location.origin;
-    const urls = { customerLink: origin + '/customer-design', staffLink: origin + '/' };
+    const urls = { customerLink: ACCESS_LINKS.customer, staffLink: ACCESS_LINKS.staff };
     Object.entries(urls).forEach(([id, url]) => {
       const inp = document.getElementById(id);
       if (inp) inp.value = url;

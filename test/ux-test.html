@@ -84,7 +84,17 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // B5/C6: تنبيه عدم الاتصال
     t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
     // الإصدار
-    t('ver-1-0-21', app.indexOf("APP_VERSION = '1.0.21'") >= 0, 'version');
+    t('ver-1-0-22', app.indexOf("APP_VERSION = '1.0.22'") >= 0, 'version');
+    // روابط About ثابتة ومركزية (ليست من location.origin)
+    t('links-static', app.indexOf("customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design'") >= 0 && app.indexOf("staff: 'https://majlis-api.asalh-najd.workers.dev/'") >= 0, 'fixed urls');
+    t('links-noorigin', (function () {
+      var i = app.indexOf('function wireAccessLinks');
+      var seg = i >= 0 ? app.slice(i, i + 2500) : '';
+      return seg.indexOf('location.origin') < 0;
+    })(), 'no origin in builder');
+    // مفتش الموظفين يميز الفتحات + سقف جوال مدمج
+    t('insp-kind', app.indexOf('insp.dataset.kind') >= 0, 'data-kind');
+    t('insp-cap', css.indexOf('.inspector[data-kind="opening"]') >= 0 && css.indexOf('max-height: 250px') >= 0, 'compact cap');
   }
 
   async function partB() {
@@ -159,17 +169,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     await waitFor(function () { return !document.querySelector('#app').hidden; }, 240000);
     log('partB: app-visible');
     t('B-login-ok', true);
-    // روابط About: قيم من نفس الأصل + نسخ/مشاركة بتغذية راجعة
-    document.querySelector('button[data-page="about"]').click();
-    await waitFor(function () { return document.querySelector('#page-about').classList.contains('active'); });
-    var cInp = document.querySelector('#customerLink'), sInp = document.querySelector('#staffLink');
-    t('B-links-urls', cInp && sInp && cInp.value.endsWith('/customer-design') && !sInp.value.endsWith('/customer-design') && cInp.value.indexOf('http') === 0, (cInp && cInp.value) + ' | ' + (sInp && sInp.value));
-    document.querySelector('#btnCopyCustomer').click();
-    await waitFor(function () { return document.querySelector('#toast').textContent.indexOf('نسخ') >= 0; });
-    t('B-links-copy', true);
-    document.querySelector('#btnShareCustomer').click();
-    await waitFor(function () { return document.querySelector('#toast').textContent.length > 0; });
-    t('B-links-share', true);
+    log('partB: MARK login-ok');
     // زر إظهار كلمة المرور (قبل الدخول كان ظاهراً — نتحقق من وجوده وسلوكه على نسخة جديدة؟ نكتفي بالوجود هنا)
     // صفحة الطلب: الشريط السفلي مخفي على الجوال
     var cs = getComputedStyle(document.querySelector('#btnNewOrder'));
@@ -300,6 +300,54 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var docOver = document.documentElement.scrollWidth > window.innerWidth + 1;
       t('B-E-' + pages[pi], !docOver && badEls.length === 0, 'doc=' + document.documentElement.scrollWidth + ' vw=' + window.innerWidth + ' ' + badEls.slice(0, 4).join('|'));
     }
+    // ملاحظة ترتيب: كتلتا المفتش والروابط في النهاية لأن setRect يُعلّم الطلب
+    // كمسودة معدّلة، وتدفق الدفع يتوقع بداية نظيفة (تأكيد طلب جديد)
+    log('partB: MARK tail-start');
+    // مفتش الموظفين للفتحات: مدمج بسقف 250px + تعديل العرض يعمل
+    (function () {
+      var dz = window.MajlisApp.designer;
+      dz.setRect(5, 4);
+      var o = dz.addOpening(0, 'door');
+      dz.select({ type: 'opening', id: o.id });
+      window.__testOpeningId = o.id;
+      var ebb = document.querySelector('#tbEdit');
+      ebb.disabled = false;
+      ebb.click();
+    })();
+    await waitFor(function () {
+      var insp = document.querySelector('#inspector');
+      return insp && !insp.hidden && insp.dataset.kind === 'opening';
+    }, 120000);
+    (function () {
+      var insp = document.querySelector('#inspector');
+      var w0 = window.MajlisApp.designer.opening(window.__testOpeningId).w;
+      insp.querySelector('#inspOW').value = String(Math.round((w0 + 0.2) * 100) / 100);
+      insp.querySelector('#inspOW').dispatchEvent(new Event('change', { bubbles: true }));
+      window.__w0 = w0;
+    })();
+    await waitFor(function () {
+      return window.MajlisApp.designer.opening(window.__testOpeningId).w > window.__w0;
+    }, 120000);
+    t('B-insp-kind', document.querySelector('#inspector').dataset.kind === 'opening', 'data-kind');
+    t('B-insp-cap', (function () {
+      var mh = getComputedStyle(document.querySelector('#inspector')).maxHeight;
+      var px = parseFloat(mh);
+      return mh !== 'none' && px <= 250;
+    })(), getComputedStyle(document.querySelector('#inspector')).maxHeight);
+    t('B-insp-width', true);
+    document.querySelector('#inspector [data-close]').click();
+    await waitFor(function () { return document.querySelector('#inspector').hidden; }, 60000);
+    // روابط About: قيم ثابتة + نسخ/مشاركة بتغذية راجعة
+    document.querySelector('button[data-page="about"]').click();
+    await waitFor(function () { return document.querySelector('#page-about').classList.contains('active'); });
+    var cInp = document.querySelector('#customerLink'), sInp = document.querySelector('#staffLink');
+    t('B-links-urls', cInp && sInp && cInp.value === 'https://majlis-api.asalh-najd.workers.dev/customer-design' && sInp.value === 'https://majlis-api.asalh-najd.workers.dev/', (cInp && cInp.value) + ' | ' + (sInp && sInp.value));
+    document.querySelector('#btnCopyCustomer').click();
+    await waitFor(function () { return document.querySelector('#toast').textContent.indexOf('نسخ') >= 0; });
+    t('B-links-copy', true);
+    document.querySelector('#btnShareCustomer').click();
+    await waitFor(function () { return document.querySelector('#toast').textContent.length > 0; });
+    t('B-links-share', true);
     window.fetch = realFetch;
   }
 
