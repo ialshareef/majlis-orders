@@ -2340,10 +2340,11 @@ body.portal { background: var(--bg); }
 .p-bar b { flex: 1; text-align: center; font-size: 1.02rem; }
 .p-bar .icon-btn { width: 44px; height: 44px; }
 .p-savestate { font-size: .78rem; color: var(--ink-3); min-width: 52px; text-align: end; }
-.p-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 6px 0 12px; }
+.p-steps { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0 12px; }
 .p-steps button {
-  display: flex; flex-direction: row; align-items: center; gap: 7px;
-  min-height: 48px; padding: 6px 10px; border: 1px solid var(--line-soft); border-radius: var(--r);
+  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7px;
+  flex: 1 1 150px; max-width: 230px; min-height: 48px; padding: 6px 10px;
+  border: 1px solid var(--line-soft); border-radius: var(--r);
   background: var(--surface); color: var(--ink-3); font-size: .82rem; font-weight: 600; cursor: pointer;
   white-space: nowrap; overflow: hidden;
 }

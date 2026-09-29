@@ -58,7 +58,7 @@
 
   var STEPS = [
     { id: 'room', label: 'الغرفة', title: 'الغرفة', hint: 'حدد شكل وحجم الغرفة: أدخل المقاسات وعدّل الجدران.' },
-    { id: 'openings', label: 'الفتحات', title: 'الفتحات', hint: 'أضف الفتحات والأعمدة: باب أو مشب على الجدار، وعامود داخل الغرفة.' },
+    { id: 'openings', label: 'العناصر المعمارية', title: 'العناصر المعمارية', hint: 'أضف بابًا أو مشبًا على الجدار، أو عامودًا داخل الغرفة.' },
     { id: 'majlis', label: 'المجلس', title: 'نوع المجلس', hint: 'اختر نوع المجلس — يُستخدم مع كل كنبة جديدة، ويمكن تغييره لاحقًا.' },
     { id: 'furn', label: 'الأثاث والإكسسوارات', title: 'الأثاث والإكسسوارات', hint: 'اختر العنصر لإضافته إلى التصميم، ثم المسه لتعديل الكمية والخصائص.' },
     { id: 'review', label: 'المراجعة', title: 'مراجعة التصميم', hint: 'راجع التصميم وأنهِ الطلب: بياناتك اختيارية.' },
@@ -436,6 +436,15 @@
       + items.map(function (i) { return '<option value="' + esc(i.id) + '"' + (i.id === val ? ' selected' : '') + '>' + esc(i.name) + '</option>'; }).join('');
   }
 
+  /* مزامنة قائمة الجدران مع الواقع دون إعادة رسم اللوحة (يحفظ تركيز الكتابة) */
+  function syncWallInputs(box, dz) {
+    var ws = (dz.state && dz.state.walls) || [];
+    $$('input[data-wall]', box).forEach(function (inp) {
+      var i = Number(inp.dataset.wall);
+      if (ws[i] && document.activeElement !== inp) inp.value = ws[i].len;
+    });
+  }
+
   function renderPanel() {
     var box = $('#pPanel');
     var dz = S.designer;
@@ -447,22 +456,27 @@
     if (S.step === 'room') {
       var ws = (dz.state && dz.state.walls) || [];
       box.innerHTML = ''
-        + '<div class="row2"><label>العرض (م)<input id="pfW" type="number" step="0.1" min="1" inputmode="decimal" value="' + (ws[0] ? ws[0].len : 5) + '"></label>'
-        + '<label>الطول (م)<input id="pfH" type="number" step="0.1" min="1" inputmode="decimal" value="' + (ws[1] ? ws[1].len : 4) + '"></label></div>'
-        + '<button type="button" class="btn primary block" id="pfRect">تطبيق كغرفة مستطيلة</button>'
-        + '<p class="hint">للغرف غير المستطيلة: أضف جدارًا من الأدوات بالأعلى، وعدّل أطوال الجدران من القائمة:</p>'
+        + '<div class="row2"><label>العرض (م)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[0] ? ws[0].len : 5) + '"></label>'
+        + '<label>الطول (م)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[1] ? ws[1].len : 4) + '"></label></div>'
+        + '<p class="hint">تتحدث الغرفة مباشرة أثناء الكتابة — بلا زر تطبيق.</p>'
+        + '<button type="button" class="btn block" id="pfAddWall">إضافة جدار (للغرف غير المستطيلة)</button>'
+        + '<p class="hint">عدّل أطوال الجدران من القائمة:</p>'
         + '<div id="pfWalls">' + ws.map(function (w, i) {
           return '<div class="p-wallrow"><span>جدار ' + (i + 1) + '</span>'
             + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-wall="' + i + '" value="' + w.len + '" aria-label="طول جدار ' + (i + 1) + '">'
             + '<button type="button" class="icon-btn" data-walldel="' + i + '" aria-label="حذف جدار ' + (i + 1) + '"><svg><use href="#p-trash"/></svg></button></div>';
         }).join('') + '</div>';
-      $('#pfRect').onclick = function () {
-        var w = Math.max(1, parseFloat($('#pfW').value) || 5);
-        var h = Math.max(1, parseFloat($('#pfH').value) || 4);
-        dz.setRect(w, h);
-        dz.fitView();
-        renderPanel();
+      /* تحديث حي: الكتابة تعدّل الجدارين الأولين مباشرة (يحافظ على الغرف
+         المخصصة عبر setWallLength)، بلا زر تطبيق وبلا فقدان التركيز */
+      var liveDim = function (idx, input) {
+        var v = parseFloat(input.value);
+        if (!Number.isFinite(v) || v < 0.5 || v > 30) return;
+        dz.setWallLength(idx, Math.round(v * 10) / 10);
+        syncWallInputs(box, dz);
       };
+      $('#pfW').addEventListener('input', function () { liveDim(0, $('#pfW')); });
+      $('#pfH').addEventListener('input', function () { liveDim(1, $('#pfH')); });
+      $('#pfAddWall').onclick = function () { openWallModal(); };
       $$('input[data-wall]', box).forEach(function (inp) {
         inp.addEventListener('change', function () {
           dz.setWallLength(Number(inp.dataset.wall), Math.max(0.3, parseFloat(inp.value) || 0.3));

@@ -41,6 +41,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
       var sqlite = new SQL.Database();
       sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+      sqlite.run("UPDATE settings SET data = '{\"shopName\":\"أصالة نجد\",\"phone\":\"0512345678\",\"currency\":\"ر.س\"}' WHERE id = 1");
       var norm = function (v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); };
       var DB = {
         prepare: function (sql) {
@@ -101,6 +102,29 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         throw e;
       }
       t('F-start', P.state().walls.length === 4);
+      // R: المراحل الخمس مسماة + التوسيط محسوب
+      var stepLabels = qAll('#pSteps button').map(function (b) { return b.textContent.replace(/^[0-9]+/, '').trim(); });
+      t('R-steps', JSON.stringify(stepLabels) === JSON.stringify(['الغرفة', 'العناصر المعمارية', 'المجلس', 'الأثاث والإكسسوارات', 'المراجعة']), stepLabels.join('|'));
+      t('R-centered', getComputedStyle(q('#pSteps')).justifyContent === 'center', 'centered');
+      t('R-no-rect-btn', !q('#pfRect'), 'no apply button');
+      // R2: بُعد حي — الكتابة تحدّث الجدار فورًا بلا زر وبلا فقدان التركيز
+      q('#pfW').focus();
+      q('#pfW').value = '6';
+      q('#pfW').dispatchEvent(new Event('input', { bubbles: true }));
+      t('R-live-w', P.state().walls[0].len === 6, 'w=' + P.state().walls[0].len);
+      t('R-focus', document.activeElement === q('#pfW'), 'focus kept');
+      q('#pfH').value = '5';
+      q('#pfH').dispatchEvent(new Event('input', { bubbles: true }));
+      t('R-live-h', P.state().walls[1].len === 5, 'h=' + P.state().walls[1].len);
+      // R3: الغرفة المخصصة لا تُهدم بالتحديث الحي
+      q('#pfAddWall').click();
+      await waitFor(function () { return q('#pwLen'); }, 60000);
+      q('#pwLen').value = '2';
+      q('#pwOk').click();
+      await waitFor(function () { return P.state().walls.length === 5; }, 60000);
+      q('#pfW').value = '7';
+      q('#pfW').dispatchEvent(new Event('input', { bubbles: true }));
+      t('R-custom-kept', P.state().walls.length === 5 && P.state().walls[0].len === 7, 'custom room kept');
       step(2);
       await waitFor(function () { return q('#pfSeat'); });
       t('F-default-floor', q('#pfSeat').value === 'floor', q('#pfSeat') && q('#pfSeat').value);
@@ -312,6 +336,23 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return q('#pPanel button[data-coldel]'); });
       qAll('#pPanel button[data-coldel]').forEach(function (b) { b.click(); });
       t('K-coldel', P.state().pieces.filter(function (x) { return x.kind === 'column'; }).length === 0, 'columns deleted');
+
+      // M: PDF وواتساب من خطوة المراجعة (CDN حقيقي، spy على التنزيل/الفتح)
+      step(4);
+      await waitFor(function () { return q('#pActPdf') && q('#pActWa'); }, 60000);
+      var openedBlobs = [];
+      var _co = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = function (b) { openedBlobs.push(b); return _co(b); };
+      var openedUrls = [];
+      window.open = function (u) { openedUrls.push(u); return null; };
+      q('#pToast').textContent = '';
+      q('#pToast').className = 'toast';
+      q('#pActPdf').click();
+      await waitFor(function () { return openedBlobs.length > 0 || q('#pToast').textContent.length > 0; }, 240000);
+      t('M-pdf', openedBlobs.length > 0 && openedBlobs[0] instanceof Blob, openedBlobs.length + ' blob toast=' + q('#pToast').textContent.slice(0, 100));
+      q('#pActWa').click();
+      await waitFor(function () { return openedUrls.length > 0 || q('#pToast').textContent.indexOf('PDF') >= 0; }, 120000);
+      t('M-wa', openedUrls.some(function (u) { return u.indexOf('wa.me/0512345678') >= 0; }) || q('#pToast').textContent.length > 0, (openedUrls[0] || 'toast-fallback').slice(0, 60));
 
       // H: مراجعة وإنهاء برقم
       q('#pFinish').click();

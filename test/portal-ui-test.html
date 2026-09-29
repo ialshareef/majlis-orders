@@ -75,11 +75,15 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       // هيكل المصمم موجود ومخفي
       t('wizard-dom', !!q('#pSteps') && !!q('#pCanvas') && !!q('#pPanel') && !!q('#pSheet') && !!q('.p-zoombar'), 'wizard');
       // خمس مراحل مسماة + لا شباك في واجهة العميل
+      var css = await get('/css/style.css');
       var ph0 = await get('/portal.html');
       t('steps-5', (ph0.match(/data-step=/g) || []).length === 0, 'steps built by JS');
       var pjs0 = await get('/js/portal.js');
       var stepIds = (pjs0.match(/id: '(room|openings|majlis|furn|review)'/g) || []).length;
       t('steps-named', stepIds === 5 && pjs0.indexOf('الأثاث والإكسسوارات') >= 0, '5 named steps');
+      t('steps-arch', pjs0.indexOf("label: 'العناصر المعمارية'") >= 0 && pjs0.indexOf("label: 'الفتحات'") < 0, 'arch label');
+      t('steps-centered', css.indexOf('.p-steps { display: flex; flex-wrap: wrap; justify-content: center;') >= 0, 'centered');
+      t('room-live', pjs0.indexOf('pfRect') < 0 && pjs0.indexOf('liveDim') >= 0 && pjs0.indexOf('تطبيق كغرفة مستطيلة') < 0, 'no apply button');
       t('no-window-add', ph0.indexOf('شباك') < 0 && pjs0.indexOf("data-t=\"window\"") < 0 && pjs0.indexOf("<option value=\"window\"") < 0, 'no window add UI');
       t('no-global-toolbar', ph0.indexOf('id="pTools"') < 0 && ph0.indexOf('id="pReview"') < 0, 'no toolbar/review view');
       t('zoom-outside', ph0.indexOf('p-zoombar') >= 0 && ph0.indexOf('zoom-ctl') < 0, 'zoom outside canvas');
@@ -99,7 +103,6 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var tbIds = ['tbAddSofa', 'tbAddDoor', 'tbAddWindow', 'tbAddMashab', 'tbAddWall', 'tbAddSofaFree', 'tbFillAll'];
       t('toolbar-ids', tbIds.every(function (id) { return idx.indexOf('id="' + id + '"') >= 0; }), '7 tools');
       t('toolbar-rows', (idx.match(/class="tb-row"/g) || []).length === 2, 'two rows');
-      var css = await get('/css/style.css');
       t('toolbar-css', css.indexOf('.tb-insert .tb-row') >= 0 && css.indexOf('.tb-insert .tb-btn span { font-size: .76rem') < 0, 'row css, no shrink');
       // About: المطوران
       t('about-devs', idx.indexOf('Fawaz Al-sharif') >= 0 && idx.indexOf('Khaled Al Qaini') >= 0 && idx.indexOf('khaledalqaini@gmail.com') >= 0, 'devs');
