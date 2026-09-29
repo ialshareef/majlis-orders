@@ -285,8 +285,8 @@
               <div class="ptabs" id="panelTabs" role="tablist" aria-label="أدوات التصميم">
                 <button role="tab" data-tab="room" class="active" aria-selected="true"><svg><use href="#i-home"/></svg>الغرفة</button>
                 <span class="ptabs-sep" aria-hidden="true"></span>
-                <button role="tab" data-tab="sofa" aria-selected="false" tabindex="-1"><svg><use href="#i-sofa"/></svg>الكنب</button>
-                <button role="tab" data-tab="acc" aria-selected="false" tabindex="-1"><svg><use href="#i-pillow"/></svg>الإكسسوار</button>
+                <button role="tab" data-tab="sofa" aria-selected="false" tabindex="-1"><svg><use href="#i-sofa"/></svg>الكنب والمقاعد</button>
+                <button role="tab" data-tab="acc" aria-selected="false" tabindex="-1"><svg><use href="#i-pillow"/></svg>الإكسسوارات</button>
               </div>
 
               <div class="ptab active" data-tab="room" role="tabpanel" aria-label="الغرفة">
@@ -313,7 +313,7 @@
                 </details>
               </div>
 
-              <div class="ptab" data-tab="sofa" role="tabpanel" aria-label="الكنب">
+              <div class="ptab" data-tab="sofa" role="tabpanel" aria-label="الكنب والمقاعد">
                 <p class="panel-lead">الكنبة تُركَّب من الخشب والقماش والإسفنج، وسعر المتر مجموع أسعارها.</p>
                 <label>الخشب <select id="sofaWoodSel"></select></label>
                 <label>القماش <select id="sofaFabricSel"></select></label>
@@ -340,7 +340,7 @@
                 </details>
               </div>
 
-              <div class="ptab" data-tab="acc" role="tabpanel" aria-label="الإكسسوار">
+              <div class="ptab" data-tab="acc" role="tabpanel" aria-label="الإكسسوارات">
                 <p class="panel-lead">اضغط لإضافة القطعة في وسط الغرفة ثم اسحبها لمكانها.</p>
                 <div id="accButtons" class="acc-buttons"></div>
               </div>
@@ -353,7 +353,7 @@
             <div class="canvas-col">
               <div class="canvas-toolbar">
                 <div class="tb-group tb-insert" role="group" aria-label="إضافة على الجدار المحدد">
-                  <button class="tb-btn" id="tbAddSofa" title="إضافة كنب على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>كنب</span></button>
+                  <button class="tb-btn" id="tbAddSofa" title="إضافة أثاث على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>أثاث</span></button>
                   <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
                   <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
                   <button class="tb-btn" id="tbAddMashab" title="إضافة مشب (مدفأة) على الجدار المحدد"><svg><use href="#i-fire"/></svg><span>مشب</span></button>

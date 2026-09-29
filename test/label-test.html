@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Label Tests</title>
+</head>
+<body>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات إعادة التسمية (الجلسات/الأثاث/الكنب والمقاعد) وسلامة البيانات.
+   تعمل على الملفات الحقيقية عبر fetch — بلا دخول وبلا قاعدة. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS L' + n + ' ' + name);
+    else { bad++; log('FAIL L' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var get = function (p) { return fetch(p, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + p); return r.text(); }); };
+  Promise.all([get('../index.html'), get('../js/app.js'), get('../js/store.js'), get('../worker/schema.sql'), get('../js/update.js')])
+    .then(function (parts) {
+      var html = parts[0], app = parts[1], store = parts[2], schema = parts[3];
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      var txt = function (sel) { var el = doc.querySelector(sel); return el ? el.textContent.trim() : null; };
+
+      // التسميات الجديدة ظاهرة
+      t('items-tab-sessions', /cat:\s*'wood'\s*,\s*label:\s*'الجلسات'/.test(app), 'ITEM_TABS wood label');
+      t('design-tab-sofa', txt('[data-tab="sofa"].ptabs button, #panelTabs [data-tab="sofa"]') === 'الكنب والمقاعد' || (doc.querySelector('#panelTabs [data-tab="sofa"]') || {}).textContent.trim() === 'الكنب والمقاعد', 'tab text');
+      t('design-tab-acc', (doc.querySelector('#panelTabs [data-tab="acc"]') || {}).textContent.trim() === 'الإكسسوارات', 'acc tab text');
+      t('toolbar-furniture', txt('#tbAddSofa span') === 'أثاث', 'tbAddSofa');
+      t('panel-aria-sofa', doc.querySelector('.ptab[data-tab="sofa"]').getAttribute('aria-label') === 'الكنب والمقاعد', 'aria sofa');
+      t('panel-aria-acc', doc.querySelector('.ptab[data-tab="acc"]').getAttribute('aria-label') === 'الإكسسوارات', 'aria acc');
+      t('inspector-furniture', /data-act="sofa"[^>]*\}\s*أثاث/.test(app) || app.indexOf("${icon('sofa')} أثاث") >= 0, 'inspector btn');
+
+      // الأسماء القديمة غائبة من المواضع المطلوبة
+      t('no-akhashab', html.indexOf('الأخشاب') < 0 && app.indexOf('الأخشاب') < 0, 'found الأخشاب');
+      t('no-old-sofa-tab', !/data-tab="sofa"[^>]*>\s*(<svg[\s\S]*?<\/svg>)?\s*الكنب\s*</.test(html), 'old tab label');
+
+      // سلامة البيانات: keys وأصناف وأسعار كما هي
+      t('key-wood-intact', app.indexOf("cat: 'wood'") >= 0 && (store.indexOf("'wood'") >= 0 || app.indexOf("'wood'") >= 0), 'wood key');
+      t('old-sofa-cat-intact', /cat:\s*'sofa'/.test(app) || app.indexOf("=== 'sofa'") >= 0, 'sofa key refs');
+      t('old-cat-label-intact', app.indexOf("return 'كنب'") >= 0, 'catLabel sofa');
+      t('seed-prices', schema.indexOf('"price":450') >= 0 && schema.indexOf('"price":550') >= 0 && schema.indexOf('"price":700') >= 0 && schema.indexOf('"price":400') >= 0, 'seed prices');
+      t('seed-ids', schema.indexOf('sofa-qatifa') >= 0 && schema.indexOf('acc-mkhada') >= 0, 'seed ids');
+      t('seed-cats', schema.indexOf('"category":"sofa"') >= 0 && schema.indexOf('"category":"acc"') >= 0, 'seed categories');
+      t('store-defaults', store.indexOf("category: 'sofa'") >= 0 && store.indexOf("'كنب عربي - قطيفة'") >= 0, 'store defaults');
+      t('version-1-0-14', app.indexOf("APP_VERSION = '1.0.14'") >= 0, 'version');
+
+      // منطق الفلاتر ما زال بالمفاتيح لا بالنصوص
+      t('filter-by-key', app.indexOf('i.category === itemsCat') >= 0, 'items filter');
+      t('counts-by-key', app.indexOf('counts[i.category]') >= 0, 'items counts');
+    })
+    .catch(function (e) { bad++; log('FAIL harness :: ' + e.message); })
+    .then(function () {
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    });
+})();
+</script>
+</body>
+</html>

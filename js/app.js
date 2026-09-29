@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.13';
+  const APP_VERSION = '1.0.14';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -999,7 +999,7 @@ function canEditOrder(o) {
           <label>الاتجاه° <input id="inspAng" type="number" step="5" value="${info.wall.angle}"></label>
         </div>
         <div class="insp-actions">
-          <button class="btn small primary" data-act="sofa">${icon('sofa')} كنب</button>
+          <button class="btn small primary" data-act="sofa">${icon('sofa')} أثاث</button>
           <button class="btn small" data-act="door">${icon('door')} باب</button>
           <button class="btn small" data-act="window">${icon('window')} شباك</button>
           <button class="btn small" data-act="mashab">${icon('fire')} مشب</button>
@@ -3630,7 +3630,7 @@ function canEditOrder(o) {
      في كل مرة. «كنب» فئة قديمة لا يُنشأ منها جديد، فتبويبها لا يظهر إلا إن
      بقيت أصناف عليها — وإلا صارت أصنافاً لا يمكن الوصول إليها. */
   const ITEM_TABS = [
-    { cat: 'wood', label: 'الأخشاب' },
+    { cat: 'wood', label: 'الجلسات' },
     { cat: 'fabric', label: 'الأقمشة' },
     { cat: 'foam', label: 'الإسفنج' },
     { cat: 'acc', label: 'الإكسسوارات' },
