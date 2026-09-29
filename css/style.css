@@ -445,6 +445,15 @@ body.booting #loginScreen { visibility: hidden; }
 .login-lead { color: var(--ink-3); font-size: .95rem; margin-bottom: 30px; }
 .login-card label { font-size: .86rem; margin-bottom: 16px; }
 .login-card input { min-height: 46px; }
+/* إظهار/إخفاء كلمة المرور: زر داخل الحقل بمنطقة لمس كافية */
+.pass-wrap { position: relative; display: block; }
+.pass-wrap input { width: 100%; padding-inline-end: 46px; }
+.pass-toggle {
+  position: absolute; inset-inline-end: 3px; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 40px; display: inline-flex; align-items: center; justify-content: center;
+  border: 0; border-radius: var(--r-sm); background: transparent; color: var(--ink-3); cursor: pointer;
+}
+.pass-toggle svg { width: 19px; height: 19px; }
 .login-card .btn.block { margin-top: 24px; }
 .login-foot { margin-top: 22px; text-align: center; font-size: .8rem; }
 
@@ -1237,6 +1246,12 @@ body[data-page="order"] main { padding-top: 10px; }
   font: inherit; font-size: .76rem; font-weight: 500; color: var(--warn); cursor: pointer;
 }
 .cat-tag { display: inline-block; padding: 1px 9px; border-radius: var(--r-xs); background: var(--sand); color: var(--ink-2); font-size: .78rem; white-space: nowrap; }
+/* شارة السعر المخصص داخل الطلب: تنبيه بصري بجانب اسم الصنف */
+.custom-tag { display: inline-block; margin-inline-start: 8px; padding: 1px 9px; border: 1px solid var(--warn-line); border-radius: var(--r-xs); background: var(--warn-soft); font-size: .76rem; font-weight: 600; color: var(--warn); white-space: nowrap; }
+/* زر قائمة الإجراءات: أيقونة مع نص واضح بدل ⋯ الغامضة */
+.rmenu-btn { gap: 6px; }
+.rmenu-btn svg { width: 16px; height: 16px; }
+.rmenu-btn span { font-size: .82rem; font-weight: 600; white-space: nowrap; }
 .price-table .row-actions .ra { gap: 2px; }
 .price-table .row-actions .icon-btn { width: 34px; height: 34px; }
 
@@ -2062,6 +2077,19 @@ body.modal-open { overflow: hidden; }
   .login-art-cap { display: none; }
   .login-main { align-items: flex-start; padding: 30px 20px 40px; }
   .login-brand { margin-bottom: 28px; }
+
+  /* تحسينات الموظف المبتدئ (A1/C2/C3/C5/B5): فصل الخطر عن الحفظ، تنقل واحد،
+     بطاقات أقصر، حالة اتصال مقروءة، وأزرار مشاركة لاصقة */
+  #btnNewOrder, #btnExportPdfTop { display: none; }
+  #stageNav { display: none; }
+  #ordersTable td.c-cost, #ordersTable td.c-profit, #ordersTable td.c-comm { display: none; }
+  .net-chip { width: auto; padding: 0 10px; gap: 6px; }
+  .net-chip #netLabel { display: inline; font-size: .75rem; font-weight: 600; white-space: nowrap; }
+  .modal-body .share-actions {
+    position: sticky; bottom: -18px; z-index: 1;
+    background: var(--surface); border-top: 1px solid var(--line-soft);
+    margin: 14px -18px -18px; padding: 12px 18px calc(12px + env(safe-area-inset-bottom, 0px));
+  }
 }
 
 @media (max-width: 420px) {
@@ -2093,11 +2121,16 @@ body.modal-open { overflow: hidden; }
 /* أهداف اللمس: 44 بكسل للإصبع، على المؤشر الخشن فقط */
 @media (pointer: coarse) {
   .btn.small { min-height: 42px; }
-  .tb-btn { min-height: 42px; }
-  .tb-btn.icon { width: 42px; }
+  .tb-btn { min-height: 44px; }
+  .tb-btn.icon { width: 44px; }
+  .tb-group { gap: 6px; padding: 4px; }
+  .zoom-ctl { gap: 6px; padding: 4px; }
+  .zoom-ctl .tb-btn { min-height: 44px; min-width: 44px; }
+  .wall-inline input { height: 44px; }
   .icon-btn { width: 44px; height: 44px; }
   .chip { min-height: 38px; }
-  .seg-chips .chip, .segmented button, .ptabs button { min-height: 40px; }
+  .seg-chips .chip, .segmented button { min-height: 40px; }
+  .ptabs button { min-height: 44px; }
   .status-chip, .status-chip.sm { height: 40px; }
   .table input.inline, .table select.inline, .totals input.inline, .totals select.inline { min-height: 42px; }
   .inspector input, .inspector select, .designer-panel input, .designer-panel select { min-height: 44px; }

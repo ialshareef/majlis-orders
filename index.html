@@ -135,8 +135,8 @@
       </div>
       <h2>تسجيل الدخول</h2>
       <p class="login-lead">صمّم المجلس، سعّره، وتابع الطلب حتى التسليم.</p>
-      <label>اسم المستخدم <input id="loginUser" autocomplete="username" required></label>
-      <label>كلمة المرور <input id="loginPass" type="password" autocomplete="current-password" required></label>
+      <label>اسم المستخدم <input id="loginUser" autocomplete="username" enterkeyhint="next" autofocus required></label>
+      <label>كلمة المرور <span class="pass-wrap"><input id="loginPass" type="password" autocomplete="current-password" enterkeyhint="go" required><button type="button" class="pass-toggle" id="passToggle" aria-label="إظهار كلمة المرور" aria-pressed="false">إظهار</button></span></label>
       <button class="btn primary block lg" type="submit">دخول</button>
       <p id="loginError" class="error" role="alert"></p>
       <p class="hint login-foot">نسيت كلمة المرور؟ اطلب من مدير النظام تعيينها من صفحة المستخدمين.</p>
@@ -324,8 +324,8 @@
                 <p id="sofaPriceHint" class="price-hint"></p>
                 <label>الجدار <select id="wallSel"></select></label>
                 <div class="row2">
-                  <button id="btnAddSofaWall" class="btn primary">إضافة على الجدار</button>
-                  <button id="btnFillAll" class="btn">فرش كل الجدران</button>
+                  <button id="btnAddSofaWall" class="btn primary">إضافة أثاث</button>
+                  <button id="btnFillAll" class="btn">فرش الكل</button>
                 </div>
                 <button id="btnAddSofaFree" class="btn block ghost">إضافة قطعة حرة</button>
                 <details class="fold">
@@ -357,7 +357,7 @@
                   <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
                   <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
                   <button class="tb-btn" id="tbAddMashab" title="إضافة مشب (مدفأة) على الجدار المحدد"><svg><use href="#i-fire"/></svg><span>مشب</span></button>
-                  <button class="tb-btn" id="tbAddWall" title="إضافة زاوية (جدار) للغرفة غير المستطيلة"><svg><use href="#i-plus"/></svg><span>زاوية</span></button>
+                  <button class="tb-btn" id="tbAddWall" title="إضافة جدار للغرفة غير المستطيلة"><svg><use href="#i-plus"/></svg><span>جدار</span></button>
                   <button class="tb-btn" id="tbFillAll" title="فرش كل الجدران بالكنب"><svg><use href="#i-home"/></svg><span>فرش الكل</span></button>
                 </div>
                 <div class="tb-group tb-history" role="group" aria-label="التحرير">
@@ -473,7 +473,7 @@
             <div class="fields">
               <label class="fld wide">
                 <svg><use href="#i-user"/></svg>
-                <span class="fld-body"><b>اسم العميل <span class="req" aria-hidden="true">*</span></b><input id="custName" placeholder="الاسم الكامل" aria-required="true" list="custNameList" autocomplete="off"></span>
+                <span class="fld-body"><b>اسم العميل <span class="req" aria-hidden="true">*</span></b><input id="custName" placeholder="الاسم الكامل" aria-required="true" list="custNameList" autocomplete="off" enterkeyhint="next"></span>
               </label>
               <label class="fld">
                 <svg><use href="#i-phone"/></svg>
@@ -514,7 +514,7 @@
           <div class="pay" id="payBlock" data-state="none">
             <div class="pay-summary">
               <div class="pay-discount">
-                <label>الخصم (ر.س) <input id="payDiscount" type="number" min="0" step="1" inputmode="decimal" placeholder="0" autocomplete="off"></label>
+                <label>الخصم (ر.س) <input id="payDiscount" type="number" min="0" step="1" inputmode="decimal" enterkeyhint="done" placeholder="0" autocomplete="off"></label>
               </div>
               <div class="pay-figs">
                 <div class="pay-fig">
@@ -540,12 +540,13 @@
             <!-- تسجيل دفعة: المبلغ وطريقته وتاريخه، وتُحفظ مع الطلب فوراً -->
             <fieldset class="pay-add">
               <legend>تسجيل دفعة</legend>
-              <label class="pay-amt">المبلغ <input id="payAmount" type="text" inputmode="decimal" class="num" placeholder="0" autocomplete="off"></label>
+              <label class="pay-amt">المبلغ <input id="payAmount" type="text" inputmode="decimal" enterkeyhint="done" class="num" placeholder="0" autocomplete="off"></label>
               <div class="pay-quick" id="payQuick" role="group" aria-label="ملء المبلغ سريعاً">
-                <button type="button" data-pay="rem" class="chip">المتبقي كاملاً</button>
                 <button type="button" data-pay="0.5" class="chip">نصف الإجمالي</button>
                 <button type="button" data-pay="dep" class="chip" id="payDepBtn">عربون 25٪</button>
               </div>
+              <p class="hint">الخيارات السريعة تملأ المبلغ فقط — ثم اضغط «تسجيل الدفعة».</p>
+              <button type="button" id="btnPayRem" class="btn primary block">تسجيل المتبقي كاملاً</button>
               <div class="row2">
                 <label>الطريقة
                   <select id="payMethod">
@@ -603,7 +604,7 @@
         <div class="actions"><button type="button" class="btn primary" id="ordersNew"><svg><use href="#i-plus"/></svg> طلب جديد</button></div>
       </header>
       <div class="toolbar">
-        <label class="search"><svg><use href="#i-search"/></svg><input id="ordSearch" type="search" aria-label="البحث في الطلبات" placeholder="بحث بالاسم أو الجوال أو رقم الطلب"></label>
+        <label class="search"><svg><use href="#i-search"/></svg><input id="ordSearch" type="search" enterkeyhint="search" aria-label="البحث في الطلبات" placeholder="بحث بالاسم أو الجوال أو رقم الطلب"></label>
         <div class="date-range">
           <label class="date-f">من <input id="ordFrom" type="date" aria-label="من تاريخ"></label>
           <label class="date-f">إلى <input id="ordTo" type="date" aria-label="إلى تاريخ"></label>
@@ -649,11 +650,12 @@
       <header class="page-head">
         <div class="ph-title"><h2>العملاء</h2><p>سجل مشتق من الطلبات: العميل يُعرَّف برقم جواله.</p></div>
         <div class="actions">
+          <button id="btnCustNew" class="btn primary"><svg><use href="#i-plus"/></svg> عميل جديد</button>
           <button id="btnCustCsv" class="btn"><svg><use href="#i-download"/></svg> تصدير CSV</button>
         </div>
       </header>
       <div class="toolbar">
-        <label class="search"><svg><use href="#i-search"/></svg><input id="custSearch" type="search" aria-label="البحث في العملاء" placeholder="بحث بالاسم أو الجوال أو العنوان"></label>
+        <label class="search"><svg><use href="#i-search"/></svg><input id="custSearch" type="search" enterkeyhint="search" aria-label="البحث في العملاء" placeholder="بحث بالاسم أو الجوال أو العنوان"></label>
         <label class="select-f">ترتيب حسب
           <select id="custSort">
             <option value="last">آخر طلب</option>
@@ -722,7 +724,7 @@
       </header>
       <div class="stats-row" id="actStats"></div>
       <div class="toolbar">
-        <label class="search"><svg><use href="#i-search"/></svg><input id="actSearch" type="search" aria-label="البحث في سجل التحديثات" placeholder="بحث برقم الطلب أو العميل أو الموظف أو التفاصيل"></label>
+        <label class="search"><svg><use href="#i-search"/></svg><input id="actSearch" type="search" enterkeyhint="search" aria-label="البحث في سجل التحديثات" placeholder="بحث برقم الطلب أو العميل أو الموظف أو التفاصيل"></label>
         <select id="actUser" aria-label="تصفية حسب الموظف"><option value="">كل الموظفين</option></select>
         <select id="actType" aria-label="تصفية حسب الإجراء">
           <option value="">كل الإجراءات</option>

@@ -93,7 +93,7 @@ async function sha256hex(bytes) {
     else fail('T0 api-surface', 'missing exports');
 
     // T0b: معادلة versionCode مطابقة لـ configure-version.js
-    if (U0.versionCodeOf('1.0.14') === 10014 && U0.versionCodeOf('1.0.13') === 10013 && U0.versionCodeOf('1.0.12') === 10012 && U0.versionCodeOf('2.3.4') === 20304) ok('T0b versionCode');
+    if (U0.versionCodeOf('1.0.15') === 10015 && U0.versionCodeOf('1.0.14') === 10014 && U0.versionCodeOf('1.0.13') === 10013 && U0.versionCodeOf('2.3.4') === 20304) ok('T0b versionCode');
     else fail('T0b versionCode', 'formula mismatch');
 
     // T1: endpoint العامل حقيقي: عام، بلا DB، الشكل سليم
@@ -103,7 +103,7 @@ async function sha256hex(bytes) {
       var b = await r.json();
       var u = b && b.update;
       var shapeOk = r.status === 200 && b.ok === true && u &&
-        u.versionName === '1.0.14' && u.versionCode === 10014 &&
+        u.versionName === '1.0.15' && u.versionCode === 10015 &&
         typeof u.apkUrl === 'string' && u.apkUrl.indexOf(ALLOW) === 0 &&
         (u.sha256 === null || /^[0-9a-f]{64}$/.test(u.sha256)) &&
         typeof u.mandatory === 'boolean';

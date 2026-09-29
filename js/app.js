@@ -61,22 +61,23 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.14';
+  const APP_VERSION = '1.0.15';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
   const isCoarse = window.matchMedia('(pointer: coarse)').matches;
 
   /* ---------------- قائمة إجراءات الصف ----------------
-     زر «⋯» واحد يجمع الإجراءات الثانوية بدل عدة أزرار في كل صف. عناصر القائمة
-     تبقى داخل الصف نفسه (بسماتها data-*) فتعمل روابط الأحداث القائمة عليها كما هي،
-     والقائمة تُعرض بموضع ثابت على الشاشة حتى لا يقصّها تمرير الجدول. */
+     زر «إجراءات» نصي (مع أيقونة ⋯) يجمع الإجراءات الثانوية بدل زر غامض بلا نص.
+     عناصر القائمة تبقى داخل الصف نفسه (بسماتها data-*) فتعمل روابط الأحداث
+     القائمة عليها كما هي، والقائمة تُعرض بموضع ثابت على الشاشة حتى لا يقصّها
+     تمرير الجدول. */
   const menuItem = (attrs, ico, label, danger = false) =>
     `<button type="button" role="menuitem" ${attrs}${danger ? ' class="danger"' : ''}>${icon(ico)}<span>${label}</span></button>`;
   function rowMenu(items, label = 'إجراءات أخرى') {
     const list = items.filter(Boolean);
     if (!list.length) return '';
-    return `<span class="rmenu"><button type="button" class="icon-btn rmenu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}">${icon('more')}</button><span class="rmenu-list" role="menu" hidden>${list.join('')}</span></span>`;
+    return `<span class="rmenu"><button type="button" class="btn small ghost rmenu-btn" aria-haspopup="menu" aria-expanded="false" aria-label="${label}" title="${label}">${icon('more')}<span>إجراءات</span></button><span class="rmenu-list" role="menu" hidden>${list.join('')}</span></span>`;
   }
   let openMenu = null;
   function closeRowMenu(refocus = false) {
@@ -144,6 +145,18 @@
   }
   $('#toast').addEventListener('click', () => { clearTimeout(toastTimer); $('#toast').className = 'toast'; });
 
+  /** رسالة بشرية قصيرة بدل نص الخادم الخام. التفاصيل الحقيقية تبقى في
+      السجل فقط (console) ولا تُعرض للمستخدم ولا تتضمن أسراراً. */
+  function humanError(raw, fallback = 'تعذّر حفظ التغييرات. تحقق من الاتصال وحاول مرة أخرى.') {
+    const s = String(raw || '');
+    try { console.error('[app-error]', s); } catch (_) { /* noop */ }
+    if (!s) return fallback;
+    if (/401|session|انتهت الجلسة|غير مسجّل/.test(s)) return 'انتهت الجلسة. سجّل الدخول مرة أخرى.';
+    if (/409|conflict|تعارض/.test(s)) return 'وصل تغيير أحدث من جهاز آخر. حدّث الصفحة وحاول مجدداً.';
+    if (/network|fetch|Network|اتصال|غير متصل|offline|ENOTFOUND|timed?\s*out/i.test(s)) return 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.';
+    return fallback;
+  }
+
   let modalReturnFocus = null;
   let modalLocked = false;     // نافذة إجبارية (كلمة المرور الأولية): لا تُغلق بزر X ولا بالخارج ولا بـ Escape
   let keepPrintArea = false;   // زر «طباعة» يُبقي المستند في منطقة الطباعة حتى تنتهي
@@ -162,7 +175,11 @@
     $('#modal').className = 'modal' + (cls ? ' ' + cls : '');
     $('#modal').hidden = false;
     if (onMount) onMount($('#modalBody'));
-    requestAnimationFrame(() => $('#modalClose').focus({preventScroll:true}));
+    // التركيز على أول حقل إدخال (لا زر الإغلاق) لتقليل ضغطات الموظف وفتح الكيبورد الصحيح
+    requestAnimationFrame(() => {
+      const first = $('#modalBody').querySelector('input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])');
+      ((first && first.getClientRects().length ? first : $('#modalClose')) || {}).focus?.({ preventScroll: true });
+    });
   }
   function closeModal() {
     $('#modal').hidden = true; $('#modal').className = 'modal'; $('#modalBody').innerHTML = '';
@@ -227,6 +244,16 @@
     setTimeout(() => offerDraftRestore(pending), 400);
   }
 
+  /** إظهار/إخفاء كلمة المرور: نص واضح بدل أيقونة غامضة، بلا أي تغيير في المصادقة */
+  { const tgl = $('#passToggle'), pw = $('#loginPass');
+    if (tgl && pw) tgl.addEventListener('click', () => {
+      const show = pw.type === 'password';
+      pw.type = show ? 'text' : 'password';
+      tgl.textContent = show ? 'إخفاء' : 'إظهار';
+      tgl.setAttribute('aria-label', show ? 'إخفاء كلمة المرور' : 'إظهار كلمة المرور');
+      tgl.setAttribute('aria-pressed', String(show));
+      pw.focus({ preventScroll: true });
+    }); }
   $('#loginForm').addEventListener('submit', async (e) => {
     e.preventDefault();
     const un = $('#loginUser').value.trim();
@@ -806,7 +833,7 @@ function canEditOrder(o) {
     const have = designer.state.pieces.filter((p) => p.kind === 'acc' && p.itemId === item.id).length;
     openModal(`إضافة ${item.name}`, `
       <div class="qty-prompt">
-        <label>الكمية (العدد الكلي في التصميم) <input id="accQty" type="number" min="1" max="${ACC_MAX}" step="1" inputmode="numeric" value="${have ? have + 1 : 1}"></label>
+        <label>الكمية (العدد الكلي في التصميم) <input id="accQty" type="number" min="1" max="${ACC_MAX}" step="1" inputmode="numeric" enterkeyhint="done" value="${have ? have + 1 : 1}"></label>
         <div class="btn-row">
           <button class="btn" id="accCancel">إلغاء</button>
           <button class="btn primary" id="accOk">إضافة</button>
@@ -825,10 +852,33 @@ function canEditOrder(o) {
       });
   }
 
+  /* آخر تركيبة صالحة للكنب (جهاز الموظف فقط، localStorage): تُقترح كافتراضي
+     غير إجباري في المرة التالية لتقليل الضغطات. لا تُحفظ في قاعدة البيانات. */
+  const SOFA_SPEC_KEY = 'majlis_sofa_spec';
+  function loadSofaSpec() {
+    try { const v = JSON.parse(localStorage.getItem(SOFA_SPEC_KEY) || 'null'); return v && typeof v === 'object' ? v : null; }
+    catch (_) { return null; }
+  }
+  function persistSofaSpec() {
+    try {
+      const v = {};
+      let any = false;
+      for (const s of SPECS) {
+        const el = $(SOFA_SEL[s.key]);
+        const rec = el && Store.getItem(el.value);
+        if (rec && rec.category === s.cat && rec.active !== false) { v[s.key] = rec.id; any = true; }
+      }
+      const dep = $('#sofaDepth');
+      if (dep && num(dep.value) >= 0.3) v.depth = num(dep.value);
+      if (any) localStorage.setItem(SOFA_SPEC_KEY, JSON.stringify(v));
+    } catch (_) { /* noop */ }
+  }
+
   function renderItemSelects() {
 
-    // الكنبة تُركَّب من خشب وقماش وإسفنج — لا صنف واحد اسمه "كنب"
-    // كل قائمة تبدأ بـ«غير محدد» ولا يُختار أي افتراضي: يختار الموظف الثلاثة يدوياً
+    // الكنبة تُركَّب من خشب وقماش وإسفنج — لا صنف واحد اسمه "كنب".
+    // الافتراضي: الاختيار الحالي، ثم آخر تركيبة صالحة على هذا الجهاز، ثم «غير محدد»
+    const remembered = loadSofaSpec();
     SPECS.forEach((s) => {
       const sel = $('#sofa' + s.key.charAt(0).toUpperCase() + s.key.slice(1) + 'Sel');
       if (!sel) return;
@@ -838,13 +888,15 @@ function canEditOrder(o) {
         ? list.map((i) => `<option value="${i.id}">${esc(i.name)} — ${fmt(i.price)} ${currency()}/م</option>`).join('')
         : '');
       if (prev && list.some((i) => i.id === prev)) sel.value = prev;
+      else if (remembered && remembered[s.key] && list.some((i) => i.id === remembered[s.key])) sel.value = remembered[s.key];
       else sel.value = '';
     });
+    if (remembered && remembered.depth && $('#sofaDepth') && !num($('#sofaDepth').value)) $('#sofaDepth').value = remembered.depth;
     updateSofaPriceHint();
 
     const accs = activeItems('acc');
-    // «مساحة حرة» مدمجة لا صنف لها في صفحة الأصناف: تُعلّم فراغاً في المجلس بلا سعر
-    $('#accButtons').innerHTML = '<button class="btn" data-free="1"><span class="sw sw-free"></span>مساحة حرة</button>'
+    // «مساحة أرضية» مدمجة لا صنف لها في صفحة الأصناف: تُعلّم فراغاً في المجلس بلا سعر
+    $('#accButtons').innerHTML = '<button class="btn" data-free="1"><span class="sw sw-free"></span>مساحة أرضية</button>'
       + (accs.length
         ? accs.map((i) => `<button class="btn" data-acc="${i.id}"><span class="sw" style="background:${esc(i.color || '#888')}"></span>${esc(i.name)}</button>`).join('')
         : '<span class="hint">لا توجد إكسسوارات مسعّرة. أضفها من صفحة الأصناف.</span>');
@@ -909,7 +961,8 @@ function canEditOrder(o) {
     const n = designer.fillAllWalls(spec);
     toast(n ? `تمت إضافة ${n} قطعة` : 'لا توجد مساحات فارغة على الجدران', n ? false : 'info');
   }
-  SPECS.forEach((s) => { const el = $(SOFA_SEL[s.key]); if (el) el.addEventListener('change', updateSofaPriceHint); });
+  SPECS.forEach((s) => { const el = $(SOFA_SEL[s.key]); if (el) el.addEventListener('change', () => { persistSofaSpec(); updateSofaPriceHint(); }); });
+  { const dep = $('#sofaDepth'); if (dep) dep.addEventListener('change', persistSofaSpec); }
 
   $('#btnAddSofaWall').addEventListener('click', () => addSofaOnWall(targetWall()));
   $('#btnFillAll').addEventListener('click', fillAll);
@@ -1004,7 +1057,8 @@ function canEditOrder(o) {
           <button class="btn small" data-act="window">${icon('window')} شباك</button>
           <button class="btn small" data-act="mashab">${icon('fire')} مشب</button>
           <button class="btn small danger" data-act="delwall" ${nWalls <= 3 ? 'disabled' : ''} title="حذف الجدار">${icon('trash')}</button>
-        </div>`;
+        </div>
+        ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     } else if (info.type === 'opening') {
       const o = info.opening;
       html += `
@@ -1016,7 +1070,8 @@ function canEditOrder(o) {
         <label>البُعد من بداية الجدار (م) <input id="inspOT" type="number" step="0.05" min="0" value="${Designer.util.round(o.t - o.w / 2, 2)}"></label>
         <label ${o.type === 'mashab' ? '' : 'hidden'}>العمق داخل الغرفة (م) <input id="inspDepth" type="number" step="0.05" min="0.15" max="1" value="${Designer.util.round(o.depth || 0.5, 2)}"></label>
         <label class="check"><input id="inspBlocks" type="checkbox" ${o.blocks ? 'checked' : ''}> لا يوضع كنب أمامه</label>
-        <div class="insp-actions"><button class="btn small danger" data-act="del">${icon('trash')} حذف</button></div>`;
+        <div class="insp-actions"><button class="btn small danger" data-act="del">${icon('trash')} حذف</button></div>
+        ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     } else {
       const p = info.piece;
       const isSofa = p.kind === 'sofa';
@@ -1042,7 +1097,7 @@ function canEditOrder(o) {
           <label>الطول (م) <input id="selW" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.w, 2)}" ${canSize ? '' : 'readonly tabindex="-1"'}></label>
           <label>${isSofa ? 'العمق' : 'العرض'} (م) <input id="selH" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.h, 2)}" ${canSize ? '' : 'readonly tabindex="-1"'}></label>
         </div>
-        ${isFree ? '<p class="hint">مساحة حرة تُعلّم فراغاً في المجلس. بلا سعر: لا تدخل جدول التسعير ولا الفاتورة، وتُكتب في أمر التصنيع بمقاسها.</p>' : ''}
+        ${isFree ? '<p class="hint">مساحة أرضية تُعلّم فراغاً في المجلس. بلا سعر: لا تدخل جدول التسعير ولا الفاتورة، وتُكتب في أمر التصنيع بمقاسها.</p>' : ''}
         ${canSize ? '' : '<p class="hint">مقاس الإكسسوار ثابت من بطاقة الصنف في صفحة «الأصناف». لتغييره، عدّل الصنف هناك أو اختر صنفاً آخر من القائمة أعلاه.</p>'}
         <div class="row2">
           <label>الزاوية° <input id="selRot" type="number" step="5" value="${Math.round(p.rot)}"></label>
@@ -1054,7 +1109,8 @@ function canEditOrder(o) {
           ${p.kind === 'sofa' ? `<button class="btn small" data-act="split">${icon('scissors')} تقسيم</button>` : ''}
           <button class="btn small" data-act="dup">${icon('copy')} نسخ</button>
           <button class="btn small danger" data-act="del">${icon('trash')} حذف</button>
-        </div>`;
+        </div>
+        ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     }
     insp.innerHTML = html;
     prepareControls(insp);
@@ -1083,6 +1139,9 @@ function canEditOrder(o) {
   function bindInspector(info) {
     const closeBtn = $('[data-close]', insp);
     if (closeBtn) closeBtn.onclick = () => closeInspector();
+    // حفظ من داخل الورقة: نفس زر الحفظ الرئيسي (بحمايته من التكرار)، لا مسار حفظ ثانٍ
+    const sheetSave = $('[data-save]', insp);
+    if (sheetSave) sheetSave.onclick = () => { if (!readOnly) { const main = $('#btnSaveOrder'); if (main && !main.disabled) main.click(); } };
     const onEnter = (el, fn) => el.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); fn(); el.blur(); } });
 
     if (info.type === 'wall') {
@@ -1555,7 +1614,7 @@ function canEditOrder(o) {
         const overridden = l.kind !== 'manual' && Math.abs(l.price - l.basePrice) > 0.004;
         const nameCell = l.kind === 'manual'
           ? `<input class="inline wide" data-m="${l.idx}" data-k="name" value="${esc(l.name)}" placeholder="اسم الصنف">`
-          : `${esc(l.name)}${l.sub ? `<span class="sub">${esc(l.sub)}</span>` : ''}`;
+          : `${esc(l.name)}${l.sub ? `<span class="sub">${esc(l.sub)}</span>` : ''}${overridden ? '<span class="custom-tag">سعر مخصص</span>' : ''}`;
         // كمية الإكسسوار تُكتب هنا وتنعكس على التصميم: تُضاف القطع أو تُحذف
         const qtyCell = l.kind === 'manual'
           ? `<input class="inline num" type="number" step="0.01" min="0" data-m="${l.idx}" data-k="qty" value="${l.qty}">`
@@ -1580,7 +1639,7 @@ function canEditOrder(o) {
           <td class="price-unit" data-label="الوحدة">${unitCell}</td>
           <td class="price-qty" data-label="الكمية">${qtyCell}</td>
           <td class="price-edit" data-label="سعر الوحدة"><input aria-label="سعر ${esc(l.name || 'الصنف')}" inputmode="numeric" class="inline num" type="number" step="1" min="0" data-price="${esc(l.key)}" value="${l.price}">
-              ${overridden ? `<button type="button" class="overridden" data-reset="${esc(l.key)}" title="إعادة السعر الأصلي">↺ الأصلي ${fmt(l.basePrice)}</button>` : ''}</td>
+              ${overridden ? `<button type="button" class="overridden" data-reset="${esc(l.key)}" title="إرجاع للسعر الأصلي">↺ إرجاع للأصلي (${fmt(l.basePrice)})</button>` : ''}</td>
           <td class="num price-total" data-label="الإجمالي"><b>${fmt(l.total)}</b></td>
           <td class="row-actions"><span class="ra">${acts}</span></td>
         </tr>`;
@@ -1847,8 +1906,15 @@ function canEditOrder(o) {
       const need = money(total * dep / 100);
       if (!(await confirmDlg('بدء التنفيذ بلا عربون', `المدفوع ${fmt(paid)} من عربون مطلوب ${fmt(need)} ${currency()} (${dep}٪ من الإجمالي). هل تريد نقل الطلب إلى «${STATUS[next]}» على أي حال؟`, 'متابعة', false))) return false;
     }
+    let asked = false;
     if (next === 'delivered' && total - paid > 0.5) {
+      asked = true;
       if (!(await confirmDlg('تسليم مع مبلغ متبقٍّ', `لم يُحصَّل ${fmt(total - paid)} ${currency()} من هذا الطلب بعد. تأكيد التسليم؟`, 'تأكيد التسليم', false))) return false;
+    }
+    // الحالات النهائية: التسليم والإلغاء يصعب التراجع عن أثرهما العملي،
+    // فيُطلب تأكيد صريح واحد. باقي الحالات الروتينية تبقى فورية بلا إزعاج.
+    if (!asked && (next === 'delivered' || next === 'cancelled') && !['delivered', 'cancelled'].includes(prevSt)) {
+      if (!(await confirmDlg(next === 'delivered' ? 'تأكيد التسليم' : 'إلغاء الطلب', next === 'delivered' ? `سيُعلَّم الطلب ${order.number ? '#' + order.number : ''} بأنه «تم التوصيل». متابعة؟` : `سيُعلَّم الطلب ${order.number ? '#' + order.number : ''} بأنه «ملغي» ويخرج من المبيعات. متابعة؟`, next === 'delivered' ? 'تأكيد التسليم' : 'تأكيد الإلغاء', false))) return false;
     }
     return true;
   }
@@ -1973,20 +2039,32 @@ function canEditOrder(o) {
     return n === null ? null : money(n);
   };
 
-  /* اختصارات الدفعة: تملأ خانة المبلغ فقط ولا تسجّل شيئاً قبل الضغط على «تسجيل» */
+  /* اختصارات الدفعة: تملأ خانة المبلغ فقط ولا تسجّل شيئاً قبل الضغط على «تسجيل».
+     زر «تسجيل المتبقي كاملاً» المنفصل هو وحده من يملأ ويسجّل معاً. */
   $('#payQuick').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-pay]');
     if (!btn || readOnly) return;
     const total = cur.total || 0;
-    const rem = Math.max(0, remainingOf(total, paidOf(cur)));
     const k = btn.dataset.pay;
-    const v = k === 'rem' ? rem : k === 'dep' ? money(total * num(settings().depositPct) / 100) : money(total * num(k));
+    const v = k === 'dep' ? money(total * num(settings().depositPct) / 100) : money(total * num(k));
     $('#payAmount').value = v || '';
     $('#payAmount').focus();
   });
 
+  let paying = false;   // منع التسجيل المزدوج من الضغط المتكرر أو Enter مع الزر معاً
+  /** تسجيل المتبقي كاملاً بخطوة واحدة: تعبئة المبلغ ثم نفس مسار التسجيل */
+  $('#btnPayRem').addEventListener('click', async () => {
+    if (readOnly || paying) return;
+    const rem = Math.max(0, remainingOf(cur.total || 0, paidOf(cur)));
+    if (rem <= 0) { toast('لا يوجد مبلغ متبقٍّ لتسجيله', 'info'); return; }
+    $('#payAmount').value = rem;
+    await addPayment(false);
+  });
+
   async function addPayment(refund) {
-    if (readOnly) return;
+    if (readOnly || paying) return;
+    paying = true;
+    try {
     const el = $('#payAmount');
     const amt = readAmount(el.value);
     if (amt === null) { setFieldError(el, 'مبلغ غير صالح — أدخل أرقاماً فقط'); el.focus(); return; }
@@ -2009,6 +2087,7 @@ function canEditOrder(o) {
     } else if (!cur.customer.name.trim()) {
       toast('سُجّلت الدفعة محلياً — أدخل اسم العميل ثم احفظ الطلب', true);
     }
+    } finally { paying = false; }
   }
   $('#btnAddPay').addEventListener('click', () => addPayment(false));
   $('#btnRefund').addEventListener('click', () => addPayment(true));
@@ -2338,7 +2417,7 @@ function canEditOrder(o) {
       setDirty(true); saveDraft();
       if (Store.lastStatus === 409) { await resolveConflict(copy); return false; }
       setNetState(Store.lastStatus === -1 ? 'off' : 'err');
-      toast('تعذر الحفظ على الخادم: ' + (Store.lastError || '') + ' — حُفظت نسخة محلية', true);
+      toast(humanError(Store.lastError) + ' — حُفظت نسخة محلية', true);
       return false;
     }
     setNetState('ok');
@@ -2365,7 +2444,7 @@ function canEditOrder(o) {
     let remote = null;
     // جلب فقط (بلا دفع): الدفع هنا مرفوض أصلاً (409)، وrefresh() الجديد يُجهض الجلب عند فشله
     if (!(await Store.fetchLatest())) {
-      toast('تعذّر جلب نسخة الخادم: ' + (Store.lastError || ''), true);
+      toast(humanError(Store.lastError, 'تعذّر جلب نسخة الخادم. تحقق من الاتصال وحاول مجدداً.'), true);
       return;
     }
     remote = db().orders.find((o) => o.id === localCopy.id) || null;
@@ -2397,7 +2476,7 @@ function canEditOrder(o) {
         if (idx >= 0) db().orders[idx] = copy; else db().orders.push(copy);
         if (remote) { const d = diffOrder(remote, copy); if (d.length) logActivity('update', copy, d.concat('كتابة فوق تعديل من جهاز آخر')); }
         if (await Store.save()) { setNetState('ok'); setDirty(false); renderOrderMeta(); toast('حُفظ تعديلك فوق نسخة الخادم'); }
-        else toast('ما زال الحفظ متعذّراً: ' + (Store.lastError || ''), true);
+        else toast(humanError(Store.lastError), true);
       });
       $('#cfTake').addEventListener('click', () => {
         closeModal();
@@ -2920,6 +2999,13 @@ function canEditOrder(o) {
       if ($('#shChat', b)) $('#shChat', b).onclick = () => openCustomerChat(order, curKind, payment);
 
       async function prepare() {
+        // إنشاء PDF يحتاج مكتبات من الإنترنت: رسالة واضحة مبكراً بدل خطأ تقني لاحق
+        if (!navigator.onLine) {
+          state.className = 'pdf-state err';
+          state.innerHTML = `${icon('alert')} تصدير PDF يحتاج اتصالًا بالإنترنت.`;
+          note.textContent = 'تحقق من الاتصال ثم أعد فتح النافذة.';
+          return;
+        }
         const my = ++run;
         const fileName = isReceipt ? `${money(payment.amount) < 0 ? 'سند-صرف' : 'سند-قبض'}-${order.number}.pdf` : ORDER_DOCS[curKind].file(order);
         btnWa.disabled = btnSave.disabled = btnPrint.disabled = true;
@@ -3160,7 +3246,7 @@ function canEditOrder(o) {
       if (!(await confirmDlg('حذف الطلب', `حذف الطلب #${o.number} للعميل ${o.customer?.name}؟ لا يمكن التراجع.`))) return;
       db().orders = db().orders.filter((x) => x.id !== o.id);
       logActivity('delete', o, [`الإجمالي ${fmt(o.total)}`, `الحالة ${STATUS[o.status] || o.status}`]);
-      if (!(await Store.save())) { toast('فشل الحذف على الخادم: ' + Store.lastError, true); await Store.refresh().catch(() => {}); renderOrders(); return; }
+      if (!(await Store.save())) { toast(humanError(Store.lastError, 'تعذّر حذف الطلب. تحقق من الاتصال وحاول مرة أخرى.'), true); await Store.refresh().catch(() => {}); renderOrders(); return; }
       if (cur.id === o.id) startNewOrder(true);
       renderOrders();
       renderNotifications();
@@ -3180,7 +3266,7 @@ function canEditOrder(o) {
         const i = db().orders.findIndex((x) => x.id === o.id);
         if (i >= 0) db().orders[i] = before;
         if (ev) db().activity = db().activity.filter((x) => x.id !== ev.id);
-        toast('فشل الحفظ على الخادم: ' + Store.lastError, true);
+        toast(humanError(Store.lastError, 'تعذّر حفظ الحالة الجديدة. تحقق من الاتصال وحاول مرة أخرى.'), true);
         renderOrders();
         return;
       }
@@ -3218,7 +3304,7 @@ function canEditOrder(o) {
           const i = db().orders.findIndex((x) => x.id === o.id);
           if (i >= 0) db().orders[i] = before;
           if (ev) db().activity = db().activity.filter((x) => x.id !== ev.id);
-          $('#ownErr', b).textContent = 'فشل الحفظ: ' + Store.lastError;
+          $('#ownErr', b).textContent = humanError(Store.lastError);
           return;
         }
         if (cur.id === o.id) { cur.createdBy = o.createdBy; cur.createdByName = o.createdByName; ownVersion(o.updatedAt); readOnly = !canEditOrder(cur); setOrderOwnerLabel(cur); applyOrderLock(); renderOrderMeta(); }
@@ -3424,7 +3510,7 @@ function canEditOrder(o) {
           const i = db().orders.findIndex((x) => x.id === o.id);
           if (i >= 0) db().orders[i] = before;
           if (ev) db().activity = db().activity.filter((x) => x.id !== ev.id);
-          $('#costErr', b).textContent = 'فشل الحفظ: ' + Store.lastError;
+          $('#costErr', b).textContent = humanError(Store.lastError);
           return;
         }
         // مزامنة الطلب المفتوح في صفحة التصميم إن كان نفسه
@@ -3505,7 +3591,7 @@ function canEditOrder(o) {
           const i = db().orders.findIndex((x) => x.id === o.id);
           if (i >= 0) db().orders[i] = before;
           if (ev) db().activity = db().activity.filter((x) => x.id !== ev.id);
-          $('#commErr', b).textContent = 'فشل الحفظ: ' + Store.lastError;
+          $('#commErr', b).textContent = humanError(Store.lastError);
           return;
         }
         if (cur.id === o.id) {
@@ -3609,6 +3695,13 @@ function canEditOrder(o) {
   }
   $('#custSearch').addEventListener('input', () => { custShown = PAGE_STEP; renderCustomers(); });
   $('#custSort').addEventListener('change', renderCustomers);
+  /** عميل جديد: نفس تدفق الطلب الحالي، يفتح مباشرة على مرحلة العميل (بلا منطق مكرر) */
+  const btnCustNew = $('#btnCustNew');
+  if (btnCustNew) btnCustNew.addEventListener('click', async () => {
+    await startNewOrder();
+    showStage('customer');
+    setTimeout(() => { const n = $('#custName'); if (n) n.focus({ preventScroll: true }); }, 120);
+  });
   $('#btnCustCsv').addEventListener('click', () => {
     const list = [...customersIndex().values()].sort((a, b) => b.sales - a.sales);
     if (!list.length) { toast('لا توجد بيانات للتصدير', 'info'); return; }
@@ -3686,7 +3779,7 @@ function canEditOrder(o) {
     $$('[data-toggle]', tb).forEach((b) => b.addEventListener('click', async () => {
       const it = Store.getItem(b.dataset.toggle);
       it.active = it.active === false;
-      if (!(await Store.save())) { it.active = !it.active; toast('فشل الحفظ على الخادم: ' + Store.lastError, true); }
+      if (!(await Store.save())) { it.active = !it.active; toast(humanError(Store.lastError), true); }
       afterItemsChange();
     }));
     $$('[data-del]', tb).forEach((b) => b.addEventListener('click', async () => {
@@ -3702,7 +3795,7 @@ function canEditOrder(o) {
         : `حذف الصنف "${it.name}"؟`;
       if (!(await confirmDlg('حذف صنف', msg))) return;
       db().items = db().items.filter((x) => x.id !== it.id);
-      if (!(await Store.save())) { toast('فشل الحذف على الخادم: ' + Store.lastError, true); await Store.refresh().catch(() => {}); afterItemsChange(); return; }
+      if (!(await Store.save())) { toast(humanError(Store.lastError), true); await Store.refresh().catch(() => {}); afterItemsChange(); return; }
       afterItemsChange();
       toast('تم حذف الصنف');
     }));
@@ -3781,7 +3874,7 @@ function canEditOrder(o) {
         const live = item ? Store.getItem(item.id) : null;
         if (live) Object.assign(live, data);
         else db().items.push(Object.assign({ id: (item && item.id) || Store.uid(), active: item ? item.active !== false : true }, data));
-        if (!(await Store.save())) { $('#fErr', b).textContent = 'فشل الحفظ على الخادم: ' + Store.lastError; return; }
+        if (!(await Store.save())) { $('#fErr', b).textContent = humanError(Store.lastError); return; }
         itemsCat = cat;   // فئة الصنف قد تخالف التبويب المفتوح: نُظهر ما حُفظ للتو
         closeModal(); afterItemsChange();
         toast('تم حفظ الصنف');
@@ -4002,7 +4095,7 @@ function canEditOrder(o) {
           mandoubParentRate: Math.min(100, Math.max(0, num($('#dMandoubParentRate', b).value))),
           shareRate: Math.min(100, Math.max(0, num($('#dShareRate', b).value))),
         });
-        if (!(await Store.save())) { toast('فشل الحفظ: ' + Store.lastError, true); return; }
+        if (!(await Store.save())) { toast(humanError(Store.lastError), true); return; }
         closeModal(); renderMandoubs();
         toast('تم حفظ الإعدادات الافتراضية');
       };
@@ -4195,7 +4288,7 @@ function canEditOrder(o) {
     if (!db().activity.length) return;
     if (!(await confirmDlg('مسح السجل', `سيتم حذف ${db().activity.length} تحديث من السجل نهائياً. الطلبات نفسها لن تتأثر. متابعة؟`))) return;
     db().activity = [];
-    if (!(await Store.save())) { toast('فشل المسح على الخادم: ' + Store.lastError, true); await Store.refresh().catch(() => {}); renderActivity(); return; }
+    if (!(await Store.save())) { toast(humanError(Store.lastError), true); await Store.refresh().catch(() => {}); renderActivity(); return; }
     renderActivity();
     toast('تم مسح السجل');
   });
@@ -4324,7 +4417,7 @@ function canEditOrder(o) {
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');
       const ok = await Store.save();
       btn.disabled = false; btn.removeAttribute('aria-busy');
-      if (!ok) { toast('فشل الحفظ على الخادم: ' + Store.lastError, true); return; }
+      if (!ok) { toast(humanError(Store.lastError), true); return; }
       applyPermissions(); renderItemSelects(); renderPricing(); toast('تم حفظ الإعدادات');
     };
     $('#sExport', b).onclick = () => exportBackup();
@@ -5424,7 +5517,16 @@ function canEditOrder(o) {
     $('#stageNext').hidden = !next;
     if (prev) { $('span', $('#stagePrev')).textContent = `السابق: ${STAGE_LABEL[prev]}`; $('#stagePrev').dataset.go = prev; }
     if (next) { $('span', $('#stageNext')).textContent = `التالي: ${STAGE_LABEL[next]}`; $('#stageNext').dataset.go = next; }
-    if (name === 'design') requestAnimationFrame(() => designer.resize());
+    if (name === 'design') {
+      requestAnimationFrame(() => designer.resize());
+      // تلميح أول استخدام فقط: الإضافة السريعة لها زر ظاهر، والنقر المزدوج خيار إضافي
+      try {
+        if (changed && !localStorage.getItem('majlis_hint_dbltap')) {
+          localStorage.setItem('majlis_hint_dbltap', '1');
+          toast('تلميح: أضف الكنب بزر «أثاث» أو بالنقر المزدوج على الجدار', 'info');
+        }
+      } catch (_) { /* noop */ }
+    }
     renderWorkflow();
     if (changed) {
       scrollToStage();
@@ -5578,7 +5680,7 @@ function canEditOrder(o) {
   showStage('design');
 
   /* ---------------- التشغيل ---------------- */
-  window.MajlisApp = { designer, get order() { return cur; }, computeLines, syncFromServer };
+  window.MajlisApp = { designer, get order() { return cur; }, computeLines, syncFromServer, humanError };
   window.addEventListener('resize', () => { syncMobileSheet(); positionInspector(); });
   renderItemSelects();
   fillOrderForm();
@@ -5600,6 +5702,6 @@ function canEditOrder(o) {
   if (su) enterApp(su);
   else {
     $('#loginUser').focus();
-    if (Store.isRemote && Store.lastError) $('#loginError').textContent = Store.lastError;
+    if (Store.isRemote && Store.lastError) $('#loginError').textContent = humanError(Store.lastError);
   }
 })();

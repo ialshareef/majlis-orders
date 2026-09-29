@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX Tests</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>/* تثبيت القياسات: إلغاء حركات الورق في بيئة الاختبار فقط */.modal-card,.modal,.sb-drawer,.inspector{animation:none!important;transition:none!important}</style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات تحسينات تجربة الموظف: فحص ثابت للكود + إقلاع محلي كامل بدخول
+   admin/admin على SQLite داخل المتصفح (لا يمس أي خادم حقيقي). */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS X' + n + ' ' + name);
+    else { bad++; log('FAIL X' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var get = function (p) { return fetch(p, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + p); return r.text(); }); };
+  var waitFor = function (cond, ms) {
+    ms = ms || 60000; var t0 = Date.now();
+    return new Promise(function (res, rej) {
+      (function poll() {
+        var v = null; try { v = cond(); } catch (e) { /* retry */ }
+        if (v) return res(v);
+        if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+        setTimeout(poll, 100);
+      })();
+    });
+  };
+  var realFetch = window.fetch.bind(window);
+
+  async function partA() {
+    var parts = await Promise.all([get('../index.html'), get('../css/style.css'), get('../js/app.js')]);
+    var html = parts[0], css = parts[1], app = parts[2];
+    // A1: زر طلب جديد وPDF خارج شريط الجوال
+    t('A1-hide-new-pdf', /#btnNewOrder,\s*#btnExportPdfTop\s*\{\s*display:\s*none/.test(css), 'css rule');
+    // A2: تسجيل المتبقي + منع المزدوج
+    t('A2-payrem-btn', html.indexOf('id="btnPayRem"') >= 0 && html.indexOf('تسجيل المتبقي كاملاً') >= 0, 'button');
+    t('A2-fill-hint', html.indexOf('تملأ المبلغ فقط') >= 0, 'hint');
+    t('A2-no-rem-chip', html.indexOf('data-pay="rem"') < 0, 'rem chip gone');
+    t('A2-paying-guard', app.indexOf('let paying = false') >= 0 && app.indexOf('if (readOnly || paying) return;') >= 0, 'guard');
+    // A3: تأكيد النهائيات
+    t('A3-final-confirm', app.indexOf('تأكيد الإلغاء') >= 0 && app.indexOf('let asked = false') >= 0, 'confirm');
+    // A4: شارة السعر
+    t('A4-badge', app.indexOf('custom-tag">سعر مخصص') >= 0 && app.indexOf('إرجاع للأصلي') >= 0 && css.indexOf('.custom-tag') >= 0, 'badge+restore');
+    // B1: حفظ بالورقة
+    t('B1-sheet-save', (app.match(/data-save/g) || []).length >= 4 && app.indexOf("sheetSave.onclick") >= 0, 'save btn');
+    // B2: افتراضيات
+    t('B2-spec-memory', app.indexOf('majlis_sofa_spec') >= 0 && app.indexOf('persistSofaSpec') >= 0, 'memory');
+    // B3: تلميح أول مرة
+    t('B3-hint-once', app.indexOf('majlis_hint_dbltap') >= 0, 'hint');
+    // B6: إجراءات نصية
+    t('B6-actions-label', app.indexOf('<span>إجراءات</span>') >= 0, 'label');
+    // B7: عميل جديد
+    t('B7-cust-new', html.indexOf('id="btnCustNew"') >= 0 && app.indexOf('startNewOrderAtCustomer') >= 0 || app.indexOf("showStage('customer')") >= 0, 'entry');
+    // B8: أخطاء بشرية
+    t('B8-human', app.indexOf('function humanError') >= 0 && app.indexOf('humanError(Store.lastError)') >= 0, 'helper');
+    t('B8-no-raw', app.indexOf('+ Store.lastError') < 0 && app.indexOf('+ (Store.lastError') < 0, 'no raw concat');
+    // B9: فوكس أول حقل
+    t('B9-focus', app.indexOf("querySelector('input:not(") >= 0, 'focus');
+    // C1: دخول
+    t('C1-login', html.indexOf('id="passToggle"') >= 0 && html.indexOf('autofocus') >= 0 && html.indexOf('enterkeyhint="go"') >= 0, 'toggle+focus');
+    // C2: تنقل واحد
+    t('C2-stage-nav', /#stageNav\s*\{\s*display:\s*none/.test(css), 'hidden');
+    // C3: بطاقات بلا تكاليف
+    t('C3-no-cost', css.indexOf('#ordersTable td.c-cost') >= 0 && css.indexOf('display: none') >= 0, 'hidden');
+    // C4: مصطلحات
+    t('C4-terms', html.indexOf('>جدار<') >= 0 && html.indexOf('فرش الكل') >= 0 && html.indexOf('إضافة أثاث') >= 0 && app.indexOf('مساحة أرضية') >= 0 && html.indexOf('>زاوية<') < 0, 'terms');
+    // C5: شبكة نصية
+    t('C5-net', css.indexOf('.net-chip #netLabel') >= 0, 'label');
+    // B5: مشاركة لاصقة
+    t('B5-sticky', css.indexOf('.modal-body .share-actions') >= 0 && css.indexOf('position: sticky') >= 0, 'sticky');
+    // B4: لمس المصمم
+    t('B4-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0 && css.indexOf('.wall-inline input { height: 44px') >= 0, 'sizes');
+    // B5/C6: تنبيه عدم الاتصال
+    t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
+    // الإصدار
+    t('ver-1-0-15', app.indexOf("APP_VERSION = '1.0.15'") >= 0, 'version');
+  }
+
+  async function partB() {
+    log('partB: sql.js…');
+    var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
+    log('partB: sqlite ready');
+    var sqlite = new SQL.Database();
+    sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+    var norm = function (v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); };
+    var DB = {
+      prepare: function (sql) {
+        var st = { sql: sql, args: [] };
+        st.bind = function () { st.args = Array.prototype.map.call(arguments, norm); return st; };
+        st.first = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var has = s.step(); var row = has ? s.getAsObject() : null; s.free(); return row; };
+        st.all = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results: results, success: true }; };
+        st.run = async function () { sqlite.run(sql, st.args); return { success: true }; };
+        return st;
+      },
+      batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
+    };
+    var mod = await import('../worker/worker.js');
+    var env = { DB: DB };
+    var ORIGIN = 'https://majlis.test';
+    var call = function (url, init) { return mod.default.fetch(new Request(url, init), env); };
+    window.fetch = async function (input, init) {
+      var url = typeof input === 'string' ? input : input.url;
+      if (url.indexOf(ORIGIN) === 0) return call(url, init);
+      return realFetch(input, init);
+    };
+    var html = await (await realFetch('../index.html')).text();
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script').forEach(function (s) { s.remove(); });
+    var wrap = document.createElement('div');
+    wrap.innerHTML = doc.body.innerHTML;
+    document.body.appendChild(wrap);
+    window.APP_CONFIG = { apiUrl: ORIGIN };
+    // بيئة الاختبار فقط: تعطيل فترات المزامنة الخلفية (30s) حتى لا تلتهم الزمن الافتراضي
+    (function () {
+      var si = window.setInterval.bind(window);
+      window.setInterval = function (fn, ms) { if (Number(ms) === 30000) return 0; return si(fn, ms); };
+    })();
+    for (var p of ['../js/store.js', '../js/designer.js', '../js/update.js', '../js/app.js']) {
+      var s = document.createElement('script');
+      s.textContent = await (await realFetch(p)).text();
+      document.body.appendChild(s);
+    }
+    log('partB: scripts injected');
+    await waitFor(function () { return window.MajlisApp && document.querySelector('#loginForm'); }, 120000);
+    log('partB: app booted');
+    try {
+      var lr0 = await window.fetch(ORIGIN + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'admin' }) }).then(function (r) { return r.json(); });
+      var bs0 = await window.fetch(ORIGIN + '/api/bootstrap', { headers: { 'x-session-token': lr0.token } }).then(function (r) { return r.json(); });
+      log('partB: bs items=' + (bs0.items || []).length + ' users=' + (bs0.users || []).length + ' feat=' + !!bs0.features);
+    } catch (e) { log('partB: bs-err=' + (e && e.message)); }
+    // C1: إظهار كلمة المرور يبدّل النوع والنص
+    await waitFor(function () { return document.querySelector('#passToggle'); }, 10000);
+    document.querySelector('#passToggle').click();
+    t('B-C1-toggle', document.querySelector('#loginPass').type === 'text' && document.querySelector('#passToggle').textContent === 'إخفاء', 'toggle');
+    document.querySelector('#passToggle').click();
+    // دخول محلي
+    document.querySelector('#loginUser').value = 'admin';
+    document.querySelector('#loginPass').value = 'admin';
+    document.querySelector('#loginForm button[type=submit]').click();
+    await new Promise(function (r) { setTimeout(r, 8000); });
+    log('partB: t8 btn=' + document.querySelector('#loginForm button[type=submit]').textContent + ' err=' + document.querySelector('#loginError').textContent.slice(0, 100) + ' fp=' + !!document.querySelector('#fpNew'));
+    // admin/admin كلمة أولية → بوابة تغيير إجبارية: نغيّرها ثم ندخل
+    await waitFor(function () { return document.querySelector('#fpNew'); }, 240000);
+    log('partB: fp-shown');
+    document.querySelector('#fpNew').value = 'test1234';
+    document.querySelector('#fpNew2').value = 'test1234';
+    document.querySelector('#fpOk').click();
+    await waitFor(function () { return !document.querySelector('#app').hidden; }, 240000);
+    log('partB: app-visible');
+    t('B-login-ok', true);
+    // زر إظهار كلمة المرور (قبل الدخول كان ظاهراً — نتحقق من وجوده وسلوكه على نسخة جديدة؟ نكتفي بالوجود هنا)
+    // صفحة الطلب: الشريط السفلي مخفي على الجوال
+    var cs = getComputedStyle(document.querySelector('#btnNewOrder'));
+    t('B-A1-hidden', cs.display === 'none', 'display=' + cs.display);
+    var sn = getComputedStyle(document.querySelector('#stageNav'));
+    t('B-C2-hidden', sn.display === 'none', 'display=' + sn.display);
+    // مرحلة الدفع: زر التسجيل المباشر
+    document.querySelector('#stepNav a[data-stage="pay"]').click();
+    await waitFor(function () { return !document.querySelector('#m-pay').hidden; });
+    t('B-A2-live', !!document.querySelector('#btnPayRem') && !document.querySelector('[data-pay="rem"]'), 'payrem');
+    // تسجيل المتبقي بمبلغ صفر → تنبيه بلا تسجيل
+    document.querySelector('#btnPayRem').click();
+    await waitFor(function () { return document.querySelector('#toast').textContent.indexOf('لا يوجد مبلغ') >= 0; });
+    t('B-A2-empty', true);
+    // humanError: تعيين مباشر
+    var H = window.MajlisApp.humanError;
+    t('B-B8-offline', H('Network request failed') === 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.', H('Network request failed'));
+    t('B-B8-401', H('401 unauthorized') === 'انتهت الجلسة. سجّل الدخول مرة أخرى.', H('401 unauthorized'));
+    t('B-B8-409', H('409 conflict') === 'وصل تغيير أحدث من جهاز آخر. حدّث الصفحة وحاول مجدداً.', H('409 conflict'));
+    t('B-B8-generic', H('weird raw xyz') === 'تعذّر حفظ التغييرات. تحقق من الاتصال وحاول مرة أخرى.', H('weird raw xyz'));
+    // التبديل: عميل جديد يفتح مرحلة العميل
+    document.querySelector('button[data-page="customers"]').click();
+    await waitFor(function () { return document.querySelector('#page-customers').classList.contains('active'); });
+    document.querySelector('#btnCustNew').click();
+    await waitFor(function () { return document.querySelector('#m-customer') && !document.querySelector('#m-customer').hidden; });
+    t('B-B7-flow', true);
+    // A2 E2E: طلب جديد → حفظ → صنف يدوي → دفع جزئي/استرداد/زيادة/متبقي/إعادة فتح
+    var digits = function (s) { return (s || '').replace(/[,٬\s]/g, ''); };
+    var setVal = function (sel, v) {
+      var el = document.querySelector(sel);
+      if (!el) throw new Error('missing ' + sel);
+      el.value = v;
+      el.dispatchEvent(new Event('input', { bubbles: true }));
+      el.dispatchEvent(new Event('change', { bubbles: true }));
+    };
+    setVal('#custName', 'عميل اختبار');
+    setVal('#custPhone', '0512345678');
+    document.querySelector('#btnSaveOrder').click();
+    await waitFor(function () { return /#\d+/.test(document.querySelector('#orderTitle').textContent); }, 240000);
+    var ordNo = document.querySelector('#orderTitle').textContent;
+    log('e2e saved ' + ordNo);
+    document.querySelector('#stepNav a[data-stage="price"]').click();
+    await waitFor(function () { return !document.querySelector('#m-price').hidden; });
+    document.querySelector('#btnAddManual').click();
+    await waitFor(function () { return document.querySelector('[data-m][data-k="name"]'); });
+    setVal('[data-m][data-k="name"]', 'بند اختبار');
+    setVal('[data-price="manual:0"]', '1000');
+    setVal('[data-m][data-k="qty"]', '2');
+    await new Promise(function (r) { setTimeout(r, 3000); });
+    log('e2e total=' + window.MajlisApp.order.total + ' lines=' + JSON.stringify((window.MajlisApp.order.manualRows || []).map(function (x) { return [x.name, x.price, x.qty]; })));
+    await waitFor(function () { return window.MajlisApp.order.total >= 2000; }, 240000);
+    t('B-pay-total', true);
+    document.querySelector('#btnSaveOrder').click();
+    await new Promise(function (r) { setTimeout(r, 3000); });
+    document.querySelector('#stepNav a[data-stage="pay"]').click();
+    await waitFor(function () { return !document.querySelector('#m-pay').hidden; });
+    var paidTxt = function () { return digits(document.querySelector('#payPaidSum').textContent); };
+    var toastTxt = function () { return document.querySelector('#toast').textContent; };
+    // النقر أثناء عملية حفظ جارية يُتجاهَل بالتصميم (منع المزدوج): نعيد النقر حتى يظهر إثبات الإنجاز
+    var clickPay = async function (btnSel, amount, expectToast) {
+      setVal('#payAmount', amount);
+      for (var a = 0; a < 8; a++) {
+        document.querySelector(btnSel).click();
+        try { await waitFor(function () { return toastTxt().indexOf(expectToast) >= 0; }, 45000); return true; }
+        catch (e) { /* مشغول — إعادة المحاولة */ }
+      }
+      return false;
+    };
+    t('B-pay-partial', await clickPay('#btnAddPay', '500', 'دفعة 500.00') && paidTxt().indexOf('500.00') >= 0, paidTxt());
+    t('B-pay-second', await clickPay('#btnAddPay', '50', 'دفعة 50.00') && paidTxt().indexOf('550.00') >= 0, paidTxt());
+    t('B-pay-refund', await clickPay('#btnRefund', '100', 'استرداد 100.00') && paidTxt().indexOf('450.00') >= 0, paidTxt());
+    t('B-pay-over', await clickPay('#btnAddPay', '5000', '5,000.00') && paidTxt().indexOf('5450.00') >= 0, paidTxt());
+    document.querySelector('#btnPayRem').click();
+    await waitFor(function () { return toastTxt().indexOf('لا يوجد مبلغ') >= 0; }, 240000);
+    t('B-pay-rem-empty', true);
+    document.querySelector('button[data-page="orders"]').click();
+    await waitFor(function () { return document.querySelector('#page-orders').classList.contains('active'); });
+    await waitFor(function () { return document.querySelector('#ordersTable [data-open]'); }, 120000);
+    document.querySelector('#ordersTable [data-open]').click();
+    await waitFor(function () { return document.querySelector('#orderTitle').textContent === ordNo; }, 120000);
+    document.querySelector('#stepNav a[data-stage="pay"]').click();
+    await waitFor(function () { return !document.querySelector('#m-pay').hidden; });
+    t('B-pay-reopen', paidTxt().indexOf('5450.00') >= 0, paidTxt());
+    // B9: نافذة صنف — التركيز على أول حقل والملاءمة داخل الشاشة
+    document.querySelector('button[data-page="items"]').click();
+    await waitFor(function () { return document.querySelector('#page-items').classList.contains('active'); });
+    document.querySelector('#btnAddItem').click();
+    await waitFor(function () { return !document.querySelector('#modal').hidden && document.querySelector('#modalBody input'); });
+    await waitFor(function () { return document.activeElement && document.activeElement.tagName === 'INPUT'; }, 60000);
+    var ae = document.activeElement;
+    t('B-B9-focus', ae && ae.tagName === 'INPUT', 'focus=' + (ae && ae.tagName + '#' + ae.id));
+    // انتظار استقرار حركة الورقة قبل القياس
+    var mc0 = null, stable = null;
+    await waitFor(function () {
+      var r = document.querySelector('#modal .modal-card').getBoundingClientRect();
+      var key = [r.left, r.right, r.bottom].join(',');
+      stable = (key === mc0); mc0 = key; return false;
+    }, 1000).catch(function () { /* settle-only */ });
+    var mc = document.querySelector('#modal .modal-card').getBoundingClientRect();
+    var scrollable = document.querySelector('#modal .modal-card').scrollHeight > document.querySelector('#modal .modal-card').clientHeight + 1;
+    t('B-modal-fits', mc.left >= -1 && mc.right <= window.innerWidth + 1 && (mc.bottom <= window.innerHeight + 1 || scrollable), JSON.stringify([Math.round(mc.left), Math.round(mc.right), Math.round(mc.bottom), scrollable]));
+    document.querySelector('#modalClose').click();
+    await waitFor(function () { return document.querySelector('#modal').hidden; });
+    // E: مسح التجاوز الأفقي غير المقصود عبر الصفحات (يُتجاهل التمرير الداخلي
+    // للجداول والعناصر المخفية كالدرج المنزلق خارج الشاشة)
+    var vis = function (el) {
+      if (el.getBoundingClientRect().width === 0) return false;
+      var cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return false;
+      var p = el.parentElement;
+      while (p && p !== document.body) {
+        var c = getComputedStyle(p);
+        if (c.display === 'none' || c.visibility === 'hidden') return false;
+        p = p.parentElement;
+      }
+      return true;
+    };
+    var pages = ['order', 'orders', 'customers', 'items'];
+    for (var pi = 0; pi < pages.length; pi++) {
+      document.querySelector('button[data-page="' + pages[pi] + '"]').click();
+      await new Promise(function (r) { setTimeout(r, 800); });
+      var badEls = [];
+      document.querySelectorAll('#app button, #app input, #app select, #app table, #app .card, #app .module, #app header').forEach(function (el) {
+        if (el.closest('.table-wrap') || !vis(el)) return;
+        var r = el.getBoundingClientRect();
+        if (r.right > window.innerWidth + 1 || r.left < -1) badEls.push((el.id || el.className.toString().slice(0, 24) || el.tagName) + '@' + Math.round(r.left) + '-' + Math.round(r.right));
+      });
+      var docOver = document.documentElement.scrollWidth > window.innerWidth + 1;
+      t('B-E-' + pages[pi], !docOver && badEls.length === 0, 'doc=' + document.documentElement.scrollWidth + ' vw=' + window.innerWidth + ' ' + badEls.slice(0, 4).join('|'));
+    }
+    window.fetch = realFetch;
+  }
+
+  (async function run() {
+    try { await partA(); }
+    catch (e) { bad++; log('FAIL partA :: ' + e.message); }
+    try { await partB(); }
+    catch (e) { bad++; log('FAIL partB :: ' + (e.message || e)); }
+    finally {
+      try { window.fetch = realFetch; } catch (_) { /* noop */ }
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
