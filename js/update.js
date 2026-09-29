@@ -3,11 +3,14 @@
    - المصدر الرسمي الوحيد: GET {apiUrl}/api/app-update (بيانات وصفية فقط).
    - المقارنة برقم البناء: remote.versionCode > current = تحديث، وإلا لا شيء.
    - لا downgrade أبداً، ولا تنزيل تلقائي، ولا تثبيت صامت.
+   - التنزيل على Android عبر المُنزِّل الأصلي (Filesystem.downloadFile: OkHttp
+     بلا CORS ويتبع redirects) — لأن fetch داخل WebView يفشل (Failed to fetch)
+     إذ يعيد GitHub التوجيه 302 إلى release-assets.githubusercontent.com
+     الذي لا يرسل Access-Control-Allow-Origin إطلاقاً.
    - بعد التنزيل: تحقق SHA-256 إجباري — عدم التطابق = حذف الملف وعدم فتحه.
-   - الفتح عبر مثبّت النظام الرسمي فقط (FileOpener في الأندرويد، وإلا تنزيل
-     المتصفح حيث يفتح المستخدم الملف بنفسه من إشعار اكتمال التنزيل).
+   - الفتح عبر مثبّت النظام الرسمي فقط (FileOpener)، وفي المتصفح تنزيل عادي.
    - فشل endpoint لا يمنع تشغيل التطبيق إطلاقاً.
-   - يعمل في المتصفح (fallback) وفي WebView الأندرويد (مسار أصلي).
+   - سجل تشخيصي في console عبر AppUpdate._diag() (بلا أسرار: لا رموز ولا بيانات).
    ====================================================================== */
 (function () {
   'use strict';
@@ -15,6 +18,15 @@
   var APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
   var APK_MIME = 'application/vnd.android.package-archive';
   var CHECK_TIMEOUT_MS = 12000;
+
+  /* ---------------- السجل التشخيصي (console/logcat، بلا أسرار) ---------------- */
+  var diagLog = [];
+  function ulog(ev, info) {
+    var e = { t: new Date().toISOString(), ev: String(ev), info: info == null ? '' : String(info).slice(0, 300) };
+    diagLog.push(e);
+    if (diagLog.length > 120) diagLog.shift();
+    try { console.log('[AppUpdate]', e.ev, e.info); } catch (_) { /* noop */ }
+  }
 
   /** نفس معادلة configure-version.js: رئيسي*10000 + فرعي*100 + تصحيح */
   function versionCodeOf(v) {
@@ -64,6 +76,7 @@
   async function checkForUpdate(current) {
     var base = apiBase();
     if (!base) return { state: 'error', error: 'no-server', message: 'التحقق من التحديث متاح في نسخة الخادم فقط.' };
+    ulog('check/start', 'base=' + base + ' current=' + current.versionCode);
     var ctrl = null, timer = 0;
     try {
       if (typeof AbortController !== 'undefined') {
@@ -77,16 +90,19 @@
         redirect: 'follow',
         signal: ctrl ? ctrl.signal : undefined,
       });
+      ulog('check/http', 'status=' + res.status);
       if (!res.ok) return { state: 'error', error: 'http-' + res.status, message: 'تعذّر الوصول إلى خادم التحديث. تحقق من الاتصال وحاول لاحقاً.' };
       var body = await res.json().catch(function () { return null; });
       var v = validUpdateMeta(body && (body.update || body));
-      if (!v.ok) return { state: 'error', error: 'invalid:' + v.error, message: 'بيانات التحديث من الخادم غير صالحة — لن يتم التنزيل.' };
+      if (!v.ok) { ulog('check/invalid', v.error); return { state: 'error', error: 'invalid:' + v.error, message: 'بيانات التحديث من الخادم غير صالحة — لن يتم التنزيل.' }; }
+      ulog('check/result', 'remote=' + v.meta.versionCode + ' sha=' + (v.meta.sha256 ? 'present' : 'missing'));
       // remote > current = تحديث؛ remote <= current = لا شيء (لا downgrade أبداً)
       if (v.meta.versionCode > current.versionCode) {
         return { state: 'available', meta: v.meta };
       }
       return { state: 'latest', meta: v.meta, same: sameVersion(v.meta.versionName, current.versionName) };
     } catch (e) {
+      ulog('check/fail', (e && e.name ? e.name + ': ' : '') + (e && e.message ? e.message : e));
       return { state: 'error', error: 'offline', message: 'تعذّر الوصول إلى خادم التحديث. تحقق من الاتصال وحاول لاحقاً.' };
     } finally {
       if (timer) clearTimeout(timer);
@@ -99,14 +115,95 @@
     return s;
   }
 
+  function b64ToBytes(b64) {
+    var s = String(b64 || '').replace(/\s/g, '');
+    var raw = atob(s);
+    var out = new Uint8Array(raw.length);
+    for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+    return out;
+  }
+
+  function capPlugins() {
+    return (window.Capacitor && window.Capacitor.Plugins) || {};
+  }
+
+  function isNative() {
+    try {
+      if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function') {
+        return !!window.Capacitor.isNativePlatform();
+      }
+    } catch (_) { /* noop */ }
+    var P = capPlugins();
+    return !!(P.Filesystem && P.FileOpener);
+  }
+
+  function apkFileName(meta) {
+    return 'asalh-najd-' + String(meta.versionName).replace(/[^0-9A-Za-z.\-]/g, '_') + '.apk';
+  }
+
   /**
-   * تنزيل APK والتحقق منه. يعيد Blob موثوقاً فقط.
-   * - يتطلب sha256 في البيانات: غيابه = رفض (fail-closed).
-   * - عدم التطابق = رفض + لا يُحفظ أي ملف ولا يُفتح شيء.
+   * المسار الأصلي (Android): تنزيل عبر Filesystem.downloadFile (شبكة أصلية،
+   * بلا CORS، يتبع redirects) ثم قراءة الملف والتحقق من SHA-256 قبل أي فتح.
+   * يعيد {kind:'native', path, size}. أي فشل = رمي بسبب واضح، بلا ملف موثوق.
    */
-  async function downloadVerifiedApk(meta, onProgress) {
-    if (!meta || !meta.sha256) throw { code: 'no-sha', message: 'بصمة التحقق غير متوفرة من الخادم — لن يتم التنزيل.' };
-    var res = await fetch(meta.apkUrl, { method: 'GET', cache: 'no-store', credentials: 'omit', redirect: 'follow' });
+  async function downloadNativeApk(meta, onProgress) {
+    var P = capPlugins();
+    var FS = P.Filesystem;
+    if (!FS || !FS.downloadFile || !FS.readFile) throw { code: 'no-native', message: 'التنزيل الأصلي غير متاح على هذا الجهاز.' };
+    var path = apkFileName(meta);
+    ulog('download/start', 'method=native url=' + meta.apkUrl);
+    try { await FS.deleteFile({ path: path, directory: 'CACHE' }); } catch (_) { /* stale cleanup best-effort */ }
+    var progHandle = null;
+    if (onProgress && FS.addListener) {
+      try {
+        progHandle = await FS.addListener('progress', function (p) {
+          if (p && p.url === meta.apkUrl && onProgress) {
+            try { onProgress(Number(p.bytes) || 0, Number(p.contentLength) || 0); } catch (_) { /* noop */ }
+          }
+        });
+      } catch (_) { progHandle = null; }
+    }
+    try {
+      await FS.downloadFile({ url: meta.apkUrl, path: path, directory: 'CACHE', progress: !!onProgress, recursive: true });
+    } catch (e) {
+      ulog('download/fail', 'method=native err=' + ((e && e.message) || e));
+      throw { code: 'download', message: 'فشل تنزيل ملف التحديث. تحقق من الاتصال وحاول مجدداً.' };
+    } finally {
+      try { if (progHandle && progHandle.remove) await progHandle.remove(); } catch (_) { /* noop */ }
+    }
+    var size = 0;
+    try {
+      var st = await FS.stat({ path: path, directory: 'CACHE' });
+      size = (st && st.size) || 0;
+    } catch (_) { size = 0; }
+    ulog('download/done', 'method=native bytes=' + size);
+    var rd = await FS.readFile({ path: path, directory: 'CACHE' });
+    var bin = b64ToBytes(rd && rd.data);
+    var digest = await crypto.subtle.digest('SHA-256', bin);
+    var ok = bytesToHex(digest) === meta.sha256;
+    ulog('checksum/' + (ok ? 'match' : 'mismatch'), 'bytes=' + bin.length);
+    if (!ok) {
+      bin.fill(0);
+      try { await FS.deleteFile({ path: path, directory: 'CACHE' }); ulog('checksum/deleted', path); } catch (_) { /* noop */ }
+      throw { code: 'checksum', message: 'فشل التحقق من سلامة الملف — حُذف ولن يُثبَّت.' };
+    }
+    return { kind: 'native', path: path, size: bin.length };
+  }
+
+  /**
+   * مسار المتصفح (احتياطي): fetch المباشر يعمل فقط إن سمح المضيف بـ CORS.
+   * يعيد {kind:'web', blob}.
+   */
+  async function downloadWebApk(meta, onProgress) {
+    ulog('download/start', 'method=web-fetch url=' + meta.apkUrl);
+    var res;
+    try {
+      res = await fetch(meta.apkUrl, { method: 'GET', cache: 'no-store', credentials: 'omit', redirect: 'follow' });
+    } catch (e) {
+      ulog('download/fail', 'method=web-fetch err=' + (e && e.name ? e.name + ': ' : '') + ((e && e.message) || e));
+      throw { code: 'download', message: 'تعذّر تنزيل الملف من المتصفح. افتح رابط الإصدار الرسمي مباشرة.' };
+    }
+    ulog('download/http', 'method=web-fetch status=' + res.status + ' final=' + (res.url || '').slice(0, 120));
     if (!res.ok) throw { code: 'http-' + res.status, message: 'فشل تنزيل ملف التحديث.' };
     var total = Number(res.headers.get('content-length')) || 0;
     var reader = res.body && res.body.getReader ? res.body.getReader() : null;
@@ -127,48 +224,76 @@
     }
     var bin = new Uint8Array(loaded), off = 0;
     for (var i = 0; i < chunks.length; i++) { bin.set(chunks[i], off); off += chunks[i].length; }
+    ulog('download/done', 'method=web-fetch bytes=' + loaded);
     var digest = await crypto.subtle.digest('SHA-256', bin);
-    if (bytesToHex(digest) !== meta.sha256) {
+    var ok = bytesToHex(digest) === meta.sha256;
+    ulog('checksum/' + (ok ? 'match' : 'mismatch'), 'bytes=' + loaded);
+    if (!ok) {
       bin.fill(0);
       throw { code: 'checksum', message: 'فشل التحقق من سلامة الملف — حُذف ولن يُثبَّت.' };
     }
-    return new Blob([bin], { type: APK_MIME });
+    return { kind: 'web', blob: new Blob([bin], { type: APK_MIME }) };
   }
 
-  function blobToBase64(blob) {
-    return new Promise(function (res, rej) {
-      var r = new FileReader();
-      r.onload = function () { res(String(r.result).split(',')[1]); };
-      r.onerror = function () { rej(new Error('تعذّر قراءة الملف')); };
-      r.readAsDataURL(blob);
-    });
-  }
-
-  function capPlugins() {
-    return (window.Capacitor && window.Capacitor.Plugins) || {};
+  /**
+   * تنزيل APK والتحقق منه. يعيد مصدراً موثوقاً فقط ({kind,...}).
+   * - يتطلب sha256 في البيانات: غيابه = رفض (fail-closed).
+   * - عدم التطابق = رفض + حذف الملف + لا يُفتح شيء.
+   */
+  async function downloadVerifiedApk(meta, onProgress) {
+    if (!meta || !meta.sha256) throw { code: 'no-sha', message: 'بصمة التحقق غير متوفرة من الخادم — لن يتم التنزيل.' };
+    if (isNative()) {
+      try {
+        return await downloadNativeApk(meta, onProgress);
+      } catch (e) {
+        // المسار الأصلي أولاً دائماً على الجهاز؛ fetch احتياط أخير فقط
+        if (e && (e.code === 'checksum' || e.code === 'no-native')) throw e;
+        ulog('download/fallback-web', String((e && e.code) || (e && e.message) || e));
+        return downloadWebApk(meta, onProgress);
+      }
+    }
+    return downloadWebApk(meta, onProgress);
   }
 
   /**
    * فتح مثبّت النظام الرسمي فقط:
-   * - أندرويد (FileOpener): حفظ الملف الموثوق في CACHE ثم فتحه — النظام يعرض
+   * - أندرويد: الملف الموثوق في CACHE يُفتح عبر FileOpener — النظام يعرض
    *   شاشة التثبيت، وإن لزم إذن «تثبيت التطبيقات غير المعروفة» يوجّه المستخدم
    *   للسماح من الإعدادات (آلية أندرويد الرسمية، بلا تجاوز).
    * - المتصفح: تنزيل الملف ليفتحه المستخدم بنفسه من إشعار الاكتمال.
    */
-  async function installApk(blob, fileName) {
+  async function installApk(src, fileName) {
     var P = capPlugins();
-    if (P.Filesystem && P.FileOpener) {
-      var data = await blobToBase64(blob);
-      var w = await P.Filesystem.writeFile({ path: fileName, data: data, directory: 'CACHE', recursive: true });
-      await P.FileOpener.open({ filePath: w.uri, contentType: APK_MIME, openWithDefault: true });
+    if (src && src.kind === 'native') {
+      if (!P.FileOpener || !P.FileOpener.open) throw { code: 'no-native', message: 'عارض الملفات الأصلي غير متاح.' };
+      var FS = P.Filesystem;
+      var uri = null;
+      try {
+        var w = await FS.getUri({ path: src.path, directory: 'CACHE' });
+        uri = w && w.uri;
+      } catch (e) {
+        ulog('install/fail', 'getUri err=' + ((e && e.message) || e));
+        throw { code: 'install', message: 'تعذّر تجهيز الملف للتثبيت.' };
+      }
+      ulog('install/start', 'method=native file=' + src.path + ' bytes=' + (src.size || 0));
+      try {
+        await P.FileOpener.open({ filePath: uri, contentType: APK_MIME, openWithDefault: true });
+      } catch (e) {
+        ulog('install/fail', 'open err=' + ((e && e.message) || e));
+        throw { code: 'install', message: 'تعذّر فتح مثبّت النظام. اسمح بـ«تثبيت التطبيقات غير المعروفة» لهذا التطبيق ثم أعد المحاولة.' };
+      }
+      ulog('install/ok', 'method=native');
       return 'native';
     }
+    var blob = src && src.blob;
+    if (!blob) throw { code: 'install', message: 'لا يوجد ملف موثوق للتثبيت.' };
     var a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = fileName;
     document.body.appendChild(a);
     a.click();
     setTimeout(function () { try { URL.revokeObjectURL(a.href); } catch (_) { /* noop */ } a.remove(); }, 5000);
+    ulog('install/ok', 'method=browser-download');
     return 'browser';
   }
 
@@ -253,11 +378,11 @@
         els.check.disabled = true;
         try {
           setStatus(els, 'جارٍ التنزيل…', 'info');
-          var blob = await downloadVerifiedApk(meta, function (loaded, total) { setProgress(els, loaded, total); });
+          var src = await downloadVerifiedApk(meta, function (loaded, total) { setProgress(els, loaded, total); });
           setProgress(els, -1, 0);
           setStatus(els, 'تم التحقق من الملف — سيُفتح مثبّت النظام.', 'info');
-          var fname = 'asalh-najd-' + meta.versionName + '.apk';
-          var how = await installApk(blob, fname);
+          var fname = apkFileName(meta);
+          var how = await installApk(src, fname);
           setStatus(
             els,
             how === 'native'
@@ -288,5 +413,6 @@
     downloadVerifiedApk: downloadVerifiedApk,
     installApk: installApk,
     initBox: initBox,
+    _diag: function () { return diagLog.slice(); },
   };
 })();

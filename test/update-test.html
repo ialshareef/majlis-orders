@@ -103,7 +103,7 @@ async function sha256hex(bytes) {
       var b = await r.json();
       var u = b && b.update;
       var shapeOk = r.status === 200 && b.ok === true && u &&
-        u.versionName === '1.0.15' && u.versionCode === 10015 &&
+        u.versionName === '1.0.16' && u.versionCode === 10016 &&
         typeof u.apkUrl === 'string' && u.apkUrl.indexOf(ALLOW) === 0 &&
         (u.sha256 === null || /^[0-9a-f]{64}$/.test(u.sha256)) &&
         typeof u.mandatory === 'boolean';
@@ -214,10 +214,11 @@ async function sha256hex(bytes) {
       await waitFor(function () { return !els8.dl.hidden && !els8.check.disabled; });
       // راقب التقدم عبر تغليف الدالة الأصلية
       var realDl = U8.downloadVerifiedApk;
-      var blob = await realDl(META3, function (l, t) { prog.push([l, t]); });
-      if (blob && blob.size === APK_BYTES.length && prog.length >= 1) ok('T8a verified-download-progress');
+      var src = await realDl(META3, function (l, t) { prog.push([l, t]); });
+      var blob = src && src.blob;
+      if (src && src.kind === 'web' && blob && blob.size === APK_BYTES.length && prog.length >= 1) ok('T8a verified-download-progress');
       else fail('T8a verified-download-progress', 'size/progress');
-      var how = await U8.installApk(blob, 't.apk');
+      var how = await U8.installApk(src, 't.apk');
       if (how === 'browser' && blobUrls === 1) ok('T8b installer-opened');
       else fail('T8b installer-opened', how + ' urls=' + blobUrls);
     } catch (e) { fail('T8 checksum-match', e.message); }
@@ -269,6 +270,124 @@ async function sha256hex(bytes) {
       if (usedStaging && fetchCalls.length === 0) ok('T11 api-base-and-local');
       else fail('T11 api-base-and-local', 'staging=' + usedStaging + ' calls=' + fetchCalls.length);
     } catch (e) { fail('T11 api-base-and-local', e.message); }
+
+    // T13: إثبات السبب الجذري — fetch المباشر لرابط GitHub موجود يفشل CORS
+    // (التوجيه 302 إلى release-assets بلا Access-Control-Allow-Origin إطلاقاً)
+    window.APP_CONFIG = { apiUrl: 'https://srv.test' };
+    window.fetch = realFetch; // T13 يقيس الشبكة الحقيقية: إسقاط أي stub سابق
+    try {
+      var U13 = await loadFreshUpdate();
+      var META13 = metaFor(10015, '1.0.15', APK_SHA);
+      var err13 = null;
+      try { await U13.downloadVerifiedApk(META13, function () {}); }
+      catch (e) { err13 = e; }
+      var dg13 = U13._diag().map(function (x) { return x.ev + '=' + x.info; }).join(' | ');
+      if (err13 && err13.code === 'download') ok('T13 webfetch-blocked');
+      else fail('T13 webfetch-blocked', (err13 ? (err13.code + ' ' + (err13.message || '')) : 'direct fetch unexpectedly worked') + ' DIAG: ' + dg13.slice(0, 500));
+    } catch (e) { fail('T13 webfetch-blocked', e.message); }
+
+    // T14-T17: المسار الأصلي عبر Filesystem/FileOpener مزيفين
+    function fakeNative(apkBytes, failMode) {
+      var calls = [];
+      var progFn = null;
+      var b64 = '';
+      { var s = ''; for (var i = 0; i < apkBytes.length; i++) s += String.fromCharCode(apkBytes[i]); b64 = btoa(s); }
+      window.Capacitor = {
+        isNativePlatform: function () { return true; },
+        Plugins: {
+          Filesystem: {
+            deleteFile: async function () { calls.push('delete'); },
+            addListener: async function (ev, fn) { progFn = fn; return { remove: async function () {} }; },
+            downloadFile: async function (o) {
+              calls.push('download:' + o.url);
+              if (failMode === 'download') { var e = new Error('native net fail'); throw e; }
+              if (progFn) progFn({ url: o.url, bytes: apkBytes.length, contentLength: apkBytes.length });
+              return { path: o.path };
+            },
+            readFile: async function () { calls.push('read'); return { data: b64 }; },
+            getUri: async function (o) { calls.push('getUri'); return { uri: 'content://fake/' + o.path }; },
+            stat: async function () { calls.push('stat'); return { size: apkBytes.length }; },
+          },
+          FileOpener: {
+            open: async function (o) { calls.push('open:' + o.contentType + ':' + o.filePath); },
+          },
+        },
+      };
+      return calls;
+    }
+    var nativeProg = [];
+    // T14: نجاح أصلي كامل: تنزيل → بصمة → مثبّت، وبلا objectURL
+    try {
+      var U14 = await loadFreshUpdate();
+      blobUrls = 0;
+      var calls14 = fakeNative(APK_BYTES, null);
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return Promise.resolve(new Response(APK_BYTES));
+        return jsonRes({ ok: true, update: metaFor(10016, '1.0.16', APK_SHA) });
+      });
+      var src14 = await U14.downloadVerifiedApk(metaFor(10016, '1.0.16', APK_SHA), function (l, t) { nativeProg.push([l, t]); });
+      var how14 = await U14.installApk(src14, 'asalh-najd-1.0.16.apk');
+      var opened = calls14.some(function (c) { return c.indexOf('open:application/vnd.android.package-archive:content://fake/') === 0; });
+      if (src14 && src14.kind === 'native' && how14 === 'native' && opened && blobUrls === 0 && nativeProg.length >= 1) ok('T14 native-full-path');
+      else fail('T14 native-full-path', JSON.stringify(calls14) + ' urls=' + blobUrls);
+    } catch (e) { fail('T14 native-full-path', e.message); }
+    // T15: بصمة خاطئة أصليًا = حذف + لا فتح إطلاقًا
+    try {
+      var U15 = await loadFreshUpdate();
+      blobUrls = 0;
+      var calls15 = fakeNative(APK_BYTES, null);
+      var badSrc = null, badErr = null;
+      try { badSrc = await U15.downloadVerifiedApk(metaFor(10016, '1.0.16', 'b'.repeat(64)), function () {}); }
+      catch (e) { badErr = e; }
+      var deleted = calls15.indexOf('delete') >= 0;
+      var opened15 = calls15.some(function (c) { return c.indexOf('open:') === 0; });
+      if (!badSrc && badErr && badErr.code === 'checksum' && deleted && !opened15 && blobUrls === 0) ok('T15 native-checksum');
+      else fail('T15 native-checksum', JSON.stringify(calls15));
+    } catch (e) { fail('T15 native-checksum', e.message); }
+    // T16: فشل التنزيل الأصلي = خطأ واضح بلا مثبّت (الـ stub يرد 404 لأي APK فيحبط fallback المتصفح أيضاً)
+    try {
+      var U16 = await loadFreshUpdate();
+      var calls16 = fakeNative(APK_BYTES, 'download');
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return Promise.resolve(new Response('nf', { status: 404 }));
+        return jsonRes({ ok: true, update: metaFor(10016, '1.0.16', APK_SHA) });
+      });
+      var err16 = null;
+      try { await U16.downloadVerifiedApk(metaFor(10016, '1.0.16', APK_SHA), function () {}); }
+      catch (e) { err16 = e; }
+      var opened16 = calls16.some(function (c) { return c.indexOf('open:') === 0; });
+      if (err16 && !opened16) ok('T16 native-dl-fail');
+      else fail('T16 native-dl-fail', JSON.stringify(calls16));
+    } catch (e) { fail('T16 native-dl-fail', e.message); }
+    delete window.Capacitor;
+    // T17: السجل التشخيصي موجود وبلا أسرار
+    try {
+      var U17 = await loadFreshUpdate();
+      stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10016, '1.0.16', APK_SHA) }); });
+      await U17.checkForUpdate({ versionName: '1.0.15', versionCode: 10015 });
+      var dg = U17._diag();
+      var hasCheck = dg.some(function (x) { return x.ev === 'check/start'; });
+      var hasMeta = dg.some(function (x) { return x.ev === 'check/result'; });
+      var leak = dg.some(function (x) { return /token|password|secret|keystore/i.test(x.info); });
+      if (hasCheck && hasMeta && !leak) ok('T17 diag-log');
+      else fail('T17 diag-log', JSON.stringify(dg).slice(0, 200));
+    } catch (e) { fail('T17 diag-log', e.message); }
+    // T18: جهاز 1.0.15 يكتشف 1.0.16 كمتاح
+    try {
+      var U18 = await loadFreshUpdate();
+      stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10016, '1.0.16', APK_SHA) }); });
+      var r18 = await U18.checkForUpdate({ versionName: '1.0.15', versionCode: 10015 });
+      if (r18.state === 'available' && r18.meta.versionCode === 10016) ok('T18 1015-sees-1016');
+      else fail('T18 1015-sees-1016', r18.state);
+    } catch (e) { fail('T18 1015-sees-1016', e.message); }
+    // T19: جهاز 1.0.16 أمام 1.0.15 = latest (لا downgrade)
+    try {
+      var U19 = await loadFreshUpdate();
+      stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10015, '1.0.15', APK_SHA) }); });
+      var r19 = await U19.checkForUpdate({ versionName: '1.0.16', versionCode: 10016 });
+      if (r19.state === 'latest') ok('T19 no-downgrade-1016');
+      else fail('T19 no-downgrade-1016', r19.state);
+    } catch (e) { fail('T19 no-downgrade-1016', e.message); }
 
     // T12: فحص صياغة app.js (تنفيذ صفري — parse فقط)
     try {
