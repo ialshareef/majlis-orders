@@ -24,6 +24,7 @@
   <symbol id="p-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6M10 11v6M14 11v6"/></symbol>
   <symbol id="p-home" viewBox="0 0 24 24"><path d="M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7h-6v7H4a1 1 0 0 1-1-1z"/></symbol>
   <symbol id="p-door" viewBox="0 0 24 24"><path d="M3 21h18"/><path d="M6 21V4h12v17"/><path d="M14 12h.01"/></symbol>
+  <symbol id="p-fire" viewBox="0 0 24 24"><path d="M12 2c1.5 2.5 3 4.5 3 7 0 3.31-2.69 6-6 6s-6-2.69-6-6c0-1.5.55-2.88 1.46-3.95C4.78 7.14 6.32 8.5 6.5 10c.25-.79.5-1.58.75-2.37C7.5 6.5 8.5 5.5 9 4c0 1.5.5 2.5 1.5 3.5C11.5 6.5 12 4 12 2z"/></symbol>
   <symbol id="p-window" viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="1"/><path d="M12 4v16M4 12h16"/></symbol>
   <symbol id="p-undo" viewBox="0 0 24 24"><path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2.3-5.7L3 10"/></symbol>
   <symbol id="p-redo" viewBox="0 0 24 24"><path d="M21 7v6h-6"/><path d="M20.5 13a9 9 0 1 1-2.3-5.7L21 10"/></symbol>
@@ -32,7 +33,8 @@
 <!-- ============ الترحيب ============ -->
 <main id="pLanding" class="p-view">
   <div class="p-hero">
-    <span class="brand-mark lg"><svg><use href="#p-sofa"/></svg></span>
+    <img id="pLogo" class="p-logo" alt="شعار المحل" hidden>
+    <span class="brand-mark lg" id="pLogoFallback"><svg><use href="#p-sofa"/></svg></span>
     <p class="p-shop" id="pShopName">أصالة نجد</p>
     <h1>صمّم مجلسك بنفسك</h1>
     <p class="p-tag" id="pTagline">صمّم مجلسك حسب مقاسات غرفتك، ثم أرسل التصميم لنا لمراجعته.</p>
@@ -59,16 +61,19 @@
   </header>
   <nav class="p-steps" id="pSteps" aria-label="خطوات التصميم"></nav>
   <div class="p-canvas-col">
+    <section class="p-panel" aria-live="polite">
+      <h3 class="p-step-title" id="pStepTitle"></h3>
+      <div id="pPanel"></div>
+    </section>
     <div class="p-tools" id="pTools" role="toolbar" aria-label="أدوات الإضافة"></div>
     <div class="canvas-wrap p-canvas">
       <canvas id="pCanvas" aria-label="مخطط الغرفة"></canvas>
-      <div class="zoom-ctl" role="group" aria-label="التكبير">
-        <button type="button" class="tb-btn" id="pZoomIn" aria-label="تكبير">+</button>
-        <button type="button" class="tb-btn" id="pZoomOut" aria-label="تصغير">−</button>
-        <button type="button" class="tb-btn" id="pZoomFit" aria-label="ملاءمة">⤢</button>
-      </div>
     </div>
-    <div class="p-panel" id="pPanel"></div>
+    <div class="p-zoombar" role="group" aria-label="التكبير والتصغير">
+      <button type="button" class="btn" id="pZoomOut">تصغير −</button>
+      <button type="button" class="btn" id="pZoomFit">100%</button>
+      <button type="button" class="btn" id="pZoomIn">توسيع +</button>
+    </div>
   </div>
   <div id="pSheet" class="inspector p-sheet" hidden></div>
   <footer class="p-footbar">

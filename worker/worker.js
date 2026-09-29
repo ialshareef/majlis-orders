@@ -141,9 +141,9 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.17';
-// بصمة asalh-najd-1.0.17.apk (إصدار GitHub v1.0.17، بناء CI الموقّع)
-const UPDATE_FALLBACK_SHA256 = '1a106e5e5ac98a3e0a00c0e8ea8a01acbae0f1e7971726f7ba69012699adb39c';
+const UPDATE_FALLBACK_VERSION = '1.0.18';
+// بصمة asalh-najd-1.0.18.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+const UPDATE_FALLBACK_SHA256 = '';
 
 function versionCodeOfName(v) {
   const p = String(v || '').split('.').map((n) => parseInt(n, 10));
@@ -251,6 +251,7 @@ async function portalSettings(env) {
     settings: {
       shopName: String(s.shopName || 'أصالة نجد'),
       tagline: String(s.tagline || '').slice(0, 140),
+      logoUrl: safeUrl(s.logoUrl),
       phone: String(s.phone || ''),
       mapsUrl: safeUrl(s.mapsUrl),
       whatsapp: safeUrl(s.whatsapp),
@@ -325,6 +326,7 @@ function checkDesign(d) {
     if (!Array.isArray(d.pieces) || d.pieces.length > 200) bad();
     for (const p of d.pieces) {
       if (!p || typeof p !== 'object' || !['sofa', 'acc', 'free'].includes(p.kind)) bad();
+      if (p.kind === 'sofa' && p.seating !== undefined && !['floor', 'sofa', 'arabic', 'raised'].includes(p.seating)) bad();
       for (const f of ['w', 'h']) if (!isNum(p[f]) || p[f] < 0.1 || p[f] > 30) bad();
       for (const f of ['x', 'y', 'rot']) if (p[f] !== undefined && !isNum(p[f])) bad();
       for (const f of ['itemId', 'woodId', 'fabricId', 'foamId']) {
@@ -691,7 +693,7 @@ async function sync(env, user, body) {
       if (v !== undefined && v !== null && !(isFinNum(v) && v >= 0)) finErr('settings.' + f);
     }
     // روابط التسويق لبوابة العميل: HTTPS فقط بلا مسافات ولا أقواس، والوصف نص قصير
-    for (const f of ['mapsUrl', 'whatsapp', 'tiktok', 'instagram', 'snapchat']) {
+    for (const f of ['mapsUrl', 'whatsapp', 'tiktok', 'instagram', 'snapchat', 'logoUrl']) {
       const v = body.settings[f];
       if (v !== undefined && v !== null && v !== '') {
         if (typeof v !== 'string' || !/^https:\/\//i.test(v.trim()) || /[\s<>"]/.test(v) || v.length > 500) finErr('settings.' + f);

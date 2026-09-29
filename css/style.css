@@ -2340,12 +2340,14 @@ body.portal { background: var(--bg); }
 .p-bar b { flex: 1; text-align: center; font-size: 1.02rem; }
 .p-bar .icon-btn { width: 44px; height: 44px; }
 .p-savestate { font-size: .78rem; color: var(--ink-3); min-width: 52px; text-align: end; }
-.p-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: 6px 0 12px; }
+.p-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 6px 0 12px; }
 .p-steps button {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  min-height: 52px; padding: 6px 2px; border: 1px solid var(--line-soft); border-radius: var(--r);
-  background: var(--surface); color: var(--ink-3); font-size: .7rem; font-weight: 600; cursor: pointer;
+  display: flex; flex-direction: row; align-items: center; gap: 7px;
+  min-height: 48px; padding: 6px 10px; border: 1px solid var(--line-soft); border-radius: var(--r);
+  background: var(--surface); color: var(--ink-3); font-size: .82rem; font-weight: 600; cursor: pointer;
+  white-space: nowrap; overflow: hidden;
 }
+.p-steps button span { overflow: hidden; text-overflow: ellipsis; }
 .p-steps button i {
   width: 24px; height: 24px; border-radius: 50%; background: var(--sand);
   display: flex; align-items: center; justify-content: center; font-style: normal; font-size: .78rem;
@@ -2353,8 +2355,18 @@ body.portal { background: var(--bg); }
 .p-steps button.active { border-color: var(--accent); color: var(--ink); }
 .p-steps button.active i { background: var(--accent-fill); color: var(--on-accent); }
 .p-canvas-col { display: flex; flex-direction: column; gap: 10px; }
-.p-tools { display: flex; flex-wrap: wrap; gap: 8px; }
-.p-tools .tb-btn { flex: 1 1 30%; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.p-tools { display: grid; gap: 8px; }
+.p-tools .tb-row { display: flex; gap: 8px; }
+.p-tools .tb-btn { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: .82rem; white-space: nowrap; }
+.p-step-title { font-size: 1.02rem; margin: 0 0 4px; }
+.p-accgrid { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
+.p-accgrid .btn { flex: none; min-height: 44px; padding-inline: 16px; }
+.p-zoombar { display: flex; gap: 8px; }
+.p-zoombar .btn { flex: 1; min-height: 44px; }
+.p-qty { display: flex; gap: 8px; align-items: stretch; }
+.p-qty .btn { flex: none; width: 48px; min-height: 44px; font-size: 1.2rem; }
+.p-qty input { flex: 1; min-height: 44px; text-align: center; }
+.p-logo { width: 84px; height: 84px; object-fit: contain; border-radius: 18px; }
 .p-canvas { height: clamp(300px, 46svh, 440px); }
 .p-canvas canvas { width: 100%; height: 100%; display: block; touch-action: none; }
 .p-panel { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-lg); padding: 14px; }

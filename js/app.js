@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.17';
+  const APP_VERSION = '1.0.18';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4550,6 +4550,7 @@ function canEditOrder(o) {
         <div class="set-head"><h3>بوابة العميل والتسويق</h3><p>تظهر في صفحة التصميم العامة للعملاء. الروابط https فقط — والأرقام وحدها تُحوَّل تلقائياً.</p></div>
         <div class="set-body">
           <label>وصف تسويقي قصير <input id="sTagline" maxlength="140" value="${esc(s.tagline || '')}" placeholder="صمّم مجلسك حسب مقاسات غرفتك"></label>
+          <label>شعار المحل (رابط صورة https) <input id="sLogo" dir="ltr" value="${esc(s.logoUrl || '')}" placeholder="https://…/logo.png"></label>
           <label>رابط موقع المحل (خرائط جوجل) <input id="sMaps" dir="ltr" value="${esc(s.mapsUrl || '')}" placeholder="https://maps.google.com/…"></label>
           <div class="row2">
             <label>واتساب المحل <input id="sWa" dir="ltr" value="${esc(s.whatsapp || '')}" placeholder=https://wa.me/9665… أو الرقم فقط"></label>
@@ -4642,6 +4643,7 @@ function canEditOrder(o) {
       };
       const mRaw = {
         tagline: $('#sTagline', b).value.trim().slice(0, 140),
+        logoUrl: normUrl($('#sLogo', b).value, false),
         mapsUrl: normUrl($('#sMaps', b).value, false),
         whatsapp: normUrl($('#sWa', b).value, true),
         instagram: normUrl($('#sIg', b).value, false),
@@ -4656,7 +4658,7 @@ function canEditOrder(o) {
         vatNumber: $('#sVatNo', b).value.trim(), vatRate: Math.min(100, Math.max(0, num($('#sVatRate', b).value))), vatEnabled: $('#sVatOn', b).checked,
         depositPct: Math.min(100, Math.max(0, num($('#sDeposit', b).value))), quoteDays: Math.min(90, Math.max(1, Math.round(num($('#sQuoteDays', b).value) || 7))),
         sellerRate: Math.min(100, Math.max(0, num($('#sSellerRate', b).value))), mandoubRate: Math.min(100, Math.max(0, num($('#sMandoubRate', b).value))), shareRate: Math.min(100, Math.max(0, num($('#sShareRate', b).value))),
-        tagline: mRaw.tagline, mapsUrl: mRaw.mapsUrl, whatsapp: mRaw.whatsapp,
+        tagline: mRaw.tagline, logoUrl: mRaw.logoUrl, mapsUrl: mRaw.mapsUrl, whatsapp: mRaw.whatsapp,
         instagram: mRaw.instagram, tiktok: mRaw.tiktok, snapchat: mRaw.snapchat,
       });
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');

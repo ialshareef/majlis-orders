@@ -94,6 +94,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       // بوابة العميل في الـ worker bundle لاحقاً: portal.html تُخدم (فحص ثابت هنا لوجود الملف)
       var ph = await get('/portal.html');
       t('portal-file', ph.indexOf('pLanding') >= 0 && ph.indexOf('/js/portal.js') >= 0, 'portal.html');
+      // إعدادات التسويق في واجهة المدير (ثابت: الحقول + التطبيع)
+      var appjs = await get('/js/app.js');
+      t('settings-fields', ['sTagline', 'sLogo', 'sMaps', 'sWa', 'sIg', 'sTik', 'sSnap'].every(function (id) { return appjs.indexOf(id) >= 0; }), 'fields');
+      t('settings-norm', appjs.indexOf('wa.me') >= 0 && appjs.indexOf('بوابة العميل والتسويق') >= 0, 'normalize');
     } catch (e) {
       bad++; log('FAIL harness :: ' + (e.message || e));
     } finally {

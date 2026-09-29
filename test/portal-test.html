@@ -179,6 +179,18 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var o = JSON.parse(ordRow[0].values[0][0]);
       t('S14-nofinance', Array.isArray(o.payments) && o.payments.length === 0 && o.total === 0 && !('commission' in o) && !('revenue' in o) && !('profit' in o) && o.design && o.design.pieces.length === 1 && o.customer.name === 'أحمد محمد', 'order ok');
 
+      // seating: قيمة فاسدة تُرفض، والصالحة تُحفظ وتُسترجع
+      var seatBad = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: { walls: [{ len: 5, angle: 0 }], pieces: [{ kind: 'sofa', w: 2, h: 0.8, seating: 'palace' }] } } });
+      t('S-seating-bad', seatBad.status === 400, seatBad.status);
+      var seatOk = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: { walls: [{ len: 5, angle: 0 }], pieces: [{ kind: 'sofa', w: 2, h: 0.8, seating: 'arabic' }] } } });
+      var seatGet = await call('GET', '/api/portal/design', { designToken: tokA });
+      t('S-seating-ok', seatOk.status === 200 && seatGet.body.design.pieces[0].seating === 'arabic', seatGet.status);
+      // logoUrl: مرفوض غير الآمن، ومقبول الصحيح وينعكس على البوابة
+      var logoBad = await call('POST', '/api/sync', { auth: 'tok-admin', body: { settings: { logoUrl: 'javascript:alert(1)' } } });
+      t('S-logo-bad', logoBad.status === 400, logoBad.status);
+      var logoOk = await call('POST', '/api/sync', { auth: 'tok-admin', body: { settings: { logoUrl: 'https://example.com/logo.png' } } });
+      var stLogo = await call('GET', '/api/portal/settings');
+      t('S-logo-ok', logoOk.status === 200 && stLogo.body.settings.logoUrl === 'https://example.com/logo.png', logoOk.status);
       // S15: تحقق روابط الإعدادات server-side
       var badSet = await call('POST', '/api/sync', { auth: 'tok-admin', body: { settings: { mapsUrl: 'javascript:alert(1)' } } });
       t('S15-bad-url', badSet.status === 400, badSet.status);

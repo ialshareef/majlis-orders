@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal Functional Tests</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبار وظيفي للبوابة: backend حقيقي (Worker + SQLite) + واجهة portal الحقيقية.
+   يقود المصمم فعليًا عبر UI والخطاف التشخيصي: جلسة، فرش، مشب، كمية، إنهاء. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS F' + n + ' ' + name);
+    else { bad++; log('FAIL F' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var waitFor = function (cond, ms) {
+    ms = ms || 120000; var t0 = Date.now();
+    return new Promise(function (res, rej) {
+      (function poll() {
+        var v = null; try { v = cond(); } catch (e) { /* retry */ }
+        if (v) return res(v);
+        if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+        setTimeout(poll, 100);
+      })();
+    });
+  };
+  var realFetch = window.fetch.bind(window);
+
+  (async function run() {
+    try {
+      var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
+      var sqlite = new SQL.Database();
+      sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+      var norm = function (v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); };
+      var DB = {
+        prepare: function (sql) {
+          var st = { sql: sql, args: [] };
+          st.bind = function () { st.args = Array.prototype.map.call(arguments, norm); return st; };
+          st.first = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var has = s.step(); var row = has ? s.getAsObject() : null; s.free(); return row; };
+          st.all = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results: results, success: true }; };
+          st.run = async function () { sqlite.run(sql, st.args); return { success: true }; };
+          return st;
+        },
+        batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
+      };
+      var mod = await import('../worker/worker.js');
+      var env = { DB: DB };
+      var call = function (url, init) { return mod.default.fetch(new Request(url, init), env); };
+      window.fetch = async function (input, init) {
+        var url = typeof input === 'string' ? input : input.url;
+        if (url.indexOf('/api/portal') >= 0) {
+          var path = url.slice(url.indexOf('/api/portal') + 11);
+          return call('https://x.test/api/portal' + path, init);
+        }
+        return realFetch(input, init);
+      };
+      sqlite.run("INSERT OR IGNORE INTO items (id, data, updated_at) VALUES ('acc-marka','{\"id\":\"acc-marka\",\"name\":\"مركى\",\"category\":\"acc\",\"price\":80,\"w\":0.6,\"h\":0.35,\"active\":true}','2026-01-01')");
+      sqlite.run("INSERT OR IGNORE INTO items (id, data, updated_at) VALUES ('fab1','{\"id\":\"fab1\",\"name\":\"قطيفة\",\"category\":\"fabric\",\"price\":10,\"active\":true}','2026-01-01')");
+      var html = await (await realFetch('../portal.html')).text();
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('script').forEach(function (s) { s.remove(); });
+      var wrap = document.createElement('div');
+      wrap.innerHTML = doc.body.innerHTML;
+      document.body.appendChild(wrap);
+      for (var p of ['../js/designer.js', '../js/portal.js']) {
+        var s = document.createElement('script');
+        s.textContent = await (await realFetch(p)).text();
+        document.body.appendChild(s);
+      }
+      var q = function (sel) { return document.querySelector(sel); };
+      var qAll = function (sel) { return Array.from(document.querySelectorAll(sel)); };
+      log('stage: scripts-injected');
+      await waitFor(function () { return window.PortalTest && q('#pStart'); });
+      log('stage: booted');
+      var P = window.PortalTest;
+      var sofas = function () { return (P.state().pieces || []).filter(function (x) { return x.kind === 'sofa'; }); };
+      var accs = function () { return (P.state().pieces || []).filter(function (x) { return x.kind === 'acc'; }); };
+      var tools = function (tt) {
+        var b = qAll('#pTools button').filter(function (x) { return x.dataset.t === tt; })[0];
+        if (!b) throw new Error('missing tool ' + tt);
+        b.click();
+      };
+      var step = function (i) { qAll('#pSteps button')[i].click(); };
+
+      // A: بدء + الافتراضي أرضية
+      q('#pStart').click();
+      try {
+        await waitFor(function () { return !q('#pDesign').hidden && P.state(); }, 120000);
+      } catch (e) {
+        log('STUCK designHidden=' + q('#pDesign').hidden + ' designer=' + !!P.designer() + ' toast=' + q('#pToast').textContent + ' landingHidden=' + q('#pLanding').hidden);
+        throw e;
+      }
+      t('F-start', P.state().walls.length === 4);
+      step(2);
+      await waitFor(function () { return q('#pfSeat'); });
+      t('F-default-floor', q('#pfSeat').value === 'floor', q('#pfSeat') && q('#pfSeat').value);
+
+      // B: فرش الكل = جلسة أرضية + بلا تكرار
+      tools('fill');
+      await waitFor(function () { return sofas().length > 0; }, 60000);
+      var c1 = sofas().length;
+      t('F-fill-floor', sofas().every(function (x) { return (x.seating || 'floor') === 'floor'; }), c1 + ' sofas');
+      tools('fill');
+      t('F-fill-nodup', sofas().length === c1, c1 + '->' + sofas().length);
+
+      // C: تغيير النوع يحفظ الغرفة + كنبة جديدة بالنوع الجديد
+      // (إفراغ الكنب أولاً — الغرفة ممتلئة من الفرش وهذا سلوك صحيح)
+      P.state().pieces.filter(function (x) { return x.kind === 'sofa'; }).forEach(function (x) {
+        P.designer().select({ type: 'piece', id: x.id });
+        P.designer().removeSelected();
+      });
+      t('F-cleared', sofas().length === 0, 'room emptied');
+      q('#pfSeat').value = 'arabic';
+      q('#pfSeat').dispatchEvent(new Event('change', { bubbles: true }));
+      var wallsBefore = P.state().walls.length;
+      tools('sofa');
+      await waitFor(function () { return sofas().some(function (x) { return x.seating === 'arabic'; }); }, 60000);
+      t('F-seating-change', P.state().walls.length === wallsBefore, 'walls kept');
+      t('F-seating-kept', localStorage.getItem('majlis_seating') === 'arabic', 'persisted');
+
+      // D: مشب يضاف ويحفظ
+      tools('mashab');
+      await waitFor(function () { return (P.state().openings || []).some(function (o) { return o.type === 'mashab'; }); }, 60000);
+      t('F-mashab', true);
+
+      // E: إكسسوار + كمية 5 حقيقية
+      step(4);
+      await waitFor(function () { return q('#pPanel button[data-acc]'); });
+      q('#pPanel button[data-acc]').click();
+      await waitFor(function () { return accs().length === 1; }, 60000);
+      var first = accs()[0];
+      P.designer().select({ type: 'piece', id: first.id });
+      await waitFor(function () { return q('#psQty'); }, 60000);
+      var qinp = q('#psQty');
+      qinp.value = '5';
+      qinp.dispatchEvent(new Event('change', { bubbles: true }));
+      await waitFor(function () { return accs().length === 5; }, 60000);
+      t('F-qty5', accs().every(function (x) { return x.itemId === first.itemId; }), '5 real copies');
+      // حفظ صريح ثم إعادة قراءة من الخادم
+      var tok = localStorage.getItem('majlis_design_token');
+      var saved = await (await window.fetch('/api/portal/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-design-token': tok }, body: JSON.stringify({ design: P.state() }) })).json();
+      t('F-qty-saved', saved.ok === true, JSON.stringify(saved).slice(0, 100));
+      var got = await (await window.fetch('/api/portal/design', { headers: { 'x-design-token': tok } })).json();
+      var racc = (got.design.pieces || []).filter(function (x) { return x.kind === 'acc'; });
+      t('F-qty-reload', racc.length === 5, racc.length + ' persisted');
+      // رفض 0 والسالب وغير الرقمي
+      var bads = ['0', '-3', 'abc'];
+      for (var bi = 0; bi < bads.length; bi++) {
+        q('#psQty').value = bads[bi];
+        q('#psQty').dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      t('F-qty-invalid', accs().length === 5, accs().length + ' kept');
+
+      // F: تدوير/نسخ/حذف
+      var one = accs()[0];
+      P.designer().select({ type: 'piece', id: one.id });
+      await waitFor(function () { return q('#pSheet [data-rot]'); });
+      var rot0 = one.rot || 0;
+      q('#pSheet [data-rot]').click();
+      await waitFor(function () {
+        var cur = P.state().pieces.filter(function (x) { return x.id === one.id; })[0];
+        return cur && cur.rot !== rot0;
+      }, 60000);
+      t('F-rotate', true);
+      var nBefore = accs().length;
+      q('#pSheet [data-dup]').click();
+      await waitFor(function () { return accs().length === nBefore + 1; }, 60000);
+      t('F-duplicate', true);
+      var delId = accs()[0].id;
+      P.designer().select({ type: 'piece', id: delId });
+      await waitFor(function () { return q('#pSheet [data-del]'); });
+      q('#pSheet [data-del]').click();
+      await waitFor(function () { return P.state().pieces.filter(function (x) { return x.id === delId; }).length === 0; }, 60000);
+      t('F-delete', true);
+
+      // G: شريط الأدوات والزوم خارج الرسم
+      var tbBtns = qAll('#pTools button');
+      t('G-tools', tbBtns.length === 7, tbBtns.length + ' buttons');
+      var fillBtn = tbBtns.filter(function (x) { return x.dataset.t === 'fill'; })[0];
+      t('G-fill-visible', fillBtn.textContent.indexOf('فرش الكل') >= 0 && fillBtn.getBoundingClientRect().width > 0, 'فرش الكل');
+      var mashBtn = tbBtns.filter(function (x) { return x.dataset.t === 'mashab'; })[0];
+      t('G-mashab-visible', mashBtn.textContent.indexOf('مشب') >= 0, 'مشب');
+      t('G-zoom-outside', !q('.p-canvas').querySelector('button') && !!q('.p-zoombar #pZoomFit'), 'zoom outside');
+      var zb = qAll('.p-zoombar .btn');
+      t('G-zoom-44', zb.every(function (x) { return x.getBoundingClientRect().height >= 44; }), 'zoom sizes');
+
+      // H: إنهاء برقم
+      q('#pFinish').click();
+      await waitFor(function () { return !q('#pReview').hidden; }, 60000);
+      q('#pSubmitDesign').click();
+      await waitFor(function () { return !q('#pDone').hidden; }, 120000);
+      var no = q('#pDesignNo').textContent;
+      t('H-finish', /^MJ-\d+$/.test(no), no);
+
+      window.fetch = realFetch;
+    } catch (e) {
+      bad++; log('FAIL harness :: ' + (e.stack || e.message || e));
+    } finally {
+      try { window.fetch = realFetch; } catch (_) { /* noop */ }
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
