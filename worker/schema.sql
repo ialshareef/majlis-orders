@@ -74,6 +74,31 @@ CREATE TABLE IF NOT EXISTS counters (
 -- عدّاد أرقام الطلبات (أول طلب = 1001)
 INSERT OR IGNORE INTO counters (key, value) VALUES ('order_no', 1000);
 
+-- ============================================================================
+-- بوابة العميل: جدول مستقل (لا يمس الطلبات/المستخدمين). الرقم العام تسلسلي
+-- (أول رقم = MJ-26000127)، والتوكن عشوائي آمن منفصل يُولَّد في الـ Worker.
+-- ============================================================================
+CREATE TABLE IF NOT EXISTS customer_designs (
+  id                TEXT PRIMARY KEY,
+  public_no         INTEGER UNIQUE,
+  token             TEXT UNIQUE,
+  status            TEXT NOT NULL DEFAULT 'draft',
+  design            TEXT NOT NULL,
+  customer_name     TEXT,
+  customer_phone    TEXT,
+  contact_requested INTEGER NOT NULL DEFAULT 0,
+  order_id          TEXT,
+  order_number      INTEGER,
+  created_at        TEXT NOT NULL,
+  updated_at        TEXT NOT NULL,
+  expires_at        TEXT
+);
+CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token);
+CREATE INDEX IF NOT EXISTS designs_public_idx ON customer_designs(public_no);
+
+-- عدّاد أرقام التصاميم (أول رقم = MJ-26000127)
+INSERT OR IGNORE INTO counters (key, value) VALUES ('design_no', 26000126);
+
 -- الإعدادات الافتراضية
 INSERT OR IGNORE INTO settings (id, data, updated_at) VALUES (1,
   '{"shopName":"أصالة نجد","phone":"","address":"","currency":"ر.س","vatEnabled":true,"vatRate":15,"vatNumber":"","invoiceNote":"","cornerMode":"deduct"}',

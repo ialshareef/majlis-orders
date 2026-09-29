@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal Security Tests</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات بوابة العميل: مصفوفة أمان + وظائف على الـ Worker الحقيقي
+   (SQLite داخل المتصفح، بلا أي خادم حقيقي). */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS P' + n + ' ' + name);
+    else { bad++; log('FAIL P' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var waitFor = function (cond, ms) {
+    ms = ms || 60000; var t0 = Date.now();
+    return new Promise(function (res, rej) {
+      (function poll() {
+        var v = null; try { v = cond(); } catch (e) { /* retry */ }
+        if (v) return res(v);
+        if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+        setTimeout(poll, 100);
+      })();
+    });
+  };
+
+  (async function run() {
+    try {
+      var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
+      var sqlite = new SQL.Database();
+      var realFetch = window.fetch.bind(window);
+      sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+      var norm = function (v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); };
+      var DB = {
+        prepare: function (sql) {
+          var st = { sql: sql, args: [] };
+          st.bind = function () { st.args = Array.prototype.map.call(arguments, norm); return st; };
+          st.first = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var has = s.step(); var row = has ? s.getAsObject() : null; s.free(); return row; };
+          st.all = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results: results, success: true }; };
+          st.run = async function () { sqlite.run(sql, st.args); return { success: true }; };
+          return st;
+        },
+        batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
+      };
+      var mod = await import('../worker/worker.js');
+      var env = { DB: DB };
+      var call = async function (method, path, opt) {
+        opt = opt || {};
+        var headers = {};
+        if (opt.designToken) headers['x-design-token'] = opt.designToken;
+        if (opt.auth) headers['x-session-token'] = opt.auth;
+        var init = { method: method, headers: headers };
+        if (opt.body !== undefined) { init.body = JSON.stringify(opt.body); headers['Content-Type'] = 'application/json'; }
+        var r = await mod.default.fetch(new Request('https://x.test' + path, init), env);
+        var body = await r.json().catch(function () { return null; });
+        return { status: r.status, body: body };
+      };
+      var future = new Date(Date.now() + 86400000 * 30).toISOString();
+      // مستخدمون وجلسات مزروعة مباشرة (admin/staff/mandoub)
+      sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-admin','admin','مدير','x','admin',1,'2026-01-01')");
+      sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-staff','sara','سارة','x','staff',1,'2026-01-01')");
+      sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-mand','m1','مندوب','x','mandoub',1,'2026-01-01')");
+      sqlite.run("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES ('tok-admin','u-admin','2026-01-01','" + future + "')");
+      sqlite.run("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES ('tok-staff','u-staff','2026-01-01','" + future + "')");
+      sqlite.run("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES ('tok-mand','u-mand','2026-01-01','" + future + "')");
+
+      // S1: جلسة آمنة
+      var s1 = await call('POST', '/api/portal/session', { body: {} });
+      t('S1-session', s1.status === 200 && /^[0-9a-f]{64}$/.test(s1.body.token), JSON.stringify(s1.body).slice(0, 120));
+      var tokA = s1.body.token;
+      var s1b = await call('POST', '/api/portal/session', { body: {} });
+      var tokB = s1b.body.token;
+      t('S1b-unique', tokA !== tokB, 'tokens differ');
+
+      // S3: حفظ صالح ثم فاسد
+      var goodDesign = { walls: [{ len: 5, angle: 0 }, { len: 4, angle: 90 }], openings: [{ wall: 0, t: 2, w: 0.9, type: 'door' }], pieces: [{ kind: 'sofa', w: 2, h: 0.8, x: 0, y: 0, rot: 0, woodId: 'w1' }], cornerMode: 'deduct' };
+      var sv = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: goodDesign, name: 'أحمد', phone: '0512345678' } });
+      t('S3-save-ok', sv.status === 200, sv.status + ' ' + JSON.stringify(sv.body).slice(0, 150));
+      var svBad = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: { walls: [{ len: 'x', angle: 0 }] } } });
+      t('S3-save-bad', svBad.status === 400, svBad.status);
+      var svBad2 = await call('POST', '/api/portal/save', { designToken: tokA, body: { design: goodDesign, phone: 'abc' } });
+      t('S3-phone-bad', svBad2.status === 400, svBad2.status);
+
+      // S4: عزل التوكنات — B يرى مسودته فقط لا A
+      var gB = await call('GET', '/api/portal/design', { designToken: tokB });
+      var gA = await call('GET', '/api/portal/design', { designToken: tokA });
+      t('S4-isolation', gB.status === 200 && gA.status === 200 && gB.body.id !== gA.body.id && (gB.body.design.pieces || []).length === 0, 'ids differ');
+      // S4b: تغيير ID في مسار الموظفين بلا دخول = 401
+      var noAuth = await call('GET', '/api/designs/' + gA.body.id);
+      t('S4b-noauth', noAuth.status === 401, noAuth.status);
+
+      // S5/S6: توكن فاسد ومنتهي
+      var bad1 = await call('GET', '/api/portal/design', { designToken: 'MJ-26000127' });
+      var bad2 = await call('GET', '/api/portal/design', { designToken: 'z'.repeat(64) });
+      t('S5-invalid', bad1.status === 401 && bad2.status === 401, bad1.status + '/' + bad2.status);
+      sqlite.run("UPDATE customer_designs SET expires_at = '2000-01-01T00:00:00.000Z' WHERE token = '" + tokB + "'");
+      var exp = await call('GET', '/api/portal/design', { designToken: tokB });
+      t('S6-expired', exp.status === 401, exp.status);
+      sqlite.run("UPDATE customer_designs SET expires_at = '" + future + "' WHERE token = '" + tokB + "'");
+
+      // S7: ترقيم تسلسلي + idempotent
+      var f1 = await call('POST', '/api/portal/finish', { designToken: tokA, body: {} });
+      t('S7-first', f1.status === 200 && f1.body.number === 'MJ-26000127', JSON.stringify(f1.body));
+      var f1b = await call('POST', '/api/portal/finish', { designToken: tokA, body: {} });
+      t('S7-idempotent', f1b.body.number === 'MJ-26000127', JSON.stringify(f1b.body));
+      var s1c = await call('POST', '/api/portal/session', { body: {} });
+      await call('POST', '/api/portal/save', { designToken: s1c.body.token, body: { design: goodDesign } });
+      var f2 = await call('POST', '/api/portal/finish', { designToken: s1c.body.token, body: {} });
+      t('S7-second', f2.body.number === 'MJ-26000128', JSON.stringify(f2.body));
+
+      // S8: تواصل
+      var cBad = await call('POST', '/api/portal/contact', { designToken: tokA, body: { name: 'A', phone: '123' } });
+      t('S8-contact-bad', cBad.status === 400, cBad.status);
+      var cOk = await call('POST', '/api/portal/contact', { designToken: tokA, body: { name: 'أحمد محمد', phone: '+966512345678' } });
+      t('S8-contact-ok', cOk.status === 200, cOk.status);
+
+      // S10: إعدادات عامة بلا أسرار
+      var st = await call('GET', '/api/portal/settings');
+      var stTxt = JSON.stringify(st.body);
+      t('S10-settings', st.status === 200 && stTxt.indexOf('password') < 0 && stTxt.indexOf('users') < 0, stTxt.slice(0, 200));
+
+      // S11: عرض عام آمن
+      var vw = await call('GET', '/api/portal/view/MJ-26000127');
+      var vwTxt = JSON.stringify(vw.body);
+      t('S11-view', vw.status === 200 && vw.body.number === 'MJ-26000127' && vw.body.design && vwTxt.indexOf('token') < 0 && vwTxt.indexOf('0512345678') < 0 && vwTxt.indexOf('966512345678') < 0, vwTxt.slice(0, 200));
+      var vw404 = await call('GET', '/api/portal/view/MJ-99999999');
+      var vwBad = await call('GET', '/api/portal/view/26000127');
+      t('S11-404', vw404.status === 404 && vwBad.status === 404, vw404.status + '/' + vwBad.status);
+      // S16: الرقم ليس توكن
+      var numAsTok = await call('GET', '/api/portal/design', { designToken: 'MJ-26000127' });
+      t('S16-number-not-token', numAsTok.status === 401, numAsTok.status);
+
+      // S9: كتالوج بلا أسعار (نزرع صنفاً بسعر أولاً)
+      sqlite.run("INSERT INTO items (id, data, updated_at) VALUES ('w1', '{\"id\":\"w1\",\"name\":\"سويدي\",\"category\":\"wood\",\"price\":999,\"cost\":111,\"active\":true}', '2026-01-01')");
+      var cat = await call('GET', '/api/portal/catalog');
+      var catTxt = JSON.stringify(cat.body);
+      var w1 = (cat.body.items || []).filter(function (x) { return x.id === 'w1'; })[0] || {};
+      t('S9-catalog', cat.status === 200 && w1.name === 'سويدي' && catTxt.indexOf('999') < 0 && catTxt.indexOf('111') < 0 && catTxt.indexOf('price') < 0 && catTxt.indexOf('cost') < 0, catTxt.slice(0, 200));
+
+      // S12: موظفون — بلا دخول 401، مندوب 403، موظف يدخل بلا توكن
+      var lNo = await call('GET', '/api/designs');
+      t('S12-noauth', lNo.status === 401, lNo.status);
+      var lMand = await call('GET', '/api/designs', { auth: 'tok-mand' });
+      t('S12-mandoub', lMand.status === 403, lMand.status);
+      var lStaff = await call('GET', '/api/designs', { auth: 'tok-staff' });
+      var lTxt = JSON.stringify(lStaff.body);
+      t('S12-staff', lStaff.status === 200 && lStaff.body.designs.length >= 2 && lTxt.indexOf('token') < 0, lTxt.slice(0, 200));
+
+      // S13: فتح/تحديث/تحويل
+      var desId = gA.body.id;
+      var gd = await call('GET', '/api/designs/' + desId, { auth: 'tok-staff' });
+      t('S13-get', gd.status === 200 && gd.body.design && JSON.stringify(gd.body).indexOf('token') < 0, gd.status);
+      var upBad = await call('PUT', '/api/designs/' + desId, { auth: 'tok-staff', body: { status: 'bogus' } });
+      t('S13-bad-status', upBad.status === 400, upBad.status);
+      var upBad2 = await call('PUT', '/api/designs/' + desId, { auth: 'tok-staff', body: { design: { walls: [{ len: -5, angle: 0 }] } } });
+      t('S13-bad-design', upBad2.status === 400, upBad2.status);
+      var up = await call('PUT', '/api/designs/' + desId, { auth: 'tok-staff', body: { status: 'reviewing' } });
+      t('S13-status', up.status === 200 && up.body.status === 'reviewing', up.status);
+      var cv = await call('POST', '/api/designs/' + desId + '/convert', { auth: 'tok-staff', body: {} });
+      t('S13-convert', cv.status === 200 && cv.body.orderId && cv.body.number >= 1001, JSON.stringify(cv.body));
+      // الأصل محفوظ + مرتبط
+      var gd2 = await call('GET', '/api/designs/' + desId, { auth: 'tok-staff' });
+      var G = gd2.body.design || {};
+      t('S13-preserved', G.status === 'converted' && G.orderId === cv.body.orderId && G.design && G.design.pieces.length === 1, JSON.stringify({ st: G.status, oid: G.orderId, exp: cv.body.orderId, pcs: G.design && G.design.pieces && G.design.pieces.length }));
+      var cv2 = await call('POST', '/api/designs/' + desId + '/convert', { auth: 'tok-staff', body: {} });
+      t('S13-reconvert', cv2.status === 400, cv2.status);
+      // الطلب المالي: بلا مدفوعات ولا عمولات
+      var ordRow = sqlite.exec("SELECT data FROM orders WHERE id = '" + cv.body.orderId + "'");
+      var o = JSON.parse(ordRow[0].values[0][0]);
+      t('S14-nofinance', Array.isArray(o.payments) && o.payments.length === 0 && o.total === 0 && !('commission' in o) && !('revenue' in o) && !('profit' in o) && o.design && o.design.pieces.length === 1 && o.customer.name === 'أحمد محمد', 'order ok');
+
+      // S15: تحقق روابط الإعدادات server-side
+      var badSet = await call('POST', '/api/sync', { auth: 'tok-admin', body: { settings: { mapsUrl: 'javascript:alert(1)' } } });
+      t('S15-bad-url', badSet.status === 400, badSet.status);
+      var goodSet = await call('POST', '/api/sync', { auth: 'tok-admin', body: { settings: { mapsUrl: 'https://maps.google.com/?q=x', tagline: 'أهلاً' } } });
+      t('S15-good-url', goodSet.status === 200, goodSet.status);
+      var st2 = await call('GET', '/api/portal/settings');
+      t('S15-live', st2.body.settings.mapsUrl === 'https://maps.google.com/?q=x' && st2.body.settings.tagline === 'أهلاً', JSON.stringify(st2.body.settings).slice(0, 150));
+    } catch (e) {
+      bad++; log('FAIL harness :: ' + (e.stack || e.message || e));
+    } finally {
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    }
+  })();
+})();
+</script>
+</body>
+</html>

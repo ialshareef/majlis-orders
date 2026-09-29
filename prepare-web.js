@@ -12,7 +12,7 @@ const www = path.join(root, 'www');
 fs.rmSync(www, { recursive: true, force: true });
 fs.mkdirSync(www, { recursive: true });
 
-for (const f of ['index.html', 'config.js', 'sw.js', 'manifest.json']) {
+for (const f of ['index.html', 'portal.html', 'config.js', 'sw.js', 'manifest.json']) {
   const src = path.join(root, f);
   if (fs.existsSync(src)) fs.copyFileSync(src, path.join(www, f));
 }

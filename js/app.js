@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.16';
+  const APP_VERSION = '1.0.17';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -217,9 +217,11 @@
   /* ---------------- الجلسة والدخول ---------------- */
   let currentUser = null;
   const isAdmin = () => currentUser && currentUser.role === 'admin';
+  const isStaff = () => currentUser && (currentUser.role === 'admin' || currentUser.role === 'staff');
 
   function applyPermissions() {
     $$('[data-admin]').forEach((el) => (el.hidden = !isAdmin()));
+    $$('[data-designs]').forEach((el) => (el.hidden = !isStaff()));
     $('#currentUserName').textContent = currentUser.name || '';
     $('#currentUserRole').textContent = ROLES[currentUser.role] || currentUser.role || '';
     $('#userAvatar').textContent = (currentUser.name || '?').trim().charAt(0);
@@ -325,8 +327,10 @@
 
   /* ---------------- التنقل ---------------- */
   const ADMIN_PAGES = ['items', 'users', 'activity', 'bi', 'settings', 'mandoubs'];
+  const DESIGN_PAGES = ['designs'];
   function showPage(name) {
     if (ADMIN_PAGES.includes(name) && !isAdmin()) name = 'order';
+    if (DESIGN_PAGES.includes(name) && !isStaff()) name = 'order';
     $$('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
     $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => {
       b.classList.toggle('active', b.dataset.page === name);
@@ -343,8 +347,9 @@
     if (name === 'bi') renderBI();
     if (name === 'settings') renderSettings();
     if (name === 'mandoubs') renderMandoubs();
+    if (name === 'designs') renderDesigns();
     if (name === 'about') renderAbout();
-    if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'mandoubs'].includes(name)) syncFromServer();
+    if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'mandoubs', 'designs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
     if (name === 'order') requestAnimationFrame(() => { designer.resize(); positionInspector(); });
@@ -969,6 +974,7 @@ function canEditOrder(o) {
   $('#tbFillAll').addEventListener('click', fillAll);
   $('#btnAddSofaFree').addEventListener('click', () => { const s = selectedSofaSpec(); if (s) designer.addSofaFree(s); });
   $('#tbAddSofa').addEventListener('click', () => addSofaOnWall(targetWall()));
+  $('#tbAddSofaFree').addEventListener('click', () => { const s = selectedSofaSpec(); if (s) designer.addSofaFree(s); });
   $('#tbAddDoor').addEventListener('click', () => designer.addOpening(targetWall(), 'door'));
   $('#tbAddWindow').addEventListener('click', () => designer.addOpening(targetWall(), 'window'));
   $('#tbAddMashab').addEventListener('click', () => designer.addOpening(targetWall(), 'mashab'));
@@ -4102,6 +4108,208 @@ function canEditOrder(o) {
     }, 'drawer');
   });
 
+  /* ---------------- تصاميم العملاء (واردة من البوابة) ----------------
+     قسم مستقل عن الطلبات: مراجعة وتحويل فقط، بلا أي منطق مالي هنا. */
+  const DESIGN_STATUS = { draft: 'مسودة', new: 'جديد', reviewing: 'قيد المراجعة', contacted: 'تم التواصل', converted: 'تم تحويله إلى طلب', closed: 'مغلق' };
+  let designsCache = [];
+  let desBound = false;
+  const desFilter = { q: '', status: '' };
+
+  async function fetchDesigns() {
+    const r = await Store.api('GET', '/api/designs');
+    designsCache = Array.isArray(r.designs) ? r.designs : [];
+    return designsCache;
+  }
+
+  function desMatches(d) {
+    if (desFilter.status && d.status !== desFilter.status) return false;
+    const q = desFilter.q.trim();
+    if (!q) return true;
+    return (d.number || '').includes(q) || (d.name || '').includes(q) || (d.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, ''));
+  }
+
+  async function renderDesigns() {
+    if (!isStaff()) return;
+    if (!desBound) {
+      desBound = true;
+      $('#desSearch').addEventListener('input', () => renderDesigns());
+      $$('#desStatusChips .chip').forEach((c) => c.addEventListener('click', () => {
+        $$('#desStatusChips .chip').forEach((x) => { const on = x === c; x.classList.toggle('on', on); x.setAttribute('aria-pressed', String(on)); });
+        desFilter.status = c.dataset.dstf || '';
+        renderDesigns();
+      }));
+    }
+    desFilter.q = $('#desSearch').value || '';
+    try { await fetchDesigns(); } catch (e) { toast('تعذّر جلب التصاميم: ' + humanError(Store.lastError), true); return; }
+    const fresh = designsCache.filter((d) => d.status === 'new').length;
+    const badge = $('#desBadge');
+    if (badge) badge.hidden = !fresh;
+    if (badge) badge.textContent = fresh > 99 ? '99+' : String(fresh);
+    const list = designsCache.filter(desMatches);
+    const tb = $('#desTable tbody');
+    tb.innerHTML = list.map((d) => {
+      const oid = esc(d.id);
+      return `<tr>
+        <td data-label="التصميم" class="c-no"><b class="num" dir="ltr">${esc(d.number)}</b><span class="sub"><bdi class="num">${esc(fmtDate(d.createdAt))}</bdi></span></td>
+        <td data-label="الحالة" class="c-status"><span class="badge">${esc(DESIGN_STATUS[d.status] || d.status)}</span></td>
+        <td data-label="العميل" class="c-cust"><b>${esc(d.name || '—')}</b>${d.phone ? `<span class="sub num">${esc(d.phone)}</span>` : ''}</td>
+        <td data-label="التواصل">${d.contactRequested ? '<span class="badge st-delivered">طلب التواصل</span>' : '<span class="hint">—</span>'}</td>
+        <td data-label="الطلب" class="num">${d.orderNumber ? '#' + esc(d.orderNumber) : '<span class="hint">—</span>'}</td>
+        <td data-label="آخر تحديث"><bdi class="num">${esc(fmtDate(d.updatedAt))}</bdi></td>
+        <td class="row-actions"><span class="ra">
+          <button class="btn small" data-desopen="${oid}">${icon('pen')} فتح ومراجعة</button>
+          ${d.orderId ? '' : rowMenu([menuItem(`data-desconv="${oid}"`, 'swap', 'تحويل إلى طلب')], `تحويل ${esc(d.number)}`)}
+        </span></td>
+      </tr>`;
+    }).join('');
+    const portalUrl = window.location.origin + '/customer-design';
+    $('#desPortalUrl').textContent = portalUrl;
+    $('#desEmpty').hidden = list.length > 0;
+    $$('[data-desopen]', tb).forEach((b) => b.addEventListener('click', () => openDesign(b.dataset.desopen)));
+    $$('[data-desconv]', tb).forEach((b) => b.addEventListener('click', () => convertDesignFlow(b.dataset.desconv)));
+    prepareControls(tb);
+  }
+
+  /** ملخص هندسي للعرض (أسماء فقط، بلا أسعار) */
+  function desFacts(design) {
+    const d = design || { walls: [], openings: [], pieces: [] };
+    const walls = (d.walls || []).map((w) => w.len + 'م').join(' × ');
+    let doors = 0, wins = 0, meters = 0;
+    const accs = {};
+    (d.openings || []).forEach((o) => { if (o.type === 'door') doors++; else if (o.type === 'window') wins++; });
+    (d.pieces || []).forEach((p) => {
+      if (p.kind === 'sofa') meters += num(p.w);
+      else if (p.kind === 'acc') { const n = (getItem(p.itemId) || {}).name || 'إكسسوار'; accs[n] = (accs[n] || 0) + 1; }
+    });
+    return { walls: walls || '—', doors, wins, meters: Math.round(meters * 100) / 100, accs };
+  }
+
+  async function openDesign(id) {
+    let d;
+    try {
+      const r = await Store.api('GET', '/api/designs/' + encodeURIComponent(id));
+      d = r.design;
+    } catch (e) { toast('تعذّر فتح التصميم: ' + humanError(Store.lastError), true); return; }
+    if (!d) return;
+    const f = desFacts(d.design);
+    openModal(`تصميم ${d.number || ''}`, `
+      <div class="des-view">
+        <div class="des-canvasbar">
+          <button type="button" class="btn small" id="dvUndo">تراجع</button>
+          <button type="button" class="btn small" id="dvFit">ملاءمة</button>
+          <button type="button" class="btn small danger" id="dvDel">حذف المحدد</button>
+          <button type="button" class="btn small primary" id="dvSaveGeo">حفظ التعديل</button>
+        </div>
+        <div class="canvas-wrap des-canvas"><canvas id="dvCanvas"></canvas></div>
+        <dl class="p-facts">
+          <div><dt>الحالة</dt><dd><select id="dvStatus" aria-label="حالة التصميم">${Object.entries(DESIGN_STATUS).map(([k, v]) => `<option value="${k}"${d.status === k ? ' selected' : ''}>${v}</option>`).join('')}</select></dd></div>
+          <div><dt>العميل</dt><dd>${esc(d.name || '—')}${d.phone ? ` <span class="num">${esc(d.phone)}</span>` : ''}${d.contactRequested ? ' <span class="badge st-delivered">طلب التواصل</span>' : ''}</dd></div>
+          <div><dt>الغرفة</dt><dd>${esc(f.walls)}</dd></div>
+          <div><dt>أبواب/شبابيك</dt><dd>${f.doors} / ${f.wins}</dd></div>
+          <div><dt>أمتار الكنب</dt><dd>${f.meters} م</dd></div>
+          <div><dt>الطلب المرتبط</dt><dd>${d.orderNumber ? '#' + esc(d.orderNumber) : '—'}</dd></div>
+        </dl>
+        <div class="btn-row">
+          ${d.phone ? `<button type="button" class="btn" id="dvWa">${icon('whatsapp')} واتساب</button><button type="button" class="btn" id="dvCall">${icon('phone')} اتصال</button>` : ''}
+          <button type="button" class="btn" id="dvPdf">${icon('file')} PDF التصميم</button>
+          ${d.orderId ? '' : `<button type="button" class="btn primary" id="dvConvert">تحويل إلى طلب</button>`}
+        </div>
+        <p class="error" id="dvErr" role="alert"></p>
+      </div>`, (b) => {
+      const cv = $('#dvCanvas', b);
+      const viewer = new Designer(cv, { getItem, pieceSpecLabel: () => '', pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) });
+      try { viewer.setState(JSON.parse(JSON.stringify(d.design || {}))); } catch (_) { /* noop */ }
+      viewer.fitView();
+      $('#dvUndo', b).onclick = () => viewer.undo();
+      $('#dvFit', b).onclick = () => viewer.fitView();
+      $('#dvDel', b).onclick = () => { viewer.removeSelected(); };
+      $('#dvSaveGeo', b).onclick = async () => {
+        try {
+          await Store.api('PUT', '/api/designs/' + encodeURIComponent(id), { design: viewer.getState() });
+          toast('حُفظ تعديل التصميم');
+          renderDesigns();
+        } catch (e) { $('#dvErr', b).textContent = humanError(Store.lastError); }
+      };
+      $('#dvStatus', b).onchange = async (e) => {
+        try {
+          await Store.api('PUT', '/api/designs/' + encodeURIComponent(id), { status: e.target.value });
+          toast('حُدّثت الحالة');
+          renderDesigns();
+        } catch (err) { $('#dvErr', b).textContent = humanError(Store.lastError); e.target.value = d.status; }
+      };
+      const wa = $('#dvWa', b);
+      if (wa) wa.onclick = () => openExternal('https://wa.me/' + String(d.phone).replace(/\D/g, '') + '?text=' + encodeURIComponent(`السلام عليكم${d.name ? ' ' + d.name : ''}، معك ${settings().shopName || 'أصالة نجد'} بخصوص تصميمك ${d.number}.`));
+      const call = $('#dvCall', b);
+      if (call) call.onclick = () => { window.location.href = 'tel:+' + String(d.phone).replace(/\D/g, '').replace(/^00/, ''); };
+      $('#dvPdf', b).onclick = async () => {
+        try {
+          const blob = await makeDesignSheetBlob(d);
+          downloadBlob(blob, `design-${d.number || d.id}.pdf`);
+        } catch (e) { $('#dvErr', b).textContent = e.message || 'تعذّر إنشاء PDF.'; }
+      };
+      const conv = $('#dvConvert', b);
+      if (conv) conv.onclick = () => { closeModal(); convertDesignFlow(id); };
+    }, 'drawer wide');
+  }
+
+  /** ورقة PDF للتصميم من جهة الموظف (هندسة فقط، بلا مالية) */
+  async function makeDesignSheetBlob(d) {
+    if (!navigator.onLine) throw new Error('تصدير PDF يحتاج اتصالًا بالإنترنت.');
+    try { await loadScript(H2C_URL); await loadScript(JSPDF_URL); }
+    catch (_) { throw new Error('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.'); }
+    const f = desFacts(d.design);
+    const off = new Designer(document.createElement('canvas'), { getItem, pieceSpecLabel: () => '', pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) });
+    off.setState(JSON.parse(JSON.stringify(d.design || {})));
+    const W = 1600, H = Math.max(500, Math.round(W / off.aspect()));
+    const img = off.toImage(W, H);
+    const el = document.createElement('div');
+    el.className = 'inv';
+    el.innerHTML = ''
+      + '<div class="inv-head"><div class="inv-brand"><span class="mark"></span><div><h1>' + esc(settings().shopName || 'أصالة نجد') + '</h1><small>ورقة تصميم عميل</small></div></div>'
+      + '<div class="inv-title-box"><div class="inv-title">تصميم</div><div class="inv-no">' + esc(d.number || '') + '</div></div></div>'
+      + '<div class="inv-info"><div><span>التصميم</span><b class="num">' + esc(d.number || '') + '</b></div>'
+      + '<div><span>العميل</span><b>' + esc(d.name || '—') + '</b></div>'
+      + '<div><span>الجوال</span><b class="num">' + esc(d.phone || '—') + '</b></div>'
+      + '<div><span>الحالة</span><b>' + esc(DESIGN_STATUS[d.status] || '') + '</b></div></div>'
+      + '<div class="inv-visuals"><div class="inv-design"><div class="imgbox"><img src="' + img + '" alt="مخطط"></div></div></div>'
+      + '<div class="inv-items"><table><thead><tr><th>البند</th><th>التفاصيل</th></tr></thead><tbody>'
+      + '<tr><td>الغرفة</td><td>' + esc(f.walls) + '</td></tr>'
+      + '<tr><td>الأبواب/الشبابيك</td><td>' + f.doors + ' / ' + f.wins + '</td></tr>'
+      + '<tr><td>أمتار الكنب</td><td>' + f.meters + ' م</td></tr>'
+      + '</tbody></table></div>';
+    const area = $('#printArea');
+    area.innerHTML = '';
+    area.appendChild(el);
+    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
+    try {
+      const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      const im = canvas.toDataURL('image/jpeg', 0.94);
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+      const h = Math.min(276, 190 * (canvas.height / canvas.width));
+      pdf.addImage(im, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
+      return pdf.output('blob');
+    } finally {
+      area.style.cssText = '';
+      area.innerHTML = '';
+    }
+  }
+
+  async function convertDesignFlow(id) {
+    const d = designsCache.find((x) => x.id === id);
+    if (d && d.orderId) { toast(`محوَّل مسبقاً للطلب #${d.orderNumber}`); return; }
+    if (!(await confirmDlg('تحويل إلى طلب', `إنشاء طلب جديد من التصميم ${d ? d.number : ''}؟ يبقى التصميم الأصلي محفوظاً.`))) return;
+    let r;
+    try {
+      r = await Store.api('POST', '/api/designs/' + encodeURIComponent(id) + '/convert');
+    } catch (e) { toast('تعذّر التحويل: ' + humanError(Store.lastError), true); return; }
+    toast(`أُنشئ الطلب #${r.number} من التصميم`);
+    await Store.refresh().catch(() => {});
+    const o = db().orders.find((x) => x.id === r.orderId);
+    if (o) loadOrder(o);
+    renderDesigns();
+  }
+
   /* ---------------- عن التطبيق ---------------- */
   function renderAbout() {
     const s = settings();
@@ -4134,7 +4342,7 @@ function canEditOrder(o) {
   }
 
   /* ---------------- سجل تحديثات الطلبات (مدير) ---------------- */
-  const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب' };
+  const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب', 'design-convert': 'تحويل تصميم عميل' };
   const ACTION_CLASS = { create: 'st-new', update: 'st-progress', status: '', cost: 'st-progress', owner: 'st-new', export: 'st-delivered', delete: 'st-cancelled' };
   const localDate = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const localTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -4339,6 +4547,22 @@ function canEditOrder(o) {
         </div>
       </section>
       <section class="set-section">
+        <div class="set-head"><h3>بوابة العميل والتسويق</h3><p>تظهر في صفحة التصميم العامة للعملاء. الروابط https فقط — والأرقام وحدها تُحوَّل تلقائياً.</p></div>
+        <div class="set-body">
+          <label>وصف تسويقي قصير <input id="sTagline" maxlength="140" value="${esc(s.tagline || '')}" placeholder="صمّم مجلسك حسب مقاسات غرفتك"></label>
+          <label>رابط موقع المحل (خرائط جوجل) <input id="sMaps" dir="ltr" value="${esc(s.mapsUrl || '')}" placeholder="https://maps.google.com/…"></label>
+          <div class="row2">
+            <label>واتساب المحل <input id="sWa" dir="ltr" value="${esc(s.whatsapp || '')}" placeholder=https://wa.me/9665… أو الرقم فقط"></label>
+            <label>Instagram <input id="sIg" dir="ltr" value="${esc(s.instagram || '')}" placeholder="https://instagram.com/…"></label>
+          </div>
+          <div class="row2">
+            <label>TikTok <input id="sTik" dir="ltr" value="${esc(s.tiktok || '')}" placeholder="https://tiktok.com/…"></label>
+            <label>Snapchat <input id="sSnap" dir="ltr" value="${esc(s.snapchat || '')}" placeholder="https://snapchat.com/…"></label>
+          </div>
+          <p class="hint">رابط البوابة للعملاء: <bdi class="num">${esc(window.location.origin + '/customer-design')}</bdi></p>
+        </div>
+      </section>
+      <section class="set-section">
         <div class="set-head"><h3>الفاتورة والضريبة</h3><p>حين تُفعَّل الضريبة ويُسجَّل الرقم الضريبي تصير الفاتورة «فاتورة ضريبية مبسطة» برمز QR.</p></div>
         <div class="set-body">
           <label>شروط تظهر في الفاتورة (اختياري) <input id="sInvNote" value="${esc(s.invoiceNote || '')}" placeholder="مثال: العربون غير مسترد، مدة التنفيذ 10 أيام"></label>
@@ -4407,12 +4631,33 @@ function canEditOrder(o) {
       const btn = $('#sSave', b);
       // يُقرأ كائن الإعدادات الآن لا عند فتح الصفحة: أي مزامنة تستبدله بكائن جديد
       const s = settings();
+      // تطبيع روابط التسويق: https صريح يُقبل، والأرقام وحدها تصير wa.me، وغيرها يُرفض برسالة
+      const normUrl = (raw, allowDigits) => {
+        const v = String(raw || '').trim();
+        if (!v) return '';
+        if (/^https:\/\//i.test(v) && !/[\s<>"]/.test(v)) return v;
+        const d = v.replace(/[^\d]/g, '');
+        if (allowDigits && /^\+?\d{7,15}$/.test(v.replace(/[\s-]/g, ''))) return 'https://wa.me/' + d;
+        return null;
+      };
+      const mRaw = {
+        tagline: $('#sTagline', b).value.trim().slice(0, 140),
+        mapsUrl: normUrl($('#sMaps', b).value, false),
+        whatsapp: normUrl($('#sWa', b).value, true),
+        instagram: normUrl($('#sIg', b).value, false),
+        tiktok: normUrl($('#sTik', b).value, false),
+        snapchat: normUrl($('#sSnap', b).value, false),
+      };
+      const badM = Object.entries(mRaw).find(([k, v]) => v === null);
+      if (badM) { toast(`رابط غير صالح في حقل التسويق (${badM[0]}): يلزم https صحيح أو رقم فقط للواتساب`, true); btn.disabled = false; btn.removeAttribute('aria-busy'); return; }
       Object.assign(s, {
         shopName: $('#sName', b).value.trim(), phone: $('#sPhone', b).value.trim(), address: $('#sAddr', b).value.trim(),
         currency: $('#sCur', b).value.trim() || 'ر.س', invoiceNote: $('#sInvNote', b).value.trim(), cornerMode: $('#sCorner', b).value, cornerModeChosen: true,
         vatNumber: $('#sVatNo', b).value.trim(), vatRate: Math.min(100, Math.max(0, num($('#sVatRate', b).value))), vatEnabled: $('#sVatOn', b).checked,
         depositPct: Math.min(100, Math.max(0, num($('#sDeposit', b).value))), quoteDays: Math.min(90, Math.max(1, Math.round(num($('#sQuoteDays', b).value) || 7))),
         sellerRate: Math.min(100, Math.max(0, num($('#sSellerRate', b).value))), mandoubRate: Math.min(100, Math.max(0, num($('#sMandoubRate', b).value))), shareRate: Math.min(100, Math.max(0, num($('#sShareRate', b).value))),
+        tagline: mRaw.tagline, mapsUrl: mRaw.mapsUrl, whatsapp: mRaw.whatsapp,
+        instagram: mRaw.instagram, tiktok: mRaw.tiktok, snapchat: mRaw.snapchat,
       });
       btn.disabled = true; btn.setAttribute('aria-busy', 'true');
       const ok = await Store.save();

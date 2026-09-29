@@ -4,7 +4,20 @@
    - يحتاج ربط قاعدة D1 باسم المتغيّر: DB   (Settings > Bindings > D1 database)
    - متغيّرات اختيارية: ALLOWED_ORIGIN (نطاق الواجهة بدل *)، PBKDF2_ITER (افتراضي 20000)
     المسارات:
+      GET  /customer-design      بوابة العميل (واجهة مستقلة بلا دخول)
       GET  /api/app-update       بيانات تحديث التطبيق (عام: بلا دخول وبلا قاعدة)
+      POST /api/portal/session   جلسة تصميم للعميل (عام، برقم عشوائي آمن)
+      GET  /api/portal/settings  بيانات المحل التسويقية (عام، بلا أسرار)
+      GET  /api/portal/catalog   الأصناف العامة (عام، بلا أسعار)
+      GET  /api/portal/design    تصميم العميل (بتوكن الجلسة فقط)
+      POST /api/portal/save      حفظ التصميم (بتوكن الجلسة فقط)
+      POST /api/portal/finish    إنهاء ومنح رقم عام (بتوكن الجلسة فقط)
+      POST /api/portal/contact   طلب التواصل (بتوكن الجلسة فقط)
+      GET  /api/portal/view/:no  عرض عام للتصميم برقمه (قراءة فقط، بلا توكن)
+      GET  /api/designs          (موظف) قائمة تصاميم العملاء
+      GET  /api/designs/:id      (موظف) فتح تصميم
+      PUT  /api/designs/:id      (موظف) مراجعة/تعديل
+      POST /api/designs/:id/convert  (موظف) تحويل إلى طلب
       POST /api/login            {username, password}  -> {ok, token, user}
       POST /api/logout
      GET  /api/me
@@ -39,6 +52,11 @@ export default {
     if (request.method === 'GET' && url.pathname.replace(/\/+$/, '') === '/api/app-update') {
       return json({ ok: true, update: appUpdateMeta(env) }, 200, cors);
     }
+    // بوابة العميل: مسار مستقل يقدّم portal.html (جاهز لنطاق فرعي لاحقاً دون إعادة بناء)
+    if (url.pathname === '/customer-design' || url.pathname.startsWith('/customer-design/')) {
+      if (ASSETS) return serveAsset('/portal.html');
+      return json({ ok: true, service: 'majlis-portal' }, 200, cors);
+    }
     if (!url.pathname.startsWith('/api/')) {
       if (ASSETS) return serveAsset(url.pathname);
       return json({ ok: true, service: 'majlis-api', hint: 'ضع هذا الرابط في config.js (apiUrl)' }, 200, cors);
@@ -63,6 +81,17 @@ async function route(request, env, url) {
   const body = (method === 'POST' || method === 'PUT') ? await request.json().catch(() => ({})) : {};
 
   if (path === '/api/login' && method === 'POST') return login(env, body, request);
+
+  // بوابة العميل (عامة): كل مسار يتحقق من customer token ولا يرى إلا صفّه
+  if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request);
+  if (path === '/api/portal/settings' && method === 'GET') return portalSettings(env);
+  if (path === '/api/portal/catalog' && method === 'GET') return portalCatalog(env);
+  if (path === '/api/portal/design' && method === 'GET') return portalGet(env, request);
+  if (path === '/api/portal/save' && method === 'POST') return portalSave(env, request, body);
+  if (path === '/api/portal/finish' && method === 'POST') return portalFinish(env, request, body);
+  if (path === '/api/portal/contact' && method === 'POST') return portalContact(env, request, body);
+  const mView = path.match(/^\/api\/portal\/view\/([A-Za-z0-9-]+)$/);
+  if (mView && method === 'GET') return portalView(env, mView[1], request);
 
   const token = tokenOf(request);
   const user = await currentUser(env, token);
@@ -90,6 +119,14 @@ async function route(request, env, url) {
   const mUser = path.match(/^\/api\/users\/([^/]+)$/);
   if (mUser && method === 'DELETE') { requireAdmin(user); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
 
+  // تصاميم العملاء (موظفون: مدير وموظف — بلا مندوب، وبلا كشف للتوكن أبداً)
+  if (path === '/api/designs' && method === 'GET') { requireStaff(user); return { designs: await listDesigns(env) }; }
+  const mConv = path.match(/^\/api\/designs\/([^/]+)\/convert$/);
+  if (mConv && method === 'POST') { requireStaff(user); return convertDesign(env, decodeURIComponent(mConv[1]), user); }
+  const mDes = path.match(/^\/api\/designs\/([^/]+)$/);
+  if (mDes && method === 'GET') { requireStaff(user); return { design: await getDesign(env, decodeURIComponent(mDes[1])) }; }
+  if (mDes && (method === 'PUT' || method === 'POST')) { requireStaff(user); return updateDesign(env, decodeURIComponent(mDes[1]), body); }
+
   throw new HttpError(404, 'المسار غير موجود');
 }
 
@@ -104,9 +141,9 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.16';
-// بصمة asalh-najd-1.0.16.apk (إصدار GitHub v1.0.16، بناء CI الموقّع)
-const UPDATE_FALLBACK_SHA256 = '4a053ee767eaeb8cc1c79ba0bf743d3bba25d4944640ccfebea438d9eac4918b';
+const UPDATE_FALLBACK_VERSION = '1.0.17';
+// بصمة asalh-najd-1.0.17.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+const UPDATE_FALLBACK_SHA256 = '';
 
 function versionCodeOfName(v) {
   const p = String(v || '').split('.').map((n) => parseInt(n, 10));
@@ -132,6 +169,319 @@ function appUpdateMeta(env) {
     sha256: /^[0-9a-f]{64}$/.test(sha) ? sha : null,
     mandatory: false,
   };
+}
+
+/* ------------------------------ بوابة العميل ------------------------------
+   - التوكن 64-hex عشوائي (crypto) لا يُخمَّن ولا يحمل أي معلومة.
+   - الرقم العام (MJ-…) للعرض فقط وليس مفتاح أمان: لا يفتح شيئاً وحده.
+   - كل مسار عميل يقرأ صفّه حصراً (WHERE token=?) بعد تحقق الشكل والانتهاء.
+   - التوكن لا يظهر أبداً في مسارات الموظفين ولا في العرض العام ولا السجلات. */
+const DESIGN_STATUSES = ['new', 'reviewing', 'contacted', 'converted', 'closed'];
+const DESIGN_TTL_DAYS = 180;
+
+function requireStaff(user) {
+  if (!user || (user.role !== 'admin' && user.role !== 'staff')) throw new HttpError(403, 'هذه العملية للموظفين فقط');
+}
+
+function designTokenOf(request) {
+  return request.headers.get('x-design-token') || null;
+}
+
+async function portalRow(env, token) {
+  const t = String(token || '');
+  if (!/^[0-9a-f]{64}$/.test(t)) throw new HttpError(401, 'جلسة التصميم غير صالحة');
+  const row = await env.DB.prepare('SELECT * FROM customer_designs WHERE token = ?').bind(t).first();
+  if (!row) throw new HttpError(401, 'جلسة التصميم غير صالحة');
+  if (row.expires_at && row.expires_at < now()) throw new HttpError(401, 'انتهت جلسة التصميم');
+  return row;
+}
+
+/* حد بسيط ضد الإغراق: 60 جلسة/عرض للعنوان في الساعة (جدول login_fail نفسه) */
+async function portalThrottle(env, request) {
+  const ip = (request && request.headers.get('CF-Connecting-IP')) || 'unknown';
+  const k = 'portal:' + ip;
+  const t = now();
+  const hourAgo = new Date(Date.now() - 3600000).toISOString();
+  const row = await env.DB.prepare('SELECT n, first_at FROM login_fail WHERE k = ?').bind(k).first();
+  const n = row && row.first_at > hourAgo ? Number(row.n) + 1 : 1;
+  const first = row && row.first_at > hourAgo ? row.first_at : t;
+  if (n > 60) throw new HttpError(429, 'طلبات كثيرة. حاول لاحقاً.');
+  await env.DB.prepare('INSERT INTO login_fail (k, n, first_at, until) VALUES (?, ?, ?, ?) ON CONFLICT(k) DO UPDATE SET n = excluded.n, first_at = excluded.first_at, until = excluded.until')
+    .bind(k, n, first, null).run();
+}
+
+function emptyDesign() {
+  return {
+    walls: [
+      { len: 5, angle: 0 }, { len: 4, angle: 90 },
+      { len: 5, angle: 180 }, { len: 4, angle: 270 },
+    ],
+    openings: [], pieces: [], cornerMode: 'deduct',
+  };
+}
+
+async function portalSession(env, request) {
+  await portalThrottle(env, request);
+  const token = randomToken();
+  const t = now();
+  const exp = new Date(Date.now() + DESIGN_TTL_DAYS * 86400000).toISOString();
+  await env.DB.prepare("INSERT INTO customer_designs (id, token, status, design, contact_requested, created_at, updated_at, expires_at) VALUES (?, ?, 'draft', ?, 0, ?, ?, ?)")
+    .bind(uid(), token, JSON.stringify(emptyDesign()), t, t, exp).run();
+  return { ok: true, token, expiresAt: exp };
+}
+
+/* روابط آمنة فقط: https بلا مسافات ولا أقواس — تُصفَّر غيرها بدل رفض الطلب كله */
+function safeUrl(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  if (!/^https:\/\//i.test(s) || /[\s<>"]/.test(s)) return '';
+  try { const u = new URL(s); return u.protocol === 'https:' ? u.href : ''; }
+  catch (_) { return ''; }
+}
+
+async function shopSettings(env) {
+  const r = await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+  return safeParse(r && r.data, {}) || {};
+}
+
+async function portalSettings(env) {
+  const s = await shopSettings(env);
+  return {
+    ok: true,
+    settings: {
+      shopName: String(s.shopName || 'أصالة نجد'),
+      tagline: String(s.tagline || '').slice(0, 140),
+      phone: String(s.phone || ''),
+      mapsUrl: safeUrl(s.mapsUrl),
+      whatsapp: safeUrl(s.whatsapp),
+      tiktok: safeUrl(s.tiktok),
+      instagram: safeUrl(s.instagram),
+      snapchat: safeUrl(s.snapchat),
+    },
+  };
+}
+
+async function portalCatalog(env) {
+  const r = await env.DB.prepare('SELECT data FROM items ORDER BY updated_at').all();
+  const out = [];
+  for (const row of r.results) {
+    const i = safeParse(row.data);
+    if (!i || typeof i !== 'object' || !i.id || i.active === false) continue;
+    if (out.length >= 2000) break;
+    out.push({
+      id: String(i.id).slice(0, 64),
+      name: String(i.name || '').slice(0, 80),
+      category: String(i.category || ''),
+      color: String(i.color || ''),
+      fabric: String(i.fabric || '').slice(0, 40),
+      depth: i.depth == null ? null : Number(i.depth),
+      w: i.w == null ? null : Number(i.w),
+      h: i.h == null ? null : Number(i.h),
+      shape: String(i.shape || ''),
+    });
+  }
+  return { ok: true, items: out };
+}
+
+function portalPublic(row) {
+  return {
+    id: row.id,
+    number: row.public_no ? 'MJ-' + row.public_no : null,
+    status: row.status,
+    design: safeParse(row.data || row.design, null),
+    name: row.customer_name || '',
+    phone: row.customer_phone || '',
+    contactRequested: !!row.contact_requested,
+    orderId: row.order_id || null,
+    orderNumber: row.order_number == null ? null : Number(row.order_number),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function portalGet(env, request) {
+  const row = await portalRow(env, designTokenOf(request));
+  return Object.assign({ ok: true }, portalPublic(row));
+}
+
+/* تحقق هندسي صارم: أرقام حقيقية محدودة فقط، وأعداد عناصر بسقوف معقولة */
+const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
+function checkDesign(d) {
+  const bad = () => { throw new HttpError(400, 'التصميم غير صالح'); };
+  if (!d || typeof d !== 'object') bad();
+  if (!Array.isArray(d.walls) || d.walls.length > 40) bad();
+  for (const w of d.walls) {
+    if (!w || typeof w !== 'object' || !isNum(w.len) || w.len < 0.3 || w.len > 50 || !isNum(w.angle)) bad();
+  }
+  if (d.openings !== undefined) {
+    if (!Array.isArray(d.openings) || d.openings.length > 60) bad();
+    for (const o of d.openings) {
+      if (!o || typeof o !== 'object' || !Number.isInteger(o.wall) || o.wall < 0 || o.wall > 39) bad();
+      if (!isNum(o.t) || !isNum(o.w) || o.w <= 0 || o.w > 30) bad();
+      if (!['door', 'window', 'mashab'].includes(o.type)) bad();
+    }
+  }
+  if (d.pieces !== undefined) {
+    if (!Array.isArray(d.pieces) || d.pieces.length > 200) bad();
+    for (const p of d.pieces) {
+      if (!p || typeof p !== 'object' || !['sofa', 'acc', 'free'].includes(p.kind)) bad();
+      for (const f of ['w', 'h']) if (!isNum(p[f]) || p[f] < 0.1 || p[f] > 30) bad();
+      for (const f of ['x', 'y', 'rot']) if (p[f] !== undefined && !isNum(p[f])) bad();
+      for (const f of ['itemId', 'woodId', 'fabricId', 'foamId']) {
+        if (p[f] !== undefined && p[f] !== null && (typeof p[f] !== 'string' || p[f].length > 64)) bad();
+      }
+    }
+  }
+  if (d.cornerMode !== undefined && !['deduct', 'full'].includes(d.cornerMode)) bad();
+  return true;
+}
+
+function cleanName(v) {
+  const s = String(v || '').trim().replace(/\s+/g, ' ');
+  if (s && (s.length < 2 || s.length > 60)) throw new HttpError(400, 'الاسم بين حرفين و60 حرفاً');
+  return s;
+}
+
+function cleanPhone(v) {
+  const s = String(v || '').trim();
+  if (!s) return '';
+  const d = s.replace(/[\s-]/g, '');
+  if (!/^\+?\d{7,15}$/.test(d)) throw new HttpError(400, 'رقم الجوال غير صالح');
+  return d;
+}
+
+async function portalSave(env, request, body) {
+  const row = await portalRow(env, designTokenOf(request));
+  checkDesign(body.design);
+  const name = body.name !== undefined ? cleanName(body.name) : row.customer_name || '';
+  const phone = body.phone !== undefined ? cleanPhone(body.phone) : row.customer_phone || '';
+  const t = now();
+  await env.DB.prepare('UPDATE customer_designs SET design = ?, customer_name = ?, customer_phone = ?, updated_at = ? WHERE id = ?')
+    .bind(JSON.stringify(body.design), name, phone, t, row.id).run();
+  return { ok: true, updatedAt: t };
+}
+
+async function portalFinish(env, request) {
+  const row = await portalRow(env, designTokenOf(request));
+  let no = row.public_no;
+  if (no == null) {
+    const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'design_no' RETURNING value").first();
+    if (!r) throw new HttpError(500, 'عدّاد أرقام التصاميم غير موجود');
+    no = Number(r.value);
+  }
+  const t = now();
+  const status = row.status === 'draft' ? 'new' : row.status;
+  await env.DB.prepare('UPDATE customer_designs SET public_no = ?, status = ?, updated_at = ? WHERE id = ?')
+    .bind(no, status, t, row.id).run();
+  return { ok: true, number: 'MJ-' + no, status };
+}
+
+async function portalContact(env, request, body) {
+  const row = await portalRow(env, designTokenOf(request));
+  const name = cleanName(body.name);
+  const phone = cleanPhone(body.phone);
+  if (!name || !phone) throw new HttpError(400, 'الاسم ورقم الجوال مطلوبان لطلب التواصل');
+  const t = now();
+  const status = row.status === 'draft' ? 'new' : row.status;
+  await env.DB.prepare('UPDATE customer_designs SET customer_name = ?, customer_phone = ?, contact_requested = 1, status = ?, updated_at = ? WHERE id = ?')
+    .bind(name, phone, status, t, row.id).run();
+  return { ok: true };
+}
+
+/* عرض عام برقم التصميم فقط: هندسة + اسم المحل — بلا توكن ولا بيانات تواصل */
+async function portalView(env, number, request) {
+  await portalThrottle(env, request);
+  const m = String(number || '').match(/^MJ-(\d{1,12})$/);
+  if (!m) throw new HttpError(404, 'التصميم غير موجود');
+  const row = await env.DB.prepare('SELECT public_no, design, created_at FROM customer_designs WHERE public_no = ?').bind(Number(m[1])).first();
+  if (!row) throw new HttpError(404, 'التصميم غير موجود');
+  const s = await shopSettings(env);
+  return {
+    ok: true,
+    number: 'MJ-' + row.public_no,
+    createdAt: row.created_at,
+    shopName: String(s.shopName || 'أصالة نجد'),
+    design: safeParse(row.design, null),
+  };
+}
+
+/* ------------------------------ تصاميم العملاء (موظفون) ------------------------------ */
+async function listDesigns(env) {
+  const r = await env.DB.prepare('SELECT id, public_no, status, customer_name, customer_phone, contact_requested, order_id, order_number, created_at, updated_at FROM customer_designs ORDER BY updated_at DESC LIMIT 500').all();
+  return r.results.map((row) => ({
+    id: row.id,
+    number: row.public_no ? 'MJ-' + row.public_no : 'مسودة',
+    status: row.status,
+    name: row.customer_name || '',
+    phone: row.customer_phone || '',
+    contactRequested: !!row.contact_requested,
+    orderId: row.order_id || null,
+    orderNumber: row.order_number == null ? null : Number(row.order_number),
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  }));
+}
+
+async function getDesign(env, id) {
+  if (typeof id !== 'string' || !id) throw new HttpError(404, 'التصميم غير موجود');
+  const row = await env.DB.prepare('SELECT * FROM customer_designs WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'التصميم غير موجود');
+  return portalPublic(row);
+}
+
+async function updateDesign(env, id, body) {
+  const row = await getDesign(env, id);
+  const t = now();
+  let status = row.status;
+  if (body.status !== undefined) {
+    if (!DESIGN_STATUSES.includes(body.status)) throw new HttpError(400, 'حالة غير صالحة');
+    if (row.status === 'converted' && body.status !== 'converted' && body.status !== 'closed') {
+      throw new HttpError(400, 'التصميم المحوَّل لطلب لا يعاد فتحه');
+    }
+    status = body.status;
+  }
+  let design = row.design;
+  if (body.design !== undefined) { checkDesign(body.design); design = body.design; }
+  await env.DB.prepare('UPDATE customer_designs SET status = ?, design = ?, updated_at = ? WHERE id = ?')
+    .bind(status, JSON.stringify(design), t, row.id).run();
+  return Object.assign({ ok: true }, portalPublic(Object.assign({}, row, { status, design: JSON.stringify(design), updated_at: t })));
+}
+
+/* التحويل لطلب: صف طلب مالي جديد + ربط، والأصل محفوظ لا يُمسّ ولا يُحذف */
+async function convertDesign(env, id, user) {
+  const row = await getDesign(env, id);
+  if (row.orderId) throw new HttpError(400, 'هذا التصميم محوَّل مسبقاً');
+  const s = await shopSettings(env);
+  const t = now();
+  const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'order_no' RETURNING value").first();
+  if (!r) throw new HttpError(500, 'عدّاد أرقام الطلبات غير موجود');
+  const number = Number(r.value);
+  const rec = {
+    id: uid(),
+    number,
+    status: 'new',
+    customer: { name: row.name || '', phone: row.phone || '' },
+    design: row.design || emptyDesign(),
+    payments: [],
+    manualRows: [],
+    discount: 0,
+    subtotal: 0, vatAmount: 0, total: 0, paid: 0, remaining: 0,
+    vat: { enabled: s.vatEnabled !== false, rate: Number(s.vatRate) || 0 },
+    createdAt: t, updatedAt: t,
+    createdBy: user.id, createdByName: user.name,
+    fromDesignId: row.id, fromDesignNo: row.number,
+  };
+  checkOrderFin(rec);
+  const data = JSON.stringify(rec);
+  const actEv = { id: uid(), at: t, action: 'design-convert', userId: user.id, userName: user.name, orderId: rec.id, orderNo: number, customer: rec.customer.name || '', total: 0, details: ['تحويل من تصميم ' + (row.number || '')] };
+  await env.DB.batch([
+    env.DB.prepare('INSERT INTO orders (id, number, status, customer_name, created_by, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(rec.id, number, 'new', rec.customer.name || '', user.id, t, data, t),
+    env.DB.prepare('UPDATE customer_designs SET order_id = ?, order_number = ?, status = ?, updated_at = ? WHERE id = ?')
+      .bind(rec.id, number, 'converted', t, row.id),
+    env.DB.prepare('INSERT INTO activity (id, at, data) VALUES (?, ?, ?)').bind(actEv.id, t, JSON.stringify(actEv)),
+  ]);
+  return { ok: true, orderId: rec.id, number };
 }
 
 /* ------------------------------ الجلسات ------------------------------ */
@@ -339,6 +689,16 @@ async function sync(env, user, body) {
     for (const f of ['vatRate', 'depositPct', 'quoteDays', 'sellerRate', 'shareRate', 'mandoubRate', 'mandoubParentRate']) {
       const v = body.settings[f];
       if (v !== undefined && v !== null && !(isFinNum(v) && v >= 0)) finErr('settings.' + f);
+    }
+    // روابط التسويق لبوابة العميل: HTTPS فقط بلا مسافات ولا أقواس، والوصف نص قصير
+    for (const f of ['mapsUrl', 'whatsapp', 'tiktok', 'instagram', 'snapchat']) {
+      const v = body.settings[f];
+      if (v !== undefined && v !== null && v !== '') {
+        if (typeof v !== 'string' || !/^https:\/\//i.test(v.trim()) || /[\s<>"]/.test(v) || v.length > 500) finErr('settings.' + f);
+      }
+    }
+    if (body.settings.tagline !== undefined && body.settings.tagline !== null && (typeof body.settings.tagline !== 'string' || body.settings.tagline.length > 140)) {
+      finErr('settings.tagline');
     }
   }
 
@@ -575,6 +935,11 @@ async function ensureSeed(env) {
   await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_id TEXT').run().catch(ignoreExistsColumn);
   await env.DB.prepare('ALTER TABLE users ADD COLUMN rate REAL').run().catch(ignoreExistsColumn);
   await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_rate REAL').run().catch(ignoreExistsColumn);
+  // بوابة العميل: جدول مستقل تماماً عن الطلبات والمستخدمين (idempotent وآمن للتكرار)
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS customer_designs (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, order_id TEXT, order_number INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)").run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_public_idx ON customer_designs(public_no)').run();
+  await env.DB.prepare("INSERT OR IGNORE INTO counters (key, value) VALUES ('design_no', 26000126)").run();
   // إدراج مشروط لا متزامن آمن: طلبان باردان معاً لا ينتجان مديرين مكررين ولا خطأ
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {

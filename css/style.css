@@ -1954,7 +1954,11 @@ body.modal-open { overflow: hidden; }
   .designer-panel { order: 2; max-height: none; overflow: visible; background: var(--surface-2); }
   .canvas-toolbar { gap: 8px; margin-bottom: 8px; }
   .canvas-toolbar .tb-group { width: 100%; justify-content: space-between; }
-  .tb-insert .tb-btn { flex: 1; padding: 0 4px; gap: 5px; font-size: .8rem; }
+  .tb-insert { flex-wrap: wrap; }
+  .tb-insert .tb-row { display: flex; flex: 1 1 100%; gap: 6px; }
+  .tb-insert .tb-row + .tb-row { margin-top: 6px; }
+  .tb-insert .tb-btn { flex: 1; min-height: 44px; padding: 0 4px; gap: 5px; font-size: .8rem; white-space: nowrap; }
+  .tb-insert .tb-btn span { overflow: visible; }
   .tb-history { width: auto !important; }
   .tb-history .tb-btn:not(.icon) { flex: 1; }
   .canvas-mode {
@@ -2101,7 +2105,7 @@ body.modal-open { overflow: hidden; }
   .stepper { margin-inline: -12px; }
   .sp-text b { font-size: .72rem; }
   .brand-mark { display: none; }
-  .tb-insert .tb-btn span { font-size: .76rem; }
+  /* شريط الأدوات صفّان بمساحة كافية: لا تصغير للخط */
   /* الشاشات الضيقة: العميل سطر كامل، ثم الحالة بجانب التسليم، ثم المبالغ */
   .os-cust { grid-column: 1 / -1; }
   .os-status { grid-column: span 3; box-shadow: -1px 0 0 var(--line-soft), 0 -1px 0 var(--line-soft); }
@@ -2308,3 +2312,93 @@ body.modal-open { overflow: hidden; }
 :root[data-theme="dark"] .sb-nav button:hover, :root[data-theme="dark"] .sb-collapse:hover { background: rgba(255, 255, 255, .04); }
 :root[data-theme="dark"] .brand-mark { background: #3A2C22; }
 :root[data-theme="light"] { color-scheme: light; }
+
+/* =====================================================================
+   30) بوابة العميل — مصمم مجالس عام، mobile-first، بلا عناصر إدارية
+   ===================================================================== */
+body.portal { background: var(--bg); }
+.portal .p-view { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; min-height: 100dvh; }
+.p-hero { text-align: center; padding: 34px 6px 10px; display: grid; gap: 12px; justify-items: center; }
+.p-shop { font-weight: 700; font-size: 1.05rem; color: var(--ink-2); }
+.p-hero h1 { font-size: 1.9rem; line-height: 1.4; margin: 0; }
+.p-tag { color: var(--ink-3); max-width: 40ch; line-height: 1.9; margin: 0; }
+.p-hero .btn.lg { min-height: 52px; font-size: 1.05rem; }
+.p-links { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; margin-top: 26px; }
+.p-link {
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  min-height: 84px; justify-content: center; padding: 12px 6px;
+  background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-lg);
+  color: var(--ink); text-decoration: none; font-size: .82rem; font-weight: 600;
+}
+.p-link svg { width: 24px; height: 24px; color: var(--accent); }
+.p-foot { text-align: center; margin-top: 22px; }
+.p-bar {
+  position: sticky; top: 0; z-index: 40;
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 2px; background: var(--bg);
+}
+.p-bar b { flex: 1; text-align: center; font-size: 1.02rem; }
+.p-bar .icon-btn { width: 44px; height: 44px; }
+.p-savestate { font-size: .78rem; color: var(--ink-3); min-width: 52px; text-align: end; }
+.p-steps { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 4px; margin: 6px 0 12px; }
+.p-steps button {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  min-height: 52px; padding: 6px 2px; border: 1px solid var(--line-soft); border-radius: var(--r);
+  background: var(--surface); color: var(--ink-3); font-size: .7rem; font-weight: 600; cursor: pointer;
+}
+.p-steps button i {
+  width: 24px; height: 24px; border-radius: 50%; background: var(--sand);
+  display: flex; align-items: center; justify-content: center; font-style: normal; font-size: .78rem;
+}
+.p-steps button.active { border-color: var(--accent); color: var(--ink); }
+.p-steps button.active i { background: var(--accent-fill); color: var(--on-accent); }
+.p-canvas-col { display: flex; flex-direction: column; gap: 10px; }
+.p-tools { display: flex; flex-wrap: wrap; gap: 8px; }
+.p-tools .tb-btn { flex: 1 1 30%; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); }
+.p-canvas { height: clamp(300px, 46svh, 440px); }
+.p-canvas canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.p-panel { display: grid; gap: 10px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: var(--r-lg); padding: 14px; }
+.p-panel label { display: grid; gap: 5px; font-size: .86rem; font-weight: 600; }
+.p-panel input, .p-panel select { min-height: 44px; }
+.p-wallrow { display: flex; align-items: center; gap: 8px; }
+.p-wallrow span { flex: 1; font-size: .86rem; }
+.p-wallrow input { width: 90px; min-height: 44px; text-align: center; }
+.p-wallrow .icon-btn { width: 44px; height: 44px; flex: none; }
+.p-accgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.p-accgrid .btn { min-height: 44px; }
+.p-sheet .insp-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+.p-sheet .p-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.p-sheet .btn { min-height: 44px; }
+.p-footbar {
+  position: sticky; bottom: 0; z-index: 40;
+  display: flex; gap: 8px; align-items: center;
+  padding: 10px 2px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--bg);
+}
+.p-footbar .btn { min-height: 48px; }
+.p-stage-narrow { max-width: 520px; margin: 0 auto; }
+.p-preview { width: 100%; border-radius: var(--r); border: 1px solid var(--line-soft); background: #fff; }
+.p-facts { display: grid; gap: 8px; margin: 14px 0; }
+.p-facts > div { display: flex; justify-content: space-between; gap: 10px; padding: 9px 12px; background: var(--surface-2); border-radius: var(--r); font-size: .88rem; }
+.p-facts dt { color: var(--ink-3); }
+.p-facts dd { font-weight: 600; text-align: end; }
+.p-done-card { text-align: center; }
+.p-party { font-size: 2.6rem; }
+.p-number { font-size: 2rem; font-weight: 700; color: var(--accent); letter-spacing: 1px; margin: 4px 0 2px; }
+.p-done-actions { display: grid; gap: 10px; margin: 16px 0; }
+.p-done-actions .btn { min-height: 48px; }
+.p-contact { text-align: start; border-top: 1px solid var(--line-soft); padding-top: 14px; margin-top: 6px; display: grid; gap: 10px; }
+.p-contact[hidden] { display: none; }
+
+/* عارض تصميم العميل (موظفون) */
+.des-view { display: grid; gap: 12px; }
+.des-canvasbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.des-canvasbar .btn { min-height: 44px; }
+.des-canvas { height: min(46vh, 360px); }
+.des-canvas canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+.sb-nav .notif-badge { position: static; margin-inline-start: auto; }
+#pPrint { display: none; }
+@media (min-width: 700px) {
+  .portal .p-view { max-width: 640px; }
+  .p-links { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .p-steps button { font-size: .78rem; }
+}

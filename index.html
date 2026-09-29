@@ -178,6 +178,7 @@
         <button type="button" data-page="order" class="active" title="الطلب الحالي"><svg><use href="#i-pen"/></svg><span>الطلب الحالي</span></button>
         <button type="button" data-page="orders" title="جميع الطلبات"><svg><use href="#i-list"/></svg><span>جميع الطلبات</span></button>
         <button type="button" data-page="customers" title="العملاء"><svg><use href="#i-user"/></svg><span>العملاء</span></button>
+        <button type="button" data-page="designs" data-designs title="تصاميم العملاء"><svg><use href="#i-sofa"/></svg><span>تصاميم العملاء</span><span class="notif-badge" id="desBadge" hidden></span></button>
         <span class="sb-group" data-admin>الإدارة</span>
         <button type="button" data-page="items" data-admin title="الأصناف والأسعار"><svg><use href="#i-tag"/></svg><span>الأصناف والأسعار</span></button>
         <button type="button" data-page="users" data-admin title="المستخدمون"><svg><use href="#i-users"/></svg><span>المستخدمون</span></button>
@@ -353,12 +354,17 @@
             <div class="canvas-col">
               <div class="canvas-toolbar">
                 <div class="tb-group tb-insert" role="group" aria-label="إضافة على الجدار المحدد">
-                  <button class="tb-btn" id="tbAddSofa" title="إضافة أثاث على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>أثاث</span></button>
-                  <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
-                  <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
-                  <button class="tb-btn" id="tbAddMashab" title="إضافة مشب (مدفأة) على الجدار المحدد"><svg><use href="#i-fire"/></svg><span>مشب</span></button>
-                  <button class="tb-btn" id="tbAddWall" title="إضافة جدار للغرفة غير المستطيلة"><svg><use href="#i-plus"/></svg><span>جدار</span></button>
-                  <button class="tb-btn" id="tbFillAll" title="فرش كل الجدران بالكنب"><svg><use href="#i-home"/></svg><span>فرش الكل</span></button>
+                  <span class="tb-row" role="group" aria-label="عناصر الغرفة">
+                    <button class="tb-btn" id="tbAddSofa" title="إضافة أثاث على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>أثاث</span></button>
+                    <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
+                    <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
+                    <button class="tb-btn" id="tbAddMashab" title="إضافة مشب (مدفأة) على الجدار المحدد"><svg><use href="#i-fire"/></svg><span>مشب</span></button>
+                  </span>
+                  <span class="tb-row" role="group" aria-label="أدوات المخطط">
+                    <button class="tb-btn" id="tbAddWall" title="إضافة جدار للغرفة غير المستطيلة"><svg><use href="#i-plus"/></svg><span>جدار</span></button>
+                    <button class="tb-btn" id="tbAddSofaFree" title="إضافة قطعة أثاث حرة"><svg><use href="#i-sofa"/></svg><span>إضافة أثاث</span></button>
+                    <button class="tb-btn" id="tbFillAll" title="فرش كل الجدران بالكنب"><svg><use href="#i-home"/></svg><span>فرش الكل</span></button>
+                  </span>
                 </div>
                 <div class="tb-group tb-history" role="group" aria-label="التحرير">
                   <button class="tb-btn icon" id="tbUndo" title="تراجع (Ctrl+Z)" disabled><svg><use href="#i-undo"/></svg></button>
@@ -678,6 +684,35 @@
       </div>
     </section>
 
+    <!-- ============ تصاميم العملاء (من البوابة) ============ -->
+    <section id="page-designs" class="page">
+      <header class="page-head">
+        <div class="ph-title"><h2>تصاميم العملاء</h2><p>تصاميم واردة من بوابة العميل — راجعها، تواصل، وحوّلها إلى طلبات.</p></div>
+      </header>
+      <div class="toolbar">
+        <label class="search"><svg><use href="#i-search"/></svg><input id="desSearch" type="search" enterkeyhint="search" aria-label="البحث في التصاميم" placeholder="بحث برقم التصميم أو الاسم أو الجوال"></label>
+      </div>
+      <div class="filter-line">
+        <div class="chip-group" id="desStatusChips" role="group" aria-label="تصفية حسب حالة التصميم">
+          <button type="button" class="chip on" data-dstf="" aria-pressed="true">الكل</button>
+          <button type="button" class="chip" data-dstf="new" aria-pressed="false"><i class="st-dot st-new"></i>جديد</button>
+          <button type="button" class="chip" data-dstf="reviewing" aria-pressed="false"><i class="st-dot st-progress"></i>قيد المراجعة</button>
+          <button type="button" class="chip" data-dstf="contacted" aria-pressed="false"><i class="st-dot st-done"></i>تم التواصل</button>
+          <button type="button" class="chip" data-dstf="converted" aria-pressed="false"><i class="st-dot st-delivered"></i>تم تحويله</button>
+          <button type="button" class="chip" data-dstf="closed" aria-pressed="false"><i class="st-dot st-cancelled"></i>مغلق</button>
+        </div>
+      </div>
+      <div class="card table-card">
+        <div class="table-wrap">
+          <table class="table responsive" id="desTable">
+            <thead><tr><th>التصميم</th><th>الحالة</th><th>العميل</th><th>التواصل</th><th>الطلب</th><th>آخر تحديث</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div id="desEmpty" class="empty" hidden><span class="empty-ico"><svg><use href="#i-sofa"/></svg></span><p>لا توجد تصاميم مطابقة — شارك رابط البوابة: <bdi class="num" id="desPortalUrl"></bdi></p></div>
+      </div>
+    </section>
+
     <!-- ============ الأصناف والأسعار ============ -->
     <section id="page-items" class="page">
       <header class="page-head">
@@ -923,6 +958,8 @@
           <dl class="about-meta">
             <div><dt>المطوّر</dt><dd id="aboutDev">Fawaz Al-sharif</dd></div>
             <div><dt>البريد الإلكتروني</dt><dd><a id="aboutEmail" class="ltr" href="mailto:alshareefawaz@gmail.com">alshareefawaz@gmail.com</a></dd></div>
+            <div><dt>المطوّر</dt><dd>Khaled Al Qaini</dd></div>
+            <div><dt>البريد الإلكتروني</dt><dd><a class="ltr" href="mailto:khaledalqaini@gmail.com">khaledalqaini@gmail.com</a></dd></div>
             <div><dt>الإصدار</dt><dd id="aboutVersion" class="num">—</dd></div>
           </dl>
           <div class="update-box" id="updateBox">

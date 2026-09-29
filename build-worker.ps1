@@ -31,10 +31,12 @@ $types = @{ '.html' = 'text/html; charset=utf-8'; '.css' = 'text/css; charset=ut
 # Files served by the Worker. config.js is generated (points the app at its own origin).
 $files = @(
   @{ url = '/index.html';    path = 'index.html' },
+  @{ url = '/portal.html';   path = 'portal.html' },
   @{ url = '/css/style.css'; path = 'css\style.css' },
   @{ url = '/js/store.js';   path = 'js\store.js' },
   @{ url = '/js/designer.js';path = 'js\designer.js' },
   @{ url = '/js/update.js';  path = 'js\update.js' },
+  @{ url = '/js/portal.js';  path = 'js\portal.js' },
   @{ url = '/js/app.js';     path = 'js\app.js' },
   @{ url = '/manifest.json'; path = 'manifest.json'; ct = 'application/manifest+json' },
   @{ url = '/sw.js';         path = 'sw.js' },

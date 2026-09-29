@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Portal UI Tests</title>
+</head>
+<body>
+<iframe id="f" src="/portal.html" style="height:900px;border:1px solid #999"></iframe>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* واجهة البوابة بعرض CSS حقيقي (iframe بعرض ثابت ?w=). بدون backend:
+   تتحقق من التدهور السليم + التخطيط + المقاسات. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var W = Number(new URLSearchParams(location.search).get('w')) || 360;
+  document.getElementById('f').style.width = W + 'px';
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS U' + n + ' ' + name);
+    else { bad++; log('FAIL U' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var waitFor = function (cond, ms) {
+    ms = ms || 30000; var t0 = Date.now();
+    return new Promise(function (res, rej) {
+      (function poll() {
+        var v = null; try { v = cond(); } catch (e) { /* retry */ }
+        if (v) return res(v);
+        if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+        setTimeout(poll, 100);
+      })();
+    });
+  };
+  var get = function (p) { return fetch(p, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + p); return r.text(); }); };
+
+  (async function run() {
+    try {
+      var frame = document.getElementById('f');
+      await waitFor(function () {
+        try { return frame.contentDocument && frame.contentDocument.querySelector('#pShopName'); }
+        catch (e) { return false; }
+      });
+      await new Promise(function (r) { setTimeout(r, 2500); });
+      var doc = frame.contentDocument;
+      var w = frame.contentWindow;
+      var vw = w.innerWidth;
+      t('width', vw === W, 'vw=' + vw + ' want=' + W);
+      var q = function (s) { return doc.querySelector(s); };
+      // الترحيب يعمل بلا backend
+      t('landing', !q('#pLanding').hidden && q('#pShopName').textContent.length > 0, 'landing');
+      t('start-btn', !!q('#pStart') && q('#pStart').textContent.indexOf('ابدأ') >= 0, 'start');
+      var links = ['plMaps', 'plTiktok', 'plInsta', 'plSnap', 'plWa', 'plPhone'];
+      t('links-present', links.every(function (id) { return !!doc.getElementById(id); }), '6 links');
+      t('links-safe', links.every(function (id) {
+        var a = doc.getElementById(id);
+        var hidden = a.style.display === 'none' || getComputedStyle(a).display === 'none';
+        if (hidden) return true;
+        var h = a.getAttribute('href') || '';
+        return h.indexOf('https://') === 0 || h.indexOf('tel:') === 0;
+      }), 'hrefs');
+      // لا تجاوز أفقي
+      t('no-overflow', doc.documentElement.scrollWidth <= vw + 1, 'doc=' + doc.documentElement.scrollWidth);
+      // أزرار ≥44
+      var small = [];
+      doc.querySelectorAll('#pLanding button, #pLanding .p-link').forEach(function (el) {
+        if (getComputedStyle(el).display === 'none') return;
+        var r = el.getBoundingClientRect();
+        if (r.width > 0 && (r.height < 44 || r.width < 44)) small.push((el.id || el.className) + ':' + Math.round(r.width) + 'x' + Math.round(r.height));
+      });
+      t('touch-44', small.length === 0, small.slice(0, 5).join('|'));
+      // هيكل المصمم موجود ومخفي
+      t('wizard-dom', !!q('#pSteps') && !!q('#pCanvas') && !!q('#pPanel') && !!q('#pTools') && !!q('#pSheet'), 'wizard');
+      t('done-dom', !!q('#pDesignNo') && !!q('#pPdf') && !!q('#pShareWa') && !!q('#pContactBtn'), 'done');
+      t('look-dom', !!q('#pLookNo') && !!q('#pLookImg'), 'look');
+      // RTL + viewport
+      t('rtl', doc.documentElement.dir === 'rtl' && doc.documentElement.lang === 'ar', 'dir');
+      // صياغة portal.js + designer.js
+      var pjs = await get('/js/portal.js');
+      try { new Function(pjs); t('portal-syntax', true); }
+      catch (e) { t('portal-syntax', false, String(e.message).slice(0, 150)); }
+      // شريط الموظفين: صفّان وكل الأدوات
+      var idx = await get('/index.html');
+      var tbIds = ['tbAddSofa', 'tbAddDoor', 'tbAddWindow', 'tbAddMashab', 'tbAddWall', 'tbAddSofaFree', 'tbFillAll'];
+      t('toolbar-ids', tbIds.every(function (id) { return idx.indexOf('id="' + id + '"') >= 0; }), '7 tools');
+      t('toolbar-rows', (idx.match(/class="tb-row"/g) || []).length === 2, 'two rows');
+      var css = await get('/css/style.css');
+      t('toolbar-css', css.indexOf('.tb-insert .tb-row') >= 0 && css.indexOf('.tb-insert .tb-btn span { font-size: .76rem') < 0, 'row css, no shrink');
+      // About: المطوران
+      t('about-devs', idx.indexOf('Fawaz Al-sharif') >= 0 && idx.indexOf('Khaled Al Qaini') >= 0 && idx.indexOf('khaledalqaini@gmail.com') >= 0, 'devs');
+      // بوابة العميل في الـ worker bundle لاحقاً: portal.html تُخدم (فحص ثابت هنا لوجود الملف)
+      var ph = await get('/portal.html');
+      t('portal-file', ph.indexOf('pLanding') >= 0 && ph.indexOf('/js/portal.js') >= 0, 'portal.html');
+    } catch (e) {
+      bad++; log('FAIL harness :: ' + (e.message || e));
+    } finally {
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' W=' + W + ' ----');
+    }
+  })();
+})();
+</script>
+</body>
+</html>

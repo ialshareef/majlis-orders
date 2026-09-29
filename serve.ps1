@@ -24,7 +24,7 @@ $types = @{ '.html'='text/html; charset=utf-8'; '.css'='text/css; charset=utf-8'
 #  GET /.cf-token, /.env, /*.token, /*.keystore, /keystore.properties      => 404
 #  GET /../README.md, /%2e%2e/.., /..%252f.., أي مسار فيه .. أو مقطع يبدأ بنقطة => 404
 #  أي امتداد خارج القائمة (مثل .ps1 أو .md) => 404
-$rootFiles = @('index.html', 'config.js', 'sw.js', 'manifest.json')
+$rootFiles = @('index.html', 'portal.html', 'config.js', 'sw.js', 'manifest.json')
 $rootDirs  = @('css/', 'js/', 'icons/', 'assets/', 'test/', 'worker/')
 
 function Test-AllowedPath([string]$rawPath) {
