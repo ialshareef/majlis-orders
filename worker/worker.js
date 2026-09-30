@@ -144,7 +144,7 @@ const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/d
 const UPDATE_FALLBACK_VERSION = '1.0.24';
 // بصمة asalh-najd-1.0.24.apk (إصدار GitHub v1.0.24، بناء CI الموقّع)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '0cecc82df10820a67d9f94f74259569828757f2ba141dd7c736249e78ac1fdc';
+const UPDATE_FALLBACK_SHA256 = '0cecc82df10820a67d9f94f74259569828757f2ba141dd7c736249e7e8ac1fdc';
 const UPDATE_FALLBACK_NOTES = [
   'تنبيه تلقائي داخل التطبيق عند توفر إصدار جديد',
   'تحسينات مصمم المجلس وتوزيع الأثاث',
