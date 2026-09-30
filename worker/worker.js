@@ -141,14 +141,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.26';
-// بصمة asalh-najd-1.0.26.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+const UPDATE_FALLBACK_VERSION = '1.0.27';
+// بصمة asalh-najd-1.0.27.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
 const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
+  'أيقونة التطبيق الجديدة بتصميم المجلس',
   'إجراءات العنصر مباشرة أسفل المخطط بلا فتح الخصائص',
   'مسافات حية لطرفي الباب والمشب أثناء السحب',
-  'اسم التطبيق «أصالة نجد» بالعربية',
 ];
 
 function versionCodeOfName(v) {
