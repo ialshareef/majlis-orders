@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.22';
+  const APP_VERSION = '1.0.23';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -463,7 +463,7 @@ function canEditOrder(o) {
     '#m-price input', '#m-price select', '#m-price button',
     '#attList input', '#attList button',
     '.designer-panel input', '.designer-panel select', '.designer-panel button',
-    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddWall', '#tbFillAll', '#btnAddManual', '#btnPickMap',
+    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddWall', '#tbAddColumn', '#tbFillAll', '#btnAddManual', '#btnPickMap',
   ].join(', ');
 
   function applyOrderLock() {
@@ -668,6 +668,9 @@ function canEditOrder(o) {
     },
     onRender() { positionInspector(); positionWallInline(); },
     onWallDblClick(i) { addSofaOnWall(i); },
+    onRevert(why) {
+      toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود — أُعيد إلى مكانه' : 'يبقى العنصر داخل حدود الغرفة', true);
+    },
   });
 
   function updateOverlapWarn() { $('#overlapWarn').hidden = designer.overlaps().size === 0; }
@@ -849,7 +852,8 @@ function canEditOrder(o) {
         const apply = () => {
           const n = Math.max(1, Math.min(ACC_MAX, Math.round(num(inp.value)) || 1));
           closeModal();
-          designer.setAccessoryCount(item, n);
+          const placed = designer.setAccessoryCount(item, n);
+          if (placed < n) toast(`المساحة المتاحة لا تكفي لـ ${n} ${item.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
         };
         $('#accOk', b).onclick = apply;
         inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
@@ -988,9 +992,18 @@ function canEditOrder(o) {
   $('#tbUndo').addEventListener('click', doUndo);
   $('#tbRedo').addEventListener('click', doRedo);
 
-  $('#tbZoomIn').addEventListener('click', () => designer.zoomAt(1.25));
-  $('#tbZoomOut').addEventListener('click', () => designer.zoomAt(0.8));
-  $('#tbFit').addEventListener('click', () => designer.fitView());
+  let zoomPct = 100;
+  const syncZoomPct = () => { const el = $('#tbZoomPct'); if (el) el.textContent = zoomPct + '%'; };
+  $('#tbZoomIn').addEventListener('click', () => { designer.zoomAt(1.25); zoomPct = Math.min(400, Math.round(zoomPct * 1.25)); syncZoomPct(); });
+  $('#tbZoomOut').addEventListener('click', () => { designer.zoomAt(0.8); zoomPct = Math.max(25, Math.round(zoomPct / 1.25)); syncZoomPct(); });
+  const zoomFit = () => { designer.fitView(); zoomPct = 100; syncZoomPct(); };
+  $('#tbFit').addEventListener('click', zoomFit);
+  $('#tbZoomPct').addEventListener('click', zoomFit);
+  syncZoomPct();
+  $('#tbAddColumn').addEventListener('click', () => {
+    const c = designer.addColumn(0.6, 0.6);
+    if (c) toast('أُضيف عامود — اسحبه لمكانه وعدّل مقاسه من الخصائص');
+  });
 
   /* --- لوحة الخصائص العائمة (Inspector) --- */
   /** لوحة الخصائص لا تُفتح بمجرّد التحديد، بل بزر «تحرير» أو بنقرة مزدوجة */
@@ -1096,7 +1109,7 @@ function canEditOrder(o) {
       html += `
         <div class="insp-head"><b>${icon(isSofa ? 'sofa' : isFree ? 'align' : 'pillow')} ${esc(curItem.name)} <small id="inspWallLbl">${p.wall != null ? 'على جدار ' + (p.wall + 1) : 'قطعة حرة'}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="insp-main">
-          ${canSize ? '' : `<div class="row2"><label>الصنف <select id="selItem">${opts.join('')}</select></label><label>الكمية <input id="selQty" type="number" min="1" step="1" value="${accCount}" inputmode="numeric"></label></div>`}
+          ${canSize ? '' : `<div class="row2"><label>الصنف <select id="selItem">${opts.join('')}</select></label><label>الكمية <span class="p-qty"><button type="button" class="btn" data-selminus aria-label="إنقاص">−</button><input id="selQty" type="number" min="1" step="1" value="${accCount}" inputmode="numeric"><button type="button" class="btn" data-selplus aria-label="زيادة">+</button></span></label></div>`}
           ${isSofa && legacy ? `<p class="hint">هذه القطعة من طلب قديم مرتبط بصنف «${esc(legacy.name)}». اختر الخشب والقماش والإسفنج لتحويلها.</p>` : ''}
           ${isSofa ? SPECS.map((s) => `<label>${s.label} ${specSelect('sel_' + s.key, s, p[s.field] || '', '')}</label>`).join('') : ''}
         </div>
@@ -1205,16 +1218,25 @@ function canEditOrder(o) {
       };
       ['selItem', 'selW', 'selH', 'selRot', 'selNote'].concat(SPECS.map((s) => 'sel_' + s.key))
         .forEach((k) => { const el = $('#' + k, insp); if (!el) return; el.addEventListener('change', apply); if (el.tagName === 'INPUT') onEnter(el, apply); });
-      // كمية الإكسسوار: إضافة/إزالة قطع من الصنف نفسه
+      // كمية الإكسسوار: إضافة/إزالة قطع من الصنف نفسه (العدد حقيقي في البيانات)
       const qtyEl = $('#selQty', insp);
       if (qtyEl) {
-        const applyQty = () => {
+        const applyQty = (raw) => {
+          const itemEl = $('#selItem', insp);
           const p = designer.selectedPiece();
-          const it = p ? getItem(p.itemId) : null;
-          if (it) designer.setAccessoryCount(it, Math.max(1, Math.round(num(qtyEl.value)) || 1));
+          const code = (itemEl && itemEl.value) || (p && p.itemId);
+          const it = code ? getItem(code) : null;
+          if (!it) return;
+          const want = Math.max(1, Math.min(ACC_MAX, Math.round(num(raw !== undefined ? raw : qtyEl.value)) || 1));
+          const placed = designer.setAccessoryCount(it, want);
+          qtyEl.value = placed;
+          if (placed < want) toast(`المساحة المتاحة لا تكفي لـ ${want} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
         };
-        qtyEl.addEventListener('change', applyQty);
-        onEnter(qtyEl, applyQty);
+        qtyEl.addEventListener('change', () => applyQty());
+        onEnter(qtyEl, () => applyQty());
+        const qm = $('[data-selminus]', insp), qp = $('[data-selplus]', insp);
+        if (qm) qm.onclick = () => applyQty(num(qtyEl.value) - 1);
+        if (qp) qp.onclick = () => applyQty(num(qtyEl.value) + 1);
       }
       $$('[data-act]', insp).forEach((b) => b.addEventListener('click', () => {
         const a = b.dataset.act;
@@ -1683,9 +1705,13 @@ function canEditOrder(o) {
       if (n > ACC_MAX) { n = ACC_MAX; toast(`أقصى عدد للصنف الواحد ${ACC_MAX} قطعة`, true); }
       if (n === have) { inp.value = have; return; }
       accQtyFocus = it.id;
-      designer.setAccessoryCount(it, n); // onChange يحدّث الطلب ويعيد رسم التسعير
-      const d = n - have;
-      toast(d > 0 ? `أُضيفت ${d} من «${it.name}» إلى التصميم` : `حُذفت ${-d} من «${it.name}» من التصميم`);
+      const placed = designer.setAccessoryCount(it, n); // onChange يحدّث الطلب ويعيد رسم التسعير
+      inp.value = placed;
+      if (placed < n) toast(`المساحة المتاحة لا تكفي لـ ${n} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
+      else {
+        const d = placed - have;
+        if (d) toast(d > 0 ? `أُضيفت ${d} من «${it.name}» إلى التصميم` : `حُذفت ${-d} من «${it.name}» من التصميم`);
+      }
     }));
     $$('[data-reset]', tb).forEach((el) => el.addEventListener('click', () => { delete cur.priceOverrides[el.dataset.reset]; setDirty(true); renderPricing(); }));
     $$('[data-m]', tb).forEach((el) => el.addEventListener('change', () => {

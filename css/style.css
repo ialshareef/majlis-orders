@@ -1161,6 +1161,7 @@ body[data-page="order"] main { padding-top: 10px; }
 .zoom-ctl .tb-btn { color: #5B5249; }
 .zoom-ctl .tb-btn svg { color: #736859; }
 .zoom-ctl .tb-btn:hover { background: #EFE8DC; color: #2A2622; }
+.zoom-ctl .tb-btn.zoom-pct { width: 44px; padding: 0; font-size: .72rem; font-weight: 700; }
 
 /* تعديل طول الجدار مباشرة فوق تسميته في المخطط (الجوال) */
 .wall-inline {

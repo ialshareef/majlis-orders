@@ -555,30 +555,39 @@
      * تُستعمل من جدول التسعير ليُعكس تعديل الكمية على المخطط. خطوة واحدة في سجل التراجع.
      * تُعيد العدد بعد التنفيذ.
      */
+    /* ضبط عدد قطع إكسسوار إلى العدد المطلوب — الموجود يبقى مكانه، والجديد
+       يوزَّع في الفراغ (بلا تكديس فوق بعضه ولا خروج من الغرفة). يعيد العدد
+       الموضوع فعلاً، فقد يكون أقل عند ضيق المساحة. */
     setAccessoryCount(item, count) {
       const n = Math.max(0, Math.round(+count || 0));
       const have = this.state.pieces.filter((p) => p.kind === 'acc' && p.itemId === item.id);
       const diff = n - have.length;
       if (!diff) return have.length;
-      // إضافة كل قطعة تُطلق changed() فتُعيد رسم الطلب كله: تُعطَّل حتى تكتمل العملية
-      const onChange = this.opts.onChange;
+      // دفعة واحدة في سجل التراجع مهما كان عدد القطع (الدفع المباشر لا يُطلق changed لكل قطعة)
       this._suspendHistory = true;
-      this.opts.onChange = null;
       try {
-        if (diff > 0) for (let i = 0; i < diff; i++) this.addAccessory(item);
-        else {
+        if (diff > 0) {
+          const w = Math.max(0.2, +item.w || 0.5), h = Math.max(0.2, +item.h || 0.5);
+          const spots = this.findSpots(w, h, diff, 'acc');
+          for (const s of spots) {
+            this.state.pieces.push({ id: uid(), kind: 'acc', itemId: item.id, x: s.x, y: s.y, w, h, rot: 0, shape: item.shape || 'rect' });
+          }
+          this._placed = have.length + spots.length;
+        } else {
           const drop = new Set(have.slice(diff).map((p) => p.id));
           this.state.pieces = this.state.pieces.filter((p) => !drop.has(p.id));
           if (this.sel && this.sel.type === 'piece' && drop.has(this.sel.id)) this.sel = null;
+          this._placed = n;
         }
       } finally {
         this._suspendHistory = false;
-        this.opts.onChange = onChange;
       }
       // لا تُفتح لوحة الخصائص على قطعة أُضيفت من صفحة التسعير
       this.select(null);
       this.changed();
-      return n;
+      const placed = this._placed != null ? this._placed : n;
+      this._placed = null;
+      return placed;
     }
 
     /** محاولة إلصاق قطعة كنب بأقرب جدار مطابق للاتجاه */
@@ -637,6 +646,7 @@
       // (تُحسب معه قطعة واحدة في الفاتورة، ويُتجاهل تداخلها معه)
       delete q.group; delete q.corner;
       q.x = p.x + 0.3; q.y = p.y + 0.3;
+      this._clampToRoom(q, this.geometry());
       this.addPiece(q);
     }
 
@@ -1084,14 +1094,16 @@
       }
       if (d.mode === 'pan') return;
       // منع الإفلات فوق عمود أو خارج الغرفة: يُعاد العنصر لمكانه ولا يُفقد بصمت
+      // (سبب الارتداد يُحسب قبل الإرجاع — بعده لا يعود هناك تداخل)
       if (d.moved && d.mode === 'move') {
         const mp = this.piece(d.id);
         if (mp) {
           const gg = this.geometry();
+          const hitCol = this.overlapsColumn(mp);
           const outside = gg.closed && !Designer.pointInPoly({ x: mp.x, y: mp.y }, gg.poly);
-          if (this.overlapsColumn(mp) || outside) {
+          if (hitCol || outside) {
             mp.x = d.orig.x; mp.y = d.orig.y;
-            if (this.opts.onRevert) { try { this.opts.onRevert(this.overlapsColumn(mp) ? 'column' : 'outside'); } catch (_) { /* noop */ } }
+            if (this.opts.onRevert) { try { this.opts.onRevert(hitCol ? 'column' : 'outside'); } catch (_) { /* noop */ } }
           }
         }
       }

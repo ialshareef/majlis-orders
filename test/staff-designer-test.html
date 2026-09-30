@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Staff Designer Tests</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+<iframe id="f" src="about:blank" style="border:1px solid #999"></iframe>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات مصمم الموظفين: نفس المحرك المحسّن + صلاحيات + تسعير.
+   ?w=320..430 يعيد التشغيل داخل iframe بالعرض المطلوب ويمرر النتيجة. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var qs = new URLSearchParams(location.search);
+  var W = Number(qs.get('w')) || 0;
+  var ROLE = qs.get('role') || 'staff';
+  var INFRAME = qs.has('inframe');
+  if (W && !INFRAME) {
+    var f = document.getElementById('f');
+    f.style.width = W + 'px';
+    f.style.height = '900px';
+    f.src = location.pathname + '?w=' + W + '&inframe=1&role=' + ROLE;
+    var t0 = Date.now();
+    (function poll() {
+      var verdict = '';
+      try {
+        var t = f.contentDocument.getElementById('testResult');
+        verdict = t ? t.textContent : '';
+        var lg = f.contentDocument.getElementById('testLog');
+        if (lg && (verdict === 'FAIL' || verdict.indexOf('PASS') === 0)) {
+          document.getElementById('testLog').textContent = 'W=' + W + ' ROLE=' + ROLE + '\n' + lg.textContent;
+        }
+      } catch (e) { /* cross-origin n/a same-origin ok */ }
+      if (verdict === 'FAIL' || verdict.indexOf('PASS') === 0) {
+        document.getElementById('testResult').textContent = verdict;
+        document.title = verdict;
+        return;
+      }
+      if (Date.now() - t0 > 540000) {
+        document.getElementById('testResult').textContent = 'FAIL';
+        document.title = 'FAIL';
+        return;
+      }
+      setTimeout(poll, 500);
+    })();
+    return;
+  }
+  document.getElementById('f').style.display = 'none';
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS D' + n + ' ' + name);
+    else { bad++; log('FAIL D' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var stageNo = 0;
+  function stage(s) { stageNo = s; try { document.title = 'STAGE' + s; } catch (_) { /* noop */ } }
+  var waitFor = function (cond, ms) {
+    ms = ms || 120000; var t0 = Date.now();
+    return new Promise(function (res, rej) {
+      (function poll() {
+        var v = null; try { v = cond(); } catch (e) { /* retry */ }
+        if (v) return res(v);
+        if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+        setTimeout(poll, 100);
+      })();
+    });
+  };
+  var realFetch = window.fetch.bind(window);
+  var get = function (p) { return realFetch(p, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + p); return r.text(); }); };
+
+  async function partA() {
+    var parts = await Promise.all([get('../index.html'), get('../css/style.css'), get('../js/app.js'), get('../js/designer.js')]);
+    var html = parts[0], css = parts[1], app = parts[2], dz = parts[3];
+    t('A-col-btn', html.indexOf('id="tbAddColumn"') >= 0, 'toolbar button');
+    t('A-col-lock', app.indexOf("'#tbAddColumn'") >= 0 && app.indexOf('#tbAddWall') >= 0, 'lockable');
+    t('A-revert', app.indexOf('onRevert') >= 0 && app.indexOf('فوق العامود') >= 0, 'revert toast');
+    t('A-zoom', html.indexOf('id="tbZoomPct"') >= 0 && app.indexOf('zoomPct') >= 0, 'zoom pct');
+    t('A-qty-step', app.indexOf('data-selminus') >= 0 && app.indexOf('data-selplus') >= 0, 'qty steppers');
+    t('A-smart', dz.indexOf('findSpots(w, h, diff') >= 0 || dz.indexOf('findSpots(w, h, n') >= 0, 'smart placement');
+    t('A-dup-clamp', dz.indexOf('this._clampToRoom(q, this.geometry())') >= 0, 'dup clamp');
+    t('A-warn', app.indexOf('تم وضع ${placed}') >= 0, 'partial warn');
+    t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
+    t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
+    t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
+    t('A-ver', app.indexOf("APP_VERSION = '1.0.23'") >= 0, 'version');
+  }
+
+  function b64(bytes) {
+    var s = '', b = new Uint8Array(bytes);
+    for (var i = 0; i < b.length; i += 4096) s += String.fromCharCode.apply(null, b.subarray(i, i + 4096));
+    return btoa(s);
+  }
+  // بيانات اختبار فقط: تكرارات رمزية (الخادم يحترم العدد المخزن) لتسريع الدخول
+  async function testHash(pw) {
+    var enc = new TextEncoder();
+    var salt = crypto.getRandomValues(new Uint8Array(16));
+    var key = await crypto.subtle.importKey('raw', enc.encode(pw), 'PBKDF2', false, ['deriveBits']);
+    var bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: salt, iterations: 100 }, key, 256);
+    return 'pbkdf2$100$' + b64(salt) + '$' + b64(bits);
+  }
+
+  async function partB() {
+    var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
+    stage(10);
+    var sqlite = new SQL.Database();
+    sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+    stage(11);
+    var norm = function (v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); };
+    var DB = {
+      prepare: function (sql) {
+        var st = { sql: sql, args: [] };
+        st.bind = function () { st.args = Array.prototype.map.call(arguments, norm); return st; };
+        st.first = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var has = s.step(); var row = has ? s.getAsObject() : null; s.free(); return row; };
+        st.all = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results: results, success: true }; };
+        st.run = async function () { sqlite.run(sql, st.args); return { success: true }; };
+        return st;
+      },
+      batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
+    };
+    var mod = await import('../worker/worker.js');
+    stage(12);
+    var env = { DB: DB };
+    var ORIGIN = 'https://majlis.test';
+    var call = function (url, init) { return mod.default.fetch(new Request(url, init), env); };
+    window.fetch = async function (input, init) {
+      var url = typeof input === 'string' ? input : input.url;
+      if (url.indexOf(ORIGIN) === 0) return call(url, init);
+      return realFetch(input, init);
+    };
+    // مستخدمون بكلمات معروفة ورخيصة (بذرة مسبقة تمنع ensureSeed + بوابة admin/admin)
+    var hpw = await testHash('test1234');
+    sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-admin','admin','مدير','" + hpw + "','admin',1,'2026-01-01')");
+    sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-staff','sara','سارة','" + hpw + "','staff',1,'2026-01-01')");
+    sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-mand','mand1','مندوب','" + hpw + "','mandoub',1,'2026-01-01')");
+    var html = await (await realFetch('../index.html')).text();
+    var doc = new DOMParser().parseFromString(html, 'text/html');
+    doc.querySelectorAll('script').forEach(function (s) { s.remove(); });
+    var wrap = document.createElement('div');
+    wrap.innerHTML = doc.body.innerHTML;
+    document.body.appendChild(wrap);
+    window.APP_CONFIG = { apiUrl: ORIGIN };
+    (function () {
+      var si = window.setInterval.bind(window);
+      window.setInterval = function (fn, ms) { if (Number(ms) === 30000) return 0; return si(fn, ms); };
+    })();
+    for (var p of ['../js/store.js', '../js/designer.js', '../js/update.js', '../js/app.js']) {
+      var s = document.createElement('script');
+      s.textContent = await (await realFetch(p)).text();
+      document.body.appendChild(s);
+    }
+    await waitFor(function () { return window.MajlisApp && document.querySelector('#loginForm'); }, 240000);
+    stage(13);
+    var creds = ROLE === 'admin' ? ['admin', 'test1234'] : (ROLE === 'staff' ? ['sara', 'test1234'] : ['mand1', 'test1234']);
+    document.querySelector('#loginUser').value = creds[0];
+    document.querySelector('#loginPass').value = creds[1];
+    document.querySelector('#loginForm button[type=submit]').click();
+    stage(14);
+    await waitFor(function () { return !document.querySelector('#app').hidden; }, 240000);
+    t('B-login-' + ROLE, true);
+    stage(1);
+    log('partB: MARK app-visible');
+    log('partB: MARK entered');
+    if (ROLE !== 'admin') {
+      var usersBtn = document.querySelector('#mainNav button[data-page="users"]');
+      t('B-admin-hidden', usersBtn && usersBtn.hidden, 'admin nav hidden');
+      document.querySelector('#mainNav button[data-page="users"]').click();
+      await new Promise(function (r) { setTimeout(r, 1000); });
+      t('B-admin-bounce', !document.querySelector('#page-users').classList.contains('active'), 'bounced');
+      var cv = document.querySelector('#designCanvas');
+      t('B-designer-present', !!cv, 'canvas exists');
+      window.fetch = realFetch;
+      return;
+    }
+    // مسار المدير الكامل
+    document.querySelector('button[data-page="order"]').click();
+    await waitFor(function () { return document.querySelector('#page-order').classList.contains('active'); });
+    log('partB: MARK order-page');
+    stage(2);
+    var dz = window.MajlisApp.designer;
+    dz.setRect(5, 4);
+    log('partB: MARK rect');
+    stage(3);
+    var q = function (sel) { return document.querySelector(sel); };
+    var qAll = function (sel) { return Array.from(document.querySelectorAll(sel)); };
+    // B: إضافة عامود بزر الشريط
+    q('#tbAddColumn').click();
+    await waitFor(function () { return dz.state.pieces.some(function (x) { return x.kind === 'column'; }); }, 120000);
+    var col = dz.state.pieces.filter(function (x) { return x.kind === 'column'; })[0];
+    var bb = dz.geometry().bb;
+    t('B-col-add', col.x >= bb.minX && col.x <= bb.maxX, 'column inside');
+    // B: كنبة + إكسسوار للمقارنة
+    var sp = dz.addSofaOnWall(0, { depth: 0.8 });
+    t('B-sofa-add', !!sp, 'sofa placed');
+    dz.addAccessory({ id: 'acc-marka', w: 0.6, h: 0.35, shape: 'rect' });
+    var acc0 = dz.state.pieces.filter(function (x) { return x.kind === 'acc'; });
+    t('B-acc-add', acc0.length === 1, 'one acc');
+    // B: تحريك مقيد
+    dz.select({ type: 'piece', id: acc0[0].id });
+    dz.moveSelected(100, 100);
+    var mv = dz.state.pieces.filter(function (x) { return x.id === acc0[0].id; })[0];
+    t('B-move-clamp', mv.x <= bb.maxX && mv.y <= bb.maxY, 'clamped');
+    // B: ارتداد عن العامود بسحب حقيقي
+    var cv2 = document.querySelector('#designCanvas');
+    dz.fitView();
+    var rect = cv2.getBoundingClientRect();
+    var toClient = function (x, y) { var s = dz.toScreen(x, y); return { x: rect.left + s.x, y: rect.top + s.y }; };
+    var pe = function (type, cx, cy) {
+      return new PointerEvent(type, { bubbles: true, cancelable: true, clientX: cx, clientY: cy, button: 0, pointerId: 1, pointerType: 'mouse', isPrimary: true });
+    };
+    var ox = mv.x, oy = mv.y;
+    var s0 = toClient(ox, oy), s1 = toClient(col.x, col.y);
+    cv2.dispatchEvent(pe('pointerdown', s0.x, s0.y));
+    var midX = (s0.x + s1.x) / 2, midY = (s0.y + s1.y) / 2;
+    cv2.dispatchEvent(pe('pointermove', midX, midY));
+    var midPos = dz.state.pieces.filter(function (x) { return x.id === acc0[0].id; })[0];
+    log('drag-mid moved=' + (Math.abs(midPos.x - ox) > 0.05 || Math.abs(midPos.y - oy) > 0.05));
+    cv2.dispatchEvent(pe('pointermove', s1.x, s1.y));
+    cv2.dispatchEvent(pe('pointerup', s1.x, s1.y));
+    var mvEnd = dz.state.pieces.filter(function (x) { return x.id === acc0[0].id; })[0];
+    t('B-revert', Math.abs(mvEnd.x - ox) < 0.05 && Math.abs(mvEnd.y - oy) < 0.05, 'reverted');
+    t('B-revert-toast', document.querySelector('#toast').textContent.indexOf('العامود') >= 0, 'toast');
+    // B: تدوير/نسخ/حذف من الورقة
+    dz.select({ type: 'piece', id: acc0[0].id });
+    var eb = document.querySelector('#tbEdit');
+    eb.disabled = false;
+    eb.click();
+    await waitFor(function () { return !document.querySelector('#inspector').hidden; }, 120000);
+    var rot0 = acc0[0].rot || 0;
+    document.querySelector('#inspector [data-act="rot"]').click();
+    await waitFor(function () {
+      var cur = dz.state.pieces.filter(function (x) { return x.id === acc0[0].id; })[0];
+      return cur && cur.rot !== rot0;
+    }, 120000);
+    t('B-rotate', true);
+    var nDup = dz.state.pieces.length;
+    document.querySelector('#inspector [data-act="dup"]').click();
+    await waitFor(function () { return dz.state.pieces.length === nDup + 1; }, 120000);
+    var dupPiece = dz.state.pieces[dz.state.pieces.length - 1];
+    var dbb = dz.geometry().bb;
+    t('B-dup', dupPiece.x <= dbb.maxX && dupPiece.y <= dbb.maxY, 'dup inside');
+    document.querySelector('#inspector [data-act="del"]').click();
+    await waitFor(function () { return dz.state.pieces.filter(function (x) { return x.id === dupPiece.id; }).length === 0; }, 120000);
+    t('B-delete', true);
+    // B: كمية حقيقية + تحذير جزئي
+    dz.select({ type: 'piece', id: acc0[0].id });
+    await waitFor(function () { return document.querySelector('#inspector #selQty'); }, 120000);
+    var qinp = document.querySelector('#inspector #selQty');
+    qinp.value = '5';
+    qinp.dispatchEvent(new Event('change', { bubbles: true }));
+    await waitFor(function () { return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === 5; }, 120000);
+    t('B-qty5', true);
+    document.querySelector('#inspector [data-selplus]').click();
+    await waitFor(function () {
+      return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === 6;
+    }, 120000);
+    t('B-qty-plus', true);
+    document.querySelector('#inspector [data-selminus]').click();
+    await waitFor(function () {
+      return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === 5;
+    }, 120000);
+    t('B-qty-minus', true);
+    // B: زوم بالنسبة
+    document.querySelector('#tbZoomIn').click();
+    await waitFor(function () { return document.querySelector('#tbZoomPct').textContent !== '100%'; }, 60000);
+    t('B-zoom-pct', true);
+    document.querySelector('#tbZoomPct').click();
+    await waitFor(function () { return document.querySelector('#tbZoomPct').textContent === '100%'; }, 60000);
+    t('B-zoom-fit', true);
+    // B: تسعير سليم مع عامود (يُتجاهل) + حفظ/إعادة فتح
+    var lines = window.MajlisApp.computeLines(window.MajlisApp.order);
+    var accLine = lines.lines.filter(function (l) { return l.kind === 'acc'; })[0];
+    t('B-pricing', accLine && accLine.qty === 5 && Number.isFinite(lines.total) && lines.lines.every(function (l) { return l.kind !== 'column'; }), 'qty=' + (accLine && accLine.qty));
+    var cnm = document.querySelector('#custName');
+    cnm.value = 'عميل اختبار';
+    cnm.dispatchEvent(new Event('input', { bubbles: true }));
+    var cph = document.querySelector('#custPhone');
+    cph.value = '0512345678';
+    cph.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector('#btnSaveOrder').click();
+    await waitFor(function () { return /#\d+/.test(document.querySelector('#orderTitle').textContent); }, 240000);
+    var ordNo = document.querySelector('#orderTitle').textContent;
+    document.querySelector('button[data-page="orders"]').click();
+    await waitFor(function () { return document.querySelector('#page-orders').classList.contains('active'); });
+    await waitFor(function () { return document.querySelector('#ordersTable [data-open]'); }, 120000);
+    document.querySelector('#ordersTable [data-open]').click();
+    await waitFor(function () { return document.querySelector('#orderTitle').textContent === ordNo; }, 120000);
+    var ro = window.MajlisApp.order;
+    t('B-reload', ro.design.pieces.filter(function (x) { return x.kind === 'acc'; }).length === 5 && ro.design.pieces.some(function (x) { return x.kind === 'column'; }), 'acc+column kept');
+    // B: مسح تجاوز أفقي (صفحة الطلب)
+    var badEls = [];
+    document.querySelectorAll('#app button, #app input, #app select, #app table, #app .card, #app .module, #app header').forEach(function (el) {
+      if (el.closest('.table-wrap')) return;
+      var cs = getComputedStyle(el);
+      if (cs.display === 'none' || cs.visibility === 'hidden') return;
+      var r = el.getBoundingClientRect();
+      if (r.width === 0) return;
+      if (r.right > window.innerWidth + 1 || r.left < -1) badEls.push((el.id || el.className.toString().slice(0, 20) || el.tagName));
+    });
+    t('B-overflow', document.documentElement.scrollWidth <= window.innerWidth + 1 && badEls.length === 0, badEls.slice(0, 3).join('|'));
+    window.fetch = realFetch;
+  }
+
+  (async function run() {
+    try { await partA(); }
+    catch (e) { bad++; log('FAIL partA :: ' + e.message); }
+    try { await partB(); }
+    catch (e) { bad++; log('FAIL partB :: ' + (e.message || e)); }
+    finally {
+      try { window.fetch = realFetch; } catch (_) { /* noop */ }
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
