@@ -42,7 +42,8 @@ $files = @(
   @{ url = '/sw.js';         path = 'sw.js' },
   @{ url = '/icons/icon-192.png';          path = 'icons\icon-192.png' },
   @{ url = '/icons/icon-512.png';          path = 'icons\icon-512.png' },
-  @{ url = '/icons/icon-maskable-512.png'; path = 'icons\icon-maskable-512.png' }
+  @{ url = '/icons/icon-maskable-512.png'; path = 'icons\icon-maskable-512.png' },
+  @{ url = '/icons/shop-logo.svg'; path = 'icons\shop-logo.svg' }
 )
 
 $entries = New-Object System.Collections.Generic.List[string]
