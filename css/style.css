@@ -1151,17 +1151,25 @@ body[data-page="order"] main { padding-top: 10px; }
   padding: 5px 12px; border-radius: var(--r-sm); pointer-events: none;
 }
 .canvas-alert svg { width: 15px; height: 15px; }
-/* أدوات التكبير في مكان ثابت على المخطط */
+/* أدوات التكبير: صف أسفل المخطط (لا يغطي الرسم) */
 .zoom-ctl {
-  position: absolute; bottom: 12px; inset-inline-end: 12px;
-  display: flex; flex-direction: column; gap: 1px; padding: 3px;
-  background: rgba(255, 253, 249, .96); border: 1px solid #E5DCCD;
+  display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap;
+  margin-top: 8px; padding: 3px;
+  background: var(--surface); border: 1px solid var(--line);
   border-radius: var(--r); box-shadow: 0 1px 2px rgba(42, 38, 34, .06);
 }
 .zoom-ctl .tb-btn { color: #5B5249; }
 .zoom-ctl .tb-btn svg { color: #736859; }
 .zoom-ctl .tb-btn:hover { background: #EFE8DC; color: #2A2622; }
 .zoom-ctl .tb-btn.zoom-pct { width: 44px; padding: 0; font-size: .72rem; font-weight: 700; }
+/* شريط إجراءات العنصر المحدد: مدمج أسفل المخطط — حذف وتدوير ونسخ مباشرة بلا فتح الخصائص */
+.selbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
+.selbar[hidden] { display: none; }
+.selbar-name { flex: 1 1 auto; min-width: 0; font-weight: 600; font-size: .88rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.selbar .btn { min-height: 40px; }
+.selbar .p-qty { display: inline-flex; gap: 4px; align-items: stretch; }
+.selbar .p-qty .btn { width: 40px; min-height: 40px; }
+.selbar .p-qty input { width: 52px; min-height: 40px; text-align: center; }
 
 /* نافذة تحديث التطبيق التلقائية: نص الحالة + شريط تقدم + ملاحظات الإصدار */
 .appupd-modal .modal-card { max-width: 430px; }
@@ -1983,7 +1991,9 @@ body.modal-open { overflow: hidden; }
   .canvas-wrap.sheet-open { height: clamp(190px, 30svh, 280px); }
   .canvas-hint { display: none; }
   .canvas-alert { inset-inline: 8px; top: 8px; border-radius: var(--r-sm); padding: 6px 9px; font-size: .76rem; }
-  .zoom-ctl { bottom: 8px; inset-inline-end: 8px; }
+  .ptabs { flex-wrap: wrap; justify-content: center; }
+  .ptabs button { flex: 1 1 30%; }
+  .ptabs-sep { display: none; }
   .ptabs button svg { display: inline-block; width: 15px; height: 15px; }
 
   /* الخصائص كورقة سفلية فوق شريط التنقل */

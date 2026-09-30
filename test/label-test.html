@@ -32,7 +32,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('items-tab-sessions', /cat:\s*'wood'\s*,\s*label:\s*'الجلسات'/.test(app), 'ITEM_TABS wood label');
       t('design-tab-sofa', txt('[data-tab="sofa"].ptabs button, #panelTabs [data-tab="sofa"]') === 'الكنب والمقاعد' || (doc.querySelector('#panelTabs [data-tab="sofa"]') || {}).textContent.trim() === 'الكنب والمقاعد', 'tab text');
       t('design-tab-acc', (doc.querySelector('#panelTabs [data-tab="acc"]') || {}).textContent.trim() === 'الإكسسوارات', 'acc tab text');
-      t('toolbar-furniture', txt('#tbAddSofa span') === 'أثاث', 'tbAddSofa');
+      t('toolbar-furniture', txt('#tbAddSofa span') === 'كنبة', 'tbAddSofa');
+      t('toolbar-free-sofa', txt('#tbAddSofaFree span') === 'كنبة حرة', 'tbAddSofaFree');
+      t('no-athlon-dup', html.indexOf('>أثاث<') < 0 && html.indexOf('إضافة أثاث') < 0, 'dup labels');
       t('panel-aria-sofa', doc.querySelector('.ptab[data-tab="sofa"]').getAttribute('aria-label') === 'الكنب والمقاعد', 'aria sofa');
       t('panel-aria-acc', doc.querySelector('.ptab[data-tab="acc"]').getAttribute('aria-label') === 'الإكسسوارات', 'aria acc');
       t('inspector-furniture', /data-act="sofa"[^>]*\}\s*أثاث/.test(app) || app.indexOf("${icon('sofa')} أثاث") >= 0, 'inspector btn');

@@ -667,6 +667,7 @@ function canEditOrder(o) {
       syncCornerMode();
       updateOverlapWarn();
       updateUndoButtons();
+      renderSelBar(designer.selectionInfo());
     },
     onSelect(info) {
       // على الحاسوب تعرض اللوحة الجانبية خصائص القطعة أو الفتحة فور تحديدها، فهي لا تحجب المخطط.
@@ -676,6 +677,7 @@ function canEditOrder(o) {
       if (k && k !== lastSelKey && !isMobile() && !readOnly && (!info || info.type !== 'wall')) { inspOpen = true; inspAuto = true; }
       lastSelKey = k;
       renderInspector(info);
+      renderSelBar(info);
       syncWallSel();
     },
     onRender() { positionInspector(); positionWallInline(); },
@@ -1017,6 +1019,70 @@ function canEditOrder(o) {
     if (c) toast('أُضيف عامود — اسحبه لمكانه وعدّل مقاسه من الخصائص');
   });
 
+  /* --- شريط إجراءات العنصر المحدد (أسفل المخطط): حذف/تدوير/نسخ مباشرة ---
+     يظهر فور التحديد بلا فتح «الخصائص» (الخصائص تبقى للضبط المتقدم).
+     يُخفى مع فتح الخصائص (فيها كل الإجراءات) وفي وضع القراءة فقط. */
+  const selBar = $('#selBar');
+  function selBarName(info) {
+    if (!info) return '';
+    if (info.type === 'wall') return 'جدار ' + (info.index + 1);
+    if (info.type === 'opening') {
+      const o = info.opening;
+      return (o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك') + ' — جدار ' + (o.wall + 1);
+    }
+    const p = info.piece;
+    if (p.kind === 'column') return 'عامود';
+    if (p.kind === 'sofa') return ((pieceStyle(p) || {}).name) || 'كنب';
+    if (p.kind === 'free') return 'مساحة أرضية';
+    return (getItem(p.itemId) || {}).name || 'إكسسوار';
+  }
+  function selBarQty(delta) {
+    const p = designer.selectedPiece();
+    if (!p) return;
+    const it = getItem(p.itemId);
+    if (!it) return;
+    const have = designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id).length;
+    const want = Math.max(1, Math.min(ACC_MAX, have + delta));
+    const placed = designer.setAccessoryCount(it, want);
+    if (placed < want) toast(`المساحة المتاحة لا تكفي لـ ${want} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
+    // setAccessoryCount يلغي التحديد: نُبقي الشريط حياً بإعادة تحديد قطعة من الصنف
+    const rest = designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id)[0];
+    if (rest) designer.select({ type: 'piece', id: rest.id });
+    else renderSelBar(designer.selectionInfo());
+  }
+  function selBarWidth(delta) {
+    const o = designer.selectedOpening();
+    if (!o) return;
+    designer.updateOpening(o.id, { w: Math.max(0.3, Math.round((o.w + delta) * 10) / 10) });
+    renderSelBar(designer.selectionInfo());
+  }
+  function renderSelBar(info) {
+    if (!selBar) return;
+    if (!info || readOnly || !insp.hidden) { selBar.hidden = true; selBar.innerHTML = ''; return; }
+    let mid = '';
+    if (info.type === 'piece' && info.piece.kind === 'acc') {
+      const it = getItem(info.piece.itemId);
+      const n = it ? designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id).length : 0;
+      mid = `<span class="p-qty"><button type="button" class="btn" data-sbminus aria-label="إنقاص">−</button><input type="number" min="1" value="${n}" inputmode="numeric" aria-label="الكمية" readonly tabindex="-1"><button type="button" class="btn" data-sbplus aria-label="زيادة">+</button></span>`;
+    } else if (info.type === 'opening') {
+      mid = `<span class="p-qty"><button type="button" class="btn" data-sbwminus aria-label="تضييق">−</button><button type="button" class="btn" data-sbwplus aria-label="توسيع">+</button></span>`;
+    }
+    selBar.innerHTML = `<span class="selbar-name">${esc(selBarName(info))}</span>${mid}`
+      + (info.type === 'piece' ? `<button type="button" class="btn small" data-sbrot title="تدوير 90°">${icon('rotate')} 90°</button><button type="button" class="btn small" data-sbdup>${icon('copy')} نسخ</button>` : '')
+      + `<button type="button" class="btn small danger" data-sbdel>${icon('trash')} حذف</button>`
+      + `<button type="button" class="btn small" data-sbprops>${icon('pen')} الخصائص</button>`;
+    selBar.hidden = false;
+    const q = (s) => selBar.querySelector(s);
+    if (q('[data-sbdel]')) q('[data-sbdel]').onclick = () => { designer.removeSelected(); renderSelBar(designer.selectionInfo()); };
+    if (q('[data-sbrot]')) q('[data-sbrot]').onclick = () => { designer.rotateSelected(90); renderSelBar(designer.selectionInfo()); };
+    if (q('[data-sbdup]')) q('[data-sbdup]').onclick = () => { designer.duplicateSelected(); };
+    if (q('[data-sbprops]')) q('[data-sbprops]').onclick = () => openInspector();
+    if (q('[data-sbminus]')) q('[data-sbminus]').onclick = () => selBarQty(-1);
+    if (q('[data-sbplus]')) q('[data-sbplus]').onclick = () => selBarQty(1);
+    if (q('[data-sbwminus]')) q('[data-sbwminus]').onclick = () => selBarWidth(-0.1);
+    if (q('[data-sbwplus]')) q('[data-sbwplus]').onclick = () => selBarWidth(0.1);
+  }
+
   /* --- لوحة الخصائص العائمة (Inspector) --- */
   /** لوحة الخصائص لا تُفتح بمجرّد التحديد، بل بزر «تحرير» أو بنقرة مزدوجة */
   function openInspector() {
@@ -1027,10 +1093,12 @@ function canEditOrder(o) {
     inspAuto = false;
     inspKey = null;   // فتح صريح: تُرسم اللوحة من جديد ويُنقل التركيز إلى أول حقل
     renderInspector(info);
+    renderSelBar(designer.selectionInfo());
   }
   function closeInspector() {
     inspOpen = false;
     renderInspector(null);
+    renderSelBar(designer.selectionInfo());
   }
   function syncEditBtn() {
     const btn = $('#tbEdit');

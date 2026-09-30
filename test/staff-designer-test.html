@@ -273,6 +273,47 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     document.querySelector('#tbZoomPct').click();
     await waitFor(function () { return document.querySelector('#tbZoomPct').textContent === '100%'; }, 60000);
     t('B-zoom-fit', true);
+    // E: شريط إجراءات مباشر أسفل المخطط + زوم أسفل + مسافات حية (بلا بوابة خصائص)
+    var cWrap = document.querySelector('.canvas-wrap');
+    var zCtl = document.querySelector('.zoom-ctl');
+    var sBar = document.querySelector('#selBar');
+    var insp = document.querySelector('#inspector');
+    t('E-zoom-below', !!(cWrap && zCtl && sBar) && zCtl.previousElementSibling === cWrap &&
+      sBar.previousElementSibling === zCtl && getComputedStyle(zCtl).position === 'static', 'dom order+static');
+    t('E-ptabs-wrap', getComputedStyle(document.querySelector('.ptabs')).flexWrap === 'wrap', 'centered wrap');
+    dz.select(null); // إغلاق أي ورقة مفتوحة من خطوات سابقة
+    var eAcc = dz.state.pieces.filter(function (x) { return x.kind === 'acc'; })[0];
+    dz.select({ type: 'piece', id: eAcc.id });
+    await waitFor(function () { return !sBar.hidden && sBar.querySelector('[data-sbdel]'); }, 60000);
+    t('E-selbar-shows', sBar.textContent.indexOf('حذف') >= 0 && !!sBar.querySelector('[data-sbprops]') &&
+      !!sBar.querySelector('[data-sbplus]') && insp.hidden, 'actions, inspector closed');
+    var eCount = dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length;
+    sBar.querySelector('[data-sbplus]').click();
+    await waitFor(function () { return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === eCount + 1 && !sBar.hidden; }, 60000);
+    t('E-selbar-qty', insp.hidden, 'qty+1 w/o inspector');
+    var eR0 = (dz.selectedPiece() || {}).rot || 0;
+    sBar.querySelector('[data-sbrot]').click();
+    await waitFor(function () {
+      var q = dz.selectedPiece();
+      return q && q.rot === ((eR0 + 90) % 360);
+    }, 60000);
+    t('E-selbar-rot', true);
+    var eDel = dz.selectedPiece();
+    var eN = dz.state.pieces.length;
+    sBar.querySelector('[data-sbdel]').click();
+    await waitFor(function () { return dz.state.pieces.length === eN - 1 && sBar.hidden; }, 60000);
+    t('E-selbar-del', dz.piece(eDel.id) === null && insp.hidden, 'deleted, no props gate');
+    var eDoor = dz.addOpening(0, 'door');
+    var eGaps = eDoor && dz.openingGaps(eDoor.id);
+    var eW0 = dz.geometry().walls[0].len;
+    t('E-gaps', !!(eDoor && eGaps && eGaps.left >= 0 && eGaps.right >= 0 &&
+      Math.abs(eGaps.left + eDoor.w + eGaps.right - eW0) < 0.01), JSON.stringify(eGaps));
+    dz.select({ type: 'opening', id: eDoor.id });
+    await waitFor(function () { return !sBar.hidden && sBar.textContent.indexOf('باب') >= 0; }, 60000);
+    t('E-selbar-opening', !!sBar.querySelector('[data-sbdel]'), 'opening actions');
+    sBar.querySelector('[data-sbdel]').click();
+    await waitFor(function () { return dz.opening(eDoor.id) === null; }, 60000);
+    t('E-selbar-opening-del', sBar.hidden, 'opening deleted');
     // B: تسعير سليم مع عامود (يُتجاهل) + حفظ/إعادة فتح
     var lines = window.MajlisApp.computeLines(window.MajlisApp.order);
     var accLine = lines.lines.filter(function (l) { return l.kind === 'acc'; })[0];

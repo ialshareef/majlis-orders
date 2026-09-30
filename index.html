@@ -325,7 +325,7 @@
                 <p id="sofaPriceHint" class="price-hint"></p>
                 <label>الجدار <select id="wallSel"></select></label>
                 <div class="row2">
-                  <button id="btnAddSofaWall" class="btn primary">إضافة أثاث</button>
+                  <button id="btnAddSofaWall" class="btn primary">إضافة كنبة</button>
                   <button id="btnFillAll" class="btn">فرش الكل</button>
                 </div>
                 <button id="btnAddSofaFree" class="btn block ghost">إضافة قطعة حرة</button>
@@ -355,7 +355,7 @@
               <div class="canvas-toolbar">
                 <div class="tb-group tb-insert" role="group" aria-label="إضافة على الجدار المحدد">
                   <span class="tb-row" role="group" aria-label="عناصر الغرفة">
-                    <button class="tb-btn" id="tbAddSofa" title="إضافة أثاث على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>أثاث</span></button>
+                    <button class="tb-btn" id="tbAddSofa" title="إضافة كنبة على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>كنبة</span></button>
                     <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>
                     <button class="tb-btn" id="tbAddWindow" title="إضافة شباك على الجدار المحدد"><svg><use href="#i-window"/></svg><span>شباك</span></button>
                     <button class="tb-btn" id="tbAddMashab" title="إضافة مشب (مدفأة) على الجدار المحدد"><svg><use href="#i-fire"/></svg><span>مشب</span></button>
@@ -363,7 +363,7 @@
                   <span class="tb-row" role="group" aria-label="أدوات المخطط">
                     <button class="tb-btn" id="tbAddWall" title="إضافة جدار للغرفة غير المستطيلة"><svg><use href="#i-plus"/></svg><span>جدار</span></button>
                     <button class="tb-btn" id="tbAddColumn" title="إضافة عامود داخل الغرفة"><svg><use href="#i-plus"/></svg><span>عامود</span></button>
-                    <button class="tb-btn" id="tbAddSofaFree" title="إضافة قطعة أثاث حرة"><svg><use href="#i-sofa"/></svg><span>إضافة أثاث</span></button>
+                    <button class="tb-btn" id="tbAddSofaFree" title="إضافة كنبة حرة"><svg><use href="#i-sofa"/></svg><span>كنبة حرة</span></button>
                     <button class="tb-btn" id="tbFillAll" title="فرش كل الجدران بالكنب"><svg><use href="#i-home"/></svg><span>فرش الكل</span></button>
                   </span>
                 </div>
@@ -383,17 +383,18 @@
                 <p id="canvasLive" class="sr-only" aria-live="polite"></p>
                 <div id="overlapWarn" class="canvas-alert" hidden><svg><use href="#i-alert"/></svg> يوجد تداخل بين بعض القطع (مظللة بالأحمر)</div>
                 <div id="canvasHint" class="canvas-hint">اضغط على جدار لتعديله</div>
-                <div class="zoom-ctl" role="group" aria-label="التكبير والعرض">
-                  <button class="tb-btn icon" id="tbZoomIn" title="تكبير"><svg><use href="#i-zoom-in"/></svg></button>
-                  <button class="tb-btn icon" id="tbZoomOut" title="تصغير"><svg><use href="#i-zoom-out"/></svg></button>
-                  <button class="tb-btn zoom-pct" id="tbZoomPct" title="نسبة التكبير — اضغط للملاءمة">100%</button>
-                  <button class="tb-btn icon" id="tbFit" title="ملاءمة العرض"><svg><use href="#i-fit"/></svg></button>
-                </div>
                 <div id="wallInlineEdit" class="wall-inline" hidden>
                   <input id="wallInlineLen" type="number" step="0.05" min="0.3" inputmode="decimal" aria-label="طول الجدار بالمتر">
                   <span class="wall-inline-unit">م</span>
                 </div>
               </div>
+              <div class="zoom-ctl" role="group" aria-label="التكبير والعرض">
+                <button class="tb-btn icon" id="tbZoomIn" title="تكبير"><svg><use href="#i-zoom-in"/></svg></button>
+                <button class="tb-btn icon" id="tbZoomOut" title="تصغير"><svg><use href="#i-zoom-out"/></svg></button>
+                <button class="tb-btn zoom-pct" id="tbZoomPct" title="نسبة التكبير — اضغط للملاءمة">100%</button>
+                <button class="tb-btn icon" id="tbFit" title="ملاءمة العرض"><svg><use href="#i-fit"/></svg></button>
+              </div>
+              <div id="selBar" class="selbar" hidden></div>
             </div>
           </div>
           <div class="atts-section">

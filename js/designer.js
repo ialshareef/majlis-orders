@@ -352,6 +352,19 @@
 
     opening(id) { return this.state.openings.find((o) => o.id === id) || null; }
 
+    /** المسافة الحية من حافتي الفتحة لطرفي الجدار (بالمتر، من الحافة لا المركز).
+        تُستخدم لرسم قراءات «← سم → [باب/مشب] ← سم →» أثناء السحب. */
+    openingGaps(id) {
+      const o = this.opening(id);
+      if (!o) return null;
+      const g = this.geometry();
+      const w = g.walls[o.wall];
+      if (!w) return null;
+      const left = Math.max(0, round(o.t - o.w / 2, 3));
+      const right = Math.max(0, round(w.len - (o.t + o.w / 2), 3));
+      return { left, right, wallLen: round(w.len, 3) };
+    }
+
     updateOpening(id, props) {
       const o = this.opening(id);
       if (!o) return;
@@ -1348,6 +1361,29 @@
           roundRect(ctx, lp.x - tw / 2, lp.y - fs * 0.8, tw, fs * 1.6, 2); ctx.fill();
           ctx.fillStyle = '#fff';
           ctx.fillText(lab, lp.x, lp.y);
+        }
+        // مسافات حية أثناء سحب الباب/المشب: قراءة كل طرف من حافة العنصر لزاوية الجدار (سم)
+        if ((o.type === 'door' || o.type === 'mashab') && this.drag && this.drag.mode === 'opening' && this.drag.id === o.id) {
+          const gaps = this.openingGaps(o.id);
+          if (gaps) {
+            const gfs = Math.max(10, Math.min(13, S * 0.18));
+            ctx.font = `700 ${gfs}px ${FONT}`;
+            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+            const inOff = 0.35;
+            const marks = [
+              { v: gaps.left, px: w.A.x + w.n.x * inOff, py: w.A.y + w.n.y * inOff },
+              { v: gaps.right, px: w.B.x + w.n.x * inOff, py: w.B.y + w.n.y * inOff },
+            ];
+            for (const mk of marks) {
+              const txt = Math.round(mk.v * 100) + ' سم';
+              const sp = P(mk.px, mk.py);
+              const sw = ctx.measureText(txt).width + 12;
+              ctx.fillStyle = 'rgba(42,38,34,.88)';
+              roundRect(ctx, sp.x - sw / 2, sp.y - gfs * 0.85, sw, gfs * 1.7, 3); ctx.fill();
+              ctx.fillStyle = '#fff';
+              ctx.fillText(txt, sp.x, sp.y);
+            }
+          }
         }
         ctx.restore();
       }

@@ -74,7 +74,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // C3: بطاقات بلا تكاليف
     t('C3-no-cost', css.indexOf('#ordersTable td.c-cost') >= 0 && css.indexOf('display: none') >= 0, 'hidden');
     // C4: مصطلحات
-    t('C4-terms', html.indexOf('>جدار<') >= 0 && html.indexOf('فرش الكل') >= 0 && html.indexOf('إضافة أثاث') >= 0 && app.indexOf('مساحة أرضية') >= 0 && html.indexOf('>زاوية<') < 0, 'terms');
+    t('C4-terms', html.indexOf('>جدار<') >= 0 && html.indexOf('فرش الكل') >= 0 && html.indexOf('>كنبة<') >= 0 && html.indexOf('كنبة حرة') >= 0 && html.indexOf('إضافة كنبة') >= 0 && html.indexOf('إضافة أثاث') < 0 && app.indexOf('مساحة أرضية') >= 0 && html.indexOf('>زاوية<') < 0, 'terms');
     // C5: شبكة نصية
     t('C5-net', css.indexOf('.net-chip #netLabel') >= 0, 'label');
     // B5: مشاركة لاصقة
