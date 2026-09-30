@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.30';
+  const APP_VERSION = '1.0.31';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4248,6 +4248,7 @@ function canEditOrder(o) {
   function designsError(e) {
     const st = e && e.status;
     if (e && e.offline) return 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.';
+    if (st === 0) return 'تعذّر الوصول إلى الخادم. هذه الصفحة تحتاج الاتصال بالإنترنت.';
     if (st === 401) return 'انتهت الجلسة. سجّل الدخول مرة أخرى.';
     if (st === 403) return 'صلاحيتك لا تسمح بعرض تصاميم العملاء.';
     const s = String((e && e.message) || '');

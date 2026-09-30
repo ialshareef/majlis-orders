@@ -89,7 +89,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
     t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
     t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
-    t('A-ver', app.indexOf("APP_VERSION = '1.0.30'") >= 0, 'version');
+    t('A-ver', app.indexOf("APP_VERSION = '1.0.31'") >= 0, 'version');
   }
 
   function b64(bytes) {
@@ -334,6 +334,18 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     await waitFor(function () { return document.querySelector('#orderTitle').textContent === ordNo; }, 120000);
     var ro = window.MajlisApp.order;
     t('B-reload', ro.design.pieces.filter(function (x) { return x.kind === 'acc'; }).length === 5 && ro.design.pieces.some(function (x) { return x.kind === 'column'; }), 'acc+column kept');
+    // G: صفحة تصاميم العملاء داخل التطبيق الحقيقي (دخول مدير فعلي عبر النموذج)
+    sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
+      "('gd-1', 26000199, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'new', '{\"walls\":[]}', 'زبون', '0550000000', 0, '2026-01-01', '2026-01-02')");
+    document.querySelector('#mainNav button[data-page="designs"]').click();
+    await waitFor(function () { return document.querySelector('#page-designs').classList.contains('active'); }, 60000);
+    await waitFor(function () { return document.querySelectorAll('#desTable tbody tr').length === 1; }, 120000);
+    t('G-ui-list', document.querySelector('#desTable tbody tr').textContent.indexOf('MJ-26000199') >= 0, 'row renders');
+    t('G-ui-noerr', document.querySelector('#toast').textContent.indexOf('تعذّر جلب') < 0, 'no fetch toast');
+    document.querySelector('#desTable [data-desopen]').click();
+    await waitFor(function () { return !document.querySelector('#modal').hidden; }, 60000);
+    t('G-ui-open', document.querySelector('#modal').textContent.indexOf('MJ-26000199') >= 0, 'viewer modal');
+    document.querySelector('#modalClose').click();
     // B: مسح تجاوز أفقي (صفحة الطلب)
     var badEls = [];
     document.querySelectorAll('#app button, #app input, #app select, #app table, #app .card, #app .module, #app header').forEach(function (el) {

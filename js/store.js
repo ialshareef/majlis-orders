@@ -139,6 +139,15 @@
 
     async fetchLatest() { return false; },
 
+    /** الوضع المحلي بلا خادم: تصاميم العملاء صفحة سحابية حصراً، فالأمر مرفوض
+        برسالة واحدة مفهومة بدل undefined مبعثر في كل موضع استدعاء. */
+    async api() {
+      const err = new Error('لا يوجد خادم في الوضع المحلي — تصاميم العملاء تحتاج الاتصال بالإنترنت');
+      err.status = 0;
+      this.lastError = err.message;
+      throw err;
+    },
+
     async login(username, password) {
       const u = this.db.users.find((x) => x.username.toLowerCase() === String(username).trim().toLowerCase());
       const h = await hash(password);
@@ -534,6 +543,11 @@
     save: () => backend.save(),
     refresh: () => backend.refresh(),
     fetchLatest: () => backend.fetchLatest(),
+    /** طلب مباشر للخادم (تصاميم العملاء وغيرها). الوضع المحلي بلا خادم:
+        يُرفض بخطأ واضح يحمل status=0 بدل undefined، فيعرف الرسم أنه لا خادم. */
+    api: (method, path, body) => backend.api
+      ? backend.api(method, path, body)
+      : Promise.reject(Object.assign(new Error('لا يوجد خادم في الوضع المحلي — الصفحة تحتاج الاتصال بالإنترنت'), { status: 0 })),
     login: (u, p) => backend.login(u, p),
     restoreSession: () => backend.restoreSession(),
     logout: () => backend.logout(),
