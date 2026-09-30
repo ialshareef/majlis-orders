@@ -103,7 +103,7 @@ async function sha256hex(bytes) {
       var b = await r.json();
       var u = b && b.update;
       var shapeOk = r.status === 200 && b.ok === true && u &&
-        u.versionName === '1.0.31' && u.versionCode === 10031 &&
+        u.versionName === '1.0.32' && u.versionCode === 10032 &&
         typeof u.apkUrl === 'string' && u.apkUrl.indexOf(ALLOW) === 0 &&
         (u.sha256 === null || /^[0-9a-f]{64}$/.test(u.sha256)) &&
         typeof u.mandatory === 'boolean';

@@ -102,6 +102,34 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('ui-caught-error', hasHelper && usesCaught && !staleFetch && !staleOpen, 'designsError wiring');
     // G9: التوكن لا يُكشف في القائمة
     t('no-token-leak', JSON.stringify(r1.body).indexOf('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') < 0, 'token in list');
+    // G10: حذف فردي — مدير وموظف، ومندوب مرفوض، والمحوَّل يحفظ الطلب
+    sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
+      "('d-2', 26000128, 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc', 'converted', '{\"walls\":[]}', 'زبون٢', '0550000001', 0, '2026-01-01', '2026-01-02')");
+    sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
+      "('d-3', 26000129, 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd', 'draft', '{\"walls\":[]}', 'زبون٣', '0550000002', 0, '2026-01-01', '2026-01-02')");
+    var rDel = await call('/api/designs/d-3', 'DELETE', 'tok-staff');
+    var gone3 = await call('/api/designs/d-3', 'GET', 'tok-admin');
+    t('delete-single', rDel.status === 200 && rDel.body.ok === true && gone3.status === 404, rDel.status + '/' + gone3.status);
+    var rDelM = await call('/api/designs/d-2', 'DELETE', 'tok-mand');
+    t('delete-mandoub-denied', rDelM.status === 403, rDelM.status);
+    var rDelNo = await call('/api/designs/d-2', 'DELETE', null);
+    t('delete-no-token-401', rDelNo.status === 401, rDelNo.status);
+    // G11: حذف جملة —shape check + skuetype غير موجود يمر بصمت
+    var rBulkBad = await call('/api/designs/bulk-delete', 'POST', 'tok-admin', { ids: 'nope' });
+    t('bulk-bad-shape-400', rBulkBad.status === 400, rBulkBad.status);
+    var rBulkM = await call('/api/designs/bulk-delete', 'POST', 'tok-mand', { ids: ['d-1'] });
+    t('bulk-mandoub-denied', rBulkM.status === 403, rBulkM.status);
+    sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
+      "('d-4', 26000130, 'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee', 'new', '{\"walls\":[]}', 'ز', '0550000003', 0, '2026-01-01', '2026-01-02')");
+    var rBulk = await call('/api/designs/bulk-delete', 'POST', 'tok-staff', { ids: ['d-2', 'd-4', 'ghost-id'] });
+    var after = await call('/api/designs', 'GET', 'tok-admin');
+    t('bulk-delete', rBulk.status === 200 && rBulk.body.deleted === 3 && after.body.designs.length === 1 &&
+      after.body.designs[0].id === 'd-1',
+      rBulk.status + ' del=' + (rBulk.body && rBulk.body.deleted) + ' left=' + after.body.designs.length);
+    // G12: سجل التحديثات يسجّل الحذف (تدقيق)
+    var actRow = await call('/api/bootstrap', 'GET', 'tok-admin');
+    var hasDel = (actRow.body.activity || []).some(function (a) { return a.action === 'design-delete'; });
+    t('delete-audited', hasDel, 'activity design-delete');
   }
   main()
     .catch(function (e) { bad++; log('FAIL harness :: ' + (e && e.message)); })

@@ -1163,6 +1163,21 @@ body[data-page="order"] main { padding-top: 10px; }
 .zoom-ctl .tb-btn svg { color: #736859; }
 .zoom-ctl .tb-btn:hover { background: #EFE8DC; color: #2A2622; }
 .zoom-ctl .tb-btn.zoom-pct { width: 44px; padding: 0; font-size: .72rem; font-weight: 700; }
+
+/* شريط التحديد الجملة في صفحة تصاميم العملاء */
+.des-bulk {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 0 0 12px; padding: 10px 12px;
+  background: var(--surface); border: 1px solid var(--accent-line); border-radius: var(--r);
+}
+.des-bulk[hidden] { display: none; }
+.des-bulk .des-bulk-n { font-size: .84rem; font-weight: 600; color: var(--ink-2); }
+.des-bulk .des-bulk-sp { flex: 1 1 auto; }
+.des-bulk .btn.on, #desEditBtn.on { background: var(--accent-soft); color: var(--ink); border-color: var(--accent-line); }
+.des-bulk input[type="checkbox"], .table .c-pick input[type="checkbox"] { width: 20px; height: 20px; }
+.table th.c-pick, .table td.c-pick { width: 44px; }
+.table th.c-pick[hidden], .table td.c-pick[hidden] { display: none; }
+.table td.c-pick { text-align: center; }
 /* شريط إجراءات العنصر المحدد: مدمج أسفل المخطط — حذف وتدوير ونسخ مباشرة بلا فتح الخصائص */
 .selbar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding: 8px 10px; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); }
 .selbar[hidden] { display: none; }

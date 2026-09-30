@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.31';
+  const APP_VERSION = '1.0.32';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4236,6 +4236,7 @@ function canEditOrder(o) {
   let designsCache = [];
   let desBound = false;
   const desFilter = { q: '', status: '' };
+  const desSel = { ids: new Set(), edit: false };   // تحديد الصفوف + وضع التعديل (لا حالة عبر التصفية)
 
   async function fetchDesigns() {
     const r = await Store.api('GET', '/api/designs');
@@ -4265,6 +4266,99 @@ function canEditOrder(o) {
     return (d.number || '').includes(q) || (d.name || '').includes(q) || (d.phone || '').replace(/\D/g, '').includes(q.replace(/\D/g, ''));
   }
 
+  /** الحذف نهائي من البوابة،hence تأكيد صريح بالعدد وذكر الطلبات المرتبطة. */
+  function desSelected() {
+    return designsCache.filter((d) => desSel.ids.has(d.id));
+  }
+  /** وضع التعديل: يفعّل أعمدة التحديد وشريط الجملة. يبقى التصميم محفوظاً حتى التأكيد. */
+  function setDesEditMode(on) {
+    desSel.edit = on;
+    if (!on) desSel.ids.clear();
+    const btn = $('#desEditBtn');
+    if (btn) { btn.setAttribute('aria-pressed', String(on)); btn.classList.toggle('on', on); }
+    paintDesigns();
+  }
+  /** يزامن شريط الجملة + «تحديد الكل» + مربعات الصفوف (بلا إعادة جلب) */
+  function syncDesSelection() {
+    const list = designsCache.filter(desMatches);
+    const ids = list.map((d) => d.id);
+    const on = ids.filter((id) => desSel.ids.has(id));
+    const bar = $('#desBulk');
+    if (bar) {
+      bar.hidden = !desSel.edit;
+      const n = $('#desBulkCount');
+      if (n) n.textContent = on.length === 0 ? 'لم يُحدَّد شيء'
+        : (on.length === ids.length && ids.length > 1 ? 'كل التصاميم محدَّدة (' + on.length + ')' : (on.length === 1 ? 'تصميم واحد محدَّد' : on.length + ' تصاميم محدَّدة'));
+    }
+    const all = $('#desSelAll');
+    if (all) {
+      all.checked = ids.length > 0 && on.length === ids.length;
+      all.indeterminate = on.length > 0 && on.length < ids.length;
+      all.disabled = ids.length === 0;
+    }
+    const del = $('#desBulkDel');
+    if (del) del.disabled = on.length === 0;
+    $$('#desTable tbody [data-dessel]').forEach((c) => { c.checked = desSel.ids.has(c.dataset.dessel); });
+  }
+  async function deleteDesignFlow(id) {
+    const d = designsCache.find((x) => x.id === id);
+    const extra = d && d.orderId ? `\n\nهذا التصميم محوَّل إلى الطلب #${d.orderNumber} — سيبقى الطلب كما هو ولا تتأثر بياناته.` : '';
+    if (!(await confirmDlg('حذف التصميم', `سيُحذف التصميم ${d ? d.number : ''} نهائياً من قائمة تصاميم العملاء.${extra}`, 'حذف'))) return;
+    try {
+      const r = await Store.api('DELETE', '/api/designs/' + encodeURIComponent(id));
+      desSel.ids.delete(id);
+      toast(r && r.hadOrder ? `حُذف التصميم — الطلب #${r.orderNumber} لم يُمس` : 'حُذف التصميم');
+      await renderDesigns();
+    } catch (e) { toast('تعذّر الحذف: ' + designsError(e), true); }
+  }
+  async function deleteSelectedDesigns() {
+    const picked = desSelected();
+    if (!picked.length) { toast('حدّد تصميماً واحداً على الأقل', true); return; }
+    const ids = picked.map((d) => d.id);
+    const withOrder = picked.filter((d) => d.orderId).length;
+    const extra = withOrder ? `\n\n${withOrder} منها محوَّلة إلى طلبات — الطلبات لن تتأثر.` : '';
+    if (!(await confirmDlg('حذف التصاميم المحدَّدة', `سيُحذف ${ids.length} تصميم نهائياً من قائمة تصاميم العملاء.${extra}`, 'حذف الكل'))) return;
+    try {
+      const r = await Store.api('POST', '/api/designs/bulk-delete', { ids });
+      desSel.ids.clear();
+      toast(`حُذف ${(r && r.deleted) || ids.length} تصميم`);
+      await renderDesigns();
+    } catch (e) { toast('تعذّر الحذف: ' + designsError(e), true); }
+  }
+
+  /** رسم صفوف القائمة من الذاكرة (بلا شبكة): يُستخدم عند التبديل بين العرض والتعديل */
+  function paintDesigns() {
+    const list = designsCache.filter(desMatches);
+    const tb = $('#desTable tbody');
+    tb.innerHTML = list.map((d) => {
+      const oid = esc(d.id);
+      return `<tr>
+        <td data-label="تحديد" class="c-pick"${desSel.edit ? '' : ' hidden'}><input type="checkbox" data-dessel="${oid}" aria-label="تحديد ${esc(d.number)}"${desSel.ids.has(d.id) ? ' checked' : ''}></td>
+        <td data-label="التصميم" class="c-no"><b class="num" dir="ltr">${esc(d.number)}</b><span class="sub"><bdi class="num">${esc(fmtDate(d.createdAt))}</bdi></span></td>
+        <td data-label="الحالة" class="c-status"><span class="badge">${esc(DESIGN_STATUS[d.status] || d.status)}</span></td>
+        <td data-label="العميل" class="c-cust"><b>${esc(d.name || '—')}</b>${d.phone ? `<span class="sub num">${esc(d.phone)}</span>` : ''}</td>
+        <td data-label="التواصل">${d.contactRequested ? '<span class="badge st-delivered">طلب التواصل</span>' : '<span class="hint">—</span>'}</td>
+        <td data-label="الطلب" class="num">${d.orderNumber ? '#' + esc(d.orderNumber) : '<span class="hint">—</span>'}</td>
+        <td data-label="آخر تحديث"><bdi class="num">${esc(fmtDate(d.updatedAt))}</bdi></td>
+        <td class="row-actions"><span class="ra">
+          <button class="btn small" data-desopen="${oid}">${icon('pen')} فتح ومراجعة</button>
+          ${rowMenu([d.orderId ? null : menuItem(`data-desconv="${oid}"`, 'swap', 'تحويل إلى طلب'), menuItem(`data-desdel="${oid}"`, 'trash', 'حذف', true)], `إجراءات ${esc(d.number)}`)}
+        </span></td>
+      </tr>`;
+    }).join('');
+    $('#desPortalUrl').textContent = window.location.origin + '/customer-design';
+    $('#desEmpty').hidden = list.length > 0;
+    $$('[data-desopen]', tb).forEach((b) => b.addEventListener('click', () => openDesign(b.dataset.desopen)));
+    $$('[data-desconv]', tb).forEach((b) => b.addEventListener('click', () => convertDesignFlow(b.dataset.desconv)));
+    $$('[data-desdel]', tb).forEach((b) => b.addEventListener('click', () => deleteDesignFlow(b.dataset.desdel)));
+    $$('[data-dessel]', tb).forEach((c) => c.addEventListener('change', () => {
+      if (c.checked) desSel.ids.add(c.dataset.dessel); else desSel.ids.delete(c.dataset.dessel);
+      syncDesSelection();
+    }));
+    syncDesSelection();
+    prepareControls(tb);
+  }
+
   async function renderDesigns() {
     if (!isStaff()) return;
     if (!desBound) {
@@ -4275,6 +4369,19 @@ function canEditOrder(o) {
         desFilter.status = c.dataset.dstf || '';
         renderDesigns();
       }));
+      // وضع التعديل: يعرض خيارات التحديد أعلى القائمة (بلا طلب شبكة)
+      const eb = $('#desEditBtn');
+      if (eb) eb.addEventListener('click', () => setDesEditMode(!desSel.edit));
+      const eo = $('#desEditOff');
+      if (eo) eo.addEventListener('click', () => setDesEditMode(false));
+      const sa = $('#desSelAll');
+      if (sa) sa.addEventListener('change', () => {
+        const ids = designsCache.filter(desMatches).map((d) => d.id);
+        desSel.ids = sa.checked ? new Set(ids) : new Set();
+        syncDesSelection();
+      });
+      const bd = $('#desBulkDel');
+      if (bd) bd.addEventListener('click', () => deleteSelectedDesigns());
     }
     desFilter.q = $('#desSearch').value || '';
     try { await fetchDesigns(); } catch (e) { toast('تعذّر جلب التصاميم: ' + designsError(e), true); return; }
@@ -4282,29 +4389,7 @@ function canEditOrder(o) {
     const badge = $('#desBadge');
     if (badge) badge.hidden = !fresh;
     if (badge) badge.textContent = fresh > 99 ? '99+' : String(fresh);
-    const list = designsCache.filter(desMatches);
-    const tb = $('#desTable tbody');
-    tb.innerHTML = list.map((d) => {
-      const oid = esc(d.id);
-      return `<tr>
-        <td data-label="التصميم" class="c-no"><b class="num" dir="ltr">${esc(d.number)}</b><span class="sub"><bdi class="num">${esc(fmtDate(d.createdAt))}</bdi></span></td>
-        <td data-label="الحالة" class="c-status"><span class="badge">${esc(DESIGN_STATUS[d.status] || d.status)}</span></td>
-        <td data-label="العميل" class="c-cust"><b>${esc(d.name || '—')}</b>${d.phone ? `<span class="sub num">${esc(d.phone)}</span>` : ''}</td>
-        <td data-label="التواصل">${d.contactRequested ? '<span class="badge st-delivered">طلب التواصل</span>' : '<span class="hint">—</span>'}</td>
-        <td data-label="الطلب" class="num">${d.orderNumber ? '#' + esc(d.orderNumber) : '<span class="hint">—</span>'}</td>
-        <td data-label="آخر تحديث"><bdi class="num">${esc(fmtDate(d.updatedAt))}</bdi></td>
-        <td class="row-actions"><span class="ra">
-          <button class="btn small" data-desopen="${oid}">${icon('pen')} فتح ومراجعة</button>
-          ${d.orderId ? '' : rowMenu([menuItem(`data-desconv="${oid}"`, 'swap', 'تحويل إلى طلب')], `تحويل ${esc(d.number)}`)}
-        </span></td>
-      </tr>`;
-    }).join('');
-    const portalUrl = window.location.origin + '/customer-design';
-    $('#desPortalUrl').textContent = portalUrl;
-    $('#desEmpty').hidden = list.length > 0;
-    $$('[data-desopen]', tb).forEach((b) => b.addEventListener('click', () => openDesign(b.dataset.desopen)));
-    $$('[data-desconv]', tb).forEach((b) => b.addEventListener('click', () => convertDesignFlow(b.dataset.desconv)));
-    prepareControls(tb);
+    paintDesigns();
   }
 
   /** ملخص هندسي للعرض (أسماء فقط، بلا أسعار) */

@@ -695,6 +695,7 @@
       </header>
       <div class="toolbar">
         <label class="search"><svg><use href="#i-search"/></svg><input id="desSearch" type="search" enterkeyhint="search" aria-label="البحث في التصاميم" placeholder="بحث برقم التصميم أو الاسم أو الجوال"></label>
+        <button type="button" class="btn small" id="desEditBtn" aria-pressed="false" title="تحديد عدة تصاميم وحذفها دفعة واحدة"><svg><use href="#i-pen"/></svg> تعديل</button>
       </div>
       <div class="filter-line">
         <div class="chip-group" id="desStatusChips" role="group" aria-label="تصفية حسب حالة التصميم">
@@ -706,10 +707,17 @@
           <button type="button" class="chip" data-dstf="closed" aria-pressed="false"><i class="st-dot st-cancelled"></i>مغلق</button>
         </div>
       </div>
+      <div class="des-bulk" id="desBulk" hidden>
+        <label class="inline-check"><input type="checkbox" id="desSelAll"> <span>تحديد الكل</span></label>
+        <span class="des-bulk-n" id="desBulkCount">لم يُحدَّد شيء</span>
+        <span class="des-bulk-sp"></span>
+        <button type="button" class="btn small" id="desEditOff">إنهاء</button>
+        <button type="button" class="btn small danger" id="desBulkDel" disabled><svg><use href="#i-trash"/></svg> حذف المحدَّد</button>
+      </div>
       <div class="card table-card">
         <div class="table-wrap">
           <table class="table responsive" id="desTable">
-            <thead><tr><th>التصميم</th><th>الحالة</th><th>العميل</th><th>التواصل</th><th>الطلب</th><th>آخر تحديث</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <thead><tr><th class="c-pick"><span class="sr-only">تحديد</span></th><th>التصميم</th><th>الحالة</th><th>العميل</th><th>التواصل</th><th>الطلب</th><th>آخر تحديث</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
             <tbody></tbody>
           </table>
         </div>

@@ -121,11 +121,14 @@ async function route(request, env, url) {
 
   // تصاميم العملاء (موظفون: مدير وموظف — بلا مندوب، وبلا كشف للتوكن أبداً)
   if (path === '/api/designs' && method === 'GET') { requireStaff(user); return { designs: await listDesigns(env) }; }
+  // حذف جملة: ids مصفوفة معرّفات. التحقق من الشكل والحدّ قبل التنفيذ.
+  if (path === '/api/designs/bulk-delete' && method === 'POST') { requireStaff(user); return bulkDeleteDesigns(env, body, user); }
   const mConv = path.match(/^\/api\/designs\/([^/]+)\/convert$/);
   if (mConv && method === 'POST') { requireStaff(user); return convertDesign(env, decodeURIComponent(mConv[1]), user); }
   const mDes = path.match(/^\/api\/designs\/([^/]+)$/);
   if (mDes && method === 'GET') { requireStaff(user); return { design: await getDesign(env, decodeURIComponent(mDes[1])) }; }
   if (mDes && (method === 'PUT' || method === 'POST')) { requireStaff(user); return updateDesign(env, decodeURIComponent(mDes[1]), body); }
+  if (mDes && method === 'DELETE') { requireStaff(user); return deleteDesign(env, decodeURIComponent(mDes[1]), user); }
 
   throw new HttpError(404, 'المسار غير موجود');
 }
@@ -141,14 +144,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.31';
-// بصمة asalh-najd-1.0.31.apk (إصدار GitHub v1.0.31، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.32';
+// بصمة asalh-najd-1.0.32.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = 'b8f41def005aafc52cbea74679098f0f7e8242ff52406c75064bd24044defd3a';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
+  'تحديد وحذف عدة تصاميم دفعة واحدة',
+  'خيار حذف التصميم من قائمة الإجراءات',
   'إصلاح صفحة تصاميم العملاء — لم تكن تظهر',
-  'زر صفحة تصميم العميل في شاشة الدخول',
-  'إصلاح عرض سبب فشل جلب التصاميم',
 ];
 
 function versionCodeOfName(v) {
@@ -454,6 +457,30 @@ async function updateDesign(env, id, body) {
   await env.DB.prepare('UPDATE customer_designs SET status = ?, design = ?, updated_at = ? WHERE id = ?')
     .bind(status, JSON.stringify(design), t, row.id).run();
   return Object.assign({ ok: true }, portalPublic(Object.assign({}, row, { status, design: JSON.stringify(design), updated_at: t })));
+}
+
+/* حذف تصميم واحد: يزيل صفّه من بوابة العميل فقط.
+   إن كان محوَّلاً لطلب فالطلب يحتفظ بنسخته المستقلة (design + fromDesignNo)،
+   فالحذف لا يمس الطلب ولا أي بيانات مالية — ويُبلَّغ الواجهة بذلك لتُحذّر. */
+async function deleteDesign(env, id, user) {
+  const row = await getDesign(env, id);
+  const t = now();
+  await env.DB.prepare('DELETE FROM customer_designs WHERE id = ?').bind(row.id).run();
+  const ev = { id: uid(), at: t, action: 'design-delete', userId: user.id, userName: user.name, designNo: row.number, orderNo: row.orderNumber || null, details: ['حذف تصميم ' + (row.number || '')] };
+  await env.DB.prepare('INSERT INTO activity (id, at, data) VALUES (?, ?, ?)').bind(ev.id, t, JSON.stringify(ev)).run();
+  return { ok: true, id: row.id, hadOrder: !!row.orderId, orderNumber: row.orderNumber || null };
+}
+
+/* حذف جملة: يتخطّى غير الموجود بصمت (سباق مع حذف فردي) ويسجّل حدثاً واحداً */
+async function bulkDeleteDesigns(env, body, user) {
+  const raw = Array.isArray(body && body.ids) ? body.ids : [];
+  const ids = raw.filter((x) => typeof x === 'string' && x.length > 0 && x.length <= 64).slice(0, 200);
+  if (!ids.length) throw new HttpError(400, 'لم يُحدَّد أي تصميم للحذف');
+  const t = now();
+  await env.DB.batch(ids.map((id) => env.DB.prepare('DELETE FROM customer_designs WHERE id = ?').bind(id)));
+  const ev = { id: uid(), at: t, action: 'design-delete', userId: user.id, userName: user.name, details: ['حذف ' + ids.length + ' تصميم'] };
+  await env.DB.prepare('INSERT INTO activity (id, at, data) VALUES (?, ?, ?)').bind(ev.id, t, JSON.stringify(ev)).run();
+  return { ok: true, requested: ids.length, deleted: ids.length };
 }
 
 /* التحويل لطلب: صف طلب مالي جديد + ربط، والأصل محفوظ لا يُمسّ ولا يُحذف */
