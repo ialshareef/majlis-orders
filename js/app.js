@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.28';
+  const APP_VERSION = '1.0.29';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4229,6 +4229,20 @@ function canEditOrder(o) {
     return designsCache;
   }
 
+  /** رسالة خطأ التصاميم من الخطأ الملتقط نفسه (e) — لا من Store.lastError التي
+      قد تكون قديمة من مزامنة/حفظ متزامن فتُظهر سبباً مضللاً. بلا بيانات حساسة. */
+  function designsError(e) {
+    const st = e && e.status;
+    if (e && e.offline) return 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.';
+    if (st === 401) return 'انتهت الجلسة. سجّل الدخول مرة أخرى.';
+    if (st === 403) return 'صلاحيتك لا تسمح بعرض تصاميم العملاء.';
+    const s = String((e && e.message) || '');
+    if (/انتهت الجلسة|غير مسجّل|401/.test(s)) return 'انتهت الجلسة. سجّل الدخول مرة أخرى.';
+    if (/صلاحي|403|ممنوع|غير مصرّح/.test(s)) return 'صلاحيتك لا تسمح بعرض تصاميم العملاء.';
+    if (/اتصال|إنترنت|غير متصل|offline|network|fetch|timeout/i.test(s)) return 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.';
+    return 'تعذّر جلب البيانات من الخادم. تحقق من الاتصال وحاول مرة أخرى.';
+  }
+
   function desMatches(d) {
     if (desFilter.status && d.status !== desFilter.status) return false;
     const q = desFilter.q.trim();
@@ -4248,7 +4262,7 @@ function canEditOrder(o) {
       }));
     }
     desFilter.q = $('#desSearch').value || '';
-    try { await fetchDesigns(); } catch (e) { toast('تعذّر جلب التصاميم: ' + humanError(Store.lastError), true); return; }
+    try { await fetchDesigns(); } catch (e) { toast('تعذّر جلب التصاميم: ' + designsError(e), true); return; }
     const fresh = designsCache.filter((d) => d.status === 'new').length;
     const badge = $('#desBadge');
     if (badge) badge.hidden = !fresh;
@@ -4297,7 +4311,7 @@ function canEditOrder(o) {
     try {
       const r = await Store.api('GET', '/api/designs/' + encodeURIComponent(id));
       d = r.design;
-    } catch (e) { toast('تعذّر فتح التصميم: ' + humanError(Store.lastError), true); return; }
+    } catch (e) { toast('تعذّر فتح التصميم: ' + designsError(e), true); return; }
     if (!d) return;
     const f = desFacts(d.design);
     openModal(`تصميم ${d.number || ''}`, `
@@ -4336,14 +4350,14 @@ function canEditOrder(o) {
           await Store.api('PUT', '/api/designs/' + encodeURIComponent(id), { design: viewer.getState() });
           toast('حُفظ تعديل التصميم');
           renderDesigns();
-        } catch (e) { $('#dvErr', b).textContent = humanError(Store.lastError); }
+        } catch (e) { $('#dvErr', b).textContent = designsError(e); }
       };
       $('#dvStatus', b).onchange = async (e) => {
         try {
           await Store.api('PUT', '/api/designs/' + encodeURIComponent(id), { status: e.target.value });
           toast('حُدّثت الحالة');
           renderDesigns();
-        } catch (err) { $('#dvErr', b).textContent = humanError(Store.lastError); e.target.value = d.status; }
+        } catch (err) { $('#dvErr', b).textContent = designsError(err); e.target.value = d.status; }
       };
       const wa = $('#dvWa', b);
       if (wa) wa.onclick = () => openExternal('https://wa.me/' + String(d.phone).replace(/\D/g, '') + '?text=' + encodeURIComponent(`السلام عليكم${d.name ? ' ' + d.name : ''}، معك ${settings().shopName || 'أصالة نجد'} بخصوص تصميمك ${d.number}.`));
@@ -4410,7 +4424,7 @@ function canEditOrder(o) {
     let r;
     try {
       r = await Store.api('POST', '/api/designs/' + encodeURIComponent(id) + '/convert');
-    } catch (e) { toast('تعذّر التحويل: ' + humanError(Store.lastError), true); return; }
+    } catch (e) { toast('تعذّر التحويل: ' + designsError(e), true); return; }
     toast(`أُنشئ الطلب #${r.number} من التصميم`);
     await Store.refresh().catch(() => {});
     const o = db().orders.find((x) => x.id === r.orderId);

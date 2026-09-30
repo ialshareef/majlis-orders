@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Designs API Tests</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات مسار تصاميم العملاء: GET /api/designs والقتح والتعديل عبر worker/worker.js
+   الحقيقي على SQLite محلي — يتحقق من الصلاحيات (مدير/موظف/مندوب/منتهي) ومن أن
+   الواجهة تعرض الخطأ الملتقط نفسه لا Store.lastError قديمة. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS G' + n + ' ' + name);
+    else { bad++; log('FAIL G' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  function norm(v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); }
+  async function main() {
+    var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
+    var sqlite = new SQL.Database();
+    sqlite.exec(await (await fetch('../worker/schema.sql')).text());
+    var DB = {
+      prepare: function (sql) {
+        var st = { sql: sql, args: [] };
+        st.bind = function () { st.args = Array.prototype.map.call(arguments, norm); return st; };
+        st.first = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var has = s.step(); var row = has ? s.getAsObject() : null; s.free(); return row; };
+        st.all = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results: results, success: true }; };
+        st.run = async function () { sqlite.run(sql, st.args); return { success: true }; };
+        return st;
+      },
+      batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
+    };
+    var mod = await import('../worker/worker.js');
+    var env = { DB: DB };
+    sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES " +
+      "('u-a','adm','مدير','x','admin',1,'2026-01-01')," +
+      "('u-s','stf','موظف','x','staff',1,'2026-01-01')," +
+      "('u-m','mnd','مندوب','x','mandoub',1,'2026-01-01')");
+    sqlite.run("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES " +
+      "('tok-admin','u-a','2026-01-01','2099-01-01')," +
+      "('tok-staff','u-s','2026-01-01','2099-01-01')," +
+      "('tok-mand','u-m','2026-01-01','2099-01-01')," +
+      "('tok-exp','u-a','2026-01-01','2000-01-01')");
+    sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
+      "('d-1', 26000127, 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', 'new', '{\"walls\":[]}', 'عميل', '0512345678', 0, '2026-01-01', '2026-01-02')");
+    var call = function (path, method, token, body) {
+      var headers = {};
+      if (token) headers['x-session-token'] = token;
+      return mod.default.fetch(
+        new Request('https://t.test' + path, { method: method || 'GET', headers: headers, body: body === undefined ? undefined : JSON.stringify(body) }),
+        env
+      ).then(async function (res) {
+        var j = null;
+        try { j = await res.json(); } catch (_) { j = null; }
+        return { status: res.status, body: j };
+      });
+    };
+    // G1/G2: مدير وموظف يجلبان القائمة
+    var r1 = await call('/api/designs', 'GET', 'tok-admin');
+    t('admin-list', r1.status === 200 && r1.body && Array.isArray(r1.body.designs) && r1.body.designs.length === 1 && r1.body.designs[0].number === 'MJ-26000127', r1.status);
+    var r2 = await call('/api/designs', 'GET', 'tok-staff');
+    t('staff-list', r2.status === 200 && r2.body && r2.body.designs.length === 1, r2.status);
+    // G3: مندوب مرفوض 403 — بلا صلاحية زائدة
+    var r3 = await call('/api/designs', 'GET', 'tok-mand');
+    t('mandoub-denied', r3.status === 403, r3.status);
+    // G4/G5: بلا رمز وجلسة منتهية 401
+    var r4 = await call('/api/designs', 'GET', null);
+    t('no-token-401', r4.status === 401, r4.status);
+    var r5 = await call('/api/designs', 'GET', 'tok-exp');
+    t('expired-401', r5.status === 401, r5.status);
+    // G6: فتح تصميم + غير موجود 404
+    var r6 = await call('/api/designs/d-1', 'GET', 'tok-admin');
+    t('admin-open', r6.status === 200 && r6.body && r6.body.design && r6.body.design.number === 'MJ-26000127', r6.status);
+    var r6b = await call('/api/designs/nope', 'GET', 'tok-staff');
+    t('open-404', r6b.status === 404, r6b.status);
+    var r6c = await call('/api/designs/d-1', 'GET', 'tok-mand');
+    t('mandoub-open-denied', r6c.status === 403, r6c.status);
+    // G7: تعديل الحالة + رفض القيمة الفاسدة + رفض المندوب
+    var r7 = await call('/api/designs/d-1', 'PUT', 'tok-staff', { status: 'reviewing' });
+    t('staff-status', r7.status === 200, r7.status);
+    var r7b = await call('/api/designs/d-1', 'PUT', 'tok-admin', { status: 'bogus' });
+    t('bad-status-400', r7b.status === 400, r7b.status);
+    var r7c = await call('/api/designs/d-1', 'PUT', 'tok-mand', { status: 'closed' });
+    t('mandoub-put-denied', r7c.status === 403, r7c.status);
+    var r7d = await call('/api/designs/d-1/convert', 'POST', 'tok-mand', {});
+    t('mandoub-convert-denied', r7d.status === 403, r7d.status);
+    // G8: الواجهة تستخدم الخطأ الملتقط (designsError) لا lastError قديمة
+    var app = await (await fetch('../js/app.js')).text();
+    var hasHelper = app.indexOf('function designsError(e)') >= 0;
+    var usesCaught = app.indexOf("designsError(e)") >= 0 && app.indexOf("designsError(err)") >= 0;
+    var staleFetch = /fetchDesigns\(\);\s*\}\s*catch\s*\([^)]*\)\s*\{\s*toast\('تعذّر جلب التصاميم: '\s*\+\s*humanError\(Store\.lastError\)/.test(app);
+    var staleOpen = /catch\s*\(e\)\s*\{\s*toast\('تعذّر فتح التصميم: '\s*\+\s*humanError\(Store\.lastError\)/.test(app);
+    t('ui-caught-error', hasHelper && usesCaught && !staleFetch && !staleOpen, 'designsError wiring');
+    // G9: التوكن لا يُكشف في القائمة
+    t('no-token-leak', JSON.stringify(r1.body).indexOf('aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa') < 0, 'token in list');
+  }
+  main()
+    .catch(function (e) { bad++; log('FAIL harness :: ' + (e && e.message)); })
+    .then(function () {
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    });
+})();
+</script>
+</body>
+</html>

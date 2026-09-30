@@ -258,6 +258,8 @@
       } catch (e) {
         const err = new Error('تعذر الاتصال بالخادم. تحقق من الإنترنت.');
         err.offline = true;
+        this.lastError = err.message;
+        this.lastStatus = -1;
         throw err;
       }
       let data = null;
@@ -270,6 +272,8 @@
         }
         const err = new Error((data && data.error) || `خطأ من الخادم (${res.status})`);
         err.status = res.status;
+        this.lastError = err.message;
+        this.lastStatus = res.status;
         throw err;
       }
       return data;
