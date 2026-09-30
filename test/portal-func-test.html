@@ -263,6 +263,41 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       dzp.select({ type: 'piece', id: dSofa.id });
       await waitFor(function () { return !q('#pSheet').hidden; }, 60000);
       t('D4-sheet-returns', !q('#pSheet').hidden, 'sheet back on new tap');
+      // D5: سحب قطعة لا يمرّر الصفحة (touchmove ملغى)، وسحب الفراغ يمرّرها (سلوك مقصود)
+      var nTouchEv = [];
+      var nProbe = function (e) { nTouchEv.push({ cancelable: e.cancelable, defaultPrevented: e.defaultPrevented, mode: dzp.drag ? dzp.drag.mode : 'none' }); };
+      document.addEventListener('touchmove', nProbe, true);
+      var nD5Piece = dz_d5_piece(dzp) || dSofa;
+      function dz_d5_piece(d) { return d.selectedPiece() || P.state().pieces.filter(function (x) { return x.kind === 'sofa'; })[0]; }
+      // نقطة داخل الجسم بعيدة عن المقابض (فوق اليسار ربع قطعة)
+      var dPos2 = dzp.toScreen(nD5Piece.x - nD5Piece.w / 5, nD5Piece.y - nD5Piece.h / 5);
+      var nEvInit = { bubbles: true, cancelable: true, clientX: dR.left + dPos2.x, clientY: dR.top + dPos2.y, pointerId: 31, pointerType: 'touch', isPrimary: true, button: 0 };
+      dCv.dispatchEvent(new PointerEvent('pointerdown', nEvInit));
+      await waitFor(function () { return dzp.drag && dzp.drag.mode === 'move'; }, 60000);
+      dCv.dispatchEvent(new PointerEvent('pointermove', Object.assign({}, nEvInit, { clientX: nEvInit.clientX + 24, clientY: nEvInit.clientY + 16 })));
+      var dTm = new Event('touchmove', { bubbles: true, cancelable: true });
+      Object.defineProperty(dTm, 'touches', { value: [{ clientX: nEvInit.clientX + 24, clientY: nEvInit.clientY + 16 }] });
+      document.dispatchEvent(dTm);
+      dCv.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, nEvInit, { clientX: nEvInit.clientX + 24, clientY: nEvInit.clientY + 16 })));
+      await waitFor(function () { return !dzp.drag; }, 60000);
+      document.removeEventListener('touchmove', nProbe, true);
+      t('D5-block-scroll-on-piece', dTm.defaultPrevented === true, 'touchmove prevented while moving piece=' + dTm.defaultPrevented);
+      // سحب الفراغ = pan يمرّر الصفحة (يبقى السلوك المقصود)
+      nTouchEv = [];
+      document.addEventListener('touchmove', nProbe, true);
+      var emptyX = dzp.toScreen(dzp.geometry().bb.minX - 0.4, dzp.geometry().bb.minY - 0.4);
+      var dEv2 = { bubbles: true, cancelable: true, clientX: dR.left + emptyX.x, clientY: dR.top + emptyX.y, pointerId: 32, pointerType: 'touch', isPrimary: true, button: 0 };
+      dCv.dispatchEvent(new PointerEvent('pointerdown', dEv2));
+      dCv.dispatchEvent(new PointerEvent('pointermove', Object.assign({}, dEv2, { clientX: dEv2.clientX + 20, clientY: dEv2.clientY + 20 })));
+      var dTm2 = new Event('touchmove', { bubbles: true, cancelable: true });
+      Object.defineProperty(dTm2, 'touches', { value: [{ clientX: dEv2.clientX + 20, clientY: dEv2.clientY + 20 }] });
+      document.dispatchEvent(dTm2);
+      dCv.dispatchEvent(new PointerEvent('pointerup', Object.assign({}, dEv2, { clientX: dEv2.clientX + 20, clientY: dEv2.clientY + 20 })));
+      await waitFor(function () { return !dzp.drag; }, 60000);
+      document.removeEventListener('touchmove', nProbe, true);
+      t('D5-pan-still-scrolls', dTm2.defaultPrevented === false, 'pan keeps page scroll=' + dTm2.defaultPrevented);
+      window.scrollTo(0, 0);   // pan حرّك الصفحة: نعيدها لتفادي 影响 بقية الخطوات
+      await new Promise(function (r) { setTimeout(r, 80); });
 
       // E: إكسسوار + كمية 5 حقيقية
       step(3);

@@ -755,8 +755,31 @@
     _bind() {
       const c = this.canvas;
       c.style.touchAction = 'none';
-      c.addEventListener('pointerdown', (e) => this._down(e));
-      c.addEventListener('pointermove', (e) => this._move(e));
+      // سحب قطعة/فتحة/مقبض: نمنع تمرير الصفحة بإصبع واحد (سلوك touch-action:none
+      // وحده لا يكفي على أندرويد: يمرّ التمرير افتراضياً ما لم نُلغِه عند السحب).
+      // السحب على الفراغ (pan) لا يُلغى — تمرير الصفحة هناك سلوك مقصود.
+      const blockScroll = (e) => {
+        const d = this.drag;
+        if (!d) return;
+        const edits = d.mode === 'move' || d.mode === 'opening' || d.mode === 'resizeW' ||
+          d.mode === 'resizeH' || d.mode === 'rotate' || d.mode === 'pinch';
+        if (edits && e.cancelable) e.preventDefault();
+      };
+      this._blockScroll = blockScroll;
+      // مستمع واحد على document لكل صفحة: يُسجّل المصمم النشط فيُحجب التمرير
+      // أثناء سحب قطعة فيه فقط (البوابة تُنشئ مصمماً جديداً في كل دخول).
+      if (!Designer._scrollBlocker) {
+        Designer._scrollBlocker = function (e) {
+          const d = Designer._active && Designer._active.drag;
+          if (!d) return;
+          const edits = d.mode === 'move' || d.mode === 'opening' || d.mode === 'resizeW' ||
+            d.mode === 'resizeH' || d.mode === 'rotate' || d.mode === 'pinch';
+          if (edits && e.cancelable) e.preventDefault();
+        };
+        document.addEventListener('touchmove', Designer._scrollBlocker, { passive: false });
+      }
+      c.addEventListener('pointerdown', (e) => { Designer._active = this; this._down(e); });
+      c.addEventListener('pointermove', (e) => { blockScroll(e); this._move(e); });
       c.addEventListener('pointerup', (e) => this._up(e));
       c.addEventListener('pointercancel', (e) => this._up(e));
       c.addEventListener('lostpointercapture', (e) => { this.pointers.delete(e.pointerId); });
