@@ -334,7 +334,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     await waitFor(function () { return document.querySelector('#orderTitle').textContent === ordNo; }, 120000);
     var ro = window.MajlisApp.order;
     t('B-reload', ro.design.pieces.filter(function (x) { return x.kind === 'acc'; }).length === 5 && ro.design.pieces.some(function (x) { return x.kind === 'column'; }), 'acc+column kept');
-    // G: صفحة تصاميم العملاء داخل التطبيق الحقيقي (دخول مدير فعلي عبر النموذج)
+    // H: صفحة تصاميم العملاء داخل التطبيق الحقيقي (دخول مدير فعلي عبر النموذج)
     sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
       "('gd-1', 26000199, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'new', '{\"walls\":[]}', 'زبون', '0550000000', 0, '2026-01-01', '2026-01-02')");
     document.querySelector('#mainNav button[data-page="designs"]').click();
@@ -374,6 +374,56 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     okDel.click();
     await waitFor(function () { return document.querySelectorAll('#desTable tbody tr').length === rowsBefore - 1; }, 120000);
     t('H-row-delete', document.querySelectorAll('#desTable tbody tr').length === 1, 'row removed');
+    // N: ضمان عدم إصابة واجهة الموظفين/المندوب بالمشكلتين نفسهما
+    // N1: اختيار الجدار من قائمة «الجدار» ثم «باب» ينفّذ على ذلك الجدار بلا لمس المخطط
+    document.querySelector('#mainNav button[data-page="order"]').click();
+    await waitFor(function () { return document.querySelector('#page-order').classList.contains('active'); }, 60000);
+    dz.select(null);
+    await waitFor(function () { return !document.querySelector('#inspector').hidden === false; }, 60000);
+    var wsel = document.querySelector('#wallSel');
+    var nWalls = dz.state.walls.length;
+    wsel.value = String(nWalls - 1);   // آخر جدار
+    wsel.dispatchEvent(new Event('change', { bubbles: true }));
+    var wantWall = Number(wsel.value);
+    document.querySelector('#tbAddDoor').click();
+    await waitFor(function () { return dz.state.openings.some(function (o) { return o.type === 'door' && o.wall === wantWall; }); }, 60000);
+    t('N1-staff-wall-picker', dz.state.openings.some(function (o) { return o.type === 'door' && o.wall === wantWall; }),
+      'wall=' + wantWall + ' openings=' + dz.state.openings.map(function (o) { return o.wall; }).join(','));
+    // N2: لمسة واحدة تُظهر الخصائص، والاستمرار بالسحب يُخفيها (المخطط يبقى ظاهراً)
+    dz.select(null);
+    // في العرض الجانبي (سطح المكتب) تفتح اللوحة بالنقر تلقائياً؛ على الجوال تفتح بزر «الخصائص»
+    var nPiece = dz.state.pieces.filter(function (x) { return x.kind === 'acc'; })[0];
+    dz.select({ type: 'piece', id: nPiece.id });
+    var nIns = document.querySelector('#inspector');
+    if (nIns.hidden) document.querySelector('#tbEdit').click();
+    await waitFor(function () { return !document.querySelector('#inspector').hidden; }, 60000);
+    t('N2-sheet-on-select', !document.querySelector('#inspector').hidden, 'inspector opens on tap');
+    // في واجهة الموظفين لا تُغطّي الخصائصُ المخططَ في العرض الجانبي (سطح المكتب ≥961px)،
+    // وعلى الجوال تُغلق تلقائياً عند السحب. نتحقق من عدم تغطية المخطط في الحالة الحاضرة.
+    cv2.scrollIntoView({ block: 'center' });
+    await new Promise(function (r) { setTimeout(r, 100); });
+    rect = cv2.getBoundingClientRect();
+    var nIsMobile = window.matchMedia('(max-width: 960px)').matches;
+    if (nIsMobile) {
+      // ورقة سفلية: تُغلق فوراً عند بدء السحب باللمس (كما في السلوك المقصود)
+      var nSel2 = dz.selectedPiece();
+      var nBody = (function () { var r2 = cv2.getBoundingClientRect(); var s2 = dz.toScreen(nSel2.x, nSel2.y); return { x: s2.x, y: s2.y, r: r2 }; })();
+      var nPe2 = function (type, cx, cy) {
+        return new PointerEvent(type, { bubbles: true, cancelable: true, clientX: nBody.r.left + cx, clientY: nBody.r.top + cy, button: 0, pointerId: 21, pointerType: 'touch', isPrimary: true });
+      };
+      dz.select({ type: 'piece', id: nSel2.id });
+      if (document.querySelector('#inspector').hidden) document.querySelector('#tbEdit').click();
+      await waitFor(function () { return !document.querySelector('#inspector').hidden; }, 60000);
+      dz.canvas.dispatchEvent(nPe2('pointerdown', nBody.x, nBody.y));
+      dz.canvas.dispatchEvent(nPe2('pointermove', nBody.x + 28, nBody.y + 18));
+      dz.canvas.dispatchEvent(nPe2('pointerup', nBody.x + 28, nBody.y + 18));
+      await waitFor(function () { return document.querySelector('#inspector').hidden; }, 60000);
+      t('N2-sheet-hides-on-touch-drag', document.querySelector('#inspector').hidden, 'sheet hides on touch drag (mobile)');
+    } else {
+      var nCoverDesk = document.elementsFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2)
+        .some(function (el) { return el.id === 'inspector' && !el.hidden; });
+      t('N2-side-panel-desktop', !nCoverDesk, 'desktop side panel, no cover');
+    }
     // B: مسح تجاوز أفقي (صفحة الطلب)
     var badEls = [];
     document.querySelectorAll('#app button, #app input, #app select, #app table, #app .card, #app .module, #app header').forEach(function (el) {
