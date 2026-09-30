@@ -35,6 +35,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('toolbar-furniture', txt('#tbAddSofa span') === 'كنبة', 'tbAddSofa');
       t('toolbar-free-sofa', txt('#tbAddSofaFree span') === 'كنبة حرة', 'tbAddSofaFree');
       t('no-athlon-dup', html.indexOf('>أثاث<') < 0 && html.indexOf('إضافة أثاث') < 0, 'dup labels');
+      var lc = doc.querySelector('#loginCustomer');
+      t('login-customer-link', !!lc && lc.textContent.trim() === 'صفحة تصميم العميل' && !!lc.querySelector('svg use'), 'login entry');
       t('panel-aria-sofa', doc.querySelector('.ptab[data-tab="sofa"]').getAttribute('aria-label') === 'الكنب والمقاعد', 'aria sofa');
       t('panel-aria-acc', doc.querySelector('.ptab[data-tab="acc"]').getAttribute('aria-label') === 'الإكسسوارات', 'aria acc');
       t('inspector-furniture', /data-act="sofa"[^>]*\}\s*أثاث/.test(app) || app.indexOf("${icon('sofa')} أثاث") >= 0, 'inspector btn');

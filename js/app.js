@@ -258,6 +258,20 @@
     }, 2500);
   }
 
+  /** رابط صفحة تصميم العميل من شاشة الدخول: نفس المنشأ (يعمل إنتاج/تجريبي/محلي)،
+      وداخل التطبيق الأصلي يفتح portal.html المضمّنة. تنقّل كامل بلا اعتماد على التطبيق. */
+  function customerDesignUrl() {
+    try {
+      if (window.Capacitor && typeof window.Capacitor.isNativePlatform === 'function' && window.Capacitor.isNativePlatform()) return 'portal.html';
+    } catch (_) { /* noop */ }
+    return window.location.origin + '/customer-design';
+  }
+  { const lc = $('#loginCustomer');
+    if (lc) {
+      const url = customerDesignUrl();
+      lc.href = url;
+      lc.addEventListener('click', (e) => { e.preventDefault(); window.location.href = url; });
+    } }
   /** إظهار/إخفاء كلمة المرور: نص واضح بدل أيقونة غامضة، بلا أي تغيير في المصادقة */
   { const tgl = $('#passToggle'), pw = $('#loginPass');
     if (tgl && pw) tgl.addEventListener('click', () => {

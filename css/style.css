@@ -456,6 +456,7 @@ body.booting #loginScreen { visibility: hidden; }
 .pass-toggle svg { width: 19px; height: 19px; }
 .login-card .btn.block { margin-top: 24px; }
 .login-foot { margin-top: 22px; text-align: center; font-size: .8rem; }
+.login-customer { margin-top: 10px; }
 
 /* اللوحة الفنية: مخطط مجلس بخطوط برونزية على خشب الجوز */
 .login-art {
