@@ -215,6 +215,54 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('D2-gaps', !!(gDoor && gGaps && gGaps.left >= 0 && gGaps.right >= 0 &&
         Math.abs(gGaps.left + gDoor.w + gGaps.right - gW0) < 0.01), JSON.stringify(gGaps));
       if (gDoor) P.designer().removeOpening(gDoor.id);
+      // D3: اختيار الجدار من القائمة ثم «باب» — ينفّذ على ذلك الجدار بلا لمس المخطط
+      P.state().openings = [];
+      step(1);
+      await waitFor(function () { return q('#pPanel select#pfOWall'); }, 60000);
+      var selW = q('#pPanel select#pfOWall');
+      t('D3-wall-select', !!selW && selW.options.length >= 2, 'wall dropdown');
+      selW.value = '3';
+      selW.dispatchEvent(new Event('change', { bubbles: true }));
+      q('#pPanel button[data-add="door"]').click();
+      await waitFor(function () { return (P.state().openings || []).some(function (o) { return o.type === 'door'; }); }, 60000);
+      var dW = (P.state().openings || []).filter(function (o) { return o.type === 'door'; })[0];
+      t('D3-door-on-wall4', !!dW && dW.wall === 3, 'wall=' + (dW && dW.wall));
+      selW = q('#pPanel select#pfOWall');
+      selW.value = '1';
+      selW.dispatchEvent(new Event('change', { bubbles: true }));
+      q('#pPanel button[data-add="mashab"]').click();
+      await waitFor(function () { return (P.state().openings || []).some(function (o) { return o.type === 'mashab'; }); }, 60000);
+      var mW = (P.state().openings || []).filter(function (o) { return o.type === 'mashab'; })[0];
+      t('D3-mashab-on-wall2', !!mW && mW.wall === 1, 'wall=' + (mW && mW.wall));
+      // D4: السحب باللمس يُخفي ورقة الخصائص، والنقرة تعيدها
+      step(3);
+      await waitFor(function () { return q('#pPanel button[data-sofa="wall"]'); }, 60000);
+      q('#pPanel button[data-sofa="wall"]').click();
+      await waitFor(function () { return P.state().pieces.some(function (x) { return x.kind === 'sofa'; }); }, 60000);
+      var dzp = P.designer(), dCv = dzp.canvas;
+      dzp.fitView();
+      var dR = dCv.getBoundingClientRect();
+      var dSofa = P.state().pieces.filter(function (x) { return x.kind === 'sofa'; })[0];
+      // نقطة بعيدة عن المقابض (أعلى يسار القطعة) حتى يقع النقر على الجسم لا على مقبض تغيير الحجم
+      var dPos = dzp.toScreen(dSofa.x - dSofa.w / 4, dSofa.y - dSofa.h / 4);
+      var ptype = function (type, x, y) { dCv.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: dR.left + x, clientY: dR.top + y, bubbles: true, cancelable: true, isPrimary: true, button: 0 })); };
+      dzp.select({ type: 'piece', id: dSofa.id });
+      await waitFor(function () { return !q('#pSheet').hidden; }, 60000);
+      t('D4-sheet-on-tap', !q('#pSheet').hidden, 'sheet visible on tap');
+      ptype('pointerdown', dPos.x, dPos.y);
+      await waitFor(function () { return dzp.drag && dzp.drag.mode === 'move'; }, 60000);
+      ptype('pointermove', dPos.x + 26, dPos.y + 18);
+      ptype('pointermove', dPos.x + 40, dPos.y + 26);
+      await waitFor(function () { return q('#pSheet').hidden; }, 60000);
+      t('D4-sheet-hides-on-drag', q('#pSheet').hidden, 'sheet hidden while dragging');
+      ptype('pointerup', dPos.x + 40, dPos.y + 26);
+      await waitFor(function () { return !dzp.drag; }, 60000);
+      var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id; })[0];
+      t('D4-moved', movedSofa && (Math.abs(movedSofa.x - dSofa.x) > 0.01 || Math.abs(movedSofa.y - dSofa.y) > 0.01), 'piece moved');
+      await new Promise(function (r) { setTimeout(r, 60); });
+      dzp.select({ type: 'piece', id: dSofa.id });
+      await waitFor(function () { return !q('#pSheet').hidden; }, 60000);
+      t('D4-sheet-returns', !q('#pSheet').hidden, 'sheet back on new tap');
 
       // E: إكسسوار + كمية 5 حقيقية
       step(3);

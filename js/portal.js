@@ -54,6 +54,7 @@
     settings: null, catalog: [], catMap: {},
     design: null, meta: null, designer: null,
     step: 'room', dirty: false, saveTimer: 0, saving: false,
+    dragHide: false,   // أثناء سحب باللمس: لا تُفتح ورقة الخصائص (تحجب المخطط)
   };
 
   var STEPS = [
@@ -328,6 +329,20 @@
       onSelect: function (info) { renderSheet(info); },
     });
     S.designer = dz;
+    /* على اللمس: بمجرد بدء سحب القطعة تُخفى ورقة الخصائص حتى لا تحجب المخطط
+       أثناء النقل. المحرك يُعيد onSelect في كل حركة، فالحجب يكون بعلامة
+       (S.dragHide) لا بإخفاء مؤقت يُعاد فتحه في الإطار التالي. */
+    dz.canvas.addEventListener('pointermove', function (e) {
+      if (!e || e.pointerType !== 'touch') return;
+      var d = dz.drag;
+      if (!d || d.moved !== true) return;
+      if (['move', 'resizeW', 'resizeH', 'rotate', 'opening'].indexOf(d.mode) < 0) return;
+      S.dragHide = true;
+      var sh = $('#pSheet');
+      if (sh && !sh.hidden) { sh.hidden = true; sh.innerHTML = ''; sh.removeAttribute('data-compact'); }
+    });
+    dz.canvas.addEventListener('pointerup', function () { setTimeout(function () { S.dragHide = false; }, 0); });
+    dz.canvas.addEventListener('pointercancel', function () { setTimeout(function () { S.dragHide = false; }, 0); });
     try { dz.setState(design || null); } catch (_) { dz.setState(null); }
     dz.fitView();
     renderPanel();
@@ -380,9 +395,17 @@
     $('#pFinish').onclick = function () { S.step = 'review'; buildSteps(); renderPanel(); };
   }
 
+  /* الجدار المستهدف للباب/المشب/الكنبة:
+     1) ما اختاره العميل من قائمة «الجدار» (المرجع الأول — بلا مس الجدار)
+     2) وإلا الجدار المحدد بالإصبع في المخطط
+     3) وإلا جدار الكنبة/الفتحة المحددة، ثم الافتراضي (الأول) */
+  var chosenWall = null;   // اختيار القائمة (step openings) — يبقى للخطوة كلها
+  function setChosenWall(i) { chosenWall = (i === null || i === undefined) ? null : i; }
   function targetWall() {
     var dz = S.designer;
     if (!dz) return 0;
+    var n = (dz.state && dz.state.walls || []).length || 1;
+    if (chosenWall != null && chosenWall >= 0 && chosenWall < n) return chosenWall;
     var i = dz.selectedWallIndex();
     if (i >= 0) return i;
     var o = dz.selectedOpening();
@@ -499,7 +522,9 @@
         + '<button type="button" class="btn" data-add="mashab"><svg><use href="#p-fire"/></svg><span>مشب</span></button>'
         + '<button type="button" class="btn" data-add="column"><svg><use href="#p-plus"/></svg><span>عامود</span></button>'
         + '</div>'
-        + '<div class="row2"><label>الجدار (للباب والمشب)<select id="pfOWall">' + walls.map(function (w, i) { return '<option value="' + i + '">جدار ' + (i + 1) + '</option>'; }).join('') + '</select></label></div>'
+        + '<div class="row2"><label>الجدار (للباب والمشب)<select id="pfOWall">' + walls.map(function (w, i) {
+            return '<option value="' + i + '"' + (i === targetWall() ? ' selected' : '') + '>جدار ' + (i + 1) + '</option>';
+          }).join('') + '</select></label></div>'
         + '<div id="pfOps">'
         + (ops.length ? ops.map(function (o) {
           var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
@@ -518,6 +543,9 @@
       $$('button[data-add]', box).forEach(function (b) {
         b.addEventListener('click', function () { addOpeningOf(b.dataset.add); renderPanel(); });
       });
+      // اختيار الجدار من القائمة: يُحفظ في الخطوة، فالزر «باب/مشب» ينفّذ عليه مباشرة
+      var owSel = $('#pfOWall', box);
+      if (owSel) owSel.addEventListener('change', function () { setChosenWall(Number(owSel.value)); });
       var opSetW = function (id, v) {
         v = Math.max(0.3, Math.round(v * 10) / 10);
         dz.updateOpening(id, { w: v });
@@ -605,7 +633,7 @@
   function renderSheet(info) {
     var sh = $('#pSheet');
     var dz = S.designer;
-    if (!dz || !info) { sh.hidden = true; sh.innerHTML = ''; sh.removeAttribute('data-compact'); return; }
+    if (!dz || !info || S.dragHide) { sh.hidden = true; sh.innerHTML = ''; sh.removeAttribute('data-compact'); return; }
     var wasHidden = sh.hidden;
     var html = '<span class="sheet-grip"></span>';
     if (info.type === 'wall') {
