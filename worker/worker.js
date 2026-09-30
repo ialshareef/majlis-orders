@@ -141,14 +141,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.24';
-// بصمة asalh-najd-1.0.24.apk (إصدار GitHub v1.0.24، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.25';
+// بصمة asalh-najd-1.0.25.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '0cecc82df10820a67d9f94f74259569828757f2ba141dd7c736249e7e8ac1fdc';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
+  'اسم التطبيق أصبح «أصالة نجد» بالعربية',
   'تنبيه تلقائي داخل التطبيق عند توفر إصدار جديد',
   'تحسينات مصمم المجلس وتوزيع الأثاث',
-  'تحسين تجربة الاستخدام على الجوال',
 ];
 
 function versionCodeOfName(v) {
