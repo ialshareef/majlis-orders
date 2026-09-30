@@ -1163,6 +1163,14 @@ body[data-page="order"] main { padding-top: 10px; }
 .zoom-ctl .tb-btn:hover { background: #EFE8DC; color: #2A2622; }
 .zoom-ctl .tb-btn.zoom-pct { width: 44px; padding: 0; font-size: .72rem; font-weight: 700; }
 
+/* نافذة تحديث التطبيق التلقائية: نص الحالة + شريط تقدم + ملاحظات الإصدار */
+.appupd-modal .modal-card { max-width: 430px; }
+.appupd-notes-title { font-weight: 700; margin-top: 12px; }
+.appupd-notes { margin: 6px 0 0; padding-inline-start: 20px; color: var(--ink-2); font-size: .9rem; line-height: 1.8; }
+.appupd-prog { height: 8px; border-radius: 99px; background: var(--line-soft, #eee); overflow: hidden; margin-top: 12px; }
+.appupd-prog > span { display: block; height: 100%; width: 0; background: var(--accent-fill); transition: width .2s; }
+.appupd-status:empty { display: none; }
+
 /* تعديل طول الجدار مباشرة فوق تسميته في المخطط (الجوال) */
 .wall-inline {
   position: absolute; z-index: 6;

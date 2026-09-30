@@ -103,7 +103,7 @@ async function sha256hex(bytes) {
       var b = await r.json();
       var u = b && b.update;
       var shapeOk = r.status === 200 && b.ok === true && u &&
-        u.versionName === '1.0.23' && u.versionCode === 10023 &&
+        u.versionName === '1.0.24' && u.versionCode === 10024 &&
         typeof u.apkUrl === 'string' && u.apkUrl.indexOf(ALLOW) === 0 &&
         (u.sha256 === null || /^[0-9a-f]{64}$/.test(u.sha256)) &&
         typeof u.mandatory === 'boolean';
@@ -194,7 +194,7 @@ async function sha256hex(bytes) {
       els7.check.click();
       await waitFor(function () { return !els7.dl.hidden && !els7.check.disabled; });
       els7.dl.click();
-      await waitFor(function () { return /سلامة الملف/.test(els7.status.textContent) && !els7.dl.disabled; });
+      await waitFor(function () { return /سلامة التحديث/.test(els7.status.textContent) && !els7.dl.disabled; });
       if (blobUrls === 0) ok('T7 checksum-mismatch');
       else fail('T7 checksum-mismatch', 'installer opened despite mismatch');
     } catch (e) { fail('T7 checksum-mismatch', e.message); }

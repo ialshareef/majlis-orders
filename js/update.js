@@ -1,5 +1,6 @@
 /* ======================================================================
-   AppUpdate: فحص تحديث تطبيق الأندرويد وتنزيله وتثبيته (يدوي فقط)
+   AppUpdate: فحص تحديث تطبيق الأندرويد وتنزيله وتثبيته
+   (فحص تلقائي صامت عند التشغيل + فحص يدوي من «عن التطبيق»)
    - المصدر الرسمي الوحيد: GET {apiUrl}/api/app-update (بيانات وصفية فقط).
    - المقارنة برقم البناء: remote.versionCode > current = تحديث، وإلا لا شيء.
    - لا downgrade أبداً، ولا تنزيل تلقائي، ولا تثبيت صامت.
@@ -56,6 +57,17 @@
       return { ok: false, error: 'bad-url' };
     }
     if (sha !== null && !/^[0-9a-f]{64}$/.test(sha)) return { ok: false, error: 'bad-sha' };
+    // ملاحظات الإصدار اختيارية: تُعرض فقط إن وُجدت، وغيابها لا يمنع التحديث
+    var notes = [];
+    try {
+      var rn = m.releaseNotes || m.notes;
+      if (Array.isArray(rn)) {
+        for (var i = 0; i < rn.length && notes.length < 6; i++) {
+          var t = String(rn[i] == null ? '' : rn[i]).trim();
+          if (t) notes.push(t.slice(0, 140));
+        }
+      }
+    } catch (_) { notes = []; }
     return {
       ok: true,
       meta: {
@@ -64,6 +76,7 @@
         apkUrl: apkUrl,
         sha256: sha,
         mandatory: m.mandatory === true,
+        releaseNotes: notes,
       },
     };
   }
@@ -167,7 +180,7 @@
       await FS.downloadFile({ url: meta.apkUrl, path: path, directory: 'CACHE', progress: !!onProgress, recursive: true });
     } catch (e) {
       ulog('download/fail', 'method=native err=' + ((e && e.message) || e));
-      throw { code: 'download', message: 'فشل تنزيل ملف التحديث. تحقق من الاتصال وحاول مجدداً.' };
+      throw { code: 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.' };
     } finally {
       try { if (progHandle && progHandle.remove) await progHandle.remove(); } catch (_) { /* noop */ }
     }
@@ -185,7 +198,7 @@
     if (!ok) {
       bin.fill(0);
       try { await FS.deleteFile({ path: path, directory: 'CACHE' }); ulog('checksum/deleted', path); } catch (_) { /* noop */ }
-      throw { code: 'checksum', message: 'فشل التحقق من سلامة الملف — حُذف ولن يُثبَّت.' };
+      throw { code: 'checksum', message: 'تعذر التحقق من سلامة التحديث.' };
     }
     return { kind: 'native', path: path, size: bin.length };
   }
@@ -201,7 +214,7 @@
       res = await fetch(meta.apkUrl, { method: 'GET', cache: 'no-store', credentials: 'omit', redirect: 'follow' });
     } catch (e) {
       ulog('download/fail', 'method=web-fetch err=' + (e && e.name ? e.name + ': ' : '') + ((e && e.message) || e));
-      throw { code: 'download', message: 'تعذّر تنزيل الملف من المتصفح. افتح رابط الإصدار الرسمي مباشرة.' };
+      throw { code: 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.' };
     }
     ulog('download/http', 'method=web-fetch status=' + res.status + ' final=' + (res.url || '').slice(0, 120));
     if (!res.ok) throw { code: 'http-' + res.status, message: 'فشل تنزيل ملف التحديث.' };
@@ -230,7 +243,7 @@
     ulog('checksum/' + (ok ? 'match' : 'mismatch'), 'bytes=' + loaded);
     if (!ok) {
       bin.fill(0);
-      throw { code: 'checksum', message: 'فشل التحقق من سلامة الملف — حُذف ولن يُثبَّت.' };
+      throw { code: 'checksum', message: 'تعذر التحقق من سلامة التحديث.' };
     }
     return { kind: 'web', blob: new Blob([bin], { type: APK_MIME }) };
   }
@@ -405,6 +418,155 @@
     return true;
   }
 
+  /* ------------- الفحص التلقائي عند التشغيل + نافذة عربية -------------
+     - يُستدعى مرة واحدة لكل تحميل صفحة؛ أي فشل = صمت تام والتطبيق يعمل طبيعياً.
+     - لا تنزيل تلقائي أبداً: التنزيل فقط بضغطة «تحديث الآن».
+     - «لاحقًا» تُسجَّل للجلسة الحالية فقط (sessionStorage لكل versionCode)،
+       فلا تظهر النافذة مجدداً في نفس الجلسة، وتعود في تشغيل لاحق.
+     - mandatory=true: بلا زر «لاحقًا» ولا إغلاق بالنقر خارجها. */
+  var autoRan = false;
+
+  function laterKey(code) { return 'majlis_update_later_' + code; }
+
+  function wasDismissed(code) {
+    try {
+      if (typeof sessionStorage === 'undefined') return false;
+      return sessionStorage.getItem(laterKey(code)) === '1';
+    } catch (_) { return false; }
+  }
+
+  function markDismissed(code) {
+    try { sessionStorage.setItem(laterKey(code), '1'); } catch (_) { /* noop */ }
+  }
+
+  function escHtml(s) {
+    return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function showUpdateModal(host, current, meta, onEvent) {
+    try { if (document.body) document.body.classList.add('modal-open'); } catch (_) { /* noop */ }
+    var box = document.createElement('div');
+    box.className = 'modal appupd-modal';
+    box.setAttribute('role', 'dialog');
+    box.setAttribute('aria-modal', 'true');
+    var mandatory = meta.mandatory === true;
+    var notes = Array.isArray(meta.releaseNotes) ? meta.releaseNotes : [];
+    var notesHtml = '';
+    if (notes.length) {
+      notesHtml = '<p class="appupd-notes-title">أبرز التحسينات</p><ul class="appupd-notes">' +
+        notes.map(function (n) { return '<li>' + escHtml(n) + '</li>'; }).join('') + '</ul>';
+    }
+    box.innerHTML =
+      '<div class="modal-card" role="document">' +
+      '<div class="modal-head"><h3>' + (mandatory ? 'تحديث مطلوب' : 'يتوفر تحديث جديد') + '</h3></div>' +
+      '<div class="modal-body">' +
+      '<p>' + (mandatory ? 'يجب تحديث التطبيق للمتابعة.' : 'يتوفر إصدار أحدث من التطبيق: v' + escHtml(meta.versionName)) + '</p>' +
+      notesHtml +
+      '<div class="appupd-prog" hidden><span></span></div>' +
+      '<p class="hint appupd-status" role="status" aria-live="polite"></p>' +
+      '<div class="btn-row">' +
+      '<button type="button" class="btn primary appupd-go">تحديث الآن</button>' +
+      (mandatory ? '' : '<button type="button" class="btn appupd-later">لاحقًا</button>') +
+      '</div></div></div>';
+    host.appendChild(box);
+    var go = box.querySelector('.appupd-go');
+    var later = box.querySelector('.appupd-later');
+    var prog = box.querySelector('.appupd-prog');
+    var bar = box.querySelector('.appupd-prog > span');
+    var status = box.querySelector('.appupd-status');
+
+    function setStatus(msg) { if (status) status.textContent = msg || ''; }
+    function setBar(loaded, total) {
+      if (!prog || !bar) return;
+      if (!loaded || loaded < 0) { prog.hidden = true; return; }
+      prog.hidden = false;
+      var pct = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
+      bar.style.width = pct + '%';
+    }
+    function close() {
+      try { box.remove(); } catch (_) { /* noop */ }
+      try {
+        if (document.body && !document.querySelector('.modal')) document.body.classList.remove('modal-open');
+      } catch (_) { /* noop */ }
+    }
+    if (later) {
+      later.addEventListener('click', function () {
+        markDismissed(meta.versionCode);
+        ulog('auto/later', 'code=' + meta.versionCode);
+        try { onEvent('later', meta); } catch (_) { /* noop */ }
+        close();
+      });
+    }
+    go.addEventListener('click', async function () {
+      // حماية أخيرة ضد downgrade/إعادة التثبيت وإن تغيّر current بعد العرض
+      if (!(meta.versionCode > current.versionCode)) {
+        setStatus('لا يوجد تحديث صالح للتنزيل.');
+        return;
+      }
+      go.disabled = true;
+      if (later) later.disabled = true;
+      try {
+        setStatus('جارٍ التنزيل…');
+        var src = await downloadVerifiedApk(meta, function (loaded, total) { setBar(loaded, total); });
+        setBar(-1, 0);
+        setStatus('تم التحقق من الملف — سيُفتح مثبّت النظام.');
+        var how = await installApk(src, apkFileName(meta));
+        setStatus(how === 'native'
+          ? 'أُرسل الملف إلى مثبّت النظام — أكمل خطوات التثبيت.'
+          : 'نُزّل الملف — افتحه من إشعار اكتمال التنزيل لإتمام التثبيت.');
+        ulog('auto/installed', 'how=' + how);
+        try { onEvent('installed', { how: how, meta: meta }); } catch (_) { /* noop */ }
+        if (!mandatory && later) { later.disabled = false; later.textContent = 'إغلاق'; }
+      } catch (e) {
+        setBar(-1, 0);
+        setStatus((e && e.message) || 'فشل التنزيل أو التثبيت.');
+        ulog('auto/failed', String((e && e.code) || (e && e.message) || e));
+        try { onEvent('failed', e); } catch (_) { /* noop */ }
+        go.disabled = false;
+        if (later) later.disabled = false;
+      }
+    });
+    return { close: close };
+  }
+
+  /**
+   * فحص واحد صامت عند التشغيل. يعيد {outcome} حيث outcome ∈
+   * shown|silent|once|no-host. لا يرمي أبداً ولا يعرض شيئاً عند أي فشل.
+   */
+  async function initAutoCheck(opts) {
+    opts = opts || {};
+    if (autoRan) return { outcome: 'once' };
+    autoRan = true;
+    var current = opts.current || { versionName: '', versionCode: 0 };
+    var onEvent = opts.onEvent || function () { /* noop */ };
+    var r;
+    try {
+      r = await checkForUpdate(current);
+    } catch (e) {
+      ulog('auto/check-throw', String((e && e.message) || e));
+      return { outcome: 'silent' };
+    }
+    if (!r || r.state !== 'available' || !r.meta || !(r.meta.versionCode > current.versionCode)) {
+      try { onEvent('silent', r && r.state); } catch (_) { /* noop */ }
+      return { outcome: 'silent', state: r && r.state };
+    }
+    if (wasDismissed(r.meta.versionCode)) {
+      try { onEvent('silent', 'dismissed'); } catch (_) { /* noop */ }
+      return { outcome: 'silent', state: 'dismissed' };
+    }
+    var host = opts.host;
+    try {
+      if (!host && typeof document !== 'undefined' && document.body) host = document.body;
+    } catch (_) { host = null; }
+    if (!host) return { outcome: 'no-host' };
+    showUpdateModal(host, current, r.meta, onEvent);
+    ulog('auto/shown', 'code=' + r.meta.versionCode + ' mandatory=' + (r.meta.mandatory === true));
+    try { onEvent('shown', r.meta); } catch (_) { /* noop */ }
+    return { outcome: 'shown', mandatory: r.meta.mandatory === true };
+  }
+
   window.AppUpdate = {
     APK_ALLOW: APK_ALLOW,
     versionCodeOf: versionCodeOf,
@@ -413,6 +575,8 @@
     downloadVerifiedApk: downloadVerifiedApk,
     installApk: installApk,
     initBox: initBox,
+    initAutoCheck: initAutoCheck,
     _diag: function () { return diagLog.slice(); },
+    _resetAuto: function () { autoRan = false; },
   };
 })();

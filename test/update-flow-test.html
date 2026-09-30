@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Update Flow Tests</title>
+<style>
+  .modal { position: fixed; inset: 0; display: flex; }
+  .modal-card { background: #fff; max-width: 430px; margin: auto; }
+  .btn-row { display: flex; gap: 10px; }
+</style>
+</head>
+<body>
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* اختبارات نافذة التحديث التلقائي (js/update.js :: initAutoCheck).
+   تعمل بـ fetch وCapacitor وهميين — لا شبكة حقيقية ولا تنزيل فعلي. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+
+var results = [];
+function log(m) { document.getElementById('testLog').textContent += m + '\n'; }
+function ok(name) { results.push([name, true]); log('PASS ' + name); }
+function fail(name, why) { results.push([name, false]); log('FAIL ' + name + ' :: ' + why); }
+function waitFor(cond, ms) {
+  ms = ms || 5000;
+  var t0 = Date.now();
+  return new Promise(function (res, rej) {
+    (function poll() {
+      var v = null;
+      try { v = cond(); } catch (e) { /* retry */ }
+      if (v) return res(v);
+      if (Date.now() - t0 > ms) return rej(new Error('timeout'));
+      setTimeout(poll, 50);
+    })();
+  });
+}
+function sha256hex(bytes) {
+  return crypto.subtle.digest('SHA-256', bytes).then(function (d) {
+    return Array.prototype.map.call(new Uint8Array(d), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+  });
+}
+
+var ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
+function metaOf(over) {
+  var m = {
+    versionName: '1.0.24', versionCode: 10024,
+    apkUrl: ALLOW + 'v1.0.24/asalh-najd-1.0.24.apk',
+    sha256: 'ab'.repeat(32), mandatory: false,
+    releaseNotes: ['تحسين أ', 'تحسين ب'],
+  };
+  if (over) for (var k in over) m[k] = over[k];
+  return m;
+}
+var CUR_OLD = { versionName: '1.0.23', versionCode: 10023 };
+var CUR_NEW = { versionName: '1.0.24', versionCode: 10024 };
+var realFetch = window.fetch;
+var realCap = window.Capacitor;
+
+function mockMeta(meta) {
+  window.fetch = function () {
+    return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ update: meta }); } });
+  };
+}
+function cleanup() {
+  window.fetch = realFetch;
+  if (realCap === undefined) delete window.Capacitor; else window.Capacitor = realCap;
+  document.querySelectorAll('.appupd-modal').forEach(function (el) { el.remove(); });
+  try { sessionStorage.clear(); } catch (_) { /* noop */ }
+  try { document.body.classList.remove('modal-open'); } catch (_) { /* noop */ }
+  if (window.AppUpdate && window.AppUpdate._resetAuto) window.AppUpdate._resetAuto();
+}
+
+(async function run() {
+  try {
+    await new Promise(function (res, rej) {
+      var s = document.createElement('script');
+      s.src = '../js/update.js?fresh=' + Date.now();
+      s.onload = res; s.onerror = function () { rej(new Error('cannot load update.js')); };
+      document.head.appendChild(s);
+    });
+    window.APP_CONFIG = { apiUrl: 'https://upd.test' };
+    var AU = window.AppUpdate;
+
+    // F1: على آخر إصدار — صمت تام بلا نافذة
+    try {
+      mockMeta(metaOf());
+      var r1 = await AU.initAutoCheck({ current: CUR_NEW });
+      if (r1.outcome === 'silent' && !document.querySelector('.appupd-modal')) ok('F1 latest-silent');
+      else fail('F1 latest-silent', JSON.stringify(r1));
+    } catch (e) { fail('F1 latest-silent', e.message); }
+    cleanup();
+
+    // F2: إصدار أحدث — نافذة عربية بزرّين
+    try {
+      mockMeta(metaOf());
+      var r2 = await AU.initAutoCheck({ current: CUR_OLD });
+      var m2 = document.querySelector('.appupd-modal');
+      var t2 = m2 && m2.querySelector('.modal-head h3').textContent;
+      var b2 = m2 && m2.querySelector('.appupd-go').textContent;
+      var l2 = m2 && m2.querySelector('.appupd-later');
+      if (r2.outcome === 'shown' && t2 === 'يتوفر تحديث جديد' &&
+          m2.textContent.indexOf('v1.0.24') >= 0 && b2 === 'تحديث الآن' && l2 && l2.textContent === 'لاحقًا') ok('F2 available-shown');
+      else fail('F2 available-shown', t2 + '|' + b2 + '|' + JSON.stringify(r2));
+    } catch (e) { fail('F2 available-shown', e.message); }
+    cleanup();
+
+    // F3: ملاحظات الإصدار تُعرض
+    try {
+      mockMeta(metaOf());
+      await AU.initAutoCheck({ current: CUR_OLD });
+      var m3 = document.querySelector('.appupd-modal');
+      var items = m3 ? m3.querySelectorAll('.appupd-notes li').length : 0;
+      if (m3 && m3.textContent.indexOf('أبرز التحسينات') >= 0 && items === 2) ok('F3 notes-shown');
+      else fail('F3 notes-shown', 'items=' + items);
+    } catch (e) { fail('F3 notes-shown', e.message); }
+    cleanup();
+
+    // F4: بلا ملاحظات — يُكتفى برسالة الإصدار
+    try {
+      var mm4 = metaOf(); delete mm4.releaseNotes;
+      mockMeta(mm4);
+      await AU.initAutoCheck({ current: CUR_OLD });
+      var m4 = document.querySelector('.appupd-modal');
+      if (m4 && !m4.querySelector('.appupd-notes') && m4.textContent.indexOf('v1.0.24') >= 0) ok('F4 notes-absent');
+      else fail('F4 notes-absent', 'notes section should be absent');
+    } catch (e) { fail('F4 notes-absent', e.message); }
+    cleanup();
+
+    // F5: إجباري — بلا «لاحقًا»
+    try {
+      mockMeta(metaOf({ mandatory: true }));
+      var r5 = await AU.initAutoCheck({ current: CUR_OLD });
+      var m5 = document.querySelector('.appupd-modal');
+      var t5 = m5 && m5.querySelector('.modal-head h3').textContent;
+      if (r5.outcome === 'shown' && r5.mandatory === true && t5 === 'تحديث مطلوب' &&
+          m5.textContent.indexOf('يجب تحديث التطبيق للمتابعة.') >= 0 && !m5.querySelector('.appupd-later')) ok('F5 mandatory-no-later');
+      else fail('F5 mandatory-no-later', t5 + '|' + JSON.stringify(r5));
+    } catch (e) { fail('F5 mandatory-no-later', e.message); }
+    cleanup();
+
+    // F6: «لاحقًا» تُغلق ولا تُعاد في نفس الجلسة
+    try {
+      mockMeta(metaOf());
+      await AU.initAutoCheck({ current: CUR_OLD });
+      document.querySelector('.appupd-modal .appupd-later').click();
+      var closed = !document.querySelector('.appupd-modal');
+      AU._resetAuto();
+      var r6 = await AU.initAutoCheck({ current: CUR_OLD });
+      if (closed && r6.outcome === 'silent' && r6.state === 'dismissed' && !document.querySelector('.appupd-modal')) ok('F6 later-dismiss-once');
+      else fail('F6 later-dismiss-once', 'closed=' + closed + ' ' + JSON.stringify(r6));
+    } catch (e) { fail('F6 later-dismiss-once', e.message); }
+    cleanup();
+
+    // F7: بلا إنترنت — التطبيق يعمل بلا نافذة ولا رمي
+    try {
+      window.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+      var r7 = await AU.initAutoCheck({ current: CUR_OLD });
+      if (r7.outcome === 'silent' && !document.querySelector('.appupd-modal')) ok('F7 offline-silent');
+      else fail('F7 offline-silent', JSON.stringify(r7));
+    } catch (e) { fail('F7 offline-silent', e.message); }
+    cleanup();
+
+    // F8: إحباط الفحص (timeout) — صمت
+    try {
+      window.fetch = function (url, o) {
+        return new Promise(function (_, rej) {
+          var sig = o && o.signal;
+          if (sig && sig.aborted) { rej(new DOMException('aborted', 'AbortError')); return; }
+          if (sig && sig.addEventListener) sig.addEventListener('abort', function () { rej(new DOMException('aborted', 'AbortError')); });
+        });
+      };
+      var r8 = await AU.initAutoCheck({ current: CUR_OLD });
+      if (r8.outcome === 'silent' && !document.querySelector('.appupd-modal')) ok('F8 abort-silent');
+      else fail('F8 abort-silent', JSON.stringify(r8));
+    } catch (e) { fail('F8 abort-silent', e.message); }
+    cleanup();
+
+    // F9: رابط غير HTTPS/رسمي — يُرفض بصمت
+    try {
+      mockMeta(metaOf({ apkUrl: 'http://evil.test/x.apk' }));
+      var r9 = await AU.initAutoCheck({ current: CUR_OLD });
+      if (r9.outcome === 'silent' && !document.querySelector('.appupd-modal')) ok('F9 invalid-url-silent');
+      else fail('F9 invalid-url-silent', JSON.stringify(r9));
+    } catch (e) { fail('F9 invalid-url-silent', e.message); }
+    cleanup();
+
+    // F10/F11: نفس الرقم أو أقل — لا تحديث (لا downgrade)
+    try {
+      mockMeta(metaOf({ versionCode: 10023 }));
+      var r10 = await AU.initAutoCheck({ current: CUR_OLD });
+      var s10 = r10.outcome === 'silent' && !document.querySelector('.appupd-modal');
+      AU._resetAuto(); mockMeta(metaOf({ versionCode: 10020 }));
+      var r11 = await AU.initAutoCheck({ current: CUR_OLD });
+      var s11 = r11.outcome === 'silent' && !document.querySelector('.appupd-modal');
+      if (s10 && s11) ok('F10-F11 same-lower-silent');
+      else fail('F10-F11 same-lower-silent', JSON.stringify(r10) + ' ' + JSON.stringify(r11));
+    } catch (e) { fail('F10-F11 same-lower-silent', e.message); }
+    cleanup();
+
+    // F12: بصمة خاطئة — الرسالة الدقيقة ولا تثبيت
+    try {
+      var bytes12 = new TextEncoder().encode('fake-apk-payload-0123456789');
+      window.fetch = function () {
+        return Promise.resolve({ ok: true, status: 200, headers: { get: function () { return 0; } }, body: null,
+          arrayBuffer: function () { return Promise.resolve(bytes12.buffer); } });
+      };
+      var err12 = null;
+      try { await AU.downloadVerifiedApk(metaOf(), null); } catch (e) { err12 = e; }
+      if (err12 && err12.code === 'checksum' && err12.message === 'تعذر التحقق من سلامة التحديث.') ok('F12 checksum-msg');
+      else fail('F12 checksum-msg', JSON.stringify(err12));
+    } catch (e) { fail('F12 checksum-msg', e.message); }
+    cleanup();
+
+    // F13: فشل التنزيل الأصلي — الرسالة الدقيقة
+    try {
+      window.Capacitor = { Plugins: {
+        Filesystem: { deleteFile: function () { return Promise.resolve(); },
+          readFile: function () { return Promise.resolve({ data: '' }); },
+          downloadFile: function () { return Promise.reject(new Error('net down')); } },
+        FileOpener: {},
+      } };
+      var err13 = null;
+      try { await AU.downloadVerifiedApk(metaOf(), null); } catch (e) { err13 = e; }
+      if (err13 && err13.code === 'download' && err13.message === 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.') ok('F13 download-msg');
+      else fail('F13 download-msg', JSON.stringify(err13));
+    } catch (e) { fail('F13 download-msg', e.message); }
+    cleanup();
+
+    // F14: فتح مثبّت النظام بالطريقة الرسمية
+    try {
+      var opened = null;
+      window.Capacitor = { Plugins: {
+        Filesystem: { getUri: function () { return Promise.resolve({ uri: 'content://dl/x.apk' }); } },
+        FileOpener: { open: function (a) { opened = a; return Promise.resolve(); } },
+      } };
+      var how14 = await AU.installApk({ kind: 'native', path: 'x.apk', size: 10 }, 'x.apk');
+      if (how14 === 'native' && opened && opened.filePath === 'content://dl/x.apk' &&
+          opened.contentType === 'application/vnd.android.package-archive' && opened.openWithDefault === true) ok('F14 installer-launch');
+      else fail('F14 installer-launch', JSON.stringify(opened));
+    } catch (e) { fail('F14 installer-launch', e.message); }
+    cleanup();
+
+    // F15: تدفق كامل عبر زر «تحديث الآن» حتى المثبّت
+    try {
+      var apkBytes = new TextEncoder().encode('full-flow-apk-bytes-abcdef-1234567890');
+      var apkSha = await sha256hex(apkBytes);
+      var b64 = btoa(String.fromCharCode.apply(null, apkBytes));
+      var opened15 = null;
+      window.Capacitor = { Plugins: {
+        Filesystem: {
+          deleteFile: function () { return Promise.resolve(); },
+          downloadFile: function () { return Promise.resolve({ path: 'u.apk' }); },
+          stat: function () { return Promise.resolve({ size: apkBytes.length }); },
+          readFile: function () { return Promise.resolve({ data: b64 }); },
+          getUri: function () { return Promise.resolve({ uri: 'content://dl/u.apk' }); },
+        },
+        FileOpener: { open: function (a) { opened15 = a; return Promise.resolve(); } },
+      } };
+      mockMeta(metaOf({ sha256: apkSha }));
+      var ev15 = [];
+      await AU.initAutoCheck({ current: CUR_OLD, onEvent: function (e) { ev15.push(e); } });
+      document.querySelector('.appupd-modal .appupd-go').click();
+      await waitFor(function () { return opened15 !== null; }, 10000);
+      var st15 = document.querySelector('.appupd-modal .appupd-status').textContent;
+      if (opened15.filePath === 'content://dl/u.apk' && st15.indexOf('مثبّت النظام') >= 0 && ev15.indexOf('installed') >= 0) ok('F15 go-installs');
+      else fail('F15 go-installs', st15 + ' ev=' + ev15.join(','));
+    } catch (e) { fail('F15 go-installs', e.message); }
+    cleanup();
+
+    // F16: فحص واحد فقط لكل تحميل صفحة
+    try {
+      mockMeta(metaOf());
+      await AU.initAutoCheck({ current: CUR_OLD });
+      var r16 = await AU.initAutoCheck({ current: CUR_OLD });
+      if (r16.outcome === 'once') ok('F16 auto-once');
+      else fail('F16 auto-once', JSON.stringify(r16));
+    } catch (e) { fail('F16 auto-once', e.message); }
+    cleanup();
+
+    // F17: غياب البصمة = رفض fail-closed
+    try {
+      var err17 = null;
+      try { await AU.downloadVerifiedApk(metaOf({ sha256: null }), null); } catch (e) { err17 = e; }
+      if (err17 && err17.code === 'no-sha') ok('F17 no-sha-refused');
+      else fail('F17 no-sha-refused', JSON.stringify(err17));
+    } catch (e) { fail('F17 no-sha-refused', e.message); }
+    cleanup();
+
+    // F18: توافق أندرويد — نفس applicationId ومعادلة الترميز وإضافات التثبيت
+    try {
+      var cfg = await (await fetch('../capacitor.config.json')).json();
+      var pkg = await (await fetch('../package.json')).json();
+      var deps = (pkg && pkg.dependencies) || {};
+      if (cfg.appId === 'com.asalhnajd.majlis' && AU.versionCodeOf('1.0.24') === 10024 &&
+          deps['@capacitor/filesystem'] && deps['@capacitor-community/file-opener']) ok('F18 android-compat');
+      else fail('F18 android-compat', cfg.appId + ' deps=' + Object.keys(deps).join(','));
+    } catch (e) { fail('F18 android-compat', e.message); }
+    cleanup();
+  } catch (e) {
+    fail('harness', e.message);
+  } finally {
+    cleanup();
+    var bad = results.filter(function (r) { return !r[1]; }).length;
+    var verdict = bad === 0 ? ('PASS ' + results.length + '/' + results.length) : 'FAIL';
+    if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); verdict = 'FAIL'; }
+    document.getElementById('testResult').textContent = verdict;
+    document.title = verdict;
+    log('---- ' + verdict + ' ----');
+  }
+})();
+</script>
+</body>
+</html>

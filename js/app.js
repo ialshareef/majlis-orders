@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.23';
+  const APP_VERSION = '1.0.24';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -244,6 +244,18 @@
     showPage('order');
     requestAnimationFrame(() => designer.resize());
     setTimeout(() => offerDraftRestore(pending), 400);
+    // فحص تحديث التطبيق تلقائياً: مرة واحدة لكل تشغيل، صامت تماماً عند أي فشل،
+    // وبلا أي تأثير على الدخول أو الطلب الحالي (التفاصيل في js/update.js)
+    setTimeout(() => {
+      try {
+        if (window.AppUpdate && typeof window.AppUpdate.initAutoCheck === 'function') {
+          const p = window.AppUpdate.initAutoCheck({
+            current: { versionName: APP_VERSION, versionCode: window.AppUpdate.versionCodeOf(APP_VERSION) },
+          });
+          if (p && typeof p.catch === 'function') p.catch(() => {});
+        }
+      } catch (_) { /* silent */ }
+    }, 2500);
   }
 
   /** إظهار/إخفاء كلمة المرور: نص واضح بدل أيقونة غامضة، بلا أي تغيير في المصادقة */
