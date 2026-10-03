@@ -96,6 +96,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('review-step', pjs0.indexOf('renderReviewPanel') >= 0 && pjs0.indexOf('pActPdf') >= 0 && pjs0.indexOf('pActWa') >= 0, 'review actions');
       t('done-dom', !!q('#pDesignNo') && !!q('#pPdf') && !!q('#pShareWa') && !!q('#pContactBtn'), 'done');
       t('look-dom', !!q('#pLookNo') && !!q('#pLookImg'), 'look');
+      // ترويسة PDF: أيقونة التطبيق صورة حقيقية (لا SVG يُرسم أسود عند التصدير)
+      t('pdf-app-icon', pjs0.indexOf('inv-mark') >= 0 && pjs0.indexOf('/icons/icon-512.png') >= 0, 'pdf uses app icon image');
       // RTL + viewport
       t('rtl', doc.documentElement.dir === 'rtl' && doc.documentElement.lang === 'ar', 'dir');
       // صياغة portal.js + designer.js

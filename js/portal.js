@@ -970,7 +970,7 @@
     var el = document.createElement('div');
     el.className = 'inv';
     el.innerHTML = ''
-      + '<div class="inv-head"><div class="inv-brand"><span class="mark"><svg><use href="#p-sofa"/></svg></span>'
+      + '<div class="inv-head"><div class="inv-brand"><img class="inv-mark" src="/icons/icon-512.png" alt="" width="60" height="60">'
       + '<div><h1>' + esc(s.shopName || 'أصالة نجد') + '</h1><small>تصميم مجلس — ' + esc(noTxt) + '</small></div></div>'
       + '<div class="inv-title-box"><div class="inv-title">تصميم العميل</div><div class="inv-no">' + esc(noTxt) + '</div></div></div>'
       + '<div class="inv-info">'
