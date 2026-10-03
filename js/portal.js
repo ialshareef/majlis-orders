@@ -980,7 +980,6 @@
     var facts = designFacts(st);
     var img = designImage(st, 1600);
     var noTxt = number || 'مسودة';
-    var qr = number ? await qrDataUrl(window.location.origin + '/customer-design/view/' + number) : '';
     var d = new Date();
     var date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     // بطاقات التواصل: أيقونة + باركود لكل قناة (يفتحها المسح مباشرة)
@@ -1011,7 +1010,6 @@
       + facts.map(function (f) { return '<tr><td>' + f[0] + '</td><td>' + esc(f[1]) + '</td></tr>'; }).join('')
       + '</tbody></table></div>'
       + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b><div class="inv-chans">' + (chanHtml || '') + '</div></div>'
-      + (qr ? '<div class="inv-qr" data-url="' + esc(window.location.origin + '/customer-design/view/' + number) + '"><img src="' + qr + '" alt="رمز التصميم"><small>امسح لعرض التصميم</small></div>' : '')
       + '</div>'
       + '</div>'
       + '<div class="inv-foot"><span>احتفظ برقم التصميم لمراجعته مع المحل</span></div>';

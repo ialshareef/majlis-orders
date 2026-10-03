@@ -2288,6 +2288,8 @@ body.modal-open { overflow: hidden; }
 /* تواصل معنا: بطاقات قناة (أيقونة + باركود + الرابط) بدل سطور نص عشوائية */
 .inv-contact { flex: 1; font-size: 8.5pt; color: #4A413A; background: #FBF9F5; border: 1px solid #EFE9DF; border-radius: .8mm; padding: 2mm 3mm; }
 .inv-contact > b { color: #1F1B18; display: block; margin-bottom: 1.6mm; }
+/* تصميم العميل: بطاقات التواصل وحدها بعرض السطر (بلا باركود تصميم جانبي) */
+.inv-bottom:has(> .inv-contact:only-child) { display: block; }
 .inv-chans { display: flex; gap: 2mm; }
 .inv-chan { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .8mm; text-align: center; }
 .inv-chan-ic { width: 7mm; height: 7mm; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; }
