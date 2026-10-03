@@ -78,6 +78,13 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
   async function partA() {
     var parts = await Promise.all([get('../index.html'), get('../css/style.css'), get('../js/app.js'), get('../js/designer.js')]);
     var html = parts[0], css = parts[1], app = parts[2], dz = parts[3];
+    // لا تبديل تلقائي بين العرض والطول (كان ينقل الرقم المُدخل إلى الحقل المجاور)
+    t('A-no-swap', app.indexOf('if (h > w) { const t = w; w = h; h = t; }') < 0, 'no auto swap');
+    t('A-no-clobber', app.indexOf("if (af !== $('#roomW'))") >= 0, 'do not overwrite focused field');
+    // 2b) اختيار الجدار من القائمة لا يفتح لوحة الطول (لا سحب للأسفل)
+    t('A-nojump', app.indexOf('wallSelNoJump = true;   // لا قفز للأسفل') >= 0, 'wall select no jump');
+    // 3) اسم الجدار خارج الغرفة
+    t('A-label-off', dz.indexOf('WALL_LABEL_OFF = 0.95') >= 0 && dz.indexOf('WALL_T + WALL_LABEL_OFF') >= 0, 'label outside');
     t('A-col-btn', html.indexOf('id="tbAddColumn"') >= 0, 'toolbar button');
     t('A-col-lock', app.indexOf("'#tbAddColumn'") >= 0 && app.indexOf('#tbAddWall') >= 0, 'lockable');
     t('A-revert', app.indexOf('onRevert') >= 0 && app.indexOf('فوق العامود') >= 0, 'revert toast');
@@ -89,7 +96,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
     t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
     t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
-    t('A-ver', app.indexOf("APP_VERSION = '1.0.36'") >= 0, 'version');
+    t('A-ver', app.indexOf("APP_VERSION = '1.0.37'") >= 0, 'version');
     // 1) لا زر «تطبيق كغرفة مستطيلة»: المقاسات تُطبَّق مباشرة أثناء الكتابة
     t('A-live-dims', app.indexOf('btnApplyRect') < 0 && app.indexOf('applyRoomDims') >= 0
       && app.indexOf("el.addEventListener('input', () => applyRoomDims(true))") >= 0, 'live room dims');
@@ -226,6 +233,20 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('B-wall-tb-door', false, 'skipped');
     }
     t('B-wall-opts', opts.length === nWalls && /جدار 1/.test(opts[0] || ''), opts.join('|'));
+    // 2b) اختيار الجدار من الشريط لا يفتح لوحة الطول ولا يركّز (لا سحب للأسفل)
+    q('#tbAddSofa').click();
+    await new Promise(function (r) { setTimeout(r, 700); });
+    t('B-wall-nojump', document.activeElement !== q('#wallInlineLen') && q('#wallInlineEdit').hidden,
+      'active=' + (document.activeElement && document.activeElement.id) + ' hidden=' + q('#wallInlineEdit').hidden);
+    // 3) اسم الجدار يُرسم خارج الغرفة (يبعد عن الباب/المشب)
+    var g0 = dz.geometry();
+    var lp = dz.wallLabelPos(0);
+    var w0 = g0.walls[0];
+    var rp = dz.toRoom(lp.x, lp.y);
+    var dot = (rp.x - w0.mid.x) * w0.n.x + (rp.y - w0.mid.y) * w0.n.y;   // سالب = خارج
+    var dist = Math.hypot(rp.x - w0.mid.x, rp.y - w0.mid.y);
+    t('B-label-out', dot < 0 && dist >= 1.0, 'dot=' + dot.toFixed(2) + ' d=' + dist.toFixed(2));
+    dz.setRect(5, 4);
     dz.setRect(5, 4);;
     // B: إضافة عامود بزر الشريط
     q('#tbAddColumn').click();

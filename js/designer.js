@@ -19,6 +19,7 @@
   const angDiff = (a, b) => Math.abs(((a - b + 540) % 360) - 180);
 
   const WALL_T = 0.2;       // سماكة الجدار المرسومة للخارج (متر)
+  const WALL_LABEL_OFF = 0.95;   // إزاحة اسم الجدار خارج الغرفة حتى لا يحجب الباب/المشب
   const MIN_SIZE = 0.2;     // أصغر بُعد مسموح (متر)
   const COARSE = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
   const HANDLE_R = COARSE ? 11 : 7;
@@ -424,7 +425,7 @@
       const g = this.geometry();
       const w = g.walls[i];
       if (!w) return null;
-      const off = WALL_T + 0.45;
+      const off = WALL_T + WALL_LABEL_OFF;
       return this.toScreen(w.mid.x - w.n.x * off, w.mid.y - w.n.y * off, v);
     }
 
@@ -726,7 +727,7 @@
     /* ======================= العرض (تكبير/تحريك) ======================= */
     _fitView(W, H) {
       const g = this.geometry();
-      const pad = WALL_T + 0.75;
+      const pad = WALL_T + WALL_LABEL_OFF + 0.3;
       const bw = Math.max(1, g.bb.maxX - g.bb.minX) + pad * 2;
       const bh = Math.max(1, g.bb.maxY - g.bb.minY) + pad * 2;
       const scale = Math.min(W / bw, H / bh);
@@ -1191,7 +1192,7 @@
     /** نسبة أبعاد الغرفة (عرض/ارتفاع) لاختيار حجم صورة التصدير */
     aspect() {
       const g = this.geometry();
-      const pad = WALL_T + 0.75;
+      const pad = WALL_T + WALL_LABEL_OFF + 0.3;
       return (g.bb.maxX - g.bb.minX + pad * 2) / (g.bb.maxY - g.bb.minY + pad * 2);
     }
 
@@ -1413,7 +1414,7 @@
 
       // تسميات الجدران (خارج الجدار)
       g.walls.forEach((w) => {
-        const off = WALL_T + 0.45;
+        const off = WALL_T + WALL_LABEL_OFF;
         const lp = P(w.mid.x - w.n.x * off, w.mid.y - w.n.y * off);
         const fs = Math.max(11 * k, Math.min(15 * k, S * 0.22));
         ctx.font = `700 ${fs}px ${FONT}`;

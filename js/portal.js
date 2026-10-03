@@ -989,7 +989,7 @@
     for (var ci = 0; ci < chans.length; ci++) {
       var c = chans[ci];
       var cq = await qrDataUrl(c.url);
-      chanHtml += '<div class="inv-chan">'
+      chanHtml += '<div class="inv-chan" data-url="' + esc(c.url) + '">'
         + '<span class="inv-chan-ic ' + c.key + '">' + (CONTACT_ICON[c.key] || '') + '</span>'
         + '<span class="inv-chan-lb">' + esc(c.label) + '</span>'
         + (cq ? '<img class="inv-chan-qr" src="' + cq + '" alt="">' : '')
@@ -1011,7 +1011,7 @@
       + facts.map(function (f) { return '<tr><td>' + f[0] + '</td><td>' + esc(f[1]) + '</td></tr>'; }).join('')
       + '</tbody></table></div>'
       + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b><div class="inv-chans">' + (chanHtml || '') + '</div></div>'
-      + (qr ? '<div class="inv-qr"><img src="' + qr + '" alt="رمز التصميم"><small>امسح لعرض التصميم</small></div>' : '')
+      + (qr ? '<div class="inv-qr" data-url="' + esc(window.location.origin + '/customer-design/view/' + number) + '"><img src="' + qr + '" alt="رمز التصميم"><small>امسح لعرض التصميم</small></div>' : '')
       + '</div>'
       + '</div>'
       + '<div class="inv-foot"><span>احتفظ برقم التصميم لمراجعته مع المحل</span></div>';
@@ -1034,11 +1034,33 @@
       var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       var h = Math.min(276, 190 * (canvas.height / canvas.width));
       pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
+      // الأيقونات والباركود روابط حقيقية: النقر عليها يفتح القناة أو التصميم
+      addPdfLinks(pdf, inv, 10, 10, 190);
       return pdf.output('blob');
     } finally {
       area.style.cssText = '';
       area.innerHTML = '';
     }
+  }
+
+  /** تحويل مواضع العناصر (data-url) إلى毫米 على صفحة PDF وإضافتها كروابط قابلة للنقر */
+  function addPdfLinks(pdf, inv, x0, y0, wMm) {
+    var base = inv.getBoundingClientRect();
+    if (!base.width) return 0;
+    var k = wMm / base.width;                 // مم لكل بكسل CSS
+    var nodes = inv.querySelectorAll('[data-url]');
+    for (var i = 0; i < nodes.length; i++) {
+      var url = nodes[i].getAttribute('data-url');
+      if (!url) continue;
+      var r = nodes[i].getBoundingClientRect();
+      if (!r.width || !r.height) continue;
+      var x = x0 + (r.left - base.left) * k;
+      var y = y0 + (r.top - base.top) * k;
+      var w = r.width * k, hh = r.height * k;
+      if (x < x0 || x + w > x0 + wMm + 0.5) continue;   // خارج حدود الصفحة أفقيًا
+      try { pdf.link(x, y, w, hh, { url: url }); } catch (_) { /* noop */ }
+    }
+    return nodes.length;
   }
 
   function downloadBlob(blob, name) {

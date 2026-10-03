@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.36';
+  const APP_VERSION = '1.0.37';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -759,9 +759,11 @@ function canEditOrder(o) {
       selTb.value = sel.value;
     }
 
+    // لا نكتب فوق الحقل الذي يكتب فيه المستخدم الآن (تفقد التركيز/الرقم ينتقل لحقله)
+    const af = document.activeElement;
     if (walls.length === 4 && walls[0].angle === 0 && walls[1].angle === 90 && walls[2].angle === 180 && walls[3].angle === 270) {
-      $('#roomW').value = Designer.util.round(walls[0].len, 3);
-      $('#roomH').value = Designer.util.round(walls[1].len, 3);
+      if (af !== $('#roomW')) $('#roomW').value = Designer.util.round(walls[0].len, 3);
+      if (af !== $('#roomH')) $('#roomH').value = Designer.util.round(walls[1].len, 3);
     }
   }
 
@@ -788,7 +790,11 @@ function canEditOrder(o) {
     wallInlineBox.style.left = pos.x + 'px';
     wallInlineBox.style.top = pos.y + 'px';
   }
+  // عند اختيار الجدار من القائمة (جانبي أو شريط الأدوات): لا تفتح لوحة الطول ولا
+  // تُحرّك الصفحة — الاختيار فقط، ثم يذهب الباب/المشب/الكنبة إلى ذلك الجدار
+  let wallSelNoJump = false;
   function showWallInline(i) {
+    if (wallSelNoJump) { wallSelNoJump = false; hideWallInline(); return; }
     if (i < 0 || readOnly || inspOpen) { hideWallInline(); return; }
     const w = designer.state.walls[i];
     if (!w) { hideWallInline(); return; }
@@ -819,13 +825,12 @@ function canEditOrder(o) {
   });
   wallInlineInp.addEventListener('blur', () => { hideWallInline(); });
 
-  /** تطبيق مباشر: تغيير العرض/ال��ول يعيد رسم الغرفة فور الكتابة (بلا زر).
-      `live` يمنع الحلقية: لا نعيد الكتابة في الحقل أثناء كل ضغطة مفتاح (تفقد التركيز). */
+  /** تطبيق مباشر: تغيير العرض/الطول يعيد رسم الغرفة فور الكتابة (بلا زر).
+      لا تبديل تلقائي بين الحقلين: العرض يبقى أفقيًا والطول رأسيًا كما كتبه المستخدم،
+      لأن التبديل كان ينقل الرقم المُدخل إلى الحقل المجاور في يبدو عشوائيًا. */
   function applyRoomDims(live) {
-    let w = Math.max(0.5, num($('#roomW').value));
-    let h = Math.max(0.5, num($('#roomH').value));
-    // الجدار الأطول يُرسم أفقيًا (عرضاً) لتكون الصورة أوضح
-    if (h > w) { const t = w; w = h; h = t; }
+    const w = Math.max(0.5, num($('#roomW').value));
+    const h = Math.max(0.5, num($('#roomH').value));
     const cur = designer.state.walls;
     const rect = cur.length === 4 && cur[0].angle === 0 && cur[1].angle === 90 && cur[2].angle === 180 && cur[3].angle === 270;
     if (rect) {
@@ -875,12 +880,13 @@ function canEditOrder(o) {
 
   $('#btnAddWall').addEventListener('click', addWallWithSize);
   $('#tbAddWall').addEventListener('click', addWallWithSize);
-  $('#wallSel').addEventListener('change', () => designer.select({ type: 'wall', index: +$('#wallSel').value }));
+  $('#wallSel').addEventListener('change', () => { wallSelNoJump = true; designer.select({ type: 'wall', index: +$('#wallSel').value }); });
   // شريط الأدوات: تغيير الجدار هنا يحدّد موضع كل عنصر يُضاف بعده (بلا لمس المخطط)
   { const tbSel = $('#wallSelTb');
     if (tbSel) tbSel.addEventListener('change', () => {
       const i = +tbSel.value;
       $('#wallSel').value = String(i);
+      wallSelNoJump = true;   // لا قفز للأسفل ولا فتح لوحة المقاس
       designer.select({ type: 'wall', index: i });
     }); }
 

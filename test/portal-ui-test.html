@@ -111,6 +111,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('pdf-contact-icons', css.indexOf('.inv-chan-qr {') >= 0 && css.indexOf('.inv-chan-ic.wa {') >= 0
         && css.indexOf('.inv-chan-ic.in {') >= 0 && css.indexOf('.inv-chan-ic.tt {') >= 0
         && css.indexOf('.inv-chan-ic.map {') >= 0, 'channel icon styles');
+      // الأيقونات والباركود روابط حقيقية داخل ملف PDF
+      t('pdf-links', pjs0.indexOf('function addPdfLinks') >= 0 && pjs0.indexOf('pdf.link(') >= 0
+        && pjs0.indexOf('data-url') >= 0, 'clickable pdf links');
       // RTL + viewport
       t('rtl', doc.documentElement.dir === 'rtl' && doc.documentElement.lang === 'ar', 'dir');
       // صياغة portal.js + designer.js
