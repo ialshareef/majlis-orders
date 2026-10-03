@@ -96,7 +96,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
     t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
     t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
-    t('A-ver', app.indexOf("APP_VERSION = '1.0.38'") >= 0, 'version');
+    t('A-ver', app.indexOf("APP_VERSION = '1.0.39'") >= 0, 'version');
     // 1) لا زر «تطبيق كغرفة مستطيلة»: المقاسات تُطبَّق مباشرة أثناء الكتابة
     t('A-live-dims', app.indexOf('btnApplyRect') < 0 && app.indexOf('applyRoomDims') >= 0
       && app.indexOf("el.addEventListener('input', () => applyRoomDims(true))") >= 0, 'live room dims');

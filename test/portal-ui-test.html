@@ -117,6 +117,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       // لا باركود تصميم جانبي في أسفل الصفحة (كان يُقصّ ويشوّه الترويسة)
       t('pdf-no-extra-qr', pjs0.indexOf('امسح لعرض التصميم') < 0 && pjs0.indexOf('customer-design/view/') < 0,
         'design qr removed');
+      // ملاحظة واضحة وسط فوق الأيقونات: «اضغط على الباركود»
+      t('pdf-qr-hint', pjs0.indexOf('inv-chans-hint') >= 0 && pjs0.indexOf('اضغط على الباركود') >= 0
+        && /\.inv-chans-hint \{[^}]*text-align: center/.test(css), 'hint above icons');
       // RTL + viewport
       t('rtl', doc.documentElement.dir === 'rtl' && doc.documentElement.lang === 'ar', 'dir');
       // صياغة portal.js + designer.js

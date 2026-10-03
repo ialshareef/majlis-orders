@@ -1009,7 +1009,9 @@
       + '<div class="inv-items"><table><thead><tr><th>البند</th><th>التفاصيل</th></tr></thead><tbody>'
       + facts.map(function (f) { return '<tr><td>' + f[0] + '</td><td>' + esc(f[1]) + '</td></tr>'; }).join('')
       + '</tbody></table></div>'
-      + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b><div class="inv-chans">' + (chanHtml || '') + '</div></div>'
+      + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b>'
+      + '<div class="inv-chans-hint">اضغط على الباركود أو الرابط لفتحه</div>'
+      + '<div class="inv-chans">' + (chanHtml || '') + '</div></div>'
       + '</div>'
       + '</div>'
       + '<div class="inv-foot"><span>احتفظ برقم التصميم لمراجعته مع المحل</span></div>';
