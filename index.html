@@ -294,10 +294,10 @@
               <div class="ptab active" data-tab="room" role="tabpanel" aria-label="الغرفة">
                 <p class="panel-lead">المقاسات من الداخل بالمتر، والجدار يُرسم للخارج.</p>
                 <div class="row2">
-                  <label>العرض الداخلي (م) <input id="roomW" type="number" step="0.1" min="0.5" value="5"></label>
-                  <label>الطول الداخلي (م) <input id="roomH" type="number" step="0.1" min="0.5" value="4"></label>
+                  <label>العرض الداخلي (م) <input id="roomW" type="number" step="0.1" min="0.5" value="5" inputmode="decimal"></label>
+                  <label>الطول الداخلي (م) <input id="roomH" type="number" step="0.1" min="0.5" value="4" inputmode="decimal"></label>
                 </div>
-                <button id="btnApplyRect" class="btn block">تطبيق كغرفة مستطيلة</button>
+                <p class="hint">يتغيّر الرسم مباشرة أثناء الكتابة — بلا زر apply.</p>
                 <details class="fold wall-details">
                   <summary><span>الجدران بالتفصيل</span><small>للغرف غير المستطيلة</small><svg><use href="#i-chevron-down"/></svg></summary>
                   <div class="fold-body">
@@ -355,6 +355,10 @@
             <div class="canvas-col">
               <div class="canvas-toolbar">
                 <div class="tb-group tb-insert" role="group" aria-label="إضافة على الجدار المحدد">
+                  <label class="tb-wallsel" title="الجدار الذي تُضاف عليه العناصر">
+                    <svg><use href="#i-home"/></svg>
+                    <select id="wallSelTb" aria-label="اختر الجدار"></select>
+                  </label>
                   <span class="tb-row" role="group" aria-label="عناصر الغرفة">
                     <button class="tb-btn" id="tbAddSofa" title="إضافة كنبة على الجدار المحدد"><svg><use href="#i-sofa"/></svg><span>كنبة</span></button>
                     <button class="tb-btn" id="tbAddDoor" title="إضافة باب على الجدار المحدد"><svg><use href="#i-door"/></svg><span>باب</span></button>

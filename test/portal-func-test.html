@@ -105,7 +105,17 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       // R: المراحل الخمس مسماة + التوسيط محسوب
       var stepLabels = qAll('#pSteps button').map(function (b) { return b.textContent.replace(/^[0-9]+/, '').trim(); });
       t('R-steps', JSON.stringify(stepLabels) === JSON.stringify(['الغرفة', 'العناصر المعمارية', 'المجلس', 'الأثاث والإكسسوارات', 'المراجعة']), stepLabels.join('|'));
-      t('R-centered', getComputedStyle(q('#pSteps')).justifyContent === 'center', 'centered');
+      // تسوية الخطوات: أزرار متساوية العرض + الأرقام في عمود واحد (لا تتعرّج)
+      var stepBtns = qAll('#pSteps button');
+      var widths = stepBtns.map(function (b) { return Math.round(b.getBoundingClientRect().width); });
+      var numLefts = stepBtns.map(function (b) {
+        var rtl = getComputedStyle(b).direction === 'rtl';
+        var ir = b.querySelector('i').getBoundingClientRect();
+        var br = b.getBoundingClientRect();
+        return Math.round(rtl ? br.right - ir.right : ir.left - br.left);
+      });
+      t('R-equal-width', new Set(widths).size === 1, widths.join(','));
+      t('R-num-aligned', new Set(numLefts).size === 1, numLefts.join(','));
       t('R-no-rect-btn', !q('#pfRect'), 'no apply button');
       // R2: بُعد حي — الكتابة تحدّث الجدار فورًا بلا زر وبلا فقدان التركيز
       q('#pfW').focus();

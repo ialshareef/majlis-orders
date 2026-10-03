@@ -82,7 +82,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var stepIds = (pjs0.match(/id: '(room|openings|majlis|furn|review)'/g) || []).length;
       t('steps-named', stepIds === 5 && pjs0.indexOf('الأثاث والإكسسوارات') >= 0, '5 named steps');
       t('steps-arch', pjs0.indexOf("label: 'العناصر المعمارية'") >= 0 && pjs0.indexOf("label: 'الفتحات'") < 0, 'arch label');
-      t('steps-centered', css.indexOf('.p-steps { display: flex; flex-wrap: wrap; justify-content: center;') >= 0, 'centered');
+      t('steps-equal-grid', css.indexOf('.p-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));') >= 0
+        && css.indexOf('.p-steps button i {') >= 0
+        && /\.p-steps button \{[^}]*width: 100%;/.test(css), 'equal-width steps, number pinned');
       t('room-live', pjs0.indexOf('pfRect') < 0 && pjs0.indexOf('liveDim') >= 0 && pjs0.indexOf('تطبيق كغرفة مستطيلة') < 0, 'no apply button');
       t('no-window-add', ph0.indexOf('شباك') < 0 && pjs0.indexOf("data-t=\"window\"") < 0 && pjs0.indexOf("<option value=\"window\"") < 0, 'no window add UI');
       t('no-global-toolbar', ph0.indexOf('id="pTools"') < 0 && ph0.indexOf('id="pReview"') < 0, 'no toolbar/review view');
@@ -98,6 +100,17 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('look-dom', !!q('#pLookNo') && !!q('#pLookImg'), 'look');
       // ترويسة PDF: أيقونة التطبيق صورة حقيقية (لا SVG يُرسم أسود عند التصدير)
       t('pdf-app-icon', pjs0.indexOf('inv-mark') >= 0 && pjs0.indexOf('/icons/icon-512.png') >= 0, 'pdf uses app icon image');
+      // رقم التصميم مرة واحدة فقط: في خانة التاريخ المجاورة، لا في الترويسة ولا مكرّرًا
+      var infoBlock = (pjs0.match(/<div class="inv-info">[\s\S]*?inv-foot/) || [''])[0];
+      t('pdf-no-once', (pjs0.match(/class="inv-no"/g) || []).length === 0
+        && pjs0.indexOf('<small>تصميم مجلس — ') < 0
+        && (infoBlock.match(/<span>رقم التصميم<\/span>/g) || []).length === 1, 'design number appears once');
+      // تواصل معنا: بطاقات أيقونة + باركود لكل قناة، لا سطور نص عشوائية
+      t('pdf-contact-cards', pjs0.indexOf('inv-chans') >= 0 && pjs0.indexOf('inv-chan-qr') >= 0
+        && pjs0.indexOf('contactLines') < 0 && pjs0.indexOf('wa.me/') >= 0, 'contact channel cards');
+      t('pdf-contact-icons', css.indexOf('.inv-chan-qr {') >= 0 && css.indexOf('.inv-chan-ic.wa {') >= 0
+        && css.indexOf('.inv-chan-ic.in {') >= 0 && css.indexOf('.inv-chan-ic.tt {') >= 0
+        && css.indexOf('.inv-chan-ic.map {') >= 0, 'channel icon styles');
       // RTL + viewport
       t('rtl', doc.documentElement.dir === 'rtl' && doc.documentElement.lang === 'ar', 'dir');
       // صياغة portal.js + designer.js

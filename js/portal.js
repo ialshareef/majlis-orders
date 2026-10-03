@@ -946,17 +946,33 @@
     } catch (_) { return ''; }
   }
 
-  function contactLines() {
+  /** قنوات التواصل: أيقونة + رابط كامل + باركود يفتح القناة مباشرة */
+  function contactChannels() {
     var s = S.settings || {};
     var wa = digits(s.whatsapp) || digits(s.phone);
-    var L = [];
-    if (digits(s.phone)) L.push(['اتصال', '+' + digits(s.phone)]);
-    if (wa) L.push(['WhatsApp', 'wa.me/' + wa]);
-    if (s.instagram) L.push(['Instagram', String(s.instagram).replace(/^https?:\/\//i, '')]);
-    if (s.tiktok) L.push(['TikTok', String(s.tiktok).replace(/^https?:\/\//i, '')]);
-    if (s.mapsUrl) L.push(['الموقع', 'خرائط جوجل']);
-    return L;
+    var out = [];
+    if (wa) out.push({ key: 'wa', label: 'واتساب', url: 'https://wa.me/' + wa });
+    if (s.instagram) out.push({ key: 'in', label: 'إنستقرام', url: httpsUrl(s.instagram) });
+    if (s.tiktok) out.push({ key: 'tt', label: 'تيكتوك', url: httpsUrl(s.tiktok) });
+    if (s.mapsUrl) out.push({ key: 'map', label: 'الموقع', url: httpsUrl(s.mapsUrl) });
+    if (digits(s.phone)) out.push({ key: 'tel', label: 'اتصال', url: 'tel:+' + digits(s.phone).replace(/^00/, '') });
+    return out.filter(function (c) { return !!c.url; });
   }
+  function httpsUrl(u) {
+    var s = String(u || '').trim();
+    if (/^https:\/\//i.test(s)) return s;
+    if (/^www\./i.test(s)) return 'https://' + s;
+    if (/^[\w.+-]+@[\w.-]+$/.test(s)) return 'mailto:' + s;
+    if (/^[+\d][\d\s-]{6,}$/.test(s)) return 'tel:+' + s.replace(/\D/g, '');
+    return '';
+  }
+  var CONTACT_ICON = {
+    wa: '<svg viewBox="0 0 24 24"><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20.6l1.6-4.9A8.4 8.4 0 1 1 20.5 11.7z"/></svg>',
+    in: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2"/></svg>',
+    tt: '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg>',
+    map: '<svg viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>',
+    tel: '<svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
+  };
 
   async function buildDesignPdf(number) {
     var s = S.settings || {};
@@ -967,25 +983,36 @@
     var qr = number ? await qrDataUrl(window.location.origin + '/customer-design/view/' + number) : '';
     var d = new Date();
     var date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+    // بطاقات التواصل: أيقونة + باركود لكل قناة (يفتحها المسح مباشرة)
+    var chans = contactChannels();
+    var chanHtml = '';
+    for (var ci = 0; ci < chans.length; ci++) {
+      var c = chans[ci];
+      var cq = await qrDataUrl(c.url);
+      chanHtml += '<div class="inv-chan">'
+        + '<span class="inv-chan-ic ' + c.key + '">' + (CONTACT_ICON[c.key] || '') + '</span>'
+        + '<span class="inv-chan-lb">' + esc(c.label) + '</span>'
+        + (cq ? '<img class="inv-chan-qr" src="' + cq + '" alt="">' : '')
+        + '<span class="inv-chan-url">' + esc(c.url.replace(/^https?:\/\//i, '')) + '</span>'
+        + '</div>';
+    }
     var el = document.createElement('div');
     el.className = 'inv';
     el.innerHTML = ''
       + '<div class="inv-head"><div class="inv-brand"><img class="inv-mark" src="/icons/icon-512.png" alt="" width="60" height="60">'
-      + '<div><h1>' + esc(s.shopName || 'أصالة نجد') + '</h1><small>تصميم مجلس — ' + esc(noTxt) + '</small></div></div>'
-      + '<div class="inv-title-box"><div class="inv-title">تصميم العميل</div><div class="inv-no">' + esc(noTxt) + '</div></div></div>'
+      + '<div><h1>' + esc(s.shopName || 'أصالة نجد') + '</h1><small>تصميم مجلس</small></div></div>'
+      + '<div class="inv-title-box"><div class="inv-title">تصميم العميل</div></div></div>'
       + '<div class="inv-info">'
       + '<div><span>رقم التصميم</span><b class="num">' + esc(noTxt) + '</b></div>'
       + '<div><span>التاريخ</span><b class="num">' + esc(date) + '</b></div>'
-      + '<div class="span2"><span>المحل</span><b>' + esc(s.shopName || 'أصالة نجد') + '</b></div>'
       + '</div>'
       + '<div class="inv-visuals"><div class="inv-design"><div class="imgbox"><img src="' + img + '" alt="مخطط المجلس"></div></div></div>'
       + '<div class="inv-items"><table><thead><tr><th>البند</th><th>التفاصيل</th></tr></thead><tbody>'
       + facts.map(function (f) { return '<tr><td>' + f[0] + '</td><td>' + esc(f[1]) + '</td></tr>'; }).join('')
       + '</tbody></table></div>'
-      + '<div class="inv-bottom"><div class="inv-notes"><b>تواصل معنا</b><br>'
-      + contactLines().map(function (c) { return esc(c[0]) + ': ' + esc(c[1]); }).join('<br>')
-      + '</div>'
+      + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b><div class="inv-chans">' + (chanHtml || '') + '</div></div>'
       + (qr ? '<div class="inv-qr"><img src="' + qr + '" alt="رمز التصميم"><small>امسح لعرض التصميم</small></div>' : '')
+      + '</div>'
       + '</div>'
       + '<div class="inv-foot"><span>احتفظ برقم التصميم لمراجعته مع المحل</span></div>';
     return el;

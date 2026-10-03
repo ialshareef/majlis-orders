@@ -1163,6 +1163,17 @@ body[data-page="order"] main { padding-top: 10px; }
 .zoom-ctl .tb-btn svg { color: #736859; }
 .zoom-ctl .tb-btn:hover { background: #EFE8DC; color: #2A2622; }
 .zoom-ctl .tb-btn.zoom-pct { width: 44px; padding: 0; font-size: .72rem; font-weight: 700; }
+/* اختيار الجدار في شريط الأدوات: يحدّد موضع الباب/المشب/الكنبة بلا لمس المخطط */
+.tb-wallsel {
+  display: inline-flex; align-items: center; gap: 6px; flex: none;
+  padding: 0 10px 0 4px; margin-inline-end: 4px;
+  background: var(--surface-2); border-inline-start: 1px solid var(--line-strong);
+}
+.tb-wallsel svg { width: 16px; height: 16px; color: var(--ink-3); flex: none; }
+.tb-wallsel select {
+  border: 0; background: transparent; color: var(--ink); font: inherit;
+  font-size: .84rem; font-weight: 600; padding: 0 18px 0 4px; min-height: 34px;
+}
 
 /* شريط التحديد الجملة في صفحة تصاميم العملاء */
 .des-bulk {
@@ -2274,6 +2285,22 @@ body.modal-open { overflow: hidden; }
 .inv-qr { flex: none; width: 30mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1mm; }
 .inv-qr img { width: 28mm; height: 28mm; image-rendering: pixelated; }
 .inv-qr small { font-size: 7pt; color: #6A5F54; text-align: center; }
+/* تواصل معنا: بطاقات قناة (أيقونة + باركود + الرابط) بدل سطور نص عشوائية */
+.inv-contact { flex: 1; font-size: 8.5pt; color: #4A413A; background: #FBF9F5; border: 1px solid #EFE9DF; border-radius: .8mm; padding: 2mm 3mm; }
+.inv-contact > b { color: #1F1B18; display: block; margin-bottom: 1.6mm; }
+.inv-chans { display: flex; gap: 2mm; }
+.inv-chan { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .8mm; text-align: center; }
+.inv-chan-ic { width: 7mm; height: 7mm; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; }
+.inv-chan-ic svg { width: 4.4mm; height: 4.4mm; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+.inv-chan-ic svg circle[r], .inv-chan-ic svg circle:not([r]) { fill: none; }
+.inv-chan-ic.wa { background: #25D366; }
+.inv-chan-ic.in { background: linear-gradient(135deg, #F9CE34, #EE2A7B 55%, #6228D7); }
+.inv-chan-ic.tt { background: #111; }
+.inv-chan-ic.map { background: #2E7D32; }
+.inv-chan-ic.tel { background: #1F6FB2; }
+.inv-chan-lb { font-weight: 700; color: #1F1B18; font-size: 8pt; }
+.inv-chan-qr { width: 15mm; height: 15mm; image-rendering: pixelated; }
+.inv-chan-url { font-size: 6.4pt; color: #6A5F54; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
 .inv-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 4mm; padding-top: 2mm; border-top: 1px dashed #D5C8B4; font-size: 9pt; color: #6A5F54; }
 .inv-sign { width: 48mm; text-align: center; }
 .inv-sign i { display: block; height: 9mm; }
@@ -2383,19 +2410,21 @@ body.portal { background: var(--bg); }
 .p-bar b { flex: 1; text-align: center; font-size: 1.02rem; }
 .p-bar .icon-btn { width: 44px; height: 44px; }
 .p-savestate { font-size: .78rem; color: var(--ink-3); min-width: 52px; text-align: end; }
-.p-steps { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 6px 0 12px; }
+/* خطوات التصميم: عرض متساوٍ لكل خطوة (رقم ثابت على اليمين) فلا تتعرّج
+   Eisenhower بع��د حروف «الغرفة» و«المجلس» أقصر من «العناصر المعمارية». */
+.p-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin: 6px 0 12px; }
 .p-steps button {
-  display: flex; flex-direction: row; align-items: center; justify-content: center; gap: 7px;
-  flex: 1 1 150px; max-width: 230px; min-height: 48px; padding: 6px 10px;
+  display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px;
+  width: 100%; min-height: 48px; padding: 6px 10px;
   border: 1px solid var(--line-soft); border-radius: var(--r);
   background: var(--surface); color: var(--ink-3); font-size: .82rem; font-weight: 600; cursor: pointer;
-  white-space: nowrap; overflow: hidden;
+  white-space: nowrap; overflow: hidden; text-align: start;
 }
-.p-steps button span { overflow: hidden; text-overflow: ellipsis; }
 .p-steps button i {
-  width: 24px; height: 24px; border-radius: 50%; background: var(--sand);
+  width: 24px; height: 24px; flex: none; border-radius: 50%; background: var(--sand);
   display: flex; align-items: center; justify-content: center; font-style: normal; font-size: .78rem;
 }
+.p-steps button span { overflow: hidden; text-overflow: ellipsis; }
 .p-steps button.active { border-color: var(--accent); color: var(--ink); }
 .p-steps button.active i { background: var(--accent-fill); color: var(--on-accent); }
 .p-canvas-col { display: flex; flex-direction: column; gap: 10px; }

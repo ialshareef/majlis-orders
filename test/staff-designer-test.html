@@ -89,7 +89,15 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
     t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
     t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
-    t('A-ver', app.indexOf("APP_VERSION = '1.0.35'") >= 0, 'version');
+    t('A-ver', app.indexOf("APP_VERSION = '1.0.36'") >= 0, 'version');
+    // 1) لا زر «تطبيق كغرفة مستطيلة»: المقاسات تُطبَّق مباشرة أثناء الكتابة
+    t('A-live-dims', app.indexOf('btnApplyRect') < 0 && app.indexOf('applyRoomDims') >= 0
+      && app.indexOf("el.addEventListener('input', () => applyRoomDims(true))") >= 0, 'live room dims');
+    t('A-live-dims-html', html.indexOf('id="btnApplyRect"') < 0 && html.indexOf('id="roomW"') >= 0
+      && html.indexOf('id="roomH"') >= 0, 'no apply button in markup');
+    // 2) اختيار الجدار في شريط الأدوات: يحدّد موضع الباب/المشب بلا لمس المخطط
+    t('A-wall-tb', html.indexOf('id="wallSelTb"') >= 0 && app.indexOf('wallSelTb') >= 0
+      && app.indexOf("tbSel.addEventListener('change'") >= 0, 'wall select in toolbar');
   }
 
   function b64(bytes) {
@@ -189,6 +197,36 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     stage(3);
     var q = function (sel) { return document.querySelector(sel); };
     var qAll = function (sel) { return Array.from(document.querySelectorAll(sel)); };
+    // 1) حيّ: الكتابة في حقل المقاس تعيد رسم الغرفة فورًا (بلا زر)
+    dz.setRect(5, 4);
+    var wIn = q('#roomW'), hIn = q('#roomH');
+    var l0 = dz.state.walls[0].len;
+    wIn.value = '7';
+    wIn.dispatchEvent(new Event('input', { bubbles: true }));
+    var l1 = dz.state.walls[0].len;
+    t('B-live-w', Math.abs(l1 - 7) < 0.01 && Math.abs(l0 - 5) < 0.01, l0 + '->' + l1);
+    hIn.value = '3';
+    hIn.dispatchEvent(new Event('input', { bubbles: true }));
+    t('B-live-h', Math.abs(dz.state.walls[1].len - 3) < 0.01, String(dz.state.walls[1].len));
+    t('B-live-closed', dz.geometry().closed, 'room still closed');
+    // 2) حيّ: اختيار الجدار من الشريط يحدّد موضع الباب التالي
+    var tbSel = q('#wallSelTb');
+    var opts = tbSel ? Array.from(tbSel.options).map(function (o) { return o.textContent; }) : [];
+    var nWalls = dz.state.walls.length;
+    if (tbSel && nWalls > 1) {
+      tbSel.value = String(nWalls - 1);
+      tbSel.dispatchEvent(new Event('change', { bubbles: true }));
+      t('B-wall-tb-sel', dz.selectedWallIndex() === nWalls - 1, 'wall ' + dz.selectedWallIndex());
+      q('#tbAddDoor').click();
+      await waitFor(function () { return dz.state.openings.some(function (o) { return o.type === 'door'; }); }, 60000);
+      var door = dz.state.openings.filter(function (o) { return o.type === 'door'; })[0];
+      t('B-wall-tb-door', door && door.wall === nWalls - 1, 'door wall=' + (door && door.wall));
+    } else {
+      t('B-wall-tb-sel', false, 'no wallSelTb');
+      t('B-wall-tb-door', false, 'skipped');
+    }
+    t('B-wall-opts', opts.length === nWalls && /جدار 1/.test(opts[0] || ''), opts.join('|'));
+    dz.setRect(5, 4);;
     // B: إضافة عامود بزر الشريط
     q('#tbAddColumn').click();
     await waitFor(function () { return dz.state.pieces.some(function (x) { return x.kind === 'column'; }); }, 120000);

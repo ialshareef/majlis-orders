@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.35';
+  const APP_VERSION = '1.0.36';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -752,6 +752,12 @@ function canEditOrder(o) {
     const prev = sel.value;
     sel.innerHTML = walls.map((w, i) => `<option value="${i}">جدار ${i + 1} (${Designer.util.round(w.len, 2)} م)</option>`).join('');
     sel.value = selWall >= 0 ? String(selWall) : (prev !== '' && +prev < walls.length ? prev : '0');
+    // شريط الأدوات: نفس القائمة باختصار (بلا أطوال) — يحدّد موضع الباب/المشب/الكنبة
+    const selTb = $('#wallSelTb');
+    if (selTb) {
+      selTb.innerHTML = walls.map((w, i) => `<option value="${i}">جدار ${i + 1}</option>`).join('');
+      selTb.value = sel.value;
+    }
 
     if (walls.length === 4 && walls[0].angle === 0 && walls[1].angle === 90 && walls[2].angle === 180 && walls[3].angle === 270) {
       $('#roomW').value = Designer.util.round(walls[0].len, 3);
@@ -761,7 +767,7 @@ function canEditOrder(o) {
 
   function syncWallSel() {
     const i = designer.selectedWallIndex();
-    if (i >= 0) $('#wallSel').value = String(i);
+    if (i >= 0) { $('#wallSel').value = String(i); const tb = $('#wallSelTb'); if (tb) tb.value = String(i); }
     $$('#wallsBody tr').forEach((tr, k) => tr.classList.toggle('sel', k === i));
     $('#canvasHint').textContent = designer.sel ? 'اسحب للتحريك، والمقابض لتغيير المقاس والتدوير' : 'اضغط على جدار أو قطعة لتحديده';
     $('#canvasHint').hidden = false;
@@ -813,13 +819,33 @@ function canEditOrder(o) {
   });
   wallInlineInp.addEventListener('blur', () => { hideWallInline(); });
 
-  $('#btnApplyRect').addEventListener('click', () => {
+  /** تطبيق مباشر: تغيير العرض/ال��ول يعيد رسم الغرفة فور الكتابة (بلا زر).
+      `live` يمنع الحلقية: لا نعيد الكتابة في الحقل أثناء كل ضغطة مفتاح (تفقد التركيز). */
+  function applyRoomDims(live) {
     let w = Math.max(0.5, num($('#roomW').value));
     let h = Math.max(0.5, num($('#roomH').value));
     // الجدار الأطول يُرسم أفقيًا (عرضاً) لتكون الصورة أوضح
     if (h > w) { const t = w; w = h; h = t; }
-    designer.setRect(w, h);
+    const cur = designer.state.walls;
+    const rect = cur.length === 4 && cur[0].angle === 0 && cur[1].angle === 90 && cur[2].angle === 180 && cur[3].angle === 270;
+    if (rect) {
+      // غرفة مستطيلة بالفعل: نعدّل طولَي الجدارين المتقابلين فيحافظ الرسم على شكله
+      designer.setWallLength(0, w);
+      designer.setWallLength(2, w);
+      designer.setWallLength(1, h);
+      designer.setWallLength(3, h);
+    } else {
+      designer.setRect(w, h);   // غرفة مخصّصة (بزوايا): تُصفَّر إلى مستطيل
+    }
+    designer.autoFit = true;
     designer.fitView();
+    renderWalls();
+    if (!live) { syncCornerMode(); updateOverlapWarn(); }
+  }
+  ['#roomW', '#roomH'].forEach((sel) => {
+    const el = $(sel);
+    el.addEventListener('input', () => applyRoomDims(true));
+    el.addEventListener('change', () => applyRoomDims(false));
   });
 
   /** إضافة زاوية (جدار) للغرفة غير المستطيلة مع كتابة الطول والاتجاه مباشرة */
@@ -850,6 +876,13 @@ function canEditOrder(o) {
   $('#btnAddWall').addEventListener('click', addWallWithSize);
   $('#tbAddWall').addEventListener('click', addWallWithSize);
   $('#wallSel').addEventListener('change', () => designer.select({ type: 'wall', index: +$('#wallSel').value }));
+  // شريط الأدوات: تغيير الجدار هنا يحدّد موضع كل عنصر يُضاف بعده (بلا لمس المخطط)
+  { const tbSel = $('#wallSelTb');
+    if (tbSel) tbSel.addEventListener('change', () => {
+      const i = +tbSel.value;
+      $('#wallSel').value = String(i);
+      designer.select({ type: 'wall', index: i });
+    }); }
 
   /* --- طريقة القياس --- */
   const CORNER_HINT = {
