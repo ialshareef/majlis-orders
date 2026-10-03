@@ -145,9 +145,9 @@ async function route(request, env, url) {
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.39';
-// بصمة asalh-najd-1.0.39.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+// بصمة asalh-najd-1.0.39.apk (إصدار GitHub v1.0.39، بناء CI الموقّع)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = 'ab935d3cc1be9dc8be9038b06b7963fdee1932cd9dcbb2453abe9153916ffa71';
 const UPDATE_FALLBACK_NOTES = [
   'ملاحظة «اضغط على الباركود» في ملف PDF',
   'إزالة الباركود الزائد في أسفل ملف PDF',
