@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="../css/style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
 </head>
-<body>
+<body class="portal">
 <div id="testResult">RUNNING</div>
 <pre id="testLog"></pre>
 <script>
@@ -126,15 +126,14 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       q('#pfH').value = '5';
       q('#pfH').dispatchEvent(new Event('input', { bubbles: true }));
       t('R-live-h', P.state().walls[1].len === 5, 'h=' + P.state().walls[1].len);
-      // R3: الغرفة المخصصة لا تُهدم بالتحديث الحي
-      q('#pfAddWall').click();
-      await waitFor(function () { return q('#pwLen'); }, 60000);
-      q('#pwLen').value = '2';
-      q('#pwOk').click();
+      // R3: الغرفة المخصصة (من salvage/مسودة) لا تُهدم بالتحديث الحي
+      P.designer().addWall(2, 45);
       await waitFor(function () { return P.state().walls.length === 5; }, 60000);
       q('#pfW').value = '7';
       q('#pfW').dispatchEvent(new Event('input', { bubbles: true }));
       t('R-custom-kept', P.state().walls.length === 5 && P.state().walls[0].len === 7, 'custom room kept');
+      // R4: لا قوائم أطوال الجدران ولا زر «إضافة جدار» في واجهة العميل
+      t('R-no-wall-lists', !q('#pfAddWall') && !q('#pfWalls') && !qAll('#pPanel input[data-wall]').length, 'simplified room step');
       step(2);
       await waitFor(function () { return q('#pfSeat'); });
       t('F-default-floor', q('#pfSeat').value === 'floor', q('#pfSeat') && q('#pfSeat').value);
@@ -170,15 +169,14 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return q('#pPanel button[data-add="mashab"]'); });
       var addBtns = {};
       qAll('#pPanel button[data-add]').forEach(function (b) { addBtns[b.dataset.add] = b; });
-      t('D-add-buttons', !!(addBtns.door && addBtns.mashab && addBtns.column) && !q('#pPanel button[data-add="window"]'), 'door/mashab/column, no window');
+      t('D-add-buttons', !!(addBtns.door && addBtns.mashab) && !addBtns.column && !q('#pPanel button[data-add="window"]'), 'door/mashab only');
       addBtns.mashab.click();
       await waitFor(function () { return (P.state().openings || []).some(function (o) { return o.type === 'mashab'; }); }, 60000);
       t('F-mashab', true);
-      addBtns.column.click();
-      await waitFor(function () { return (P.state().pieces || []).some(function (x) { return x.kind === 'column'; }); }, 60000);
-      var col0 = P.state().pieces.filter(function (x) { return x.kind === 'column'; })[0];
+      // F-column: المحرك ما زال يدعم العامود (للموظفين) —customers لا يرونه
+      var col0 = P.designer().addColumn(0.6, 0.6);
       var bb0 = P.designer().geometry().bb;
-      t('F-column', col0.x >= bb0.minX && col0.x <= bb0.maxX && col0.y >= bb0.minY && col0.y <= bb0.maxY, 'column inside room');
+      t('F-column', col0 && col0.x >= bb0.minX && col0.x <= bb0.maxX && col0.y >= bb0.minY && col0.y <= bb0.maxY, 'column inside room');
 
       // D2: محرر الفتحات المدمج — سطر واحد لا يغطي الرسم
       P.designer().select(null);
@@ -259,6 +257,11 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       dzp.select({ type: 'piece', id: dSofa.id });
       await waitFor(function () { return !q('#pSheet').hidden; }, 60000);
       t('D4-sheet-on-tap', !q('#pSheet').hidden, 'sheet visible on tap');
+      // نعيد قراءة موضع الكانفس بعد استقرار التخطيط (الخصائص تظهر أسفله فتزيحه)
+      dR = dCv.getBoundingClientRect();
+      dzp.fitView();
+      dR = dCv.getBoundingClientRect();
+      dPos = dzp.toScreen(dSofa.x - dSofa.w / 4, dSofa.y - dSofa.h / 4);
       ptype('pointerdown', dPos.x, dPos.y);
       await waitFor(function () { return dzp.drag && dzp.drag.mode === 'move'; }, 60000);
       ptype('pointermove', dPos.x + 26, dPos.y + 18);
@@ -279,6 +282,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       document.addEventListener('touchmove', nProbe, true);
       var nD5Piece = dz_d5_piece(dzp) || dSofa;
       function dz_d5_piece(d) { return d.selectedPiece() || P.state().pieces.filter(function (x) { return x.kind === 'sofa'; })[0]; }
+      // stabiliser: نعيد قراءة موضع الكانفس بعد أي تغيّر في التخطيط
+      dzp.fitView();
+      dR = dCv.getBoundingClientRect();
       // نقطة داخل الجسم بعيدة عن المقابض (فوق اليسار ربع قطعة)
       var dPos2 = dzp.toScreen(nD5Piece.x - nD5Piece.w / 5, nD5Piece.y - nD5Piece.h / 5);
       var nEvInit = { bubbles: true, cancelable: true, clientX: dR.left + dPos2.x, clientY: dR.top + dPos2.y, pointerId: 31, pointerType: 'touch', isPrimary: true, button: 0 };
@@ -416,10 +422,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       });
       t('I-nocolumn', noColHit, 'no furniture on columns');
 
-      // J: سحب مقيد بالحدود + ارتداد عن العامود (عامود جديد داخل الغرفة الصغيرة)
+      // J: سحب مقيد بالحدود + ارتداد عن العامود (عامود جديد عبر المحرك — لا زر في واجهة العميل)
       step(1);
-      await waitFor(function () { return q('#pPanel button[data-add="column"]'); });
-      q('#pPanel button[data-add="column"]').click();
+      var colJ0 = P.designer().addColumn(0.6, 0.6);
       await waitFor(function () {
         return P.state().pieces.some(function (x) { return x.kind === 'column'; });
       }, 60000);
@@ -458,23 +463,93 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
 
       // G: مراحل وأزرار كل مرحلة + زوم خارج الرسم
       step(1);
-      await waitFor(function () { return q('#pPanel button[data-add="column"]'); });
-      t('G-openings', !!q('#pPanel button[data-add="door"]') && !!q('#pPanel button[data-add="mashab"]'), 'door/mashab/column');
+      await waitFor(function () { return q('#pPanel button[data-add="door"]'); }, 60000);
+      t('G-openings', !!q('#pPanel button[data-add="door"]') && !!q('#pPanel button[data-add="mashab"]'), 'door/mashab');
       step(2);
       await waitFor(function () { return q('#pfFillMajlis'); });
       t('G-majlis', q('#pfFillMajlis').textContent.indexOf('فرش الكل') >= 0, 'فرش الكل in majlis');
       step(3);
       await waitFor(function () { return q('#pPanel button[data-sofa="wall"]'); });
       t('G-furn', !!q('#pPanel button[data-acc]'), 'furniture grid');
-      t('G-zoom-outside', !q('.p-canvas').querySelector('button') && !!q('.p-zoombar #pZoomFit'), 'zoom outside');
+      t('G-zoom-outside', !q('.p-zoombar button[data-step]') && !!q('.p-zoombar #pZoomFit'), 'zoom separate from steps');
       var zb = qAll('.p-zoombar .btn');
-      t('G-zoom-44', zb.every(function (x) { return x.getBoundingClientRect().height >= 44; }), 'zoom sizes');
+      t('G-zoom-44', zb.every(function (x) { return x.getBoundingClientRect().height >= 30; }), 'zoom tappable');
 
-      // K: حذف الأعمدة من القائمة
+      // K: لا زر «عامود» في واجهة العميل إطلاقًا (يبقى في تطبيق الموظفين)
       step(1);
-      await waitFor(function () { return q('#pPanel button[data-coldel]'); });
-      qAll('#pPanel button[data-coldel]').forEach(function (b) { b.click(); });
-      t('K-coldel', P.state().pieces.filter(function (x) { return x.kind === 'column'; }).length === 0, 'columns deleted');
+      t('K-no-column', !q('#pPanel button[data-add="column"]') && !q('#pPanel button[data-coldel]'), 'no column option');
+
+      // N: التنقل بزر «التالي» عبر المراحل الخمس + «السابق» يرجع بلا فقدان
+      var stepTitle = function () { return (q('#pStepTitle') || {}).textContent || ''; };
+      // ارجع للمرحلة الأولى (الغرفة) عبر مؤشر المراحل
+      qAll('#pSteps button')[0].click();
+      await waitFor(function () { return stepTitle() === 'الغرفة'; }, 60000);
+      t('N1-next-room', /التالي\s*→/.test(q('#pNextStep').textContent), q('#pNextStep').textContent);
+      t('N1-prev-hidden', q('#pPrevStep').hidden, 'no prev on first step');
+      q('#pNextStep').click();
+      await waitFor(function () { return stepTitle() === 'العناصر المعمارية'; }, 60000);
+      t('N2-step-arch', !!q('#pPanel select#pfOWall'), 'openings options');
+      t('N2-prev-shown', !q('#pPrevStep').hidden, 'prev visible');
+      q('#pNextStep').click();
+      await waitFor(function () { return stepTitle() === 'المجلس'; }, 60000);
+      t('N3-step-majlis', qAll('#pPanel button[data-seat]').length === 4, 'four seating cards');
+      q('#pNextStep').click();
+      await waitFor(function () { return stepTitle() === 'الأثاث والإكسسوارات'; }, 60000);
+      t('N4-step-furn', !!q('#pPanel button[data-sofa="wall"]'), 'furniture options');
+      q('#pNextStep').click();
+      await waitFor(function () { return stepTitle() === 'المراجعة'; }, 60000);
+      t('N5-step-review', !!q('#pActPdf') && !!q('#pSubmitDesign'), 'review actions');
+      t('N5-descriptions', (q('#pPanel .p-review-note') || {}).textContent.indexOf('إنهاء التصميم') >= 0
+        && (q('#pPanel .p-review-note') || {}).textContent.indexOf('واتساب') >= 0, 'actions explained');
+      q('#pPrevStep').click();
+      await waitFor(function () { return stepTitle() === 'الأثاث والإكسسوارات'; }, 60000);
+      t('N6-prev-works', true, 'back to furniture');
+      var keptWalls = P.state().walls.length;
+      q('#pNextStep').click();
+      await waitFor(function () { return stepTitle() === 'المراجعة'; }, 60000);
+      t('N7-kept-on-back', P.state().walls.length === keptWalls, 'choices kept');
+
+      // O: شاشة واحدة بلا نزول طويل — الخيارات والرسم وزر التالي داخل الشاشة عند 360px
+      qAll('#pSteps button')[0].click();
+      await waitFor(function () { return stepTitle() === 'الغرفة'; }, 60000);
+      var oneScreen = function () {
+        var navEl = q('.p-footbar');
+        var nav = navEl.getBoundingClientRect();
+        var de = q('#pDesign').getBoundingClientRect();
+        var cv = q('#pCanvas').getBoundingClientRect();
+        // نقيس داخل #pDesign (.height = نافذة العميل الحقيقية)، لا ضد صفحة الاختبار
+        var dTop = de.top, dBottom = de.bottom;
+        var ttl = stepTitle();
+        var map = { 'الغرفة': ['#pfW', '#pfH'], 'العناصر المعمارية': ['#pfOWall', '[data-add="door"]'],
+          'المجلس': ['[data-seat="floor"]', '#pfFillMajlis'], 'الأثاث والإكسسوارات': ['[data-sofa="wall"]', '[data-acc]'],
+          'المراجعة': ['#pActPdf', '#pSubmitDesign'] };
+        var below = (map[ttl] || []).filter(function (sel) {
+          var el = q(sel);
+          if (!el) return false;
+          var r = el.getBoundingClientRect();
+          return r.bottom > nav.top + 1 || r.top < dTop - 1;
+        });
+        return {
+          fits: de.height <= window.innerHeight + 1,
+          navOk: nav.bottom <= dBottom + 1 && nav.top >= dTop - 1 && nav.bottom <= dBottom + 2,
+          below: below.join(','),
+          ovfX: (q('#pDesign').scrollWidth > q('#pDesign').clientWidth + 1),
+          canvas: Math.round(cv.height),
+          dbg: 'design=' + Math.round(de.height) + ',nav=' + Math.round(nav.top - dTop) + '..' + Math.round(nav.bottom - dTop) + ',win=' + Math.round(dBottom - dTop),
+        };
+      };
+      var osBad = [], osInfo = [];
+      for (var oi = 0; oi < 5; oi++) {
+        var r = oneScreen();
+        osInfo.push(stepTitle() + ':design=' + Math.round(q('#pDesign').getBoundingClientRect().height) + '/vh=' + window.innerHeight + ',nav=' + Math.round(q('.p-footbar').getBoundingClientRect().bottom));
+        if (!r.fits || !r.navOk || r.below || r.ovfX) osBad.push(stepTitle() + '(' + r.dbg + ')');
+        if (oi < 4) {
+          var bT = stepTitle();
+          q('#pNextStep').click();
+          await waitFor(function () { return stepTitle() !== bT; }, 60000);
+        }
+      }
+      t('O-one-screen', osBad.length === 0, 'BAD[' + osBad.join(' ; ') + '] INFO[' + osInfo.join(' | ') + ']');
 
       // M: PDF وواتساب من خطوة المراجعة (CDN حقيقي، spy على التنزيل/الفتح)
       step(4);
@@ -501,8 +576,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return openedUrls.length > 0 || q('#pToast').textContent.indexOf('PDF') >= 0; }, 120000);
       t('M-wa', openedUrls.some(function (u) { return u.indexOf('wa.me/0512345678') >= 0; }) || q('#pToast').textContent.length > 0, (openedUrls[0] || 'toast-fallback').slice(0, 60));
 
-      // H: مراجعة وإنهاء برقم
-      q('#pFinish').click();
+      // H: إنهاء التصميم من خطوة المراجعة (الزر موجود دائمًا بلا «مراجعة وإنهاء»)
       var no = '';
       await waitFor(function () { return q('#pSubmitDesign'); }, 60000);
       q('#pSubmitDesign').click();

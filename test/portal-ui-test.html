@@ -89,7 +89,20 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('no-window-add', ph0.indexOf('شباك') < 0 && pjs0.indexOf("data-t=\"window\"") < 0 && pjs0.indexOf("<option value=\"window\"") < 0, 'no window add UI');
       t('no-global-toolbar', ph0.indexOf('id="pTools"') < 0 && ph0.indexOf('id="pReview"') < 0, 'no toolbar/review view');
       t('zoom-outside', ph0.indexOf('p-zoombar') >= 0 && ph0.indexOf('zoom-ctl') < 0, 'zoom outside canvas');
-      t('column-ui', pjs0.indexOf("data-add=\"column\"") >= 0 && pjs0.indexOf('addColumn') >= 0, 'column');
+      // واجهة مُبسّطة: زر «التالي» كـ Layout، ولا قوائم أطوال جدران
+      t('nav-next', ph0.indexOf('id="pNextStep"') >= 0 && ph0.indexOf('id="pPrevStep"') >= 0, 'next/prev buttons');
+      t('nav-bar-css', /\.portal #pDesign \{[^}]*overflow: hidden/.test(css)
+        && /\.portal #pDesign \.p-canvas-col \{[^}]*overflow: hidden/.test(css), 'one-screen layout');
+      t('room-simple', pjs0.indexOf('عرض الغرفة') >= 0 && pjs0.indexOf('طول الغرفة') >= 0
+        && pjs0.indexOf("id=\"pfAddWall\"") < 0 && pjs0.indexOf('id="pfWalls"') < 0
+        && pjs0.indexOf('data-walldel') < 0, 'room = w+l only');
+      t('arch-simple', pjs0.indexOf('تغيير الجدار') < 0 && pjs0.indexOf('أين تريد الباب والمشب') >= 0, 'wall picker wording');
+      t('seat-cards', pjs0.indexOf('SEAT_HELP') >= 0 && pjs0.indexOf('data-seat=') >= 0
+        && pjs0.indexOf('يوزّع الفرش تلقائيًا') >= 0, 'seating explained + auto-fill explained');
+      t('review-desc', pjs0.indexOf('p-actrow') >= 0 && pjs0.indexOf('p-review-note') >= 0
+        && pjs0.indexOf('معاينة: شاهد التصميم قبل الإنهاء') >= 0, 'review actions explained');
+      // العمود غير معروض كخيار في واجهة العميل (يبقى في تطبيق الموظفين)
+      t('column-ui', pjs0.indexOf("data-add=\"column\"") < 0 && pjs0.indexOf('data-coldel') < 0, 'no column option');
       // محرر الفتحات المدمج: سطر واحد + steppers، وبلا زر حذف عريض
       t('op-compact', pjs0.indexOf('opsheet') >= 0 && pjs0.indexOf('data-owminus') >= 0 && pjs0.indexOf('data-owplus') >= 0 && pjs0.indexOf('data-compact') >= 0, 'compact sheet');
       t('op-panel-stepper', pjs0.indexOf('data-opwminus') >= 0 && pjs0.indexOf('data-opwplus') >= 0 && pjs0.indexOf('data-opw="') >= 0, 'panel steppers');

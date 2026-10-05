@@ -57,6 +57,7 @@
   <header class="p-bar">
     <button type="button" class="icon-btn" id="pBack" aria-label="رجوع"><svg><use href="#p-arrow"/></svg></button>
     <b>تصميم المجلس</b>
+    <button type="button" class="icon-btn" id="pUndo" aria-label="تراجع"><svg><use href="#p-undo"/></svg></button>
     <span class="p-savestate" id="pSaveState">مسودة</span>
   </header>
   <nav class="p-steps" id="pSteps" aria-label="خطوات التصميم"></nav>
@@ -67,17 +68,17 @@
     </section>
     <div class="canvas-wrap p-canvas">
       <canvas id="pCanvas" aria-label="مخطط الغرفة"></canvas>
+      <div class="p-zoombar" role="group" aria-label="التكبير والتصغير">
+        <button type="button" class="btn" id="pZoomOut">تصغير −</button>
+        <button type="button" class="btn" id="pZoomFit">ملاءمة</button>
+        <button type="button" class="btn" id="pZoomIn">تكبير +</button>
+      </div>
     </div>
-    <div class="p-zoombar" role="group" aria-label="التكبير والتصغير">
-      <button type="button" class="btn" id="pZoomOut">تصغير −</button>
-      <button type="button" class="btn" id="pZoomFit">100%</button>
-      <button type="button" class="btn" id="pZoomIn">توسيع +</button>
-    </div>
+    <div id="pSheet" class="inspector p-sheet" hidden></div>
   </div>
-  <div id="pSheet" class="inspector p-sheet" hidden></div>
   <footer class="p-footbar">
-    <button type="button" class="btn ghost" id="pUndo"><svg><use href="#p-undo"/></svg> تراجع</button>
-    <button type="button" class="btn primary block" id="pFinish">مراجعة وإنهاء التصميم</button>
+    <button type="button" class="btn ghost" id="pPrevStep" hidden>السابق →</button>
+    <button type="button" class="btn primary block lg" id="pNextStep">التالي</button>
   </footer>
 </main>
 

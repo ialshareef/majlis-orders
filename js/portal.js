@@ -57,13 +57,28 @@
     dragHide: false,   // أثناء سحب باللمس: لا تُفتح ورقة الخصائص (تحجب المخطط)
   };
 
+  /* المراحل الخمس. lead = شرح مختصر يظهر تحت العنوان، next = نص زر «التالي».
+     bureaucracy: كل مرحلة تعرض خياراتها فقط + الرسم + زر التالي. */
   var STEPS = [
-    { id: 'room', label: 'الغرفة', title: 'الغرفة', hint: 'حدد شكل وحجم الغرفة: أدخل المقاسات وعدّل الجدران.' },
-    { id: 'openings', label: 'العناصر المعمارية', title: 'العناصر المعمارية', hint: 'أضف بابًا أو مشبًا على الجدار، أو عامودًا داخل الغرفة.' },
-    { id: 'majlis', label: 'المجلس', title: 'نوع المجلس', hint: 'اختر نوع المجلس — يُستخدم مع كل كنبة جديدة، ويمكن تغييره لاحقًا.' },
-    { id: 'furn', label: 'الأثاث والإكسسوارات', title: 'الأثاث والإكسسوارات', hint: 'اختر العنصر لإضافته إلى التصميم، ثم المسه لتعديل الكمية والخصائص.' },
-    { id: 'review', label: 'المراجعة', title: 'مراجعة التصميم', hint: 'راجع التصميم وأنهِ الطلب: بياناتك اختيارية.' },
+    { id: 'room', label: 'الغرفة', title: 'الغرفة',
+      lead: 'اكتب عرض الغرفة وطولها بالمتر، وسيتغيّر الرسم أمامك مباشرة.',
+      hint: 'حدد عرض وطول الغرفة فقط — نتكفّل بالباقي.', next: 'التالي → العناصر المعمارية' },
+    { id: 'openings', label: 'العناصر المعمارية', title: 'العناصر المعمارية',
+      lead: 'اختر الجدار أولاً ثم أضف الباب أو المشب عليه.',
+      hint: 'أضف بابًا أو مشبًا على الجدار الذي تريد.', next: 'التالي → المجلس' },
+    { id: 'majlis', label: 'المجلس', title: 'المجلس',
+      lead: 'اختر نوع الجلسة المناسب لغرفتك، وسيُطبَّق على كل كنبة.',
+      hint: 'اختر نوع المجلس — يُستخدم مع كل كنبة جديدة.', next: 'التالي → الأثاث والإكسسوارات' },
+    { id: 'furn', label: 'الأثاث والإكسسوارات', title: 'الأثاث والإكسسوارات',
+      lead: 'أضف الكنب والإكسسوارات، ثم المس أي قطعة لتعديلها أو حذفها.',
+      hint: 'اختر العنصر لإضافته، ثم المسه لتعديله أو حذفه.', next: 'التالي → المراجعة' },
+    { id: 'review', label: 'المراجعة', title: 'المراجعة',
+      lead: 'شاهد تصميمك، ثم أنهِ الطلب ليصل إلى المحل.',
+      hint: 'راجع التصميم وأنهِ الطلب: بياناتك اختيارية.', next: '' },
   ];
+  var STEP_INDEX = {};
+  STEPS.forEach(function (s, i) { STEP_INDEX[s.id] = i; });
+  function stepAt(i) { return STEPS[Math.max(0, Math.min(STEPS.length - 1, i))]; }
 
   /* أنواع المجلس (تسميات عرض فقط — تُحفظ كرموز ثابتة في القطعة) */
   var SEATING = { floor: 'جلسة أرضية', sofa: 'جلسة كنب', arabic: 'جلسة عربية', raised: 'جلسة مرتفعة' };
@@ -346,6 +361,7 @@
     try { dz.setState(design || null); } catch (_) { dz.setState(null); }
     dz.fitView();
     renderPanel();
+    renderNav();
     renderSheet(null);
   }
 
@@ -378,21 +394,63 @@
       return '<button type="button" data-step="' + s.id + '" class="' + (s.id === S.step ? 'active' : '') + '" aria-current="' + (s.id === S.step) + '"><i>' + (i + 1) + '</i><span>' + s.label + '</span></button>';
     }).join('');
     $$('button', box).forEach(function (b) {
-      b.addEventListener('click', function () { S.step = b.dataset.step; buildSteps(); renderPanel(); });
+      b.addEventListener('click', function () { gotoStep(b.dataset.step); });
     });
+  }
+
+  /* الانتقال بين المراحل: يحدّث المؤشر واللوحة والرسم وأزرار التالي/السابق.
+     fitView بعد كل انتقال حتى يظهر الرسم كاملًا داخل الشاشة بلا نزول. */
+  function gotoStep(id) {
+    if (!STEP_INDEX.hasOwnProperty(id)) return;
+    S.step = id;
+    if (id !== 'openings') setChosenWall(null);
+    buildSteps();
+    renderPanel();
+    renderNav();
+    if (S.designer) { S.designer.autoFit = true; S.designer.fitView(); }
+    renderSheet(null);
+  }
+  function stepMove(n) {
+    var i = STEP_INDEX[S.step];
+    var t = stepAt(i + n);
+    if (t && t.id !== S.step) gotoStep(t.id);
+  }
+
+  /* شريط التنقل السفلي: «السابق» + «التالي» باسم المرحلة القادمة */
+  function renderNav() {
+    var i = STEP_INDEX[S.step];
+    var cur = STEPS[i];
+    var host = $('#pDesign');
+    if (host) host.dataset.step = S.step;   // CSS يتكيّف مع المرحلة (بلا رسم حيّ في المراجعة)
+    var prev = $('#pPrevStep'), next = $('#pNextStep');
+    if (prev) prev.hidden = i <= 0;
+    if (!next) return;
+    if (!STEPS[i + 1]) {
+      next.textContent = 'إنهاء التصميم ↓';
+      next.classList.add('lg');
+      return;
+    }
+    next.textContent = (cur && cur.next) || ('التالي → ' + STEPS[i + 1].title);
   }
 
   /* لا شريط أدوات عام: كل مرحلة تعرض أزرارها الخاصة — بلا تكرار ولا مفاهيم متداخلة */
   function wireStatic() {
     S.zoom = 100;
-    var zlabel = function () { var f = $('#pZoomFit'); if (f) f.textContent = S.zoom + '%'; };
+    /* أزرار التكبير/التصغير تعرض الغرفة كاملة داخل مساحة الرسم فقط —
+       لا تغيّر أبعاد الغرفة إطلاقًا. الوسط = ملاءمة الشاشة. */
+    var fitBtn = $('#pZoomFit');
+    var zlabel = function () { if (fitBtn) fitBtn.title = 'ملاءمة الشاشة (' + S.zoom + '%)'; };
     $('#pZoomIn').onclick = function () { if (!S.designer) return; S.designer.zoomAt(1.25); S.zoom = Math.min(400, Math.round(S.zoom * 1.25)); zlabel(); };
     $('#pZoomOut').onclick = function () { if (!S.designer) return; S.designer.zoomAt(0.8); S.zoom = Math.max(25, Math.round(S.zoom / 1.25)); zlabel(); };
-    $('#pZoomFit').onclick = function () { if (!S.designer) return; S.designer.fitView(); S.zoom = 100; zlabel(); };
+    fitBtn.onclick = function () { if (!S.designer) return; S.designer.fitView(); S.zoom = 100; zlabel(); };
     zlabel();
     $('#pUndo').onclick = function () { if (S.designer) S.designer.undo(); };
     $('#pBack').onclick = function () { show('pLanding'); };
-    $('#pFinish').onclick = function () { S.step = 'review'; buildSteps(); renderPanel(); };
+    $('#pPrevStep').onclick = function () { stepMove(-1); };
+    $('#pNextStep').onclick = function () {
+      var nx = STEPS[STEP_INDEX[S.step] + 1];
+      if (nx) gotoStep(nx.id);
+    };
   }
 
   /* الجدار المستهدف للباب/المشب/الكنبة:
@@ -430,15 +488,11 @@
     return spec;
   }
 
-  /* إضافة عنصر من مرحلته: باب/مشب على الجدار، وعامود في وسط الفراغ */
+  /* إضافة عنصر من مرحلته: باب أو مشب على الجدار المختار.
+     لا «عامود» في واجهة العميل — يبقى في تطبيق الموظفين فقط. */
   function addOpeningOf(type) {
     var dz = S.designer;
     if (!dz) return;
-    if (type === 'column') {
-      var c = dz.addColumn(0.6, 0.6);
-      if (c) { dz.select({ type: 'piece', id: c.id }); renderSheet(dz.selectionInfo()); }
-      return;
-    }
     var p = dz.addOpening(targetWall(), type);
     if (!p) toast('لا توجد مساحة على هذا الجدار', true);
     else renderPanel();
@@ -459,72 +513,69 @@
       + items.map(function (i) { return '<option value="' + esc(i.id) + '"' + (i.id === val ? ' selected' : '') + '>' + esc(i.name) + '</option>'; }).join('');
   }
 
-  /* مزامنة قائمة الجدران مع الواقع دون إعادة رسم اللوحة (يحفظ تركيز الكتابة) */
-  function syncWallInputs(box, dz) {
-    var ws = (dz.state && dz.state.walls) || [];
-    $$('input[data-wall]', box).forEach(function (inp) {
-      var i = Number(inp.dataset.wall);
-      if (ws[i] && document.activeElement !== inp) inp.value = ws[i].len;
-    });
+  /* أوصاف أنواع المجلس بلغة العميل — فرق واضح بلا مصطلحات */
+  var SEAT_HELP = {
+    floor: 'جلسة أرضية مباشرة على الأرض بدون كنب — تناسب المجالس المفتوحة.',
+    sofa: 'جلسة كنب: مقاعد مرتفعة مع مسند وظهر.',
+    arabic: 'جلسة عربية: مقاعد أرضية مع مسند جانبي وطاولة وسط.',
+    raised: 'جلسة مرتفعة: دكان مرتفع مع مقاعد على الجانبين.',
+  };
+  function seatOptions(sel) {
+    return Object.keys(SEATING).map(function (k) {
+      return '<option value="' + k + '"' + (k === sel ? ' selected' : '') + '>' + SEATING[k] + '</option>';
+    }).join('');
   }
-
   function renderPanel() {
     var box = $('#pPanel');
     var dz = S.designer;
     var cur = null;
     STEPS.forEach(function (s) { if (s.id === S.step) cur = s; });
     var ttl = $('#pStepTitle');
-    if (ttl && cur) ttl.textContent = cur.title;
+    if (ttl && cur) {
+      ttl.textContent = cur.title;
+      /* شرح مختصر تحت العنوان — خطوة واحدة واضحة بلا مصطلحات */
+      var old = $('#pStepLead');
+      if (cur.lead) {
+        if (!old) { old = document.createElement('p'); old.id = 'pStepLead'; old.className = 'p-step-lead'; ttl.after(old); }
+        old.textContent = cur.lead;
+        old.hidden = false;
+      } else if (old) { old.hidden = true; }
+    }
     if (!dz) { box.innerHTML = ''; return; }
     if (S.step === 'room') {
       var ws = (dz.state && dz.state.walls) || [];
+      /* المرحلة ١ مبسّطة: العرض والطول فقط. لا قوائم أطوال الجدران ولا زر «إضافة جدار»
+         — العميل لا يحتاج التحكم في كل جدار، والغرفة تتحدّد كاملة من المقاسين. */
       box.innerHTML = ''
-        + '<div class="row2"><label>العرض (م)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[0] ? ws[0].len : 5) + '"></label>'
-        + '<label>الطول (م)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[1] ? ws[1].len : 4) + '"></label></div>'
-        + '<p class="hint">تتحدث الغرفة مباشرة أثناء الكتابة — بلا زر تطبيق.</p>'
-        + '<button type="button" class="btn block" id="pfAddWall">إضافة جدار (للغرف غير المستطيلة)</button>'
-        + '<p class="hint">عدّل أطوال الجدران من القائمة:</p>'
-        + '<div id="pfWalls">' + ws.map(function (w, i) {
-          return '<div class="p-wallrow"><span>جدار ' + (i + 1) + '</span>'
-            + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-wall="' + i + '" value="' + w.len + '" aria-label="طول جدار ' + (i + 1) + '">'
-            + '<button type="button" class="icon-btn" data-walldel="' + i + '" aria-label="حذف جدار ' + (i + 1) + '"><svg><use href="#p-trash"/></svg></button></div>';
-        }).join('') + '</div>';
+        + '<div class="row2"><label>عرض الغرفة (متر)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[0] ? ws[0].len : 5) + '"></label>'
+        + '<label>طول الغرفة (متر)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[1] ? ws[1].len : 4) + '"></label></div>'
+        + '<p class="hint">يتغيّر الرسم مباشرة أثناء الكتابة — بلا زر ولا خطوة إضافية.</p>';
       /* تحديث حي: الكتابة تعدّل الجدارين الأولين مباشرة (يحافظ على الغرف
          المخصصة عبر setWallLength)، بلا زر تطبيق وبلا فقدان التركيز */
       var liveDim = function (idx, input) {
         var v = parseFloat(input.value);
         if (!Number.isFinite(v) || v < 0.5 || v > 30) return;
         dz.setWallLength(idx, Math.round(v * 10) / 10);
-        syncWallInputs(box, dz);
       };
       $('#pfW').addEventListener('input', function () { liveDim(0, $('#pfW')); });
       $('#pfH').addEventListener('input', function () { liveDim(1, $('#pfH')); });
-      $('#pfAddWall').onclick = function () { openWallModal(); };
-      $$('input[data-wall]', box).forEach(function (inp) {
-        inp.addEventListener('change', function () {
-          dz.setWallLength(Number(inp.dataset.wall), Math.max(0.3, parseFloat(inp.value) || 0.3));
-          renderPanel();
-        });
-      });
-      $$('button[data-walldel]', box).forEach(function (b) {
-        b.addEventListener('click', function () {
-          try { dz.removeWall(Number(b.dataset.walldel)); } catch (e) { toast('لا يمكن حذف هذا الجدار', true); }
-          renderPanel();
-        });
-      });
     } else if (S.step === 'openings') {
       var walls = (dz.state && dz.state.walls) || [];
       var ops = (dz.state && dz.state.openings) || [];
-      var cols = (dz.state && dz.state.pieces || []).filter(function (x) { return x.kind === 'column'; });
+      /* المرحلة ٢: الجدار ثم الباب والمشب فقط. لا «عامود» ولا «شباك»
+         كخيار مستقل — والعمود القديم يبقى قابلًا للحذف من خصائصه على الرسم. */
       box.innerHTML = ''
-        + '<div class="p-addrow" role="group" aria-label="إضافة فتحة أو عامود">'
-        + '<button type="button" class="btn" data-add="door"><svg><use href="#p-door"/></svg><span>باب</span></button>'
-        + '<button type="button" class="btn" data-add="mashab"><svg><use href="#p-fire"/></svg><span>مشب</span></button>'
-        + '<button type="button" class="btn" data-add="column"><svg><use href="#p-plus"/></svg><span>عامود</span></button>'
-        + '</div>'
-        + '<div class="row2"><label>الجدار (للباب والمشب)<select id="pfOWall">' + walls.map(function (w, i) {
+        + '<div class="p-optgrid">'
+        + '<div class="p-opt"><label for="pfOWall">الجدار — أين تريد الباب والمشب؟</label>'
+        + '<select id="pfOWall">' + walls.map(function (w, i) {
             return '<option value="' + i + '"' + (i === targetWall() ? ' selected' : '') + '>جدار ' + (i + 1) + '</option>';
-          }).join('') + '</select></label></div>'
+          }).join('') + '</select></div></div>'
+        + '<div class="p-optgrid two">'
+        + '<div class="p-opt"><button type="button" class="btn" data-add="door"><svg><use href="#p-door"/></svg><span>باب</span></button>'
+        + '<small>باب على الجدار المختار</small></div>'
+        + '<div class="p-opt"><button type="button" class="btn" data-add="mashab"><svg><use href="#p-fire"/></svg><span>مشب</span></button>'
+        + '<small>مشب على الجدار المختار</small></div>'
+        + '</div>'
         + '<div id="pfOps">'
         + (ops.length ? ops.map(function (o) {
           var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
@@ -534,11 +585,7 @@
             + '<button type="button" class="btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع">+</button></span>'
             + '<button type="button" class="icon-btn" data-opdel="' + esc(o.id) + '" aria-label="حذف"><svg><use href="#p-trash"/></svg></button></div>';
         }).join('') : '')
-        + (cols.length ? cols.map(function (c) {
-          return '<div class="p-wallrow"><span>عامود</span>'
-            + '<button type="button" class="icon-btn" data-coldel="' + esc(c.id) + '" aria-label="حذف العامود"><svg><use href="#p-trash"/></svg></button></div>';
-        }).join('') : '')
-        + ((!ops.length && !cols.length) ? '<p class="hint">لا توجد فتحات أو أعمدة بعد.</p>' : '')
+        + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو مشبًا بعد.</p>' : '')
         + '</div>';
       $$('button[data-add]', box).forEach(function (b) {
         b.addEventListener('click', function () { addOpeningOf(b.dataset.add); renderPanel(); });
@@ -575,41 +622,48 @@
           renderPanel();
         });
       });
-      $$('button[data-coldel]', box).forEach(function (b) {
-        b.addEventListener('click', function () {
-          dz.select({ type: 'piece', id: b.dataset.coldel });
-          dz.removeSelected();
-          renderSheet(null);
-          renderPanel();
-        });
-      });
     } else if (S.step === 'majlis') {
       var curSeat = getSeating();
+      /* المرحلة ٣: الأنواع الأربعة كبطاقات بوصف مختصر، و«فرش الكل» (النشاط الأساسي)
+         بعدها خامات الفرش (تفاصيل اختيارية). */
       box.innerHTML = ''
-        + '<label>نوع المجلس<select id="pfSeat">'
-        + Object.keys(SEATING).map(function (k) { return '<option value="' + k + '"' + (k === curSeat ? ' selected' : '') + '>' + SEATING[k] + '</option>'; }).join('')
-        + '</select></label>'
-        + '<label>القماش<select id="pfFabric">' + optList(catItems('fabric')) + '</select></label>'
-        + '<label>الإسفنج<select id="pfFoam">' + optList(catItems('foam')) + '</select></label>'
-        + '<label>العمق (م)<input id="pfDepth" type="number" step="0.05" min="0.3" inputmode="decimal" value="0.8"></label>'
-        + '<button type="button" class="btn primary block" id="pfFillMajlis">فرش الكل (' + SEATING[getSeating()] + ')</button>'
-        + '<p class="hint">الافتراضي «جلسة أرضية» — غيّره متى شئت، ويُستخدم مع كل كنبة جديدة.</p>';
+        + '<div class="p-optgrid two">'
+        + Object.keys(SEATING).map(function (k) {
+            return '<div class="p-opt">'
+              + '<button type="button" class="btn" data-seat="' + k + '"' + (k === curSeat ? ' aria-pressed="true" style="border-color:var(--accent);color:var(--accent)"' : '') + '>' + SEATING[k] + '</button>'
+              + '<small>' + SEAT_HELP[k] + '</small></div>';
+          }).join('')
+        + '</div>'
+        + '<select id="pfSeat" class="p-hidden-sel" aria-hidden="true" tabindex="-1">' + seatOptions(curSeat) + '</select>'
+        + '<div class="p-opt"><button type="button" class="btn primary" id="pfFillMajlis">فرش الكل (' + SEATING[curSeat] + ')</button>'
+        + '<small>يوزّع الفرش تلقائيًا على كل الجدران الفارغة.</small></div>'
+        + '<div class="row2"><label>قماش الكنبة<select id="pfFabric">' + optList(catItems('fabric')) + '</select></label>'
+        + '<label>الإسفنج<select id="pfFoam">' + optList(catItems('foam')) + '</select></label></div>'
+        + '<label>عمق الكنبة (متر)<input id="pfDepth" type="number" step="0.05" min="0.3" inputmode="decimal" value="0.8"></label>';
+      $$('button[data-seat]', box).forEach(function (b) {
+        b.addEventListener('click', function () { setSeating(b.dataset.seat); renderPanel(); });
+      });
       $('#pfSeat').onchange = function () { setSeating($('#pfSeat').value); renderPanel(); };
       $('#pfFillMajlis').onclick = function () { fillAll(); };
     } else if (S.step === 'furn') {
       var accs = catItems('acc');
+      /* المرحلة ٤: قسمان واضحان — الأثاث ثم الإكسسوارات — بلا تكرار الأوامر.
+         الحذف السريع متاح بعد المس أي قطعة على الرسم (تظهر خصائصها أسفل الرسم). */
       box.innerHTML = ''
-        + '<p class="hint">نوع المجلس الحالي: <b>' + SEATING[getSeating()] + '</b> (يُغيَّر من خطوة المجلس).</p>'
-        + '<div class="p-addrow" role="group" aria-label="إضافة كنب">'
-        + '<button type="button" class="btn primary" data-sofa="wall">إضافة كنبة</button>'
-        + '<button type="button" class="btn" data-sofa="free">كنبة حرة</button>'
-        + '<button type="button" class="btn" data-sofa="fill">فرش الكل</button>'
+        + '<h4 class="p-subhead">الأثاث</h4>'
+        + '<div class="p-optgrid three">'
+        + '<div class="p-opt"><button type="button" class="btn primary" data-sofa="wall">كنبة</button>'
+        + '<small>على الجدار المختار</small></div>'
+        + '<div class="p-opt"><button type="button" class="btn" data-sofa="free">كنبة حرة</button>'
+        + '<small>في أي مكان</small></div>'
+        + '<div class="p-opt"><button type="button" class="btn" data-sofa="fill">فرش الكل</button>'
+        + '<small>توزيع تلقائي</small></div>'
         + '</div>'
-        + '<h4 class="p-subhead">الإكسسوارات</h4>'
+        + '<h4 class="p-subhead">الإكسسوارات <small>— المس أي قطعة لحذفها</small></h4>'
         + '<div class="p-accgrid">' + (accs.length ? accs.map(function (a) {
           return '<button type="button" class="btn" data-acc="' + esc(a.id) + '">' + esc(a.name) + '</button>';
         }).join('') : '<p class="hint">لا توجد إكسسوارات متاحة حالياً.</p>') + '</div>'
-        + '<button type="button" class="btn block ghost" id="pfFreeSpace">إضافة مساحة أرضية (علامة بلا سعر)</button>';
+        + '<button type="button" class="btn ghost" id="pfFreeSpace">+ مساحة أرضية فارغة</button>';
       $$('button[data-sofa]', box).forEach(function (b) {
         b.addEventListener('click', function () {
           var k = b.dataset.sofa;
@@ -748,22 +802,6 @@
     act('[data-dup]', function () { dz.duplicateSelected(); });
   }
 
-  function openWallModal() {
-    openPModal('إضافة جدار', ''
-      + '<div class="row2"><label>الطول (م)<input id="pwLen" type="number" step="0.1" min="0.5" inputmode="decimal" value="3"></label>'
-      + '<label>الاتجاه°<input id="pwAng" type="number" step="5" inputmode="numeric" value="0"></label></div>'
-      + '<div class="btn-row"><button class="btn" id="pwCancel">إلغاء</button><button class="btn primary" id="pwOk">إضافة</button></div>',
-      function (b) {
-        $('#pwCancel', b).onclick = closePModal;
-        $('#pwOk', b).onclick = function () {
-          S.designer.addWall(Math.max(0.5, parseFloat($('#pwLen', b).value) || 3), parseFloat($('#pwAng', b).value) || 0);
-          closePModal();
-          renderPanel();
-        };
-        setTimeout(function () { var i = $('#pwLen', b); if (i) { i.focus(); i.select(); } }, 80);
-      });
-  }
-
   function openPModal(title, html, onMount) {
     $('#pModalTitle').textContent = title;
     $('#pModalBody').innerHTML = html;
@@ -816,28 +854,30 @@
   /* المراجعة خطوة داخل المصمم: معاينة + بيانات اختيارية + PDF/واتساب/إنهاء */
   function renderReviewPanel(box, dz) {
     var cust = S.cust || { name: '', phone: '' };
+    /* المرحلة ٥ مبسّطة: معاينة + بيانات العميل + صف أزرار واحد (معاينة/تصدير/مشاركة/إنهاء)
+       وسطر شرح واحد يوضّح وظيفة كل زر — بلا قائمة حقائق طويلة. */
     box.innerHTML = ''
       + '<img id="pReviewImg" class="p-preview" alt="معاينة المخطط">'
-      + '<dl class="p-facts" id="pFacts"></dl>'
       + '<div class="fields">'
-      + '<h4 class="p-subhead">بيانات العميل — اختيارية</h4>'
-      + '<label class="fld wide"><span class="fld-body"><b>الاسم</b><input id="pName" maxlength="60" placeholder="اسمك الكريم" autocomplete="name" value="' + esc(cust.name) + '"></span></label>'
-      + '<label class="fld wide"><span class="fld-body"><b>رقم الجوال</b><input id="pPhone" type="tel" inputmode="tel" placeholder="05xxxxxxxx" autocomplete="tel" value="' + esc(cust.phone) + '"></span></label>'
+      + '<div class="row2">'
+      + '<label>الاسم (اختياري)<input id="pName" maxlength="60" placeholder="اسمك" autocomplete="name" value="' + esc(cust.name) + '"></label>'
+      + '<label>رقم الجوال (اختياري)<input id="pPhone" type="tel" inputmode="tel" placeholder="05xxxxxxxx" autocomplete="tel" value="' + esc(cust.phone) + '"></label>'
       + '</div>'
-      + '<div class="p-review-actions">'
-      + '<button type="button" class="btn block" id="pActPreview">معاينة التصميم</button>'
-      + '<button type="button" class="btn block" id="pActPdf">تصدير PDF</button>'
-      + '<button type="button" class="btn block" id="pActWa">مشاركة واتساب</button>'
-      + '<button type="button" class="btn primary block lg" id="pSubmitDesign">إنهاء التصميم</button>'
       + '</div>'
+      + '<div class="p-actrow">'
+      + '<button type="button" class="btn" id="pActPreview">معاينة</button>'
+      + '<button type="button" class="btn" id="pActPdf">تصدير PDF</button>'
+      + '<button type="button" class="btn" id="pActWa">واتساب</button>'
+      + '<button type="button" class="btn primary" id="pSubmitDesign">إنهاء التصميم</button>'
+      + '</div>'
+      + '<p class="p-review-note">معاينة: شاهد التصميم قبل الإنهاء · تصدير PDF: احفظه كملف على جهازك · '
+      + 'واتساب: أرسل التصميم عبر واتساب · إنهاء التصميم: يُنهي الطلب ويحفظ التصميم لدى المحل.</p>'
       + '<p class="error" id="pReviewErr" role="alert"></p>';
     var refreshPreview = function () {
       try {
         var st = dz.getState();
-        $('#pReviewImg', box).src = designImage(st, 1000);
-        $('#pFacts', box).innerHTML = designFacts(st).map(function (f) {
-          return '<div><dt>' + f[0] + '</dt><dd>' + esc(f[1]) + '</dd></div>';
-        }).join('');
+        var img = $('#pReviewImg', box);
+        if (img) img.src = designImage(st, 1000);
       } catch (e) { /* noop */ }
     };
     refreshPreview();

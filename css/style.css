@@ -2395,6 +2395,7 @@ body.modal-open { overflow: hidden; }
    ===================================================================== */
 body.portal { background: var(--bg); }
 .portal .p-view { max-width: 560px; margin: 0 auto; padding: 20px 16px 40px; min-height: 100dvh; }
+.portal .p-view[hidden] { display: none; }
 .p-hero { text-align: center; padding: 34px 6px 10px; display: grid; gap: 12px; justify-items: center; }
 .p-shop { font-weight: 700; font-size: 1.05rem; color: var(--ink-2); }
 .p-hero h1 { font-size: 1.9rem; line-height: 1.4; margin: 0; }
@@ -2434,13 +2435,89 @@ body.portal { background: var(--bg); }
 .p-steps button span { overflow: hidden; text-overflow: ellipsis; }
 .p-steps button.active { border-color: var(--accent); color: var(--ink); }
 .p-steps button.active i { background: var(--accent-fill); color: var(--on-accent); }
-.p-canvas-col { display: flex; flex-direction: column; gap: 10px; }
+/* ============ تصميم العميل: مرحلة واحدة = شاشة واحدة ============
+   لا نزول طويل: الصفحة كلها قflex بارتفاع الشاشة، واللوحة تُقفل بارتفاع أقصى
+   وتُقفل داخليًا، والرسم يأخذ ما تبقى من المساحة. */
+.portal #pDesign {
+  display: flex; flex-direction: column; gap: 8px;
+  height: 100dvh; max-height: 100dvh; min-height: 0;
+  padding: 10px 12px calc(8px + env(safe-area-inset-bottom, 0px));
+  overflow: hidden;
+}
+.portal #pDesign .p-bar { flex: none; padding: 0; }
+.portal #pDesign .p-steps { flex: none; margin: 0; }
+/* اللوحة تنكمش (ولا تكبر) لتترك مساحة لـ«التالي» دائمًا ظاهرة في أسفل الشاشة. */
+.portal #pDesign .p-canvas-col { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+.portal #pDesign .p-panel { flex: 0 1 auto; min-height: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
+.portal #pDesign .p-canvas { flex: 0 0 auto; height: clamp(150px, 26dvh, 280px); min-height: 150px; position: relative; flex-shrink: 1; }
+/* أدوات التكبير تطفو فوق الرسم (أسفله) — لا تأخذ صفًا من ارتفاع الشاشة */
+.portal #pDesign .p-zoombar {
+  position: absolute; inset-inline: 8px; bottom: 8px; z-index: 6;
+  display: flex; gap: 6px; justify-content: center; pointer-events: none;
+}
+.portal #pDesign .p-zoombar .btn {
+  pointer-events: auto; min-height: 34px; padding: 0 12px; font-size: .76rem;
+  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 2px 8px rgba(42, 38, 34, .18);
+}
+.portal #pDesign .p-footbar { flex: none; }
+/* خصائص القطعة/الفتحة: تظهر أسفل الرسم مباشرة (ليست ورقة تغطي الشاشة) */
+.portal #pDesign .p-sheet {
+  position: static; inset: auto; z-index: auto;
+  flex: 0 1 auto; min-height: 0; max-height: 38dvh; overflow-y: auto; overscroll-behavior: contain;
+  border: 1px solid var(--line-strong); border-radius: var(--r-lg);
+  box-shadow: none; animation: none; padding: 10px 12px;
+}
+.portal #pDesign .p-sheet .sheet-grip { display: none; }
+/* أزرار التنقل بين المراحل: واضحة وكبيرة للسهل الضغط على الجوال */
+.p-navrow { display: flex; gap: 8px; align-items: stretch; }
+.p-navrow .btn { min-height: 54px; font-size: 1rem; font-weight: 700; }
+.p-navrow .btn.block { flex: 1 1 auto; }
+#pPrevStep { flex: 0 0 auto; padding-inline: 16px; }
+/* حقل مخفي يبقى للقراءة فقط (توافق مع الحفظ والجلسات) */
+.p-hidden-sel { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; border: 0; }
+/* عنوان المرحلة + شرح مختصر */
+.p-step-lead { margin: -2px 0 2px; font-size: .84rem; color: var(--ink-3); line-height: 1.6; }
+/* بطاقة خيار واحدة: زر كبير + شرح سطر واحد */
+.p-opt { display: grid; gap: 3px; }
+.p-opt .btn { min-height: 52px; font-size: 1rem; font-weight: 700; }
+.p-opt small { font-size: .76rem; color: var(--ink-3); line-height: 1.5; padding-inline: 2px; }
+.p-optgrid { display: grid; gap: 8px; }
+.p-optgrid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.p-optgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+@media (max-width: 359px) { .p-optgrid.two { grid-template-columns: 1fr; } .p-optgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+/* أوصاف الأزرار في خطوة المراجعة */
+/* حقل مخفي يبقى للقراءة فقط (توافق مع الحفظ والجلسات) */
+.p-hidden-sel { display: none !important; }
+.p-actdesc { display: grid; gap: 8px; }
+.p-actdesc .btn { min-height: 50px; font-size: .98rem; font-weight: 700; }
+.p-actdesc small { font-size: .76rem; color: var(--ink-3); line-height: 1.45; padding-inline: 2px; }
+/* المرحلة ٥: معاينة + صف أزرار واحد + سطر شرح واحد = شاشة واحدة بلا نزول */
+.portal #pDesign .p-actrow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+.portal #pDesign .p-actrow .btn { min-height: 46px; padding: 4px 2px; font-size: .84rem; font-weight: 700; }
+.portal #pDesign #pReviewImg { max-height: 72px; object-fit: contain; background: #fff; }
+.portal #pDesign .p-review-note { margin: 0; font-size: .72rem; line-height: 1.45; color: var(--ink-3); }
+.portal #pDesign .error:empty { display: none; }
+.portal #pDesign .p-facts { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 4px; margin: 6px 0; }
+.portal #pDesign .p-facts > div { display: flex; justify-content: space-between; align-items: center; gap: 5px; min-height: 0; padding: 4px 8px; font-size: .76rem; line-height: 1.35; }
+.portal #pDesign .p-facts dt, .portal #pDesign .p-facts dd { font-size: .76rem; line-height: 1.35; }
+.portal #pDesign .fields { display: grid; gap: 5px; }
+.portal #pDesign .fields label { gap: 3px; font-size: .8rem; }
+.portal #pDesign .p-actdesc { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.portal #pDesign .p-actdesc .btn { min-height: 44px; font-size: .9rem; }
+.portal #pDesign .p-accgrid { max-height: 128px; overflow-y: auto; }
+.portal #pDesign .p-opt small { font-size: .74rem; line-height: 1.45; }
+.portal #pDesign .p-subhead { margin: 5px 0 2px; }
+.portal #pDesign .p-subhead small { font-weight: 400; color: var(--ink-3); font-size: .76rem; }
+.portal #pDesign .p-panel { gap: 8px; }
+.portal #pDesign .p-opt .btn { min-height: 48px; }
+.portal #pDesign .p-facts { max-height: 68px; overflow-y: auto; }
+/* في المراجعة لا داعي للرسم الحيّ: المعاينة المصغّرة تكفي — فنمنح الخيارات كل المساحة */
+.portal #pDesign[data-step="review"] .p-canvas,
+.portal #pDesign[data-step="review"] .p-zoombar { display: none; }
 .p-tools { display: grid; gap: 8px; }
 .p-tools .tb-row { display: flex; gap: 8px; }
 .p-tools .tb-btn { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: .82rem; white-space: nowrap; }
 .p-step-title { font-size: 1.02rem; margin: 0 0 4px; }
-.p-addrow { display: flex; gap: 8px; flex-wrap: wrap; }
-.p-addrow .btn { flex: 1 1 28%; min-height: 44px; white-space: nowrap; }
 .p-subhead { font-size: .92rem; margin: 12px 0 2px; }
 .p-accgrid { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 6px; scrollbar-width: thin; }
 .p-accgrid .btn { flex: none; min-height: 44px; padding-inline: 16px; }
@@ -2477,11 +2554,11 @@ body.portal { background: var(--bg); }
 .p-sheet .p-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
 .p-sheet .btn { min-height: 44px; }
 .p-footbar {
-  position: sticky; bottom: 0; z-index: 40;
-  display: flex; gap: 8px; align-items: center;
-  padding: 10px 2px calc(10px + env(safe-area-inset-bottom, 0px)); background: var(--bg);
+  display: flex; gap: 8px; align-items: stretch;
+  padding: 0; background: var(--bg);
 }
-.p-footbar .btn { min-height: 48px; }
+.p-footbar .btn { min-height: 54px; }
+.p-footbar .btn.block { flex: 1 1 auto; }
 .p-stage-narrow { max-width: 520px; margin: 0 auto; }
 .p-preview { width: 100%; border-radius: var(--r); border: 1px solid var(--line-soft); background: #fff; }
 .p-facts { display: grid; gap: 8px; margin: 14px 0; }
@@ -2523,4 +2600,12 @@ body.portal { background: var(--bg); }
   .portal .p-view { max-width: 640px; }
   .p-links { grid-template-columns: repeat(6, minmax(0, 1fr)); }
   .p-steps button { font-size: .78rem; }
+}
+/* الجوال: مؤشر المراحل صف واحد مختصر (٥ أرقام) — اسم المرحلة يظهر كعنوان كبير
+   فوق الخيارات، فلا نهدر ارتفاع الشاشة ولا نحتاج نزولًا. */
+@media (max-width: 640px) {
+  .portal #pDesign .p-steps { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+  .portal #pDesign .p-steps button { min-height: 42px; padding: 4px; justify-content: center; }
+  .portal #pDesign .p-steps button span { display: none; }
+  .portal #pDesign .p-steps button i { width: 26px; height: 26px; font-size: .82rem; }
 }
