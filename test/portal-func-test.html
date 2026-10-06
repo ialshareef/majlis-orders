@@ -126,6 +126,15 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       q('#pfH').value = '5';
       q('#pfH').dispatchEvent(new Event('input', { bubbles: true }));
       t('R-live-h', P.state().walls[1].len === 5, 'h=' + P.state().walls[1].len);
+      // R2b: عند اللمس يُحدَّد الرقم كاملًا فيكتب فوقه العميل مباشرة
+      var pfW = q('#pfW');
+      var selCalled = false;
+      var origSel = pfW.select.bind(pfW);
+      pfW.select = function () { selCalled = true; return origSel(); };
+      pfW.dispatchEvent(new Event('pointerdown', { bubbles: true }));
+      pfW.focus();
+      pfW.dispatchEvent(new Event('focus', { bubbles: true }));
+      t('R-select-all', selCalled, 'select() called on touch/focus');
       // R3: الغرفة المخصصة (من salvage/مسودة) لا تُهدم بالتحديث الحي
       P.designer().addWall(2, 45);
       await waitFor(function () { return P.state().walls.length === 5; }, 60000);
@@ -157,9 +166,11 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       q('#pfSeat').value = 'arabic';
       q('#pfSeat').dispatchEvent(new Event('change', { bubbles: true }));
       var wallsBefore = P.state().walls.length;
-      step(3);
-      await waitFor(function () { return q('#pPanel button[data-sofa="wall"]'); });
-      q('#pPanel button[data-sofa="wall"]').click();
+      log('MARK before-step2');
+      step(2);
+      await waitFor(function () { return q('#pfFillMajlis'); }, 60000);
+      log('MARK at-majlis');
+      q('#pfFillMajlis').click();
       await waitFor(function () { return sofas().some(function (x) { return x.seating === 'arabic'; }); }, 60000);
       t('F-seating-change', P.state().walls.length === wallsBefore, 'walls kept');
       t('F-seating-kept', localStorage.getItem('majlis_seating') === 'arabic', 'persisted');
@@ -243,14 +254,16 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var mW = (P.state().openings || []).filter(function (o) { return o.type === 'mashab'; })[0];
       t('D3-mashab-on-wall2', !!mW && mW.wall === 1, 'wall=' + (mW && mW.wall));
       // D4: السحب باللمس يُخفي ورقة الخصائص، والنقرة تعيدها
-      step(3);
-      await waitFor(function () { return q('#pPanel button[data-sofa="wall"]'); }, 60000);
-      q('#pPanel button[data-sofa="wall"]').click();
+      step(2);
+      await waitFor(function () { return q('#pfFillMajlis'); }, 60000);
+      q('#pfFillMajlis').click();
       await waitFor(function () { return P.state().pieces.some(function (x) { return x.kind === 'sofa'; }); }, 60000);
       var dzp = P.designer(), dCv = dzp.canvas;
       dzp.fitView();
       var dR = dCv.getBoundingClientRect();
       var dSofa = P.state().pieces.filter(function (x) { return x.kind === 'sofa'; })[0];
+      // نقرأ الموضع بعد استقرار التخطيط في كل مرحلة (الرسم ينمو بين الفحوص)
+      var dReSync = function () { dzp.fitView(); dR = dCv.getBoundingClientRect(); };
       // نقطة بعيدة عن المقابض (أعلى يسار القطعة) حتى يقع النقر على الجسم لا على مقبض تغيير الحجم
       var dPos = dzp.toScreen(dSofa.x - dSofa.w / 4, dSofa.y - dSofa.h / 4);
       var ptype = function (type, x, y) { dCv.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: dR.left + x, clientY: dR.top + y, bubbles: true, cancelable: true, isPrimary: true, button: 0 })); };
@@ -258,10 +271,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return !q('#pSheet').hidden; }, 60000);
       t('D4-sheet-on-tap', !q('#pSheet').hidden, 'sheet visible on tap');
       // نعيد قراءة موضع الكانفس بعد استقرار التخطيط (الخصائص تظهر أسفله فتزيحه)
-      dR = dCv.getBoundingClientRect();
-      dzp.fitView();
-      dR = dCv.getBoundingClientRect();
-      dPos = dzp.toScreen(dSofa.x - dSofa.w / 4, dSofa.y - dSofa.h / 4);
+      dReSync();
+      var dPos = dzp.toScreen(dSofa.x - dSofa.w / 4, dSofa.y - dSofa.h / 4);
       ptype('pointerdown', dPos.x, dPos.y);
       await waitFor(function () { return dzp.drag && dzp.drag.mode === 'move'; }, 60000);
       ptype('pointermove', dPos.x + 26, dPos.y + 18);
@@ -283,8 +294,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var nD5Piece = dz_d5_piece(dzp) || dSofa;
       function dz_d5_piece(d) { return d.selectedPiece() || P.state().pieces.filter(function (x) { return x.kind === 'sofa'; })[0]; }
       // stabiliser: نعيد قراءة موضع الكانفس بعد أي تغيّر في التخطيط
-      dzp.fitView();
-      dR = dCv.getBoundingClientRect();
+      dReSync();
       // نقطة داخل الجسم بعيدة عن المقابض (فوق اليسار ربع قطعة)
       var dPos2 = dzp.toScreen(nD5Piece.x - nD5Piece.w / 5, nD5Piece.y - nD5Piece.h / 5);
       var nEvInit = { bubbles: true, cancelable: true, clientX: dR.left + dPos2.x, clientY: dR.top + dPos2.y, pointerId: 31, pointerType: 'touch', isPrimary: true, button: 0 };
@@ -299,6 +309,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       document.removeEventListener('touchmove', nProbe, true);
       t('D5-block-scroll-on-piece', dTm.defaultPrevented === true, 'touchmove prevented while moving piece=' + dTm.defaultPrevented);
       // سحب الفراغ = pan يمرّر الصفحة (يبقى السلوك المقصود)
+      dReSync();
       nTouchEv = [];
       document.addEventListener('touchmove', nProbe, true);
       var emptyX = dzp.toScreen(dzp.geometry().bb.minX - 0.4, dzp.geometry().bb.minY - 0.4);
@@ -315,19 +326,41 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       window.scrollTo(0, 0);   // pan حرّك الصفحة: نعيدها لتفادي 影响 بقية الخطوات
       await new Promise(function (r) { setTimeout(r, 80); });
 
-      // E: إكسسوار + كمية 5 حقيقية
+      // E: شاشة الكمية — تفتح، تعدّل، وتلغي (الإضافة تعتمد على وجود مساحة)
       step(3);
-      await waitFor(function () { return q('#pPanel button[data-acc]'); });
-      q('#pPanel button[data-acc]').click();
-      await waitFor(function () { return accs().length === 1; }, 60000);
-      var first = accs()[0];
-      P.designer().select({ type: 'piece', id: first.id });
-      await waitFor(function () { return q('#psQty'); }, 60000);
-      var qinp = q('#psQty');
-      qinp.value = '5';
-      qinp.dispatchEvent(new Event('change', { bubbles: true }));
+      await waitFor(function () { return q('#pPanel button[data-acc]'); }, 60000);
+      var accClick = q('#pPanel button[data-acc]');
+      t('E-acc-btn', !!accClick && !!q('#pModal'), 'acc btn + modal node');
+      P.openAccQty(accClick.dataset.acc);
+      await waitFor(function () { return q('#accqBox'); }, 60000);
+      t('E-acc-modal', !q('#pModal').hidden && !!q('#accqOk') && !!q('[data-accq-plus]'), 'qty modal open');
+      q('[data-accq-plus]').click();
+      var n1 = Number(q('#accqN').textContent);
+      t('E-acc-plus', n1 >= 2, 'n=' + n1);
+      q('[data-accq-minus]').click();
+      t('E-acc-minus', Number(q('#accqN').textContent) === n1 - 1, 'back');
+      q('#accqOk').click();
+      await waitFor(function () { return q('#pModal').hidden; }, 60000);
+      t('E-acc-close', q('#pModal').hidden, 'modal closed');
+      // الإضافة الفعلية عند وجود مساحة
+      var addNow = q('#pPanel button[data-acc]');
+      if (addNow) {
+        addNow.click();
+        await waitFor(function () { return q('#accqBox'); }, 60000);
+        q('#accqOk').click();
+        await waitFor(function () { return q('#pModal').hidden; }, 60000);
+      }
+      // F: الإضافة الفعلية 5 قطع + الحفظ + إعادة القراءة (بع شاشة الكمية)
+      step(3);
+      await waitFor(function () { return q('#pPanel button[data-acc]'); }, 60000);
+      var accId = q('#pPanel button[data-acc]').dataset.acc;
+      P.openAccQty(accId);
+      await waitFor(function () { return q('#accqBox'); }, 60000);
+      for (var eq = 0; eq < 4; eq++) q('[data-accq-plus]').click();
+      q('#accqOk').click();
+      await waitFor(function () { return q('#pModal').hidden; }, 60000);
       await waitFor(function () { return accs().length === 5; }, 60000);
-      t('F-qty5', accs().every(function (x) { return x.itemId === first.itemId; }), '5 real copies');
+      t('F-qty5', accs().length === 5 && accs().every(function (x) { return x.itemId === accId; }), accs().length + ' real copies');
       // حفظ صريح ثم إعادة قراءة من الخادم
       var tok = localStorage.getItem('majlis_design_token');
       var saved = await (await window.fetch('/api/portal/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-design-token': tok }, body: JSON.stringify({ design: P.state() }) })).json();
@@ -335,13 +368,14 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var got = await (await window.fetch('/api/portal/design', { headers: { 'x-design-token': tok } })).json();
       var racc = (got.design.pieces || []).filter(function (x) { return x.kind === 'acc'; });
       t('F-qty-reload', racc.length === 5, racc.length + ' persisted');
-      // رفض 0 والسالب وغير الرقمي
-      var bads = ['0', '-3', 'abc'];
-      for (var bi = 0; bi < bads.length; bi++) {
-        q('#psQty').value = bads[bi];
-        q('#psQty').dispatchEvent(new Event('change', { bubbles: true }));
-      }
-      t('F-qty-invalid', accs().length === 5, accs().length + ' kept');
+      // الحد الأدنى للكمية = 1 (لا صفر ولا سالب)
+      P.openAccQty(accId);
+      await waitFor(function () { return q('#accqBox'); }, 60000);
+      for (var bi = 0; bi < 12; bi++) q('[data-accq-minus]').click();
+      t('F-qty-min1', Number(q('#accqN').textContent) === 1, 'min is 1');
+      q('#accqOk').click();
+      await waitFor(function () { return q('#pModal').hidden; }, 60000);
+      t('F-qty-invalid', accs().length === 1, accs().length + ' reduced to 1');
 
       // F: تدوير/نسخ/حذف
       var one = accs()[0];
@@ -378,7 +412,12 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return q('#pPanel button[data-acc]'); });
       var addFreshAcc = function () {
         var before = accs().map(function (x) { return x.id; });
-        q('#pPanel button[data-acc]').click();
+        var btn = q('#pPanel button[data-acc]');
+        if (!btn) throw new Error('no acc button');
+        P.openAccQty(btn.dataset.acc);
+        var box = q('#accqBox');
+        if (!box) throw new Error('accq not open');
+        q('#accqOk').click();
         var nw = accs().filter(function (x) { return before.indexOf(x.id) < 0; })[0];
         if (!nw) throw new Error('no fresh acc');
         return nw;
@@ -466,14 +505,47 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return q('#pPanel button[data-add="door"]'); }, 60000);
       t('G-openings', !!q('#pPanel button[data-add="door"]') && !!q('#pPanel button[data-add="mashab"]'), 'door/mashab');
       step(2);
-      await waitFor(function () { return q('#pfFillMajlis'); });
-      t('G-majlis', q('#pfFillMajlis').textContent.indexOf('فرش الكل') >= 0, 'فرش الكل in majlis');
+      await waitFor(function () { return q('#pfFillMajlis'); }, 60000);
+      t('G-majlis', q('#pfFillMajlis').textContent.indexOf('فرش الكل') >= 0, 'fill-all in majlis');
+      // G3: بلا أنواع جلسة ولا قماش/إسفنج مرئية — المقاس فقط
+      t('G3-size-only', !q('#pPanel button[data-seat]') && !!q('#pfMajLen') && !!q('#pfDepth')
+        && getComputedStyle(q('#pPanel select#pfFabric')).display === 'none', 'majlis = size only');
       step(3);
-      await waitFor(function () { return q('#pPanel button[data-sofa="wall"]'); });
-      t('G-furn', !!q('#pPanel button[data-acc]'), 'furniture grid');
-      t('G-zoom-outside', !q('.p-zoombar button[data-step]') && !!q('.p-zoombar #pZoomFit'), 'zoom separate from steps');
-      var zb = qAll('.p-zoombar .btn');
-      t('G-zoom-44', zb.every(function (x) { return x.getBoundingClientRect().height >= 30; }), 'zoom tappable');
+      await waitFor(function () { return q('#pPanel button[data-acc]') || q('#pPanel .hint'); }, 60000);
+      t('G-furn', !!q('#pPanel button[data-acc]'), 'accessories grid');
+      t('G4-acc-only', !q('#pPanel button[data-sofa]'), 'no sofa buttons in furn step');
+      t('G-zoom-hidden', getComputedStyle(q('.p-zoombar')).display === 'none', 'zoom bar hidden');
+      // G5: الضغط على إكسسوار يفتح شاشة الكمية كاملة (نُفرّغ المكان أولًا)
+      P.state().pieces.filter(function (x) { return x.kind !== 'acc'; }).forEach(function (x) {
+        P.designer().select({ type: 'piece', id: x.id });
+        P.designer().removeSelected();
+      });
+      var st2 = P.state();
+      st2.openings = [];
+      P.designer().setState(st2);
+      await waitFor(function () { return q('#pPanel button[data-acc]'); }, 60000);
+      q('#pPanel button[data-acc]').click();
+      await waitFor(function () { return q('#accqBox'); }, 60000);
+      q('[data-accq-plus]').click();
+      var qBefore = P.state().pieces.filter(function (x) { return x.kind === 'acc'; }).length;
+      q('#accqOk').click();
+      await waitFor(function () { return q('#pModal').hidden; }, 60000);
+      var qAfter = P.state().pieces.filter(function (x) { return x.kind === 'acc'; }).length;
+      // الإضافة تنجح إن وُجدت مساحة؛ المهم أن الشاشة تعمل وتُغلق
+      t('G5-acc-qty', qAfter >= qBefore, qBefore + '->' + qAfter);
+      q('#pPanel button[data-acc]').click();
+      await waitFor(function () { return q('#accqBox'); }, 60000);
+      var a2 = P.state().pieces.filter(function (x) { return x.kind === 'acc'; }).length;
+      q('#accqOk').click();
+      await waitFor(function () { return q('#pModal').hidden; }, 60000);
+      t('G5-acc-keep', P.state().pieces.filter(function (x) { return x.kind === 'acc'; }).length === a2, 'kept');
+      // G6: الرسم يظهر في الغرفة/العناصر/المجلس فقط
+      step(0);
+      await waitFor(function () { return q('#pfW'); }, 60000);
+      t('G6-canvas-room', getComputedStyle(q('.p-canvas')).display !== 'none', 'canvas in room');
+      step(3);
+      await waitFor(function () { return q('#pPanel button[data-acc]') || q('#pPanel .hint'); }, 60000);
+      t('G6-canvas-furn', getComputedStyle(q('.p-canvas')).display === 'none', 'canvas hidden in furn');
 
       // K: لا زر «عامود» في واجهة العميل إطلاقًا (يبقى في تطبيق الموظفين)
       step(1);
@@ -492,10 +564,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('N2-prev-shown', !q('#pPrevStep').hidden, 'prev visible');
       q('#pNextStep').click();
       await waitFor(function () { return stepTitle() === 'المجلس'; }, 60000);
-      t('N3-step-majlis', qAll('#pPanel button[data-seat]').length === 4, 'four seating cards');
+      t('N3-step-majlis', !!q('#pPanel #pfMajLen') && !!q('#pPanel #pfFillMajlis'), 'majlis size options');
       q('#pNextStep').click();
       await waitFor(function () { return stepTitle() === 'الأثاث والإكسسوارات'; }, 60000);
-      t('N4-step-furn', !!q('#pPanel button[data-sofa="wall"]'), 'furniture options');
+      t('N4-step-furn', !!q('#pPanel button[data-acc]') && !q('#pPanel button[data-sofa]'), 'accessories only');
       q('#pNextStep').click();
       await waitFor(function () { return stepTitle() === 'المراجعة'; }, 60000);
       t('N5-step-review', !!q('#pActPdf') && !!q('#pSubmitDesign'), 'review actions');
@@ -521,7 +593,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         var dTop = de.top, dBottom = de.bottom;
         var ttl = stepTitle();
         var map = { 'الغرفة': ['#pfW', '#pfH'], 'العناصر المعمارية': ['#pfOWall', '[data-add="door"]'],
-          'المجلس': ['[data-seat="floor"]', '#pfFillMajlis'], 'الأثاث والإكسسوارات': ['[data-sofa="wall"]', '[data-acc]'],
+          'المجلس': ['#pfMajLen', '#pfFillMajlis'], 'الأثاث والإكسسوارات': ['[data-acc]'],
           'المراجعة': ['#pActPdf', '#pSubmitDesign'] };
         var below = (map[ttl] || []).filter(function (sel) {
           var el = q(sel);

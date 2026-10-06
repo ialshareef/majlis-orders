@@ -249,6 +249,24 @@
     return accGroup(p).length;
   }
 
+  /* عدد قطع إكسسوار معيّن في التصميم (لكل مجموعة على حدة) */
+  function accGroupById(itemId) {
+    var dz = S.designer;
+    var all = (dz && dz.state.pieces || []).filter(function (x) { return x.kind === 'acc' && x.itemId === itemId; });
+    var out = [];
+    var seen = {};
+    all.forEach(function (p) {
+      var k = p.qg || p.id;
+      if (seen[k]) return;
+      seen[k] = 1;
+      out.push(all.filter(function (x) { return (x.qg || x.id) === k; }));
+    });
+    return out;
+  }
+  function accCount(itemId) {
+    return (S.designer && S.designer.state.pieces || []).filter(function (x) { return x.kind === 'acc' && x.itemId === itemId; }).length;
+  }
+
   function accDims(itemId) {
     var it = S.catMap[itemId] || {};
     return { w: Math.max(0.2, Number(it.w) || 0.5), h: Math.max(0.2, Number(it.h) || 0.5), shape: it.shape || 'rect' };
@@ -306,19 +324,80 @@
     return placed;
   }
 
-  function portalAddAcc(itemId) {
+function portalAddAcc(itemId) {
     var dz = S.designer;
     var it = S.catMap[itemId];
     if (!dz || !it) return null;
     var d = accDims(itemId);
     var spots = dz.findSpots(d.w, d.h, 1, 'acc');
-    if (!spots.length) { toast('لا توجد مساحة مناسبة داخل الغرفة', true); return null; }
+    if (!spots.length) { toast('لا توجد مساحة فارغة لإضافة ' + it.name, true); return null; }
     var gid = portalUid();
     var added = dz.addPiece({
       kind: 'acc', itemId: it.id, x: spots[0].x, y: spots[0].y,
       w: d.w, h: d.h, rot: 0, shape: d.shape, qg: gid,
     });
     return added;
+  }
+
+  /* شاشة الإكسسوارات: تغطي كل الشاشة، تختار الكمية أو تحذف، وتُغلق بوضوح.
+     السبب: الخصائص كانت تظهر أسفل الرسم مخفية —Customers لا يجدونها. */
+  function openAccQty(itemId) {
+    var dz = S.designer;
+    var it = S.catMap[itemId];
+    if (!dz || !it) { toast('تعذّر فتح الكمية (' + itemId + ')', true); return; }
+    var cur = accCount(itemId);
+    var N = Math.max(1, Math.min(99, cur || 1));
+    function paint() {
+      var rows = Array.apply(null, { length: N }).map(function (_, i) {
+        return '<div class="accq-row"><b>' + (i + 1) + '</b>'
+          + '<button type="button" class="icon-btn" data-accq-rm aria-label="حذفPiece ' + (i + 1) + '"><svg><use href="#p-trash"/></svg></button></div>';
+      }).join('');
+      return '' + rows + '<p class="hint">العدد الحالي في التصميم: <b>' + cur + '</b></p>';
+    }
+    openPModal(it.name, ''
+      + '<div class="accq" id="accqBox">'
+      + '<div class="accq-head">كم عدد «' + esc(it.name) + '» الذي تريده؟</div>'
+      + '<div class="accq-step"><button type="button" class="btn" data-accq-minus aria-label="إنقاص">−</button>'
+      + '<b id="accqN">' + N + '</b>'
+      + '<button type="button" class="btn" data-accq-plus aria-label="زيادة">+</button></div>'
+      + '<div id="accqRows">' + paint() + '</div>'
+      + '<div class="btn-row"><button class="btn" id="accqCancel">إلغاء</button>'
+      + '<button class="btn primary" id="accqOk">تطبيق الكمية</button></div>'
+      + '</div>',
+      function (b) {
+        var nEl = $('#accqN', b), rowsEl = $('#accqRows', b);
+        function redraw() {
+          nEl.textContent = String(N);
+          rowsEl.innerHTML = paint();
+        }
+        function apply() {
+          // اضبط العدد: زد أو أنقص قطع هذا الإكسسوار حتى يصبح N
+          var have = accCount(itemId);
+          var guard = 0;
+          while (have < N && guard++ < 120) { portalAddAcc(itemId); have = accCount(itemId); }
+          guard = 0;
+          while (have > N && guard++ < 120) {
+            var all = (dz.state.pieces || []).filter(function (x) { return x.kind === 'acc' && x.itemId === itemId; });
+            if (!all.length) break;
+            dz.select({ type: 'piece', id: all[all.length - 1].id });
+            dz.removeSelected();
+            have = accCount(itemId);
+          }
+          renderSheet(null);
+          renderPanel();
+        }
+        b.querySelector('[data-accq-minus]').onclick = function () { N = Math.max(1, N - 1); redraw(); };
+        b.querySelector('[data-accq-plus]').onclick = function () { N = Math.min(99, N + 1); redraw(); };
+        $('#accqCancel', b).onclick = closePModal;
+        b.querySelector('#accqOk').onclick = function () { apply(); closePModal(); toast('تم ضبط الكمية: ' + N); };
+        // حذف صف معيّن من القائمة (حذف من التصميم عند التطبيق)
+        rowsEl.addEventListener('click', function (e) {
+          var btn = e.target.closest('[data-accq-rm]');
+          if (!btn) return;
+          N = Math.max(1, N - 1);
+          redraw();
+        });
+      });
   }
 
   function enterDesign(design) {
@@ -478,8 +557,11 @@
   function currentSpec() {
     var spec = {
       seating: getSeating(),
-      depth: Math.max(0.3, parseFloat(($('#pfDepth') || {}).value) || 0.8),
+      depth: Math.max(0.3, parseFloat((document.getElementById('pfDepth') || {}).value) || S.majDepth || 0.8),
     };
+    var len = parseFloat((document.getElementById('pfMajLen') || {}).value);
+    if (Number.isFinite(len) && len >= 0.5) { S.majLen = len; spec.w = len; }
+    else if (S.majLen) { spec.w = S.majLen; }
     [['fabricId', 'pfFabric'], ['foamId', 'pfFoam']].forEach(function (pair) {
       var el = document.getElementById(pair[1]);
       var id = el && el.value;
@@ -545,11 +627,13 @@
     if (S.step === 'room') {
       var ws = (dz.state && dz.state.walls) || [];
       /* المرحلة ١ مبسّطة: العرض والطول فقط. لا قوائم أطوال الجدران ولا زر «إضافة جدار»
-         — العميل لا يحتاج التحكم في كل جدار، والغرفة تتحدّد كاملة من المقاسين. */
+         — العميل لا يحتاج التحكم في كل جدار، والغرفة تتحدّد كاملة من المقاسين.
+         الحقول أرقام عادية (بلا أسهم خطوة) وعند اللمس يُحدَّد الرقم كله
+         فيكتب فوقه العميل مباشرة بلا تحديد الكل يدويًا. */
       box.innerHTML = ''
         + '<div class="row2"><label>عرض الغرفة (متر)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[0] ? ws[0].len : 5) + '"></label>'
         + '<label>طول الغرفة (متر)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[1] ? ws[1].len : 4) + '"></label></div>'
-        + '<p class="hint">يتغيّر الرسم مباشرة أثناء الكتابة — بلا زر ولا خطوة إضافية.</p>';
+        + '<p class="hint">اضغط على الرقم فيتحدّد كاملًا — اكتب المقاس الجديد مباشرة.</p>';
       /* تحديث حي: الكتابة تعدّل الجدارين الأولين مباشرة (يحافظ على الغرف
          المخصصة عبر setWallLength)، بلا زر تطبيق وبلا فقدان التركيز */
       var liveDim = function (idx, input) {
@@ -557,8 +641,15 @@
         if (!Number.isFinite(v) || v < 0.5 || v > 30) return;
         dz.setWallLength(idx, Math.round(v * 10) / 10);
       };
-      $('#pfW').addEventListener('input', function () { liveDim(0, $('#pfW')); });
-      $('#pfH').addEventListener('input', function () { liveDim(1, $('#pfH')); });
+      /* لمسة واحدة = تحديد الرقم كاملًا (يحل مشكلة «المؤشر بجانب الرقم») */
+      ['#pfW', '#pfH'].forEach(function (sel) {
+        var el = $(sel);
+        el.addEventListener('input', function () { liveDim(sel === '#pfW' ? 0 : 1, el); });
+        el.addEventListener('focus', function () { try { el.select(); } catch (_) { /* noop */ } });
+        el.addEventListener('pointerdown', function () {
+          setTimeout(function () { try { el.select(); } catch (_) { /* noop */ } }, 0);
+        });
+      });
     } else if (S.step === 'openings') {
       var walls = (dz.state && dz.state.walls) || [];
       var ops = (dz.state && dz.state.openings) || [];
@@ -624,58 +715,49 @@
       });
     } else if (S.step === 'majlis') {
       var curSeat = getSeating();
-      /* المرحلة ٣: الأنواع الأربعة كبطاقات بوصف مختصر، و«فرش الكل» (النشاط الأساسي)
-         بعدها خامات الفرش (تفاصيل اختيارية). */
+      /* المرحلة ٣ (مبسّطة): ما يهم العميل هو مقاس المجلس لا «نوع الجلسة» ولا الخامة.
+         نُبقي ثابتًا «جلسة أرضية» داخليًا (سلوك افتراضي موجود أصلًا)،
+         ونعرض: طول المجلس + عمقه + زر «فرش الكل». */
       box.innerHTML = ''
-        + '<div class="p-optgrid two">'
-        + Object.keys(SEATING).map(function (k) {
-            return '<div class="p-opt">'
-              + '<button type="button" class="btn" data-seat="' + k + '"' + (k === curSeat ? ' aria-pressed="true" style="border-color:var(--accent);color:var(--accent)"' : '') + '>' + SEATING[k] + '</button>'
-              + '<small>' + SEAT_HELP[k] + '</small></div>';
-          }).join('')
-        + '</div>'
         + '<select id="pfSeat" class="p-hidden-sel" aria-hidden="true" tabindex="-1">' + seatOptions(curSeat) + '</select>'
-        + '<div class="p-opt"><button type="button" class="btn primary" id="pfFillMajlis">فرش الكل (' + SEATING[curSeat] + ')</button>'
-        + '<small>يوزّع الفرش تلقائيًا على كل الجدران الفارغة.</small></div>'
-        + '<div class="row2"><label>قماش الكنبة<select id="pfFabric">' + optList(catItems('fabric')) + '</select></label>'
-        + '<label>الإسفنج<select id="pfFoam">' + optList(catItems('foam')) + '</select></label></div>'
-        + '<label>عمق الكنبة (متر)<input id="pfDepth" type="number" step="0.05" min="0.3" inputmode="decimal" value="0.8"></label>';
-      $$('button[data-seat]', box).forEach(function (b) {
-        b.addEventListener('click', function () { setSeating(b.dataset.seat); renderPanel(); });
+        + '<div class="row2">'
+        + '<label>طول المجلس (متر)<input id="pfMajLen" type="number" step="0.1" min="0.5" max="12" inputmode="decimal" value="' + (S.majLen || 3) + '"></label>'
+        + '<label>عمق المجلس (متر)<input id="pfDepth" type="number" step="0.05" min="0.3" max="2" inputmode="decimal" value="' + (S.majDepth || 0.8) + '"></label>'
+        + '</div>'
+        + '<div class="p-opt"><button type="button" class="btn primary" id="pfFillMajlis">فرش الكل</button>'
+        + '<small>يوزّع المجلس على كل الجدران الفارغة تلقائيًا بالمقاس الذي حددته.</small></div>'
+        + '<select id="pfFabric" class="p-hidden-sel" aria-hidden="true" tabindex="-1">' + optList(catItems('fabric')) + '</select>'
+        + '<select id="pfFoam" class="p-hidden-sel" aria-hidden="true" tabindex="-1">' + optList(catItems('foam')) + '</select>';
+      /* أبعاد المجلس تُحفظ وتُستخدم في الفرش */
+      var majLen = $('#pfMajLen'), majDepth = $('#pfDepth');
+      var saveMaj = function () {
+        var L = parseFloat(majLen.value), D = parseFloat(majDepth.value);
+        if (Number.isFinite(L) && L >= 0.5) S.majLen = L;
+        if (Number.isFinite(D) && D >= 0.3) S.majDepth = D;
+      };
+      [majLen, majDepth].forEach(function (el) {
+        el.addEventListener('input', function () { try { el.select(); } catch (_) { } });
+        el.addEventListener('change', saveMaj);
       });
-      $('#pfSeat').onchange = function () { setSeating($('#pfSeat').value); renderPanel(); };
-      $('#pfFillMajlis').onclick = function () { fillAll(); };
+      $('#pfSeat').onchange = function () { setSeating($('#pfSeat').value); };
+      $('#pfFillMajlis').onclick = function () { saveMaj(); fillAll(); };
     } else if (S.step === 'furn') {
       var accs = catItems('acc');
-      /* المرحلة ٤: قسمان واضحان — الأثاث ثم الإكسسوارات — بلا تكرار الأوامر.
-         الحذف السريع متاح بعد المس أي قطعة على الرسم (تظهر خصائصها أسفل الرسم). */
+      /* المرحلة ٤: الإكسسوارات فقط (الكنب والفرش في خطوة المجلس).
+         كل إكسسوار يفتح شاشة اختيار الكمية الكاملة — لا خصائص مخفية أسفل الرسم. */
       box.innerHTML = ''
-        + '<h4 class="p-subhead">الأثاث</h4>'
-        + '<div class="p-optgrid three">'
-        + '<div class="p-opt"><button type="button" class="btn primary" data-sofa="wall">كنبة</button>'
-        + '<small>على الجدار المختار</small></div>'
-        + '<div class="p-opt"><button type="button" class="btn" data-sofa="free">كنبة حرة</button>'
-        + '<small>في أي مكان</small></div>'
-        + '<div class="p-opt"><button type="button" class="btn" data-sofa="fill">فرش الكل</button>'
-        + '<small>توزيع تلقائي</small></div>'
-        + '</div>'
-        + '<h4 class="p-subhead">الإكسسوارات <small>— المس أي قطعة لحذفها</small></h4>'
-        + '<div class="p-accgrid">' + (accs.length ? accs.map(function (a) {
-          return '<button type="button" class="btn" data-acc="' + esc(a.id) + '">' + esc(a.name) + '</button>';
+        + '<h4 class="p-subhead">الإكسسوارات <small>— اضغط على أي عنصر لاختيار كميته</small></h4>'
+        + '<div class="p-accgrid" id="pfAccGrid">' + (accs.length ? accs.map(function (a) {
+          var n = accCount(a.id);
+          return '<button type="button" class="btn" data-acc="' + esc(a.id) + '">'
+            + esc(a.name) + (n ? ' <span class="acc-n">' + n + '</span>' : '') + '</button>';
         }).join('') : '<p class="hint">لا توجد إكسسوارات متاحة حالياً.</p>') + '</div>'
         + '<button type="button" class="btn ghost" id="pfFreeSpace">+ مساحة أرضية فارغة</button>';
-      $$('button[data-sofa]', box).forEach(function (b) {
-        b.addEventListener('click', function () {
-          var k = b.dataset.sofa;
-          if (k === 'wall') {
-            var added = dz.addSofaOnWall(targetWall(), currentSpec());
-            if (!added) toast('لا توجد مساحة كافية على هذا الجدار', true);
-          } else if (k === 'free') { dz.addSofaFree(currentSpec()); }
-          else { fillAll(); }
-        });
-      });
       $$('button[data-acc]', box).forEach(function (b) {
-        b.addEventListener('click', function () { portalAddAcc(b.dataset.acc); });
+        b.addEventListener('click', function () {
+          try { openAccQty(b.dataset.acc); }
+          catch (e) { toast('تعذّر فتح شاشة الكمية: ' + (e.message || e), true); }
+        });
       });
       $('#pfFreeSpace').onclick = function () { dz.addFreeSpace(); };
     } else if (S.step === 'review') {
@@ -1217,6 +1299,7 @@
     state: function () { return S.designer ? S.designer.getState() : null; },
     designer: function () { return S.designer; },
     seating: getSeating,
+    openAccQty: openAccQty,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

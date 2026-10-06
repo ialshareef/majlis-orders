@@ -97,8 +97,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         && pjs0.indexOf("id=\"pfAddWall\"") < 0 && pjs0.indexOf('id="pfWalls"') < 0
         && pjs0.indexOf('data-walldel') < 0, 'room = w+l only');
       t('arch-simple', pjs0.indexOf('تغيير الجدار') < 0 && pjs0.indexOf('أين تريد الباب والمشب') >= 0, 'wall picker wording');
-      t('seat-cards', pjs0.indexOf('SEAT_HELP') >= 0 && pjs0.indexOf('data-seat=') >= 0
-        && pjs0.indexOf('يوزّع الفرش تلقائيًا') >= 0, 'seating explained + auto-fill explained');
+      t('seat-cards', pjs0.indexOf('pfMajLen') >= 0 && pjs0.indexOf('عمق المجلس') >= 0
+        && pjs0.indexOf('يوزّع المجلس على كل الجدران الفارغة') >= 0
+        && pjs0.indexOf('data-seat="floor"') < 0, 'majlis by size, auto-fill explained');
       t('review-desc', pjs0.indexOf('p-actrow') >= 0 && pjs0.indexOf('p-review-note') >= 0
         && pjs0.indexOf('معاينة: شاهد التصميم قبل الإنهاء') >= 0, 'review actions explained');
       // العمود غير معروض كخيار في واجهة العميل (يبقى في تطبيق الموظفين)

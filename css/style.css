@@ -2288,10 +2288,12 @@ body.modal-open { overflow: hidden; }
 /* تواصل معنا: بطاقات قناة (أيقونة + باركود + الرابط) بدل سطور نص عشوائية */
 .inv-contact { flex: 1; font-size: 8.5pt; color: #4A413A; background: #FBF9F5; border: 1px solid #EFE9DF; border-radius: .8mm; padding: 2mm 3mm; }
 .inv-contact > b { color: #1F1B18; display: block; margin-bottom: 1.6mm; }
-/* ملاحظة وسط فوق الأيقونات:اضغط على الباركود */
+/* ملاحظة وسط فوق الأيقونات: اضغط على الباركود — بوضوح تام (خلفية داكنة + نص أبيض) */
 .inv-chans-hint {
-  text-align: center; font-size: 7.6pt; color: #6A5F54; margin: 0 0 1.6mm;
-  padding-bottom: 1.2mm; border-bottom: 1px dashed #E3D9CA;
+  text-align: center; font-weight: 800; font-size: 9pt; color: #FFFFFF;
+  background: #B3261E; border: 1px solid #7A1710; border-radius: 1mm;
+  margin: 0 0 2.4mm; padding: 1.4mm 2mm;
+  letter-spacing: .2px;
 }
 /* تصميم العميل: بطاقات التواصل وحدها بعرض السطر (بلا باركود تصميم جانبي) */
 .inv-bottom:has(> .inv-contact:only-child) { display: block; }
@@ -2449,16 +2451,12 @@ body.portal { background: var(--bg); }
 /* اللوحة تنكمش (ولا تكبر) لتترك مساحة لـ«التالي» دائمًا ظاهرة في أسفل الشاشة. */
 .portal #pDesign .p-canvas-col { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
 .portal #pDesign .p-panel { flex: 0 1 auto; min-height: 0; max-height: 100%; overflow-y: auto; overscroll-behavior: contain; }
-.portal #pDesign .p-canvas { flex: 0 0 auto; height: clamp(150px, 26dvh, 280px); min-height: 150px; position: relative; flex-shrink: 1; }
-/* أدوات التكبير تطفو فوق الرسم (أسفله) — لا تأخذ صفًا من ارتفاع الشاشة */
-.portal #pDesign .p-zoombar {
-  position: absolute; inset-inline: 8px; bottom: 8px; z-index: 6;
-  display: flex; gap: 6px; justify-content: center; pointer-events: none;
-}
-.portal #pDesign .p-zoombar .btn {
-  pointer-events: auto; min-height: 34px; padding: 0 12px; font-size: .76rem;
-  background: var(--surface); border: 1px solid var(--line-strong); box-shadow: 0 2px 8px rgba(42, 38, 34, .18);
-}
+/* الرسم يملأ الإطار بالكامل (بلا قصّ من جهة) والرسم نفسه يوظّف كل الجهات */
+.portal #pDesign .p-canvas { flex: 0 0 auto; height: clamp(190px, 30dvh, 320px); min-height: 190px; position: relative; flex-shrink: 1; box-sizing: border-box; }
+.portal #pDesign .p-canvas canvas { width: 100%; height: 100%; display: block; }
+/* أدوات التكبير مخفية في صفحة العميل (تأخذ مساحة ولا يحتاجها العميل —
+   يكفيه أن يظهر الرسم كاملًا في الإطار). تبقى موجودة في تطبيق الموظفين. */
+.portal #pDesign .p-zoombar { display: none; }
 .portal #pDesign .p-footbar { flex: none; }
 /* خصائص القطعة/الفتحة: تظهر أسفل الرسم مباشرة (ليست ورقة تغطي الشاشة) */
 .portal #pDesign .p-sheet {
@@ -2511,9 +2509,28 @@ body.portal { background: var(--bg); }
 .portal #pDesign .p-panel { gap: 8px; }
 .portal #pDesign .p-opt .btn { min-height: 48px; }
 .portal #pDesign .p-facts { max-height: 68px; overflow-y: auto; }
-/* في المراجعة لا داعي للرسم الحيّ: المعاينة المصغّرة تكفي — فنمنح الخيارات كل المساحة */
+/* في المراجعة والإكسسوارات لا داعي للرسم الحيّ: المعاينة/القائمة تكفي —
+   فنمنح الخيارات كل المساحة (طلبت: الرسم يظهر في الغرفة والعناصر والمجلس فقط). */
 .portal #pDesign[data-step="review"] .p-canvas,
-.portal #pDesign[data-step="review"] .p-zoombar { display: none; }
+.portal #pDesign[data-step="furn"] .p-canvas { display: none; }
+/* شاشة اختيار كمية الإكسسوار: تغطي كل الشاشة بوضوح */
+.portal .accq { display: grid; gap: 14px; }
+.portal .accq-head { font-size: .95rem; font-weight: 700; text-align: center; }
+.portal .accq-step { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.portal .accq-step .btn { width: 56px; min-height: 56px; font-size: 1.6rem; border-radius: 50%; }
+.portal .accq-step b { min-width: 76px; text-align: center; font-size: 2rem; font-weight: 800; color: var(--accent); }
+.portal .accq-rows, .portal #accqRows { display: grid; gap: 8px; max-height: 34vh; overflow-y: auto; }
+.portal .accq-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 12px; background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r);
+}
+.portal .accq-row b { flex: 1; font-size: 1rem; }
+.portal .accq-row .icon-btn { width: 44px; height: 44px; flex: none; }
+/* عدّاد صغير بجانب اسم الإكسسوار داخل زر القائمة */
+.portal .acc-n {
+  display: inline-block; min-width: 22px; padding: 1px 6px; margin-inline-start: 4px;
+  border-radius: 999px; background: var(--accent-fill); color: var(--on-accent); font-size: .74rem; font-weight: 700;
+}
 .p-tools { display: grid; gap: 8px; }
 .p-tools .tb-row { display: flex; gap: 8px; }
 .p-tools .tb-btn { flex: 1; min-height: 44px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface); font-size: .82rem; white-space: nowrap; }
