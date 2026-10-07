@@ -144,15 +144,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.42';
-// بصمة asalh-najd-1.0.42.apk (إصدار GitHub v1.0.42، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.43';
+// بصمة asalh-najd-1.0.43.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = 'b9a83653df1453406d7b52bdace6a9e29d6d7f1ada7c64319fd1bc4b21b7c26b';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'إصلاح الدخول: نجاح الدخول يصفّر عدّاد المحاولات الفاشلة للعنوان أيضاً',
-  'توحيد عرض أرقام الجوال في PDF بصيغة +966 53 372 4290',
-  'ظهور زر حذف الإكسسوار كاملاً في شاشة التسعير',
-  'اختصار «كامل المبلغ» بدل زر «تسجيل المتبقي كاملاً»',
+  'الرابط الرسمي للنظام: majlis-api.asalh-najd.workers.dev',
+  'تم إنهاء الرابط القديم للنظام نهائياً — استخدم الرابط أعلاه',
 ];
 
 function versionCodeOfName(v) {

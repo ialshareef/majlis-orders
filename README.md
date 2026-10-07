@@ -1,6 +1,6 @@
 # أصالة نجد | نظام إدارة طلبات المجالس
 
-> **النظام منشور ويعمل**: <https://majlis-api.klopoor.workers.dev>
+> **النظام منشور ويعمل**: <https://majlis-api.asalh-najd.workers.dev>
 > الدخول الأول باسم `admin`: ستُطلب منك كلمة مرور جديدة إجبارياً قبل دخول النظام (بلا تجاوز).
 > لإعادة النشر بعد أي تعديل: `powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1`
 
