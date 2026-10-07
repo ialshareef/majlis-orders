@@ -145,9 +145,9 @@ async function route(request, env, url) {
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.42';
-// بصمة asalh-najd-1.0.42.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+// بصمة asalh-najd-1.0.42.apk (إصدار GitHub v1.0.42، بناء CI الموقّع)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = 'b9a83653df1453406d7b52bdace6a9e29d6d7f1ada7c64319fd1bc4b21b7c26b';
 const UPDATE_FALLBACK_NOTES = [
   'إصلاح الدخول: نجاح الدخول يصفّر عدّاد المحاولات الفاشلة للعنوان أيضاً',
   'توحيد عرض أرقام الجوال في PDF بصيغة +966 53 372 4290',
