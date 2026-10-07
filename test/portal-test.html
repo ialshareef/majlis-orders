@@ -59,6 +59,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         var headers = {};
         if (opt.designToken) headers['x-design-token'] = opt.designToken;
         if (opt.auth) headers['x-session-token'] = opt.auth;
+        if (opt.ip) headers['CF-Connecting-IP'] = opt.ip;
         var init = { method: method, headers: headers };
         if (opt.body !== undefined) { init.body = JSON.stringify(opt.body); headers['Content-Type'] = 'application/json'; }
         var r = await mod.default.fetch(new Request('https://x.test' + path, init), env);
@@ -204,6 +205,38 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('S15-good-url', goodSet.status === 200, goodSet.status);
       var st2 = await call('GET', '/api/portal/settings');
       t('S15-live', st2.body.settings.mapsUrl === 'https://maps.google.com/?q=x' && st2.body.settings.tagline === 'أهلاً', JSON.stringify(st2.body.settings).slice(0, 150));
+      // S17: مسار إنشاء المستخدم ثم دخول حساب قديم وجديد بصيغة تجزئة صالحة
+      var b64 = function (bytes) {
+        var out = '';
+        for (var bi = 0; bi < bytes.length; bi++) out += String.fromCharCode(bytes[bi]);
+        return btoa(out);
+      };
+      var seedPassword = 'Secret123';
+      var seedKey = await crypto.subtle.importKey('raw', new TextEncoder().encode(seedPassword), 'PBKDF2', false, ['deriveBits']);
+      var seedSalt = crypto.getRandomValues(new Uint8Array(16));
+      var seedBits = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: seedSalt, iterations: 100 }, seedKey, 256));
+      var seedHash = 'pbkdf2$100$' + b64(seedSalt) + '$' + b64(seedBits);
+      sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-login-admin','loginadmin','مدير اختبار','" + seedHash + "','admin',1,'2026-01-01')");
+      sqlite.run("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES ('tok-login-admin','u-login-admin','2026-01-01','" + future + "')");
+      var created = await call('POST', '/api/users', { auth: 'tok-login-admin', body: { name: 'موظف اختبار', username: 'LoginUser1', password: 'Secret123', role: 'staff', active: true } });
+      t('S17-user-create', created.status === 200 && created.body.ok === true, created.status);
+      sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-login-old','loginold','موظف قديم','" + seedHash + "','staff',1,'2026-01-01')");
+      sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-login-new','loginnew','موظف جديد','" + seedHash + "','staff',1,'2026-01-01')");
+      var oldLogin = await call('POST', '/api/login', { body: { username: 'LOGINOLD', password: seedPassword } });
+      var newLogin = await call('POST', '/api/login', { body: { username: 'loginnew', password: seedPassword } });
+      t('S17-old-login', oldLogin.status === 200 && oldLogin.body.ok === true, oldLogin.status);
+      t('S17-new-login', newLogin.status === 200 && newLogin.body.ok === true, newLogin.status);
+      // S18: عدّاد العنوان يجب أن يُقفل عند حدّه، وأن يُمسح فور نجاح أي دخول
+      var ipK = '5.5.5.5';
+      for (var i = 0; i < 20; i++) await call('POST', '/api/login', { ip: ipK, body: { username: 'ghost' + i, password: 'wrong' } });
+      var tripped = await call('POST', '/api/login', { ip: ipK, body: { username: 'loginold', password: seedPassword } });
+      t('S18-ip-lock', tripped.body.error === 'locked' && tripped.body.minutes > 0, JSON.stringify(tripped.body));
+      // بعد إزالة القفل يدوياً: 19 محاولة فاشلة (تحت الحد) ثم دخول صحيح ⇒ يجب تصفير عدّاد العنوان
+      sqlite.run("DELETE FROM login_fail WHERE k = 'ip:" + ipK + "'");
+      for (var j = 0; j < 19; j++) await call('POST', '/api/login', { ip: ipK, body: { username: 'ghost' + j, password: 'wrong' } });
+      var cleared = await call('POST', '/api/login', { ip: ipK, body: { username: 'loginold', password: seedPassword } });
+      var ipRows = sqlite.exec("SELECT n FROM login_fail WHERE k = 'ip:" + ipK + "'");
+      t('S18-ip-cleared-on-success', cleared.body.ok === true && ipRows.length === 0, JSON.stringify(cleared.body) + ' rows=' + ipRows.length);
     } catch (e) {
       bad++; log('FAIL harness :: ' + (e.stack || e.message || e));
     } finally {

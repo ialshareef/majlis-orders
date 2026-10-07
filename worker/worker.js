@@ -144,15 +144,15 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.41';
-// بصمة asalh-najd-1.0.41.apk (إصدار GitHub v1.0.41، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.42';
+// بصمة asalh-najd-1.0.42.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '47b10fd6458c10b9b0a3e3110842a740bab5cfdc41abf3994af04b96c555b7bb';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'اختيار الكمية بلمسة واحدة في مقاسات الغرفة',
-  'الرسم يتوسّع من كل الجهات بلا قصّ',
-  'إخفاء أدوات التقريب في صفحة العميل',
-  'شاشة كاملة لاختيار كمية الإكسسوار',
+  'إصلاح الدخول: نجاح الدخول يصفّر عدّاد المحاولات الفاشلة للعنوان أيضاً',
+  'توحيد عرض أرقام الجوال في PDF بصيغة +966 53 372 4290',
+  'ظهور زر حذف الإكسسوار كاملاً في شاشة التسعير',
+  'اختصار «كامل المبلغ» بدل زر «تسجيل المتبقي كاملاً»',
 ];
 
 function versionCodeOfName(v) {
@@ -580,7 +580,10 @@ async function login(env, body, request) {
   const u = await env.DB.prepare('SELECT * FROM users WHERE lower(username) = ?').bind(username).first();
   if (!u || !(await verifyPassword(password, u.password_hash))) { await loginFailed(env, keys); return { ok: false, error: 'bad_credentials' }; }
   if (!u.active) return { ok: false, error: 'inactive' };
-  await env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind('u:' + username).run();
+  // نجاح الدخول يمسح عدّاد اسم المستخدم **و** عدّاد العنوان معاً: فبدون ذلك يبقى
+  // فشل مستخدمين آخرين على نفس الشبكة (wifi المكتب/الجوال) متراكماً ويُقفل دخول
+  // الجميع من العنوان نفسه رغم صحة كلمة مرورهم.
+  await env.DB.batch(keys.map((k) => env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind(k)));
   const token = randomToken();
   const created = now();
   const expires = new Date(Date.now() + SESSION_DAYS * 86400000).toISOString();

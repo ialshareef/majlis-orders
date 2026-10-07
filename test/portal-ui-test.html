@@ -125,6 +125,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('pdf-contact-icons', css.indexOf('.inv-chan-qr {') >= 0 && css.indexOf('.inv-chan-ic.wa {') >= 0
         && css.indexOf('.inv-chan-ic.in {') >= 0 && css.indexOf('.inv-chan-ic.tt {') >= 0
         && css.indexOf('.inv-chan-ic.map {') >= 0, 'channel icon styles');
+      t('pdf-phone-format', pjs0.indexOf('function saudiIntl') >= 0 && pjs0.indexOf('function formatSaudiIntl') >= 0
+        && pjs0.indexOf("text: formatSaudiIntl") >= 0 && /m\[1\]\s*\+\s*' '\s*\+\s*m\[2\]\s*\+\s*' '\s*\+\s*m\[3\]\s*\+\s*' '\s*\+\s*m\[4\]/.test(pjs0), 'Saudi international display');
       // الأيقونات والباركود روابط حقيقية داخل ملف PDF
       t('pdf-links', pjs0.indexOf('function addPdfLinks') >= 0 && pjs0.indexOf('pdf.link(') >= 0
         && pjs0.indexOf('data-url') >= 0, 'clickable pdf links');

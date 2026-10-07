@@ -1298,6 +1298,14 @@ body[data-page="order"] main { padding-top: 10px; }
 .rmenu-btn span { font-size: .82rem; font-weight: 600; white-space: nowrap; }
 .price-table .row-actions .ra { gap: 2px; }
 .price-table .row-actions .icon-btn { width: 34px; height: 34px; }
+/* عمود الإجراءات ثابت عند طرف الجدول: زر الحذف يبقى ظاهراً بالكامل حتى مع تمرير الجدول أفقياً. */
+.price-table td.row-actions {
+  position: sticky;
+  inset-inline-end: 0;
+  z-index: 1;
+  min-width: 52px;
+  background: var(--surface);
+}
 
 /* ملخص التسعير */
 .totals { background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r-lg); padding: 16px 16px 14px; }

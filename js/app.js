@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.41';
+  const APP_VERSION = '1.0.42';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -2206,8 +2206,7 @@ function canEditOrder(o) {
     return n === null ? null : money(n);
   };
 
-  /* اختصارات الدفعة: تملأ خانة المبلغ فقط ولا تسجّل شيئاً قبل الضغط على «تسجيل».
-     زر «تسجيل المتبقي كاملاً» المنفصل هو وحده من يملأ ويسجّل معاً. */
+  /* اختصارات الدفعة: تملأ خانة المبلغ فقط ولا تسجّل شيئاً قبل الضغط على «تسجيل الدفعة». */
   $('#payQuick').addEventListener('click', (e) => {
     const btn = e.target.closest('button[data-pay]');
     if (!btn || readOnly) return;
@@ -2219,15 +2218,6 @@ function canEditOrder(o) {
   });
 
   let paying = false;   // منع التسجيل المزدوج من الضغط المتكرر أو Enter مع الزر معاً
-  /** تسجيل المتبقي كاملاً بخطوة واحدة: تعبئة المبلغ ثم نفس مسار التسجيل */
-  $('#btnPayRem').addEventListener('click', async () => {
-    if (readOnly || paying) return;
-    const rem = Math.max(0, remainingOf(cur.total || 0, paidOf(cur)));
-    if (rem <= 0) { toast('لا يوجد مبلغ متبقٍّ لتسجيله', 'info'); return; }
-    $('#payAmount').value = rem;
-    await addPayment(false);
-  });
-
   async function addPayment(refund) {
     if (readOnly || paying) return;
     paying = true;

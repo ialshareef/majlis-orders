@@ -640,13 +640,18 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       if (openedBlobs.length && openedBlobs[0] instanceof Blob) {
         var pdfTxt = await openedBlobs[0].text();
         var uriCount = (pdfTxt.match(/\/URI \(/g) || []).length;
-        t('M-pdf-links', uriCount >= 2 && pdfTxt.indexOf('wa.me') >= 0, 'uri=' + uriCount);
+        t('M-pdf-links', uriCount >= 2 && pdfTxt.indexOf('wa.me/966512345678') >= 0, 'uri=' + uriCount);
       } else {
         t('M-pdf-links', false, 'no blob');
       }
       q('#pActWa').click();
       await waitFor(function () { return openedUrls.length > 0 || q('#pToast').textContent.indexOf('PDF') >= 0; }, 120000);
-      t('M-wa', openedUrls.some(function (u) { return u.indexOf('wa.me/0512345678') >= 0; }) || q('#pToast').textContent.length > 0, (openedUrls[0] || 'toast-fallback').slice(0, 60));
+      t('M-wa', openedUrls.some(function (u) { return u.indexOf('wa.me/966512345678') >= 0; }) || q('#pToast').textContent.length > 0, (openedUrls[0] || 'toast-fallback').slice(0, 60));
+      t('M-phone-format', P.saudiIntl('0533724290') === '966533724290'
+        && P.formatSaudiIntl('966533724290') === '+966 53 372 4290'
+        && P.contactChannels().some(function (c) { return c.key === 'wa' && c.url === 'https://wa.me/966512345678' && c.text === '+966 51 234 5678'; })
+        && P.contactChannels().some(function (c) { return c.key === 'tel' && c.url === 'tel:+966512345678' && c.text === '+966 51 234 5678'; }),
+        JSON.stringify(P.contactChannels()));
 
       // H: إنهاء التصميم من خطوة المراجعة (الزر موجود دائمًا بلا «مراجعة وإنهاء»)
       var no = '';

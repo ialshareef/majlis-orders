@@ -43,8 +43,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     var html = parts[0], css = parts[1], app = parts[2];
     // A1: زر طلب جديد وPDF خارج شريط الجوال
     t('A1-hide-new-pdf', /#btnNewOrder,\s*#btnExportPdfTop\s*\{\s*display:\s*none/.test(css), 'css rule');
-    // A2: تسجيل المتبقي + منع المزدوج
-    t('A2-payrem-btn', html.indexOf('id="btnPayRem"') >= 0 && html.indexOf('تسجيل المتبقي كاملاً') >= 0, 'button');
+    // A2: كامل المبلغ يملأ الحقل فقط، ومنع التسجيل المزدوج ما زال موجوداً
+    t('A2-full-chip', html.indexOf('data-pay="1"') >= 0 && html.indexOf('كامل المبلغ') >= 0, 'full chip');
+    t('A2-no-payrem-btn', html.indexOf('id="btnPayRem"') < 0 && html.indexOf('تسجيل المتبقي كاملاً') < 0, 'direct-reminder button removed');
     t('A2-fill-hint', html.indexOf('تملأ المبلغ فقط') >= 0, 'hint');
     t('A2-no-rem-chip', html.indexOf('data-pay="rem"') < 0, 'rem chip gone');
     t('A2-paying-guard', app.indexOf('let paying = false') >= 0 && app.indexOf('if (readOnly || paying) return;') >= 0, 'guard');
@@ -84,7 +85,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // B5/C6: تنبيه عدم الاتصال
     t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
     // الإصدار
-    t('ver-1-0-41', app.indexOf("APP_VERSION = '1.0.41'") >= 0, 'version');
+    t('ver-1-0-42', app.indexOf("APP_VERSION = '1.0.42'") >= 0, 'version');
     // في الجوال: لوحة الأدوات/المقاسات قبل الرسم (كما في صفحة العميل)
     t('panel-above-canvas-mobile', (function () {
       var dl = css.indexOf('.designer-layout { display: flex');
@@ -189,10 +190,14 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // مرحلة الدفع: زر التسجيل المباشر
     document.querySelector('#stepNav a[data-stage="pay"]').click();
     await waitFor(function () { return !document.querySelector('#m-pay').hidden; });
-    t('B-A2-live', !!document.querySelector('#btnPayRem') && !document.querySelector('[data-pay="rem"]'), 'payrem');
-    // تسجيل المتبقي بمبلغ صفر → تنبيه بلا تسجيل
-    document.querySelector('#btnPayRem').click();
-    await waitFor(function () { return document.querySelector('#toast').textContent.indexOf('لا يوجد مبلغ') >= 0; });
+    t('B-A2-live', !!document.querySelector('[data-pay="1"]') && !document.querySelector('#btnPayRem') && !document.querySelector('[data-pay="rem"]'), 'full chip');
+    // مبلغ فارغ → خطأ حقلي بلا تسجيل
+    document.querySelector('#payAmount').value = '';
+    document.querySelector('#btnAddPay').click();
+    await waitFor(function () {
+      var err = document.querySelector('#payAmountErr');
+      return err && err.textContent.indexOf('مبلغ غير صالح') >= 0;
+    });
     t('B-A2-empty', true);
     // humanError: تعيين مباشر
     var H = window.MajlisApp.humanError;
@@ -252,9 +257,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('B-pay-second', await clickPay('#btnAddPay', '50', 'دفعة 50.00') && paidTxt().indexOf('550.00') >= 0, paidTxt());
     t('B-pay-refund', await clickPay('#btnRefund', '100', 'استرداد 100.00') && paidTxt().indexOf('450.00') >= 0, paidTxt());
     t('B-pay-over', await clickPay('#btnAddPay', '5000', '5,000.00') && paidTxt().indexOf('5450.00') >= 0, paidTxt());
-    document.querySelector('#btnPayRem').click();
-    await waitFor(function () { return toastTxt().indexOf('لا يوجد مبلغ') >= 0; }, 240000);
-    t('B-pay-rem-empty', true);
+    document.querySelector('[data-pay="1"]').click();
+    var expectedTotal = String(window.MajlisApp.order.total);
+    await waitFor(function () { return document.querySelector('#payAmount').value === expectedTotal; }, 240000);
+    t('B-pay-full-chip', true);
     document.querySelector('button[data-page="orders"]').click();
     await waitFor(function () { return document.querySelector('#page-orders').classList.contains('active'); });
     await waitFor(function () { return document.querySelector('#ordersTable [data-open]'); }, 120000);

@@ -96,7 +96,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
     t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
     t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
-    t('A-ver', app.indexOf("APP_VERSION = '1.0.41'") >= 0, 'version');
+    t('A-ver', app.indexOf("APP_VERSION = '1.0.42'") >= 0, 'version');
     // 1) لا زر «تطبيق كغرفة مستطيلة»: المقاسات تُطبَّق مباشرة أثناء الكتابة
     t('A-live-dims', app.indexOf('btnApplyRect') < 0 && app.indexOf('applyRoomDims') >= 0
       && app.indexOf("el.addEventListener('input', () => applyRoomDims(true))") >= 0, 'live room dims');
@@ -483,6 +483,13 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         .some(function (el) { return el.id === 'inspector' && !el.hidden; });
       t('N2-side-panel-desktop', !nCoverDesk, 'desktop side panel, no cover');
     }
+    // B: زر حذف الإكسسوار في التسعير يجب أن يكون ظاهراً بالكامل داخل الشاشة
+    document.querySelector('#stepNav a[data-stage="price"]').click();
+    await waitFor(function () { return !document.querySelector('#m-price').hidden && document.querySelector('button[data-accdel]'); }, 60000);
+    var accDel = document.querySelector('button[data-accdel]');
+    var accRect = accDel.getBoundingClientRect();
+    t('B-price-acc-delete-visible', !accDel.disabled && accRect.width >= 34 && accRect.height >= 34
+      && accRect.left >= -1 && accRect.right <= window.innerWidth + 1 && getComputedStyle(accDel.closest('td')).position === 'sticky', JSON.stringify([Math.round(accRect.width), Math.round(accRect.height), Math.round(accRect.left), Math.round(accRect.right), window.innerWidth, getComputedStyle(accDel.closest('td')).position]));
     // B: مسح تجاوز أفقي (صفحة الطلب)
     var badEls = [];
     document.querySelectorAll('#app button, #app input, #app select, #app table, #app .card, #app .module, #app header').forEach(function (el) {

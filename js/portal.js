@@ -134,15 +134,15 @@
     else { if (logo) logo.hidden = true; if (fb) fb.hidden = false; }
     document.title = 'صمّم مجلسك | ' + (s.shopName || 'أصالة نجد');
     if (s.tagline) $('#pTagline').textContent = s.tagline;
-    var waNum = digits(s.whatsapp) || '';
-    var waHref = safeHref(s.whatsapp) || (digits(s.phone) ? 'https://wa.me/' + digits(s.phone) : '');
+    var waNum = saudiIntl(s.whatsapp) || '';
+    var waHref = safeHref(s.whatsapp) || (saudiIntl(s.phone) ? 'https://wa.me/' + saudiIntl(s.phone) : '');
     var links = [
       ['plMaps', safeHref(s.mapsUrl), null],
       ['plTiktok', safeHref(s.tiktok), null],
       ['plInsta', safeHref(s.instagram), null],
       ['plSnap', safeHref(s.snapchat), null],
       ['plWa', waHref || (waNum ? 'https://wa.me/' + waNum : ''), null],
-      ['plPhone', digits(s.phone) ? 'tel:+' + digits(s.phone).replace(/^00/, '') : '', 'tel'],
+      ['plPhone', saudiIntl(s.phone) ? 'tel:+' + saudiIntl(s.phone) : '', 'tel'],
     ];
     links.forEach(function (L) {
       var el = document.getElementById(L[0]);
@@ -1068,16 +1068,32 @@ function portalAddAcc(itemId) {
     } catch (_) { return ''; }
   }
 
+  /** توحيد أرقام الجوال السعودية إلى الصيغة الدولية 9665xxxxxxxx.
+      يقبل 05xxxxxxxx و5xxxxxxxx و009665xxxxxxxx و+9665xxxxxxxx. */
+  function saudiIntl(raw) {
+    var d = digits(raw);
+    if (/^00\d+$/.test(d)) d = d.slice(2);
+    if (/^966\d{9}$/.test(d)) return d;
+    if (/^0\d{9}$/.test(d)) return '966' + d.slice(1);
+    if (/^5\d{8}$/.test(d)) return '966' + d;
+    return d;
+  }
+  /** العرض البشري المطلوب: +966 53 372 4290. */
+  function formatSaudiIntl(d) {
+    var m = /^(966)(5\d)(\d{3})(\d{4})$/.exec(d || '');
+    return m ? '+' + m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4] : (d ? '+' + d : '');
+  }
   /** قنوات التواصل: أيقونة + رابط كامل + باركود يفتح القناة مباشرة */
   function contactChannels() {
     var s = S.settings || {};
-    var wa = digits(s.whatsapp) || digits(s.phone);
+    var wa = saudiIntl(s.whatsapp) || saudiIntl(s.phone);
+    var tel = saudiIntl(s.phone);
     var out = [];
-    if (wa) out.push({ key: 'wa', label: 'واتساب', url: 'https://wa.me/' + wa });
+    if (wa) out.push({ key: 'wa', label: 'واتساب', url: 'https://wa.me/' + wa, text: formatSaudiIntl(wa) });
     if (s.instagram) out.push({ key: 'in', label: 'إنستقرام', url: httpsUrl(s.instagram) });
     if (s.tiktok) out.push({ key: 'tt', label: 'تيكتوك', url: httpsUrl(s.tiktok) });
     if (s.mapsUrl) out.push({ key: 'map', label: 'الموقع', url: httpsUrl(s.mapsUrl) });
-    if (digits(s.phone)) out.push({ key: 'tel', label: 'اتصال', url: 'tel:+' + digits(s.phone).replace(/^00/, '') });
+    if (tel) out.push({ key: 'tel', label: 'اتصال', url: 'tel:+' + tel, text: formatSaudiIntl(tel) });
     return out.filter(function (c) { return !!c.url; });
   }
   function httpsUrl(u) {
@@ -1114,7 +1130,7 @@ function portalAddAcc(itemId) {
         + '<span class="inv-chan-ic ' + c.key + '">' + (CONTACT_ICON[c.key] || '') + '</span>'
         + '<span class="inv-chan-lb">' + esc(c.label) + '</span>'
         + (cq ? '<img class="inv-chan-qr" src="' + cq + '" alt="">' : '')
-        + '<span class="inv-chan-url">' + esc(c.url.replace(/^https?:\/\//i, '')) + '</span>'
+        + '<span class="inv-chan-url">' + esc(c.text || c.url.replace(/^https?:\/\//i, '')) + '</span>'
         + '</div>';
     }
     var el = document.createElement('div');
@@ -1196,7 +1212,7 @@ function portalAddAcc(itemId) {
 
   function waNumber() {
     var s = S.settings || {};
-    return digits(s.whatsapp) || digits(s.phone);
+    return saudiIntl(s.whatsapp) || saudiIntl(s.phone);
   }
 
   $('#pPdf').addEventListener('click', async function () {
@@ -1300,6 +1316,9 @@ function portalAddAcc(itemId) {
     designer: function () { return S.designer; },
     seating: getSeating,
     openAccQty: openAccQty,
+    saudiIntl: saudiIntl,
+    formatSaudiIntl: formatSaudiIntl,
+    contactChannels: contactChannels,
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);
