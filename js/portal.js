@@ -505,6 +505,7 @@ function portalAddAcc(itemId) {
     if (prev) prev.hidden = i <= 0;
     if (!next) return;
     if (!STEPS[i + 1]) {
+      /* الزر نفسه ينفّذ إنهاء التصميم (finishDesign) — لا ينقل لمرحلة */
       next.textContent = 'إنهاء التصميم ↓';
       next.classList.add('lg');
       return;
@@ -526,9 +527,13 @@ function portalAddAcc(itemId) {
     $('#pUndo').onclick = function () { if (S.designer) S.designer.undo(); };
     $('#pBack').onclick = function () { show('pLanding'); };
     $('#pPrevStep').onclick = function () { stepMove(-1); };
+    /* في المرحلة الأخيرة لا توجد مرحلة تالية، فزر «التالي» يتحوّل إلى «إنهاء التصميم».
+       كان ملتصقًا بـ if (nx) فقط، أي لا يفعل شيئًا. نفس إجراء الإنهاء المستخدم في
+       صف أزرار المراجعة (#pSubmitDesign → submitDesign) حتى لا يختلف السلوك بينهما. */
     $('#pNextStep').onclick = function () {
       var nx = STEPS[STEP_INDEX[S.step] + 1];
-      if (nx) gotoStep(nx.id);
+      if (nx) { gotoStep(nx.id); return; }
+      finishDesign();
     };
   }
 
@@ -745,14 +750,17 @@ function portalAddAcc(itemId) {
       var accs = catItems('acc');
       /* المرحلة ٤: الإكسسوارات فقط (الكنب والفرش في خطوة المجلس).
          كل إكسسوار يفتح شاشة اختيار الكمية الكاملة — لا خصائص مخفية أسفل الرسم. */
+      /* المرحلة ٤: شبكة إكسسوارات كاملة بلا تمرير داخلي — كل الخيارات في الصفحة
+         نفسها، والعميل ينزل طبيعيًا للقسم التالي. سطر «عدد الإكسسوارات» يوضّح
+         العدد ويطمئن أن لا شيء مخفي. */
       box.innerHTML = ''
-        + '<h4 class="p-subhead">الإكسسوارات <small>— اضغط على أي عنصر لاختيار كميته</small></h4>'
+        + '<h4 class="p-subhead">الإكسسوارات <small>— ' + accs.length + ' عنصر · اضغط لاختيار الكمية</small></h4>'
         + '<div class="p-accgrid" id="pfAccGrid">' + (accs.length ? accs.map(function (a) {
           var n = accCount(a.id);
           return '<button type="button" class="btn" data-acc="' + esc(a.id) + '">'
             + esc(a.name) + (n ? ' <span class="acc-n">' + n + '</span>' : '') + '</button>';
         }).join('') : '<p class="hint">لا توجد إكسسوارات متاحة حالياً.</p>') + '</div>'
-        + '<button type="button" class="btn ghost" id="pfFreeSpace">+ مساحة أرضية فارغة</button>';
+        + '<button type="button" class="btn ghost block" id="pfFreeSpace">+ مساحة أرضية فارغة</button>';
       $$('button[data-acc]', box).forEach(function (b) {
         b.addEventListener('click', function () {
           try { openAccQty(b.dataset.acc); }
@@ -773,10 +781,13 @@ function portalAddAcc(itemId) {
     var wasHidden = sh.hidden;
     var html = '<span class="sheet-grip"></span>';
     if (info.type === 'wall') {
-      html += '<div class="insp-head"><b>جدار ' + (info.index + 1) + '</b><button class="btn small" data-close>تم</button></div>'
-        + '<div class="row2"><label>الطول (م)<input id="psLen" type="number" step="0.05" min="0.3" inputmode="decimal" value="' + info.wall.len + '"></label>'
-        + '<label>الاتجاه°<input id="psAng" type="number" step="5" inputmode="numeric" value="' + info.wall.angle + '"></label></div>'
-        + '<button type="button" class="btn block danger" data-delwall>حذف الجدار</button>';
+      /* تحديد الجدار لا يفتح ورقة: أبعاد الغرفة تعدّل من حقلي العرض والطول في
+         المرحلة الأولى فقط (المطلوب). هنا سطر تأكيد واحد ويختفي بلمسة أخرى.
+         محرّك التصميم ما زال يملك setWallLength/setWallAngle/removeWall intactًا
+         — أزلنا عناصر التحكم من واجهة العميل لا من المحرك. */
+      html += '<div class="opsheet"><b>جدار ' + (info.index + 1) + '</b>'
+        + '<span class="hint" style="flex:1">لتغيير مقاسات الغرفة عدّل العرض والطول في المرحلة الأولى.</span>'
+        + '<button class="btn small" data-close>تم</button></div>';
     } else if (info.type === 'opening') {
       var o = info.opening;
       var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
@@ -831,8 +842,6 @@ function portalAddAcc(itemId) {
       var el = $(sel, sh);
       if (el) el.addEventListener('change', function () { fn(parseFloat(el.value)); });
     };
-    bindNum('#psLen', function (v) { dz.setWallLength(info.index, Math.max(0.3, v || 0.3)); });
-    bindNum('#psAng', function (v) { dz.setWallAngle(info.index, v || 0); });
     bindNum('#psOW', function (v) { dz.updateOpening(info.opening.id, { w: Math.max(0.2, v || 0.5) }); });
     var owStep = function (d) {
       if (!info.opening) return;
@@ -848,8 +857,6 @@ function portalAddAcc(itemId) {
     if (owp) owp.onclick = function () { owStep(0.1); };
     bindNum('#psW', function (v) { dz.updateSelected({ w: Math.max(0.2, v || 0.2) }); });
     bindNum('#psH', function (v) { dz.updateSelected({ h: Math.max(0.2, v || 0.2) }); });
-    var dw = $('[data-delwall]', sh);
-    if (dw) dw.onclick = function () { try { dz.removeWall(info.index); } catch (e) { toast('لا يمكن حذف هذا الجدار', true); } renderSheet(null); renderPanel(); };
     var seatSel = $('#psSeat', sh);
     if (seatSel && info.type === 'piece') {
       seatSel.onchange = function () {
@@ -969,7 +976,7 @@ function portalAddAcc(itemId) {
     $('#pActPreview', box).onclick = function () { keepCust(); refreshPreview(); toast('حُدّثت المعاينة'); };
     $('#pActPdf', box).onclick = function () { keepCust(); reviewPdf(); };
     $('#pActWa', box).onclick = function () { keepCust(); reviewShare(); };
-    $('#pSubmitDesign', box).onclick = function () { keepCust(); submitDesign(box); };
+    $('#pSubmitDesign', box).onclick = finishDesign;
     ['pName', 'pPhone'].forEach(function (id) {
       var el = $('#' + id, box);
       if (el) el.addEventListener('input', keepCust);
@@ -1010,15 +1017,23 @@ function portalAddAcc(itemId) {
     }
   }
 
-  async function submitDesign(box) {
-    var btn = $('#pSubmitDesign', box);
-    if (!btn || btn.disabled) return;
-    var name = ($('#pName', box) || {}).value || '';
-    var phone = ($('#pPhone', box) || {}).value || '';
-    btn.disabled = true;
+  /* الإجراء الوحيد للإنهاء: يقرؤ الاسم والجوال من لوحة المراجعة نفسها، ويحرس نفسه
+     أثناء التنفيذ فلا يُنهي التصميم مرتين بضغط متتابع على الزرين. */
+  var finishing = false;
+  async function finishDesign() {
+    if (finishing) return;
+    var box = $('#pPanel');
+    var btns = [$('#pSubmitDesign', box), $('#pNextStep')].filter(Boolean);
+    if (btns.some(function (b) { return b.disabled; })) return;
+    var name = (($('#pName', box) || {}).value || '').trim();
+    var phone = (($('#pPhone', box) || {}).value || '').trim();
+    S.cust = { name: name, phone: phone };
+    finishing = true;
+    btns.forEach(function (b) { b.disabled = true; });
+    var live = $('#pNextStep');
+    if (live) live.textContent = 'جارٍ الإنهاء…';
     try {
       await saveDraft();
-      name = name.trim(); phone = phone.trim();
       if (name || phone) {
         await api('/save', { method: 'POST', body: { design: S.designer.getState(), name: name, phone: phone } });
       }
@@ -1028,9 +1043,13 @@ function portalAddAcc(itemId) {
       showDone(r.number);
     } catch (e) {
       var err = $('#pReviewErr', box);
-      if (err) err.textContent = e.message || 'تعذّر إنهاء التصميم.';
-    } finally {
-      btn.disabled = false;
+      if (err) {
+        err.textContent = e.message || 'تعذّر إنهاء التصميم.';
+        err.scrollIntoView({ block: 'nearest' });
+      }
+      finishing = false;
+      btns.forEach(function (b) { b.disabled = false; });
+      renderNav();
     }
   }
 
