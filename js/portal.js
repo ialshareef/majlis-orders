@@ -1120,7 +1120,7 @@ function portalAddAcc(itemId) {
     var noTxt = number || 'مسودة';
     var d = new Date();
     var date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    // بطاقات التواصل: أيقونة + باركود لكل قناة (يفتحها المسح مباشرة)
+    // بطاقات التواصل: أيقونة + باركود لكل قناة (النقر على البطاقة كلها يفتحها، والمسح يفتحها مباشرة)
     var chans = contactChannels();
     var chanHtml = '';
     for (var ci = 0; ci < chans.length; ci++) {
@@ -1148,7 +1148,7 @@ function portalAddAcc(itemId) {
       + facts.map(function (f) { return '<tr><td>' + f[0] + '</td><td>' + esc(f[1]) + '</td></tr>'; }).join('')
       + '</tbody></table></div>'
       + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b>'
-      + '<div class="inv-chans-hint">اضغط على الباركود أو الرابط لفتحه</div>'
+      + '<div class="inv-chans-hint">اضغط على الأيقونة أو امسح رمز QR لفتح الرابط مباشرة</div>'
       + '<div class="inv-chans">' + (chanHtml || '') + '</div></div>'
       + '</div>'
       + '</div>'

@@ -2296,12 +2296,15 @@ body.modal-open { overflow: hidden; }
 /* تواصل معنا: بطاقات قناة (أيقونة + باركود + الرابط) بدل سطور نص عشوائية */
 .inv-contact { flex: 1; font-size: 8.5pt; color: #4A413A; background: #FBF9F5; border: 1px solid #EFE9DF; border-radius: .8mm; padding: 2mm 3mm; }
 .inv-contact > b { color: #1F1B18; display: block; margin-bottom: 1.6mm; }
-/* ملاحظة وسط فوق الأيقونات: اضغط على الباركود — بوضوح تام (خلفية داكنة + نص أبيض) */
+/* ملاحظة وسط فوق الأيقونات: اضغط على الأيقونة أو امسح رمز QR — بوضوح تام (خلفية داكنة + نص أبيض)
+   ملاحظة: لا يُضاف letter-spacing هنا إطلاقاً — الفاتورة تفرض تباعداً صفرياً على كل descendants
+   (السطر 2235) لأن html2canvas يرسم الحروف منفردة عند أي تباعد فتنكسر العربية. الخلفية الحمراء
+   والتسمية الجديدة تُبقيا كما هما؛ التباعد وحده هو سبب الانفصال. */
 .inv-chans-hint {
   text-align: center; font-weight: 800; font-size: 9pt; color: #FFFFFF;
   background: #B3261E; border: 1px solid #7A1710; border-radius: 1mm;
   margin: 0 0 2.4mm; padding: 1.4mm 2mm;
-  letter-spacing: .2px;
+  letter-spacing: normal;
 }
 /* تصميم العميل: بطاقات التواصل وحدها بعرض السطر (بلا باركود تصميم جانبي) */
 .inv-bottom:has(> .inv-contact:only-child) { display: block; }
