@@ -145,9 +145,9 @@ async function route(request, env, url) {
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.44';
-// بصمة asalh-najd-1.0.44.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
+// بصمة asalh-najd-1.0.44.apk (إصدار GitHub v1.0.44، بناء CI الموقّع)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = '682fe2229e9b774813310d2972a30c7c415ce4d92270fb4c97ed6276caf54f57';
 const UPDATE_FALLBACK_NOTES = [
   'الرابط الرسمي للنظام: majlis-api.asalh-najd.workers.dev',
   'تم إنهاء الرابط القديم للنظام نهائياً — استخدم الرابط أعلاه',
