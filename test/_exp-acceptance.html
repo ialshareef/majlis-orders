@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>expanded acceptance</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#st{position:fixed;bottom:0;left:0;z-index:999999;background:#111;color:#0f0;font:11px monospace;padding:3px 7px;direction:ltr;max-width:100%;white-space:pre-wrap}#rep{display:none}</style>
+</head>
+<body class="px">
+<div id="st">boot…</div>
+<pre id="rep"></pre>
+<script>
+/* اختبار قبول «التصميم الموسّع» في صفحة واحدة:
+   - worker.js على SQLite داخل المتصفح (بيئة معزولة تماماً — لا خادم حقيقي)
+   - واجهة portal-expanded.html محمّلة في نفس المستند
+   - يقود المراحل الخمس والكميات فعلياً
+   العرض يُضبط من نافذة المتصفح (?w) لأن استعلامات الوسائط تُقيَّم على عرض النافذة. */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));
+  document.getElementById('st').textContent='pass='+T.pass+' fail='+T.fail;}
+function flush(){const r=document.getElementById('rep');r.textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');
+  document.title='DONE p'+T.pass+'f'+T.fail;}
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const W=Number(new URLSearchParams(location.search).get('w')||window.innerWidth);
+const TAG='W'+W+': ';
+
+(async function(){
+  const realFetch=window.fetch.bind(window);
+  try{
+    document.getElementById('st').textContent='sql.js…';
+    const SQL=await initSqlJs({locateFile:f=>'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'+f});
+    const sqlite=new SQL.Database();
+    sqlite.exec(await (await realFetch('/worker/schema.sql')).text());
+    sqlite.run("CREATE TABLE IF NOT EXISTS customer_designs_exp (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)");
+    sqlite.run("CREATE INDEX IF NOT EXISTS designs_exp_token_idx ON customer_designs_exp(token)");
+    sqlite.run("INSERT OR IGNORE INTO counters (key,value) VALUES ('design_no_exp',90000000)");
+    sqlite.run("UPDATE settings SET data=? WHERE id=1",[JSON.stringify({
+      shopName:'أصالة نجد', phone:'+966533724290', whatsapp:'+966533724290',
+      instagram:'https://instagram.com/asalhnajd', tiktok:'https://tiktok.com/@asalhnajd',
+      mapsUrl:'https://maps.google.com/?q=24.7,46.6', tagline:'أثاث مجلس أصيل حسب مقاسك',
+      currency:'ر.س', vatEnabled:true, vatRate:15, cornerMode:'deduct'})]);
+    window.__db=sqlite;
+    const norm=v=>v===undefined?null:(typeof v==='boolean'?(v?1:0):v);
+    const DB={prepare(sql){const st={sql,args:[]};
+      st.bind=(...a)=>{st.args=a.map(norm);return st;};
+      st.first=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const h=s.step();const r=h?s.getAsObject():null;s.free();return r;};
+      st.all=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const o=[];while(s.step())o.push(s.getAsObject());s.free();return{results:o,success:true};};
+      st.run=async()=>{sqlite.run(sql,st.args);return{success:true};};return st;},
+      async batch(s){const o=[];for(const x of s)o.push(await x.run());return o;}};
+    const mod=await import('/worker/worker.js');
+    const env={DB};const ORIGIN='https://majlis.test';
+    window.__calls=[];
+    // ملفات الواجهة تُقرأ أولاً، ثم يُوجَّه /api فقط إلى worker.js
+    const files={
+      page: await (await realFetch('/portal-expanded.html')).text(),
+      designer: await (await realFetch('/js/designer.js')).text(),
+      app: await (await realFetch('/js/portal-expanded.js')).text()
+    };
+    window.fetch=async(input,init)=>{
+      const u=typeof input==='string'?input:input.url;
+      if(u.indexOf('/api/')===0){window.__calls.push((init&&init.method)||'GET');return mod.default.fetch(new Request(ORIGIN+u,init),env);}
+      return realFetch(input,init);};
+    // تحميل الواجهة في نفس المستند (بلا iframe: استعلامات الوسائط تحتاج عرض النافذة)
+    const doc=new DOMParser().parseFromString(files.page,'text/html');
+    doc.querySelectorAll('script').forEach(s=>s.remove());
+    const keep=document.getElementById('st');
+    document.body.innerHTML='';
+    document.body.className='px';
+    document.body.appendChild(keep);
+    const wrap=document.createElement('div');wrap.innerHTML=doc.body.innerHTML;
+    document.body.appendChild(wrap);
+    const rep=document.createElement('pre');rep.id='rep';document.body.appendChild(rep);
+    for(const src of [files.designer, files.app]){
+      const s=document.createElement('script');s.textContent=src;document.body.appendChild(s);}
+    await wait(1200);
+
+    const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+    const T2=()=>window.PortalExpandedTest;
+    t(TAG+'harness booted', !!T2(), '');
+    t(TAG+'exp banner shown', /نسخة تجريبية/.test((document.querySelector('.px-banner')||{}).textContent||''));
+
+    $('#pxStart').click();
+    let n=0; while(n++<60 && !T2().designer()) await wait(250);
+    t(TAG+'entered designer', !$('#pxDesign').hidden && !!T2().designer());
+
+    // ---- المرحلة ١: الغرفة ----
+    T2().gotoStep('room'); await wait(300);
+    t(TAG+'room width+length fields', !!$('#pxW')&&!!$('#pxH'));
+    $('#pxW').value='6'; $('#pxW').dispatchEvent(new Event('input',{bubbles:true}));
+    $('#pxH').value='4.5'; $('#pxH').dispatchEvent(new Event('input',{bubbles:true}));
+    await wait(300);
+    const dz=T2().designer();
+    t(TAG+'live room dims', Math.abs(dz.state.walls[0].len-6)<0.01&&Math.abs(dz.state.walls[1].len-4.5)<0.01,
+      dz.state.walls.slice(0,2).map(x=>x.len).join('x'));
+    t(TAG+'zoom controls visible', !!$('#pxZoomIn')&&!!$('#pxZoomOut')&&!!$('#pxZoomFit'));
+    $('#pxZoomIn').click(); await wait(200);
+    t(TAG+'zoom % updates', $('#pxZoomVal').textContent!=='100%', $('#pxZoomVal').textContent);
+    $('#pxZoomFit').click(); await wait(200);
+    t(TAG+'fit resets to 100%', $('#pxZoomVal').textContent==='100%');
+    t(TAG+'units shown (متر)', /متر/.test($('#pxPanel').textContent));
+    t(TAG+'no per-wall edit/delete', !$('#pxPanel').querySelector('#psLen,#psAng,[data-delwall]'));
+
+    // ---- المرحلة ٢: العناصر المعمارية ----
+    T2().gotoStep('openings'); await wait(350);
+    t(TAG+'wall picker + door/mashab only', !!$('#pxOWall')&&!!$('[data-add="door"]')&&!!$('[data-add="mashab"]')&&!$('[data-add="window"]'));
+    $('#pxOWall').value='1'; $('#pxOWall').dispatchEvent(new Event('change',{bubbles:true}));
+    $('[data-add="door"]').click(); await wait(450);
+    t(TAG+'door added', dz.state.openings.length>=1, 'openings='+dz.state.openings.length);
+    t(TAG+'opening has delete control', !!$('[data-opdel]'));
+
+    // ---- المرحلة ٣: المجلس ----
+    T2().gotoStep('majlis'); await wait(350);
+    t(TAG+'4 seat cards with thumbnails', $$('[data-seat]').length===4 && $$('[data-seat] .px-seat-art svg').length===4);
+    t(TAG+'exactly one seat selected', $$('[data-seat][aria-pressed="true"]').length===1);
+    $('[data-seat="arabic"]').click(); await wait(250);
+    t(TAG+'seat selection switches', $('[data-seat="arabic"]').getAttribute('aria-pressed')==='true');
+    t(TAG+'fill-all explained before use', /يوزّع المجلس/.test($('#pxPanel').textContent));
+    $('#pxMajLen').value='3.2'; $('#pxMajLen').dispatchEvent(new Event('change',{bubbles:true}));
+    $('#pxDepth').value='0.8'; $('#pxDepth').dispatchEvent(new Event('change',{bubbles:true}));
+    $('#pxFillMajlis').click(); await wait(800);
+    t(TAG+'fill-all added sofas', dz.state.pieces.filter(p=>p.kind==='sofa').length>0,
+      'sofas='+dz.state.pieces.filter(p=>p.kind==='sofa').length);
+
+    // ---- المرحلة ٤: الكميات (الأهم) ----
+    T2().gotoStep('furn'); await wait(500);
+    const qInputs=$$('[data-qtyin]');
+    t(TAG+'accessories listed', qInputs.length>=4, 'count='+qInputs.length);
+    const grid=$('#pxAccGrid');
+    t(TAG+'grid has no inner scroll', grid.scrollHeight<=grid.clientHeight+2 && getComputedStyle(grid).overflowY==='visible',
+      'sH='+grid.scrollHeight+' cH='+grid.clientHeight);
+    t(TAG+'each qty input is numeric keypad', qInputs.every(i=>i.getAttribute('inputmode')==='numeric'));
+    const id=qInputs[0].dataset.qtyin;
+    const qi=()=>$$('[data-qtyin]').find(i=>i.dataset.qtyin===id);
+    qi().value='1'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(500);
+    t(TAG+'type 1 -> 1 piece', T2().accCount(id)===1, 'got '+T2().accCount(id));
+    qi().value='5'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(700);
+    t(TAG+'type 5 -> 5 pieces', T2().accCount(id)===5, 'got '+T2().accCount(id));
+    qi().value='10'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(900);
+    t(TAG+'type 10 -> 10 pieces', T2().accCount(id)===10, 'got '+T2().accCount(id));
+    t(TAG+'plan reflects quantity', dz.state.pieces.filter(p=>p.kind==='acc'&&p.itemId===id).length===10);
+    qi().value='3'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(600);
+    t(TAG+'repeat change -> 3', T2().accCount(id)===3, 'got '+T2().accCount(id));
+    qi().value='-3'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(450);
+    t(TAG+'negative rejected', T2().accCount(id)===3, 'got '+T2().accCount(id));
+    qi().value='abc'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(450);
+    t(TAG+'non-numeric rejected', T2().accCount(id)===3, 'got '+T2().accCount(id));
+    qi().value='0'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(600);
+    t(TAG+'zero deletes item', T2().accCount(id)===0, 'got '+T2().accCount(id));
+    qi().value='2'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(600);
+    t(TAG+'re-add after delete', T2().accCount(id)===2, 'got '+T2().accCount(id));
+    $('[data-qtyplus="'+id+'"]').click(); await wait(450);
+    t(TAG+'+ button increments', T2().accCount(id)===3, 'got '+T2().accCount(id));
+    $('[data-qtyminus="'+id+'"]').click(); await wait(450);
+    t(TAG+'− button decrements', T2().accCount(id)===2, 'got '+T2().accCount(id));
+    $('[data-spread="'+id+'"]').click(); await wait(500);
+    t(TAG+'spread evenly keeps count', T2().accCount(id)===2);
+    t(TAG+'max qty documented', /الحد الأقصى 99/.test($('#pxPanel').textContent));
+    // توافق الرقم المعروض مع القطع الفعلية
+    t(TAG+'displayed qty matches actual', Number(qi().value)===T2().accCount(id), 'disp='+qi().value+' real='+T2().accCount(id));
+
+    // أدوات العنصر المحدد
+    const anyAcc=dz.state.pieces.find(p=>p.kind==='acc');
+    if(anyAcc){
+      dz.select({type:'piece',id:anyAcc.id});
+      dz.opts.onSelect({type:'piece',id:anyAcc.id,piece:anyAcc});
+      await wait(400);
+      const sh=$('#pxSheet');
+      t(TAG+'sheet appears on selection', !sh.hidden);
+      t(TAG+'delete directly available', !!sh.querySelector('[data-del]'));
+      t(TAG+'rotate + duplicate kept', !!sh.querySelector('[data-rot]')&&!!sh.querySelector('[data-dup]'));
+      const y1=sh.getBoundingClientRect().top, cv=$('#pxCanvas').getBoundingClientRect().bottom;
+      t(TAG+'sheet below canvas (no overlap)', y1>=cv-1, 'sheetTop='+Math.round(y1)+' canvasBottom='+Math.round(cv));
+      // التراجع
+      const beforeUndo=T2().accCount(id);
+      sh.querySelector('[data-dup]').click(); await wait(400);
+      const afterDup=T2().accCount(id);
+      t(TAG+'duplicate adds a piece', afterDup>beforeUndo, beforeUndo+'->'+afterDup);
+      $('#pxUndo').click(); await wait(400);
+      t(TAG+'undo reverts duplicate', T2().accCount(id)===beforeUndo, 'now='+T2().accCount(id));
+    }
+
+    // ---- المرحلة ٥: المراجعة ----
+    T2().gotoStep('review'); await wait(700);
+    t(TAG+'review summary rendered', !!$('#pxValidate') && /مقاسات الغرفة/.test($('#pxPanel').textContent));
+    t(TAG+'quantities table', !!$('.px-qtable'));
+    t(TAG+'back buttons to all earlier steps', $$('[data-back]').length===4);
+    t(TAG+'pdf/wa/finish buttons', !!$('#pxActPdf')&&!!$('#pxActWa')&&!!$('#pxSubmitDesign'));
+    const sum=T2().summary();
+    t(TAG+'summary has room+seating+meters', sum.w>0&&sum.meters>0&&!!sum.seatTxt, JSON.stringify({w:sum.w,m:sum.meters}));
+    t(TAG+'summary qty total matches plan', sum.total===T2().accCount(id), 'summary='+sum.total+' acc='+T2().accCount(id));
+    // الرجوع يحفظ الاختيار
+    $('[data-back="furn"]').click(); await wait(450);
+    t(TAG+'back to furn keeps qty', T2().accCount(id)===2, 'got '+T2().accCount(id));
+    T2().gotoStep('review'); await wait(450);
+    // تحقق البيانات
+    $('#pxName').value='فهد'; $('#pxName').dispatchEvent(new Event('input',{bubbles:true}));
+    $('#pxPhone').value='abc'; $('#pxPhone').dispatchEvent(new Event('input',{bubbles:true}));
+    await wait(300);
+    t(TAG+'invalid phone flagged', /غير صالح/.test($('#pxValidate').textContent), $('#pxValidate').textContent);
+    $('#pxPhone').value='0555555555'; $('#pxPhone').dispatchEvent(new Event('input',{bubbles:true}));
+    await wait(300);
+    t(TAG+'valid phone accepted', /مقبولة/.test($('#pxValidate').textContent));
+    // ملاحظة: قياس التخطيط والإنهاء يأتيان بعد هذا — شاشة «تم» تستبدل المصمم
+    // ---- العزل ----
+    // sql.js exec يعيد [{columns, values:[[..]]}] في الإصدارات الحديثة، ومصفوفة مصفوفات في القديمة
+    function scalar(sql){
+      try{
+        const r=sqlite.exec(sql);
+        if(!r||!r.length) return NaN;
+        if(Array.isArray(r[0].values)) return Number(r[0].values[0][0]);
+        if(Array.isArray(r[0])) return Number(r[0][0]);
+        return NaN;
+      }catch(e){ return NaN; }
+    }
+    const expRows=scalar("SELECT COUNT(*) FROM customer_designs_exp");
+    const realRows=scalar("SELECT COUNT(*) FROM customer_designs");
+    t(TAG+'isolated table used (exp only)', expRows===1&&realRows===0, 'exp='+expRows+' real='+realRows);
+    const seq=scalar("SELECT value FROM counters WHERE key='design_no'");
+    t(TAG+'MJ counter untouched by exp designs', seq===26000126, 'design_no='+seq);
+
+    // ---- تخطيط كل المراحل (بعد الإنهاء تعود لشاشة «تم»، فنقيس قبله) ----
+    const docW=document.documentElement.clientWidth;
+    for(const st of ['room','openings','majlis','furn','review']){
+      T2().gotoStep(st); await wait(450);
+      const over=[];
+      $$('#pxPanel *, .px-sheet *').forEach(el=>{const r=el.getBoundingClientRect();
+        if(r.width>1&&(r.right>docW+1||r.left<-1))over.push((el.className||el.tagName)+'');});
+      t(TAG+st+': no horizontal overflow', over.length===0, over.slice(0,2).join('|'));
+      const pn=$('#pxPanel');
+      t(TAG+st+': panel no inner scroll', pn.scrollHeight<=pn.clientHeight+2);
+      const nb=$('#pxNextStep'); window.scrollTo(0,document.documentElement.scrollHeight); await wait(250);
+      const nr=nb.getBoundingClientRect();
+      t(TAG+st+': next button reachable', !nb.hidden&&nr.height>=44&&nr.right<=docW+1&&nr.bottom<=window.innerHeight+2,
+        'h='+Math.round(nr.height)+' r='+Math.round(nr.right)+' docW='+docW);
+    }
+    // ---- إنهاء التصميم (بعد قياس التخطيط: شاشة «تم» تستبدل المصمم) ----
+    T2().gotoStep('review'); await wait(450);
+    const postsBefore=window.__calls.filter(c=>c==='POST').length;
+    $('#pxSubmitDesign').click(); await wait(1800);
+    t(TAG+'finish shows done screen', !$('#pxDone').hidden);
+    t(TAG+'EXP- prefixed number', /^EXP-/.test($('#pxDesignNo').textContent||''), $('#pxDesignNo').textContent);
+    t(TAG+'success message shown', !!$('#pxSavedOk')&&/تم حفظ/.test($('#pxSavedOk').textContent));
+    const postsAfter=window.__calls.filter(c=>c==='POST').length;
+    $('#pxNextStep').click(); $('#pxSubmitDesign').click(); await wait(800);
+    t(TAG+'double finish blocked', window.__calls.filter(c=>c==='POST').length===postsAfter,
+      postsAfter+'->'+window.__calls.filter(c=>c==='POST').length);
+
+    window.__PDF=await T2().makePdfBlob('EXP-90000001').then(function(b){return b;});
+    t(TAG+'PDF generated', !!window.__PDF&&window.__PDF.size>20000, window.__PDF?window.__PDF.size+' bytes':'');
+  }catch(e){ t(TAG+'suite completed', false, e.message+' | '+(e.stack||'').split('\n')[1]); }
+  flush();
+})();
+</script>
+</body>
+</html>

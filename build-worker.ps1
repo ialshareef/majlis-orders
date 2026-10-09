@@ -32,6 +32,10 @@ $types = @{ '.html' = 'text/html; charset=utf-8'; '.css' = 'text/css; charset=ut
 $files = @(
   @{ url = '/index.html';    path = 'index.html' },
   @{ url = '/portal.html';   path = 'portal.html' },
+  # التصميم الموسّع (نسخة تجريبية) — منفصلة تماماً عن بوابة العميل
+  @{ url = '/portal-expanded.html';    path = 'portal-expanded.html' },
+  @{ url = '/js/portal-expanded.js';   path = 'js\portal-expanded.js' },
+  @{ url = '/css/portal-expanded.css'; path = 'css\portal-expanded.css' },
   @{ url = '/css/style.css'; path = 'css\style.css' },
   @{ url = '/js/store.js';   path = 'js\store.js' },
   @{ url = '/js/designer.js';path = 'js\designer.js' },

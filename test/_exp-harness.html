@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>expanded harness</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#st{position:fixed;bottom:0;left:0;z-index:99999;background:#111;color:#0f0;font:11px monospace;padding:3px 7px;direction:ltr}</style>
+</head>
+<body class="px">
+<div id="st">loading…</div>
+<pre id="rep" style="display:none"></pre>
+<script>
+/* بيئة معزولة تماماً: worker.js على SQLite داخل الصفحة + واجهة النسخة الموسّعة.
+   لا اتصال بخادم حقيقي ولا كتابة على أي بيانات إنتاجية. */
+window.H={log:[],err:''};
+window.addEventListener('error',function(e){window.H.err=(e.message||'')+' @'+(e.filename||'').split('/').pop()+':'+e.lineno;});
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+const status=m=>{document.getElementById('st').textContent=m;window.H.log.push(m);};
+(async function(){
+  const realFetch=window.fetch.bind(window);
+  try{
+    status('sql.js…');
+    const SQL=await initSqlJs({locateFile:f=>'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'+f});
+    const sqlite=new SQL.Database();
+    sqlite.exec(await (await realFetch('/worker/schema.sql')).text());
+    // جدول النسخة التجريبية (ensureSeed في الخادم ينشئه — ننشئه هنا أيضاً)
+    sqlite.run("CREATE TABLE IF NOT EXISTS customer_designs_exp (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)");
+    sqlite.run("CREATE INDEX IF NOT EXISTS designs_exp_token_idx ON customer_designs_exp(token)");
+    sqlite.run("INSERT OR IGNORE INTO counters (key,value) VALUES ('design_no_exp',90000000)");
+    // إعدادات فيها قنوات تواصل حقيقية للتحقق من PDF
+    sqlite.run("UPDATE settings SET data=? WHERE id=1",[JSON.stringify({
+      shopName:'أصالة نجد', phone:'+966533724290', whatsapp:'+966533724290',
+      instagram:'https://instagram.com/asalhnajd', tiktok:'https://tiktok.com/@asalhnajd',
+      mapsUrl:'https://maps.google.com/?q=24.7,46.6', tagline:'أثاث مجلس أصيل حسب مقاسك',
+      currency:'ر.س', vatEnabled:true, vatRate:15, cornerMode:'deduct'
+    })]);
+    window.__db=sqlite;
+    const norm=v=>v===undefined?null:(typeof v==='boolean'?(v?1:0):v);
+    const DB={prepare(sql){const st={sql,args:[]};
+      st.bind=(...a)=>{st.args=a.map(norm);return st;};
+      st.first=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const h=s.step();const r=h?s.getAsObject():null;s.free();return r;};
+      st.all=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const o=[];while(s.step())o.push(s.getAsObject());s.free();return{results:o,success:true};};
+      st.run=async()=>{sqlite.run(sql,st.args);return{success:true};};return st;},
+      async batch(s){const o=[];for(const x of s)o.push(await x.run());return o;}};
+    const mod=await import('/worker/worker.js');
+    const env={DB};const ORIGIN='https://majlis.test';
+    window.__calls=[];
+    // نلتقط ملفات الواجهة قبل اعتراض fetch، ثم نوجّه مسارات /api فقط إلى worker.js
+    const files={
+      page: await (await realFetch('/portal-expanded.html')).text(),
+      designer: await (await realFetch('/js/designer.js')).text(),
+      app: await (await realFetch('/js/portal-expanded.js')).text()
+    };
+    window.fetch=async(input,init)=>{
+      const u=typeof input==='string'?input:input.url;
+      if(u.startsWith('/api/')){window.__calls.push((init&&init.method)||'GET');return mod.default.fetch(new Request(ORIGIN+u,init),env);}
+      return realFetch(input,init);};
+    status('inject page…');
+    const doc=new DOMParser().parseFromString(files.page,'text/html');
+    doc.querySelectorAll('script').forEach(s=>s.remove());
+    document.getElementById('st').remove();document.getElementById('rep').remove();
+    document.body.className='px';
+    const wrap=document.createElement('div');wrap.innerHTML=doc.body.innerHTML;
+    document.body.appendChild(wrap);
+    if(!document.getElementById('pxPrint')){const p=document.createElement('div');p.id='pxPrint';document.body.appendChild(p);}
+    for(const src of [files.designer, files.app]){
+      const s=document.createElement('script');s.textContent=src;document.body.appendChild(s);}
+    status('booted');
+    window.H.ready=true;
+  }catch(e){status('ERROR: '+e.message);window.H.error=e.message;console.error(e);}
+})();
+</script>
+</body>
+</html>

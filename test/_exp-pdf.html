@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>exp pdf dump</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#st{position:fixed;bottom:0;left:0;z-index:999999;background:#111;color:#0f0;font:11px monospace;padding:3px 7px}#rep{display:none}</style>
+</head>
+<body class="px"><div id="st">…</div><pre id="rep"></pre>
+<script>
+/* يبني تصميمًا كاملاً ويصدّر PDF عبر makePdfBlob، ثم يرسم كل صفحة PDF
+   على canvas عبر تحميل libraries — ويصدّر base64 لكل صفحة + PDF كامل. */
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async function(){
+  const realFetch=window.fetch.bind(window);
+  const out=[];
+  try{
+    document.getElementById('st').textContent='sql.js…';
+    const SQL=await initSqlJs({locateFile:f=>'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'+f});
+    const sqlite=new SQL.Database();
+    sqlite.exec(await (await realFetch('/worker/schema.sql')).text());
+    sqlite.run("CREATE TABLE IF NOT EXISTS customer_designs_exp (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)");
+    sqlite.run("INSERT OR IGNORE INTO counters (key,value) VALUES ('design_no_exp',90000000)");
+    sqlite.run("UPDATE settings SET data=? WHERE id=1",[JSON.stringify({
+      shopName:'أصالة نجد', phone:'+966533724290', whatsapp:'+966533724290',
+      instagram:'https://instagram.com/asalhnajd', tiktok:'https://tiktok.com/@asalhnajd',
+      mapsUrl:'https://maps.google.com/?q=24.7,46.6', tagline:'أثاث مجلس أصيل حسب مقاسك',
+      currency:'ر.س', vatEnabled:true, vatRate:15, cornerMode:'deduct'})]);
+    const norm=v=>v===undefined?null:(typeof v==='boolean'?(v?1:0):v);
+    const DB={prepare(sql){const st={sql,args:[]};
+      st.bind=(...a)=>{st.args=a.map(norm);return st;};
+      st.first=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const h=s.step();const r=h?s.getAsObject():null;s.free();return r;};
+      st.all=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const o=[];while(s.step())o.push(s.getAsObject());s.free();return{results:o,success:true};};
+      st.run=async()=>{sqlite.run(sql,st.args);return{success:true};};return st;},
+      async batch(s){const o=[];for(const x of s)o.push(await x.run());return o;}};
+    const mod=await import('/worker/worker.js');const env={DB};const ORIGIN='https://majlis.test';
+    const files={page:await (await realFetch('/portal-expanded.html')).text(),
+      designer:await (await realFetch('/js/designer.js')).text(),
+      app:await (await realFetch('/js/portal-expanded.js')).text()};
+    window.fetch=async(i,init)=>{const u=typeof i==='string'?i:i.url;
+      if(u.indexOf('/api/')===0)return mod.default.fetch(new Request(ORIGIN+u,init),env);
+      return realFetch(i,init);};
+    const doc=new DOMParser().parseFromString(files.page,'text/html');
+    doc.querySelectorAll('script').forEach(s=>s.remove());
+    const st0=document.getElementById('st'),rep=document.getElementById('rep');
+    document.body.innerHTML='';document.body.className='px';
+    document.body.appendChild(st0);document.body.appendChild(rep);
+    const wrap=document.createElement('div');wrap.innerHTML=doc.body.innerHTML;document.body.appendChild(wrap);
+    const pp=document.createElement('div');pp.id='pxPrint';document.body.appendChild(pp);
+    for(const src of [files.designer,files.app]){const s=document.createElement('script');s.textContent=src;document.body.appendChild(s);}
+    await wait(1200);
+    const $=s=>document.querySelector(s);
+    $('#pxStart').click();
+    let n=0;while(n++<60&&!window.PortalExpandedTest.designer())await wait(250);
+    const T2=window.PortalExpandedTest;
+    $('#pxW').value='6';$('#pxW').dispatchEvent(new Event('input',{bubbles:true}));
+    $('#pxH').value='4.5';$('#pxH').dispatchEvent(new Event('input',{bubbles:true}));
+    await wait(250);
+    T2.gotoStep('openings');await wait(350);
+    $('#pxOWall').value='0';$('#pxOWall').dispatchEvent(new Event('change',{bubbles:true}));
+    $('[data-add="door"]').click();await wait(400);
+    T2.gotoStep('majlis');await wait(300);
+    $('#pxMajLen').value='3';$('#pxMajLen').dispatchEvent(new Event('change',{bubbles:true}));
+    $('#pxFillMajlis').click();await wait(800);
+    T2.gotoStep('furn');await wait(400);
+    const accs=Array.from(document.querySelectorAll('[data-qtyin]'));
+    const setQ=(el,v)=>{el.value=String(v);el.dispatchEvent(new Event('change',{bubbles:true}));};
+    setQ(accs[0],6);await wait(700);setQ(accs[1],4);await wait(600);setQ(accs[2],3);await wait(500);
+    T2.gotoStep('review');await wait(500);
+    $('#pxName').value='فهد بن محمد';$('#pxName').dispatchEvent(new Event('input',{bubbles:true}));
+    $('#pxPhone').value='0555551234';$('#pxPhone').dispatchEvent(new Event('input',{bubbles:true}));
+    await wait(400);
+    document.getElementById('st').textContent='PDF…';
+    const blob=await T2.makePdfBlob('EXP-90000001');
+    const u8=new Uint8Array(await blob.arrayBuffer());
+    let bin='',CH=0x8000;
+    for(let i=0;i<u8.length;i+=CH)bin+=String.fromCharCode.apply(null,u8.subarray(i,i+CH));
+    out.push('PDFB64:'+btoa(bin)+':ENDPDF');
+    out.push('PDFFACTS:size='+blob.size+' pages_expected=3');
+  }catch(e){out.push('ERR:'+e.message+' @'+(e.stack||'').split('\n')[1]);}
+  document.getElementById('rep').textContent=out.join('\n');
+  document.title='DONE';
+})();
+</script>
+</body></html>

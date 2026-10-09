@@ -14,6 +14,7 @@
       POST /api/portal/finish    إنهاء ومنح رقم عام (بتوكن الجلسة فقط)
       POST /api/portal/contact   طلب التواصل (بتوكن الجلسة فقط)
       GET  /api/portal/view/:no  عرض عام للتصميم برقمه (قراءة فقط، بلا توكن)
+      GET  /customer-design-expanded   التصميم الموسّع (نسخة تجريبية — جدول وواجهة منفصلة)
       GET  /api/designs          (موظف) قائمة تصاميم العملاء
       GET  /api/designs/:id      (موظف) فتح تصميم
       PUT  /api/designs/:id      (موظف) مراجعة/تعديل
@@ -57,6 +58,14 @@ export default {
       if (ASSETS) return serveAsset('/portal.html');
       return json({ ok: true, service: 'majlis-portal' }, 200, cors);
     }
+    /* التصميم الموسّع — نسخة تجريبية (منفصلة تماماً عن بوابة العميل):
+       صفحة مختلفة بملفها، وواجهة API مختلفة تحفظ في جدول customer_designs_exp
+       فلا تختلط تصاميم التجربة بتصاميم العملاء الحقيقيين ولا تستهلك أرقام MJ.
+       المسار لا يطابق شرط '/customer-design' أعلاه (يلزم '/' بعده) فلا تعارض. */
+    if (url.pathname === '/customer-design-expanded' || url.pathname.startsWith('/customer-design-expanded/')) {
+      if (ASSETS) return serveAsset('/portal-expanded.html');
+      return json({ ok: true, service: 'majlis-portal-expanded' }, 200, cors);
+    }
     if (!url.pathname.startsWith('/api/')) {
       if (ASSETS) return serveAsset(url.pathname);
       return json({ ok: true, service: 'majlis-api', hint: 'ضع هذا الرابط في config.js (apiUrl)' }, 200, cors);
@@ -92,6 +101,21 @@ async function route(request, env, url) {
   if (path === '/api/portal/contact' && method === 'POST') return portalContact(env, request, body);
   const mView = path.match(/^\/api\/portal\/view\/([A-Za-z0-9-]+)$/);
   if (mView && method === 'GET') return portalView(env, mView[1], request);
+
+  /* واجهة النسخة التجريبية (التصميم الموسّع): نفس منطق الأمان لكن على جدول
+     منفصل (customer_designs_exp) وبادئة توكن x — فالتصميم التجريبي لا يختلط
+     ببيانات العملاء ولا بأرقام MJ ولا يظهر في صفحة تصاميم الموظفين. */
+  if (path.startsWith('/api/portal-expanded')) {
+    const ep = path.slice('/api/portal-expanded'.length) || '/';
+    if (ep === '/session' && method === 'POST') return portalExpSession(env, request);
+    if (ep === '/settings' && method === 'GET') return portalSettings(env);
+    if (ep === '/catalog' && method === 'GET') return portalCatalog(env);
+    if (ep === '/design' && method === 'GET') return portalExpGet(env, request);
+    if (ep === '/save' && method === 'POST') return portalExpSave(env, request, body);
+    if (ep === '/finish' && method === 'POST') return portalExpFinish(env, request);
+    if (ep === '/contact' && method === 'POST') return portalExpContact(env, request, body);
+    throw new HttpError(404, 'المسار غير موجود');
+  }
 
   const token = tokenOf(request);
   const user = await currentUser(env, token);
@@ -416,6 +440,94 @@ async function portalView(env, number, request) {
     shopName: String(s.shopName || 'أصالة نجد'),
     design: safeParse(row.design, null),
   };
+}
+
+/* ------------------------------ التصميم الموسّع (نسخة تجريبية) ------------------------------
+   نفس قواعد أمان البوابة، لكن على جدول customer_designs_exp وبادجة token 'x':
+   - لا يختلط ببيانات العملاء الحقيقيين ولا يستهلك أرقام MJ
+   - لا يظهر في صفحة «تصاميم العملاء» (تقرأ customer_designs فقط)
+   - التوكن يبدأ بـ x فيرفضه جدول البوابة العادية والعكس
+   لاContain prices ولا أي بيانات داخلية — نفس مستوى الحماية. */
+const EXP_TOKEN_PREFIX = 'x';
+
+function expTokenOf(request) {
+  const t = request.headers.get('x-design-token') || '';
+  return /^x[0-9a-f]{64}$/.test(t) ? t : null;
+}
+
+async function portalExpRow(env, token) {
+  if (!token) throw new HttpError(401, 'جلسة التصميم غير صالحة');
+  const row = await env.DB.prepare('SELECT * FROM customer_designs_exp WHERE token = ?').bind(token).first();
+  if (!row) throw new HttpError(401, 'جلسة التصميم غير صالحة');
+  if (row.expires_at && row.expires_at < now()) throw new HttpError(401, 'انتهت جلسة التصميم');
+  return row;
+}
+
+async function portalExpSession(env, request) {
+  await portalThrottle(env, request);
+  const token = EXP_TOKEN_PREFIX + randomToken();
+  const t = now();
+  const exp = new Date(Date.now() + DESIGN_TTL_DAYS * 86400000).toISOString();
+  await env.DB.prepare("INSERT INTO customer_designs_exp (id, token, status, design, contact_requested, created_at, updated_at, expires_at) VALUES (?, ?, 'draft', ?, 0, ?, ?, ?)")
+    .bind(uid(), token, JSON.stringify(emptyDesign()), t, t, exp).run();
+  return { ok: true, token, expiresAt: exp };
+}
+
+function portalExpPublic(row) {
+  return {
+    id: row.id,
+    number: row.public_no ? 'EXP-' + row.public_no : null,
+    status: row.status,
+    design: safeParse(row.design, null),
+    name: row.customer_name || '',
+    phone: row.customer_phone || '',
+    contactRequested: !!row.contact_requested,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+async function portalExpGet(env, request) {
+  const row = await portalExpRow(env, expTokenOf(request));
+  return Object.assign({ ok: true }, portalExpPublic(row));
+}
+
+async function portalExpSave(env, request, body) {
+  const row = await portalExpRow(env, expTokenOf(request));
+  checkDesign(body.design);
+  const name = body.name !== undefined ? cleanName(body.name) : row.customer_name || '';
+  const phone = body.phone !== undefined ? cleanPhone(body.phone) : row.customer_phone || '';
+  const t = now();
+  await env.DB.prepare('UPDATE customer_designs_exp SET design = ?, customer_name = ?, customer_phone = ?, updated_at = ? WHERE id = ?')
+    .bind(JSON.stringify(body.design), name, phone, t, row.id).run();
+  return { ok: true, updatedAt: t };
+}
+
+async function portalExpFinish(env, request) {
+  const row = await portalExpRow(env, expTokenOf(request));
+  let no = row.public_no;
+  if (no == null) {
+    const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'design_no_exp' RETURNING value").first();
+    if (!r) throw new HttpError(500, 'عدّاد أرقام التصاميم التجريبية غير موجود');
+    no = Number(r.value);
+  }
+  const t = now();
+  const status = row.status === 'draft' ? 'new' : row.status;
+  await env.DB.prepare('UPDATE customer_designs_exp SET public_no = ?, status = ?, updated_at = ? WHERE id = ?')
+    .bind(no, status, t, row.id).run();
+  return { ok: true, number: 'EXP-' + no, status };
+}
+
+async function portalExpContact(env, request, body) {
+  const row = await portalExpRow(env, expTokenOf(request));
+  const name = cleanName(body.name);
+  const phone = cleanPhone(body.phone);
+  if (!name || !phone) throw new HttpError(400, 'الاسم ورقم الجوال مطلوبان لطلب التواصل');
+  const t = now();
+  const status = row.status === 'draft' ? 'new' : row.status;
+  await env.DB.prepare('UPDATE customer_designs_exp SET customer_name = ?, customer_phone = ?, contact_requested = 1, status = ?, updated_at = ? WHERE id = ?')
+    .bind(name, phone, status, t, row.id).run();
+  return { ok: true };
 }
 
 /* ------------------------------ تصاميم العملاء (موظفون) ------------------------------ */
@@ -980,6 +1092,13 @@ async function ensureSeed(env) {
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token)').run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_public_idx ON customer_designs(public_no)').run();
   await env.DB.prepare("INSERT OR IGNORE INTO counters (key, value) VALUES ('design_no', 26000126)").run();
+  /* التصميم الموسّع (تجريبي): جدول منفصل تماماً. يُنشأ بـ IF NOT EXISTS فلا يمسّ
+     بيانات العملاء ولا يستهلك أرقام MJ ولا يظهر في صفحة تصاميم الموظفين.
+     التوكن يبدأ بـ 'x' distinguishingه عن جدول البوابة العادية. */
+  await env.DB.prepare("CREATE TABLE IF NOT EXISTS customer_designs_exp (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)").run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_exp_token_idx ON customer_designs_exp(token)').run();
+  await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_exp_public_idx ON customer_designs_exp(public_no)').run();
+  await env.DB.prepare("INSERT OR IGNORE INTO counters (key, value) VALUES ('design_no_exp', 90000000)").run();
   // إدراج مشروط لا متزامن آمن: طلبان باردان معاً لا ينتجان مديرين مكررين ولا خطأ
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {

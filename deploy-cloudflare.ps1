@@ -3,6 +3,14 @@
 #  Usage:  powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1
 #  Requires a file named .cf-token in this folder containing a Cloudflare API token.
 #  The token value is never printed.
+#
+#  Token permissions required (all three, else the run stops early):
+#    Account > Workers Scripts > Edit
+#    Account > D1               > Edit   (a missing D1 permission fails with HTTP 401)
+#    Account > Account Settings > Read   (used to resolve the account id)
+#
+#  The .cf-token file is kept on this machine and is gitignored (.gitignore line 2);
+#  it is NOT deleted after a deploy.
 # =============================================================================
 param(
   [string]$TokenFile  = '.cf-token',
@@ -154,4 +162,5 @@ Write-Host ("  URL   : $appUrl") -ForegroundColor Green
 Write-Host '  Login : admin   (a new password is required on first login)' -ForegroundColor Green
 Write-Host '==================================================================' -ForegroundColor Green
 Write-Host '  To update later: run this script again.' -ForegroundColor DarkGray
-Write-Host '  For safety: delete the .cf-token file when done.' -ForegroundColor DarkGray
+  # .cf-token محفوظ على الجهاز ولا يُحذف (قرار المستخدم)، وهو مُدرج في .gitignore فلا يُرفع.
+  Write-Host '  The .cf-token file is kept on this machine (gitignored) for future deploys.' -ForegroundColor DarkGray

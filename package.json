@@ -1,8 +1,13 @@
 {
   "name": "majlis-orders",
-  "version": "1.0.0",
+  "version": "1.0.46",
   "private": true,
   "description": "أصالة نجد | نظام إدارة طلبات المجالس (تطبيق أندرويد)",
+  "homepage": "https://majlis-api.asalh-najd.workers.dev",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ialshareef/majlis-orders"
+  },
   "scripts": {
     "prep": "node prepare-web.js",
     "add:android": "npm run prep && cap add android",

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>exp shot</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#st{position:fixed;bottom:0;left:0;z-index:999999;background:#111;color:#0f0;font:11px monospace;padding:3px 7px;direction:ltr}</style>
+</head>
+<body class="px"><div id="st">…</div>
+<script>
+/* يبني التصميم حتى مرحلة محددة (?step=) ثم يتركه — لالتقاط Chrome صورة حقيقية. */
+const wait=ms=>new Promise(r=>setTimeout(r,ms));
+(async function(){
+  const realFetch=window.fetch.bind(window);
+  const step=new URLSearchParams(location.search).get('step')||'furn';
+  try{
+    const SQL=await initSqlJs({locateFile:f=>'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'+f});
+    const sqlite=new SQL.Database();
+    sqlite.exec(await (await realFetch('/worker/schema.sql')).text());
+    sqlite.run("CREATE TABLE IF NOT EXISTS customer_designs_exp (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)");
+    sqlite.run("INSERT OR IGNORE INTO counters (key,value) VALUES ('design_no_exp',90000000)");
+    sqlite.run("UPDATE settings SET data=? WHERE id=1",[JSON.stringify({shopName:'أصالة نجد',phone:'+966533724290',whatsapp:'+966533724290',instagram:'https://instagram.com/asalhnajd',tiktok:'https://tiktok.com/@asalhnajd',mapsUrl:'https://maps.google.com/?q=24.7,46.6',tagline:'أثاث مجلس أصيل حسب مقاسك',currency:'ر.س',vatEnabled:true,vatRate:15,cornerMode:'deduct'})]);
+    const norm=v=>v===undefined?null:(typeof v==='boolean'?(v?1:0):v);
+    const DB={prepare(sql){const st={sql,args:[]};
+      st.bind=(...a)=>{st.args=a.map(norm);return st;};
+      st.first=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const h=s.step();const r=h?s.getAsObject():null;s.free();return r;};
+      st.all=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const o=[];while(s.step())o.push(s.getAsObject());s.free();return{results:o,success:true};};
+      st.run=async()=>{sqlite.run(sql,st.args);return{success:true};};return st;},
+      async batch(s){const o=[];for(const x of s)o.push(await x.run());return o;}};
+    const mod=await import('/worker/worker.js');const env={DB};const ORIGIN='https://majlis.test';
+    const files={page:await (await realFetch('/portal-expanded.html')).text(),
+      designer:await (await realFetch('/js/designer.js')).text(),
+      app:await (await realFetch('/js/portal-expanded.js')).text()};
+    window.fetch=async(i,init)=>{const u=typeof i==='string'?i:i.url;
+      if(u.indexOf('/api/')===0)return mod.default.fetch(new Request(ORIGIN+u,init),env);
+      return realFetch(i,init);};
+    const doc=new DOMParser().parseFromString(files.page,'text/html');
+    doc.querySelectorAll('script').forEach(s=>s.remove());
+    const st0=document.getElementById('st');
+    document.body.innerHTML='';document.body.className='px';document.body.appendChild(st0);
+    const wrap=document.createElement('div');wrap.innerHTML=doc.body.innerHTML;document.body.appendChild(wrap);
+    for(const src of [files.designer,files.app]){const s=document.createElement('script');s.textContent=src;document.body.appendChild(s);}
+    await wait(1200);
+    const $=s=>document.querySelector(s);
+    $('#pxStart').click();
+    let n=0;while(n++<60&&!window.PortalExpandedTest.designer())await wait(250);
+    const T2=window.PortalExpandedTest;
+    $('#pxW').value='6';$('#pxW').dispatchEvent(new Event('input',{bubbles:true}));
+    $('#pxH').value='4.5';$('#pxH').dispatchEvent(new Event('input',{bubbles:true}));
+    await wait(250);
+    T2.gotoStep('openings');await wait(350);
+    $('#pxOWall').value='0';$('#pxOWall').dispatchEvent(new Event('change',{bubbles:true}));
+    $('[data-add="door"]').click();await wait(450);
+    T2.gotoStep('majlis');await wait(350);
+    $('#pxMajLen').value='3';$('#pxMajLen').dispatchEvent(new Event('change',{bubbles:true}));
+    $('#pxFillMajlis').click();await wait(900);
+    T2.gotoStep('furn');await wait(500);
+    const accs=Array.from(document.querySelectorAll('[data-qtyin]'));
+    const setQ=(el,v)=>{el.value=String(v);el.dispatchEvent(new Event('change',{bubbles:true}));};
+    if(accs[0])setQ(accs[0],5);await wait(700);
+    if(accs[1])setQ(accs[1],3);await wait(600);
+    if(accs[2])setQ(accs[2],2);await wait(500);
+    T2.gotoStep(step);await wait(700);
+    if(step==='review'){
+      $('#pxName').value='فهد بن محمد';$('#pxName').dispatchEvent(new Event('input',{bubbles:true}));
+      $('#pxPhone').value='0555551234';$('#pxPhone').dispatchEvent(new Event('input',{bubbles:true}));
+      await wait(500);}
+    if(step==='furn'){
+      // نحدد قطعة لإظهار الأدوات أسفل الرسم
+      const dz=T2.designer();const a=dz.state.pieces.find(p=>p.kind==='acc');
+      if(a){dz.select({type:'piece',id:a.id});dz.opts.onSelect({type:'piece',id:a.id,piece:a});await wait(500);}}
+    window.scrollTo(0,document.documentElement.scrollHeight);
+    await wait(400);
+    document.title='READY';
+  }catch(e){document.getElementById('st').textContent='ERR '+e.message;document.title='DONE';}
+})();
+</script>
+</body></html>

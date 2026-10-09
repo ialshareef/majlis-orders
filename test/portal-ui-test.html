@@ -91,8 +91,15 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('zoom-outside', ph0.indexOf('p-zoombar') >= 0 && ph0.indexOf('zoom-ctl') < 0, 'zoom outside canvas');
       // واجهة مُبسّطة: زر «التالي» كـ Layout، ولا قوائم أطوال جدران
       t('nav-next', ph0.indexOf('id="pNextStep"') >= 0 && ph0.indexOf('id="pPrevStep"') >= 0, 'next/prev buttons');
-      t('nav-bar-css', /\.portal #pDesign \{[^}]*overflow: hidden/.test(css)
-        && /\.portal #pDesign \.p-canvas-col \{[^}]*overflow: hidden/.test(css), 'one-screen layout');
+      // صفحة بتمرير طبيعي: لا قفل بـ 100dvh ولا تمرير داخلي مخادع،
+      // وزر «التالي» sticky أسفل فيبقى في المتReach مهما طالت الصفحة.
+      t('nav-bar-css', /\.portal #pDesign \{[^}]*overflow: visible/.test(css)
+        && /\.portal #pDesign \{[^}]*max-height: none/.test(css)
+        && /\.portal #pDesign \.p-panel \{[^}]*overflow: visible/.test(css), 'natural page scroll');
+      t('accgrid-no-inner-scroll', /\.portal #pDesign \.p-accgrid \{[^}]*overflow: visible/.test(css)
+        && /\.portal #pDesign \.p-accgrid \{[^}]*max-height: none/.test(css), 'accessories list not clipped');
+      t('wall-controls-removed', pjs0.indexOf('data-delwall') < 0 && pjs0.indexOf("id=\"psLen\"") < 0,
+        'no wall edit/delete in customer UI');
       t('room-simple', pjs0.indexOf('عرض الغرفة') >= 0 && pjs0.indexOf('طول الغرفة') >= 0
         && pjs0.indexOf("id=\"pfAddWall\"") < 0 && pjs0.indexOf('id="pfWalls"') < 0
         && pjs0.indexOf('data-walldel') < 0, 'room = w+l only');
@@ -134,8 +141,13 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('pdf-no-extra-qr', pjs0.indexOf('امسح لعرض التصميم') < 0 && pjs0.indexOf('customer-design/view/') < 0,
         'design qr removed');
       // ملاحظة واضحة وسط فوق الأيقونات: «اضغط على الباركود»
-      t('pdf-qr-hint', pjs0.indexOf('inv-chans-hint') >= 0 && pjs0.indexOf('اضغط على الباركود') >= 0
+      // العبارة الجديدة بلا خلفية ملوّنة، وتباعد الحروف صفر (قاعدة الفاتورة).
+      t('pdf-qr-hint', pjs0.indexOf('inv-chans-hint') >= 0
+        && pjs0.indexOf('اضغط على الأيقونة أو امسح رمز QR') >= 0
         && /\.inv-chans-hint \{[^}]*text-align: center/.test(css), 'hint above icons');
+      t('pdf-qr-hint-transparent', /\.inv-chans-hint \{[^}]*background: none/.test(css)
+        && /\.inv-chans-hint \{[^}]*border: 0/.test(css), 'hint has no background');
+      t('pdf-qr-hint-no-tracking', /\.inv-chans-hint \{[^}]*letter-spacing: normal/.test(css), 'arabic stays connected');
       // RTL + viewport
       t('rtl', doc.documentElement.dir === 'rtl' && doc.documentElement.lang === 'ar', 'dir');
       // صياغة portal.js + designer.js
