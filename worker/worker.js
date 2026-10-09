@@ -168,13 +168,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.47';
-// بصمة asalh-najd-1.0.47.apk (إصدار GitHub v1.0.47، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.48';
+// بصمة asalh-najd-1.0.48.apk — تُملأ بعد بناء CI (قبلها null فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = 'e7210370ff72eeb3d7d07d2abf6768c3701b2defeac5610b6736c6c1e2168ec6';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'صفحة «عن التطبيق»: رابط التصميم الموسّع (نسخة تجريبية) مع روابط الوصول',
-  'إزالة البريد الإلكتروني للمطوّر خالد من صفحة «عن التطبيق»',
+  'أمان: المسارات المجهولة لم تعد تعرض واجهة الموظفين على رابط عشوائي',
+  'صفحة «عن التطبيق»: رابط التصميم الموسّع (نسخة تجريبية)',
 ];
 
 function versionCodeOfName(v) {
@@ -1137,7 +1137,13 @@ function timingSafeEqual(a, b) {
 /* ------------------------------ خدمة ملفات الواجهة ------------------------------ */
 function serveAsset(pathname) {
   const key = pathname === '/' ? '/index.html' : pathname.replace(/\/+$/, '');
-  const a = ASSETS[key] || ASSETS[key + '/index.html'] || (key.includes('.') ? null : ASSETS['/index.html']);
+  /* مطابقة دقيقة فقط — بلا رجوع إلى index.html لأي مسار مجهول.
+     كان السطر القديم: (key.includes('.') ? null : ASSETS['/index.html'])
+     فيخدم واجهة الموظفين على أي مسار بلا نقطة (/foo، /anything …)، وهو تسريب
+     لواجهة داخلية على رابط عشوائي. لا حاجة للرجوع: التطبيق بلا توجيه بالمسار
+     ولا بالـ hash، وكل المسارات المشروعة إما أصول بالاسم أو تُعالَج قبل هذه الدالة
+     (/ و /customer-design و /customer-design-expanded و /api/*). */
+  const a = ASSETS[key] || ASSETS[key + '/index.html'];
   if (!a) return new Response('404', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   let body = a.body;
   if (a.b64) body = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));

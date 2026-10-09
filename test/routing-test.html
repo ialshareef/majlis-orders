@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>routing isolation</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99;overflow:auto;font:12px/1.6 monospace;padding:10px;direction:ltr;text-align:left}</style>
+</head>
+<body>
+<pre id="rep">…</pre>
+<script>
+/* فحص توجيه الأصول على الحزمة المبنية (worker.bundle.js) وهي نسخة الإنتاج
+   الحقيقية بمحتوى ASSETS مضمّن:
+     - المسارات المشروعة تعمل (root, index.html, الأصول, customer-design, expanded)
+     - المسارات المجهولة بلا نقطة تعيد 404 بدل تقديم واجهة الموظفين  */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+(async function(){
+  const realFetch=window.fetch.bind(window);
+  try{
+    const SQL=await initSqlJs({locateFile:f=>'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/'+f});
+    const sqlite=new SQL.Database();
+    sqlite.exec(await (await realFetch('/worker/schema.sql')).text());
+    const norm=v=>v===undefined?null:(typeof v==='boolean'?(v?1:0):v);
+    const DB={prepare(sql){const st={sql,args:[]};
+      st.bind=(...a)=>{st.args=a.map(norm);return st;};
+      st.first=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const h=s.step();const r=h?s.getAsObject():null;s.free();return r;};
+      st.all=async()=>{const s=sqlite.prepare(sql);s.bind(st.args);const o=[];while(s.step())o.push(s.getAsObject());s.free();return{results:o,success:true};};
+      st.run=async()=>{sqlite.run(sql,st.args);return{success:true};};return st;},
+      async batch(s){const o=[];for(const x of s)o.push(await x.run());return o;}};
+    // الحزمة المبنية = نسخة الإنتاج (تحتوي const ASSETS = {...})
+    const mod=await import('/worker/worker.bundle.js');
+    const env={DB};
+    const hit=async(p)=>{
+      const r=await mod.default.fetch(new Request('https://majlis.test'+p),env);
+      let body='';try{body=await r.text();}catch(_){}
+      return {status:r.status, body:body, type:r.headers.get('content-type')||''};
+    };
+    const STAFF_MARK=/majlis_theme|majlis_sidebar|sidebar/;
+
+    /* ---------- 1) المسارات المشروعة ---------- */
+    const root=await hit('/');
+    t('root serves staff app', root.status===200 && STAFF_MARK.test(root.body), root.status);
+    const idx=await hit('/index.html');
+    t('/index.html serves staff app', idx.status===200 && STAFF_MARK.test(idx.body), idx.status);
+    for(const a of ['/portal.html','/css/style.css','/js/app.js','/js/portal.js','/js/portal-expanded.js','/css/portal-expanded.css','/manifest.json','/sw.js','/portal-expanded.html']){
+      const r=await hit(a);
+      t('asset '+a, r.status===200, r.status);
+    }
+    const cd=await hit('/customer-design');
+    t('/customer-design serves portal', cd.status===200 && /pLanding/.test(cd.body) && !STAFF_MARK.test(cd.body), cd.status);
+    const cdt=await hit('/customer-design/');
+    t('/customer-design/ (trailing slash) serves portal', cdt.status===200 && /pLanding/.test(cdt.body), cdt.status);
+    const cx=await hit('/customer-design-expanded');
+    t('/customer-design-expanded serves expanded', cx.status===200 && /pxLanding|px-banner/.test(cx.body), cx.status);
+    const api=await hit('/api/app-update');
+    t('/api/app-update works', api.status===200 && /versionName/.test(api.body), api.status);
+
+    /* ---------- 2) المسارات المجهولة: يجب 404 ولا تُسرّب واجهة الموظفين ---------- */
+    const unknown=['/foo','/anything','/totally-made-up-xyz','/nope','/admin','/login','/test','/worker','/deep/nested/path'];
+    for(const p of unknown){
+      const r=await hit(p);
+      const leaks=r.status===200 && STAFF_MARK.test(r.body);
+      t('unknown '+p+' -> 404, no staff leak', r.status===404 && !leaks, 'status='+r.status+' leaks='+leaks);
+    }
+    /* ---------- 3) أصول غير موجودة بنقطة: 404 ---------- */
+    for(const p of ['/nope.png','/js/does-not-exist.js','/css/missing.css']){
+      const r=await hit(p);
+      t('missing asset '+p+' -> 404', r.status===404, 'status='+r.status);
+    }
+    /* ---------- 4) لا رجوع تنفيذي لواجهة الموظفين في production ---------- */
+    const src=await (await realFetch('/worker/worker.js')).text();
+    const serveSrc=(src.match(/function serveAsset[\s\S]*?\n}/)||[''])[0];
+    // نُسقط التعليقات أولاً: النص القديم مذكور هناك توثيقاً فقط
+    const codeOnly=serveSrc.replace(/\/\*[\s\S]*?\*\//g,'').replace(/\/\/.*$/gm,'');
+    t('serveAsset: no executable SPA fallback', !/ASSETS\['\/index\.html'\]/.test(codeOnly.replace(/pathname === '\/' \? '\/index\.html'/, '')),
+      'only exact-match lookups remain');
+    t('serveAsset: exact-match lookup present', /const a = ASSETS\[key\] \|\| ASSETS\[key \+ '\/index\.html'\];/.test(codeOnly));
+    t('serveAsset: root still maps to /index.html', /pathname === '\/' \? '\/index\.html'/.test(codeOnly));
+  }catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+  flush();
+})();
+</script>
+</body></html>
