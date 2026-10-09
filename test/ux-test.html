@@ -85,7 +85,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // B5/C6: تنبيه عدم الاتصال
     t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
     // الإصدار
-    t('ver-1-0-46', app.indexOf("APP_VERSION = '1.0.46'") >= 0, 'version');
+    t('ver-1-0-47', app.indexOf("APP_VERSION = '1.0.47'") >= 0, 'version');
     // في الجوال: لوحة الأدوات/المقاسات قبل الرسم (كما في صفحة العميل)
     t('panel-above-canvas-mobile', (function () {
       var dl = css.indexOf('.designer-layout { display: flex');
@@ -97,7 +97,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         /order:\s*1/.test(seg.slice(p, p + 130)) && /order:\s*2/.test(seg.slice(c, c + 60));
     })(), 'panel first on mobile');
     // روابط About ثابتة ومركزية (ليست من location.origin)
-    t('links-static', app.indexOf("customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design'") >= 0 && app.indexOf("staff: 'https://majlis-api.asalh-najd.workers.dev/'") >= 0, 'fixed urls');
+    t('links-static', app.indexOf("customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design'") >= 0 && app.indexOf("staff: 'https://majlis-api.asalh-najd.workers.dev/'") >= 0 && app.indexOf("expanded: 'https://majlis-api.asalh-najd.workers.dev/customer-design-expanded'") >= 0, 'fixed urls');
     t('links-noorigin', (function () {
       var i = app.indexOf('function wireAccessLinks');
       var seg = i >= 0 ? app.slice(i, i + 2500) : '';
@@ -357,7 +357,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     document.querySelector('button[data-page="about"]').click();
     await waitFor(function () { return document.querySelector('#page-about').classList.contains('active'); });
     var cInp = document.querySelector('#customerLink'), sInp = document.querySelector('#staffLink');
+    var eInp = document.querySelector('#expandedLink');
     t('B-links-urls', cInp && sInp && cInp.value === 'https://majlis-api.asalh-najd.workers.dev/customer-design' && sInp.value === 'https://majlis-api.asalh-najd.workers.dev/', (cInp && cInp.value) + ' | ' + (sInp && sInp.value));
+    t('B-links-expanded-url', eInp && eInp.value === 'https://majlis-api.asalh-najd.workers.dev/customer-design-expanded', eInp && eInp.value);
+    t('B-links-expanded-btns', !!document.querySelector('#btnOpenExpanded') && !!document.querySelector('#btnCopyExpanded') && !!document.querySelector('#btnShareExpanded'), 'expanded buttons');
     document.querySelector('#btnCopyCustomer').click();
     await waitFor(function () { return document.querySelector('#toast').textContent.indexOf('نسخ') >= 0; });
     t('B-links-copy', true);

@@ -160,8 +160,12 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('toolbar-ids', tbIds.every(function (id) { return idx.indexOf('id="' + id + '"') >= 0; }), '7 tools');
       t('toolbar-rows', (idx.match(/class="tb-row"/g) || []).length === 2, 'two rows');
       t('toolbar-css', css.indexOf('.tb-insert .tb-row') >= 0 && css.indexOf('.tb-insert .tb-btn span { font-size: .76rem') < 0, 'row css, no shrink');
-      // About: المطوران
-      t('about-devs', idx.indexOf('Fawaz Al-sharif') >= 0 && idx.indexOf('Khaled Al Qaini') >= 0 && idx.indexOf('khaledalqaini@gmail.com') >= 0, 'devs');
+// About: المطوران (اسم خالد موجود وبريده محذوف بقرار صريح)
+t('about-devs', idx.indexOf('Fawaz Al-sharif') >= 0 && idx.indexOf('Khaled Al Qaini') >= 0, 'dev names');
+      t('about-devs-no-khaled-email', idx.indexOf('khaledalqaini@gmail.com') < 0, 'khaled email removed');
+      // روابط الوصول: الثلاثة موجودة (عميل + موظفون + التصميم الموسّع)
+      t('about-links-expanded', idx.indexOf('expandedLink') >= 0 && idx.indexOf('btnOpenExpanded') >= 0
+        && idx.indexOf('btnCopyExpanded') >= 0 && idx.indexOf('btnShareExpanded') >= 0, 'expanded link row');
       // بوابة العميل في الـ worker bundle لاحقاً: portal.html تُخدم (فحص ثابت هنا لوجود الملف)
       var ph = await get('/portal.html');
       t('portal-file', ph.indexOf('pLanding') >= 0 && ph.indexOf('/js/portal.js') >= 0, 'portal.html');

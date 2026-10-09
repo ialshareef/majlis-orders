@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.46';
+  const APP_VERSION = '1.0.47';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4590,6 +4590,7 @@ function canEditOrder(o) {
   const ACCESS_LINKS = {
     customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design',
     staff: 'https://majlis-api.asalh-najd.workers.dev/',
+    expanded: 'https://majlis-api.asalh-najd.workers.dev/customer-design-expanded',
   };
 
   /** روابط العميل والموظفين: فتح/نسخ/مشاركة (Web Share API مع بديل النسخ) */
@@ -4597,7 +4598,11 @@ function canEditOrder(o) {
   function wireAccessLinks() {
     const box = $('#linksBox');
     if (!box || linksWired) return;
-    const urls = { customerLink: ACCESS_LINKS.customer, staffLink: ACCESS_LINKS.staff };
+    const urls = {
+      customerLink: ACCESS_LINKS.customer,
+      staffLink: ACCESS_LINKS.staff,
+      expandedLink: ACCESS_LINKS.expanded,
+    };
     Object.entries(urls).forEach(([id, url]) => {
       const inp = document.getElementById(id);
       if (inp) inp.value = url;
@@ -4633,6 +4638,9 @@ function canEditOrder(o) {
     bind('btnOpenStaff', () => open('staffLink'));
     bind('btnCopyStaff', () => copy('staffLink'));
     bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'));
+    bind('btnOpenExpanded', () => open('expandedLink'));
+    bind('btnCopyExpanded', () => copy('expandedLink'));
+    bind('btnShareExpanded', () => share('expandedLink', 'التصميم الموسّع — نسخة تجريبية'));
     linksWired = true;
   }
 
