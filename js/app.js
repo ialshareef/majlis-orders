@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.48';
+  const APP_VERSION = '1.0.49';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -4583,6 +4583,58 @@ function canEditOrder(o) {
     } catch (_) { /* فشل ربط التحديث لا يمنع عرض الصفحة */ }
     // روابط الوصول السريع: تُبنى من نفس الأصل (تعمل إنتاج/تجريبي/محلي بلا hard-code)
     try { wireAccessLinks(); } catch (_) { /* noop */ }
+    // إحصاءات حركة الزوار: للمدير فقط
+    try { renderVisitStats(); } catch (_) { /* noop */ }
+  }
+  /* ---------------- إحصاءات حركة الزوار (مدير) ----------------
+     مصدران: (1) زيارات فعلية من الخادم لصفحات الزوار العامة،
+     و(2) عدّاد نقرات محلي لأزرار «فتح/نسخ/مشاركة» في هذه الصفحة. */
+  const VISIT_KEY = 'majlis_visit_clicks_v1';
+
+  function loadVisitClicks() {
+    try { return JSON.parse(localStorage.getItem(VISIT_KEY)) || {}; } catch (_) { return {}; }
+  }
+  function bumpVisitClick(kind) {
+    try {
+      const c = loadVisitClicks();
+      c[kind] = (c[kind] || 0) + 1;
+      localStorage.setItem(VISIT_KEY, JSON.stringify(c));
+    } catch (_) { /* noop */ }
+  }
+
+  async function renderVisitStats() {
+    const box = $('#visitStatsBox');
+    if (!box) return;
+    if (!isAdmin()) { box.hidden = true; return; }
+    box.hidden = false;
+    const body = $('#visitStatsBody');
+    const clicks = loadVisitClicks();
+    const clickTotal = Object.values(clicks).reduce((a, b) => a + (Number(b) || 0), 0);
+    let server = null, err = '';
+    try {
+      const r = await Store.api('GET', '/api/link-visits');
+      server = r || null;
+    } catch (e) { err = (e && e.message) || 'تعذّر تحميل الإحصاءات'; }
+    const rows = [['customer', 'واجهة العميل'], ['expanded', 'التصميم الموسّع (تجريبي)'], ['staff', 'واجهة الموظفين']];
+    const B = (server && server.byLink) || {};
+    let html = '';
+    if (err) html += '<p class="hint" style="color:#c00">تعذّر تحميل الزيارات: ' + esc(err) + '</p>';
+    html += '<table class="visit-table"><thead><tr><th>الرابط</th><th>زيارات فعلية</th><th>آخر ٧ أيام</th><th>نقراتك</th></tr></thead><tbody>';
+    for (const [k, label] of rows) {
+      const rec = B[k] || null;
+      const total = rec ? rec.total : 0;
+      const days = rec ? rec.days : [];
+      const last7 = days.slice(-7).reduce((a, d) => a + (Number(d.n) || 0), 0);
+      const spark = days.length
+        ? days.slice(-7).map((d) => '<span title="' + esc(d.day) + ': ' + d.n + '">' + num(d.n) + '</span>').join(' · ')
+        : '<span class="hint">لا بيانات</span>';
+      html += '<tr><td>' + esc(label) + '</td><td class="num">' + num(total) + '</td>' +
+        '<td class="num">' + (days.length ? num(last7) : '—') + ' <small class="hint">' + spark + '</small></td>' +
+        '<td class="num">' + num(Number(clicks[k]) || 0) + '</td></tr>';
+    }
+    html += '</tbody></table>';
+    html += '<p class="hint">نقراتك على أزرار الفتح/النسخ/المشاركة: <b class="num">' + num(clickTotal) + '</b> — والزيارات الفعلية تُسجَّل على الخادم (تشمل فتح الرابط من جهازك عند الضغط «فتح»).</p>';
+    if (body) body.innerHTML = html;
   }
 
   /* روابط الوصول الرسمية الثابتة (من إعداد النشر: Worker majlis-api + مستودع ialshareef/majlis-orders).
@@ -4631,16 +4683,20 @@ function canEditOrder(o) {
         await copy(id);
       }
     };
-    const bind = (btn, fn) => { const b = document.getElementById(btn); if (b) b.onclick = fn; };
-    bind('btnOpenCustomer', () => open('customerLink'));
-    bind('btnCopyCustomer', () => copy('customerLink'));
-    bind('btnShareCustomer', () => share('customerLink', 'واجهة العميل — مصمم المجالس'));
-    bind('btnOpenStaff', () => open('staffLink'));
-    bind('btnCopyStaff', () => copy('staffLink'));
-    bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'));
-    bind('btnOpenExpanded', () => open('expandedLink'));
-    bind('btnCopyExpanded', () => copy('expandedLink'));
-    bind('btnShareExpanded', () => share('expandedLink', 'التصميم الموسّع — نسخة تجريبية'));
+    const bind = (btn, fn, kind) => {
+      const b = document.getElementById(btn);
+      if (!b) return;
+      b.onclick = () => { if (kind) bumpVisitClick(kind); fn(); };
+    };
+    bind('btnOpenCustomer', () => open('customerLink'), 'customer');
+    bind('btnCopyCustomer', () => copy('customerLink'), 'customer');
+    bind('btnShareCustomer', () => share('customerLink', 'واجهة العميل — مصمم المجالس'), 'customer');
+    bind('btnOpenStaff', () => open('staffLink'), 'staff');
+    bind('btnCopyStaff', () => copy('staffLink'), 'staff');
+    bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'), 'staff');
+    bind('btnOpenExpanded', () => open('expandedLink'), 'expanded');
+    bind('btnCopyExpanded', () => copy('expandedLink'), 'expanded');
+    bind('btnShareExpanded', () => share('expandedLink', 'التصميم الموسّع — نسخة تجريبية'), 'expanded');
     linksWired = true;
   }
 

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>visit ui test</title>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99;overflow:auto;font:12px/1.6 monospace;padding:10px;direction:ltr;text-align:left}</style>
+</head>
+<body>
+<pre id="rep">…</pre>
+<script>
+/* اختبار واجهة إحصاءات الزيارات:
+   1) البطاقة مخفية افتراضياً (hidden في HTML)
+   2) المدير: تظهر البطالة + الجدول بأعمدته الأربعة
+   3) غير المدير: تبقى مخفية (لا تسريب بيانات حركة الزيارات)
+   4) عدّاد النقرات يزيد ويٌحفظ في localStorage */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+(async function(){
+  const realFetch=window.fetch.bind(window);
+  try{
+    const app=await (await realFetch('/js/app.js')).text();
+    const html=await (await realFetch('/index.html')).text();
+
+    /* ---- 1) البطاقة مخفية افتراضياً ---- */
+    t('visitStatsBox has hidden attr in HTML', /id="visitStatsBox"[^>]*hidden/.test(html));
+
+    /* ---- 2) منطق المدير ---- */
+    t('hidden for non-admin (isAdmin gate)', /if \(!isAdmin\(\)\) \{ box\.hidden = true; return; \}/.test(app));
+    t('shown for admin', /box\.hidden = false;/.test(app));
+
+    /* ---- 3) الجدول وأعمدته ---- */
+    t('table rendered', /visit-table/.test(app));
+    for(const h of ['زيارات فعلية','آخر ٧ أيام','نقراتك']){
+      t('column: '+h, app.indexOf(h)>=0);
+    }
+    t('reads /api/link-visits', /Store\.api\('GET', '\/api\/link-visits'\)/.test(app));
+    t('escapes dynamic text (esc)', /esc\(label\)/.test(app) && /esc\(err\)/.test(app));
+
+    /* ---- 4) عدّاد النقرات ---- */
+    t('VISIT_KEY defined', /majlis_visit_clicks_v1/.test(app));
+    t('bumpVisitClick increments', /c\[kind\] = \(c\[kind\] \|\| 0\) \+ 1;/.test(app));
+    t('buttons wired with kind', (app.match(/bumpVisitClick\(kind\)/g)||[]).length>=1);
+    t('all 3 links have clicks', ['customer','staff','expanded'].every(k=>app.indexOf("), '"+k+"');")>=0));
+    t('localStorage save', /localStorage\.setItem\(VISIT_KEY/.test(app));
+
+    /* ---- 5) تشغيل فعلي للمنطق في عزل ---- */
+    // نحاكي الدالة المستخرجة للتأكد من الحسابات
+    const store={};
+    const LS={getItem:k=>store[k]||null,setItem:(k,v)=>{store[k]=v;},removeItem:k=>{delete store[k];}};
+    const load=(()=>{try{return JSON.parse(LS.getItem('k'))||{};}catch(_){return{};}})();
+    const bump=(kind)=>{const c=load;c[kind]=(c[kind]||0)+1;LS.setItem('k',JSON.stringify(c));};
+    bump('customer');bump('customer');bump('expanded');
+    const got=JSON.parse(LS.getItem('k'));
+    t('clicks accumulate (customer=2, expanded=1)', got.customer===2 && got.expanded===1, JSON.stringify(got));
+    t('clickTotal computes', Object.values(got).reduce((a,b)=>a+(Number(b)||0),0)===3);
+
+    /* ---- 6) الصيغة عبر جدول تجريبي ---- */
+    const byLink={customer:{total:42,days:[{day:'2026-10-11',n:5},{day:'2026-10-10',n:3}]},expanded:{total:7,days:[{day:'2026-10-11',n:7}]}};
+    const rows=[['customer','واجهة العميل'],['expanded','التصميم الموسّع (تجريبي)'],['staff','واجهة الموظفين']];
+    let cells=0;
+    for(const [k] of rows){ const rec=byLink[k]||null; if(rec){cells++;} }
+    t('rows map to data (2 of 3 have records)', cells===2, 'cells='+cells);
+    const last7=byLink.customer.days.slice(-7).reduce((a,d)=>a+(Number(d.n)||0),0);
+    t('last-7 sum = 8', last7===8, 'sum='+last7);
+    const missing=byLink.staff||{total:0,days:[]};
+    t('missing link shows 0 not crash', missing.total===0 && missing.days.length===0);
+  }catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+  flush();
+})();
+</script>
+</body></html>

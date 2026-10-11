@@ -1007,6 +1007,13 @@
               </div>
             </div>
           </div>
+          <!-- إحصاءات حركة الزوار: للمدير فقط (يخفيها renderVisitStats لغير المدير) -->
+          <div class="links-box" id="visitStatsBox" hidden>
+            <h4>حركة الزوار (إحصاءات)</h4>
+            <div class="link-row" style="display:block">
+              <div id="visitStatsBody" class="hint">…جارٍ التحميل…</div>
+            </div>
+          </div>
           <div class="update-box" id="updateBox">
             <button type="button" class="btn block" id="btnCheckUpdate">التحقق من وجود تحديث</button>
             <p class="hint" id="updateStatus" role="status" aria-live="polite"></p>

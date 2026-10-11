@@ -55,6 +55,7 @@ export default {
     }
     // بوابة العميل: مسار مستقل يقدّم portal.html (جاهز لنطاق فرعي لاحقاً دون إعادة بناء)
     if (url.pathname === '/customer-design' || url.pathname.startsWith('/customer-design/')) {
+      await recordVisit(env, request, 'customer');
       if (ASSETS) return serveAsset('/portal.html');
       return json({ ok: true, service: 'majlis-portal' }, 200, cors);
     }
@@ -63,6 +64,7 @@ export default {
        فلا تختلط تصاميم التجربة بتصاميم العملاء الحقيقيين ولا تستهلك أرقام MJ.
        المسار لا يطابق شرط '/customer-design' أعلاه (يلزم '/' بعده) فلا تعارض. */
     if (url.pathname === '/customer-design-expanded' || url.pathname.startsWith('/customer-design-expanded/')) {
+      await recordVisit(env, request, 'expanded');
       if (ASSETS) return serveAsset('/portal-expanded.html');
       return json({ ok: true, service: 'majlis-portal-expanded' }, 200, cors);
     }
@@ -140,6 +142,8 @@ async function route(request, env, url) {
   }
   if (path === '/api/users' && method === 'GET') { requireAdmin(user); return { users: await listUsers(env) }; }
   if (path === '/api/users' && method === 'POST') { requireAdmin(user); return saveUser(env, user, body, token); }
+  // إحصاءات زيارات روابط «عن التطبيق»: للمدير فقط (بيانات حركة زيارات لا يراها الموظفون)
+  if (path === '/api/link-visits' && method === 'GET') { requireAdmin(user); return linkVisits(env); }
   const mUser = path.match(/^\/api\/users\/([^/]+)$/);
   if (mUser && method === 'DELETE') { requireAdmin(user); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
 
@@ -168,13 +172,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.48';
-// بصمة asalh-najd-1.0.48.apk (إصدار GitHub v1.0.48، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.49';
+// بصمة asalh-najd-1.0.49.apk — تُملأ بعد بناء CI (قبلها فارغة فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '771e984befce796634e79f3f49287dceacefe3f181fcbbba79751b4a7e4ab799';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'أمان: المسارات المجهولة لم تعد تعرض واجهة الموظفين على رابط عشوائي',
-  'صفحة «عن التطبيق»: رابط التصميم الموسّع (نسخة تجريبية)',
+  'جديد: إحصاءات حركة الزوار في صفحة «عن التطبيق» (للمدير فقط)',
+  'عدّ يومي للزيارات الفعلية + عدّاد نقراتك، بلا تخزين أي بيانات شخصية',
 ];
 
 function versionCodeOfName(v) {
@@ -1001,6 +1005,56 @@ function restoreCosts(rec, prev) {
 }
 
 /* ------------------------------ المستخدمون ------------------------------ */
+/* ---------------- إحصاءات زيارات روابط «عن التطبيق» ----------------
+   تُسجَّل الزيارات على الخادم عند تقديم صفحات الزوار العامة (بوابة العميل
+   والتصميم الموسّع). تُستثنى واجهة الموظفين (تحتاج جلسة) والروبوتات.
+   العدّ يومي مجمّع (day, link) — لا يُخزَّن أي IP ولا بيانات شخصية. */
+const VISIT_LINKS = {
+  customer: 'بوابة العميل',
+  expanded: 'التصميم الموسّع',
+};
+// روبوتات/مكشّفون شائعون لا تُعدّ زياراتهم (تفقد الدقة إن استُثنوا، فلا تبالَغ)
+const BOT_RE = /bot|crawler|spider|crawling|slurp|bingpreview|facebookexternalhit|whatsapp|telegrambot|discordbot|curl\/|wget|python-requests|headlesschrome|lighthouse|uptime|monitor|preview|scrapy|semrush|ahrefs|petalbot|applebot|ia_archiver|semrushbot/i;
+
+function visitDayKey(env) {
+  // يوم محلي (الرياض UTC+3) لا UTC: العدّ يتوافق مع يوم صاحب المحل
+  const off = Number(env && env.VISIT_TZ_OFFSET_MIN) || 180;
+  return new Date(Date.now() + off * 60000).toISOString().slice(0, 10);
+}
+
+/** تسجيل زيارة رابط (تجاهل الروبوتات؛ الأخطاء لا تُفشل تقديم الصفحة) */
+async function recordVisit(env, request, link) {
+  try {
+    if (!env.DB || !VISIT_LINKS[link]) return;
+    // ضمان الجدول محلياً: لا نعتمد على ensureSeed لأنه قد يتوقف عند خطأ غير متعلق
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visits (day TEXT NOT NULL, link TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, link))').run().catch(ignoreExistsObject);
+    const ua = (request.headers.get('user-agent') || '');
+    if (!ua || BOT_RE.test(ua)) return;
+    // لا يُحتسب الطلب البرمجي المجرّد (بلا متصفح) كزيارة بشرية
+    // نمط upsert محمول: قراءة الزيادة ثم INSERT OR REPLACE (بدل ON CONFLICT المدعوم في D1
+    // فقط) — ينتج نفس السلوك ويبقى آمناً إن نُفِّذ على محرك أقدم
+    const day = visitDayKey(env);
+    const cur = await env.DB.prepare('SELECT n FROM link_visits WHERE day = ? AND link = ?').bind(day, link).first();
+    const next = (Number(cur && cur.n) || 0) + 1;
+    await env.DB.prepare('INSERT OR REPLACE INTO link_visits (day, link, n) VALUES (?, ?, ?)').bind(day, link, next).run();
+  } catch (e) { console.warn('recordVisit failed:', e && e.message); /* إحصاء لا يعطّل الخدمة */ }
+}
+
+/** قراءة الإحصاءات للمدير: إجمالي لكل رابط + تفصيل آخر ٣٠ يوماً */
+async function linkVisits(env) {
+  const totals = await env.DB.prepare('SELECT link, SUM(n) AS total FROM link_visits GROUP BY link').all();
+  const days = await env.DB.prepare('SELECT day, link, SUM(n) AS n FROM link_visits WHERE day >= ? GROUP BY day, link')
+    .bind(new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)).all();
+  const byLink = {};
+  for (const t of (totals.results || [])) byLink[t.link] = { total: Number(t.total) || 0, days: [] };
+  for (const d of (days.results || [])) {
+    const k = byLink[d.link] || (byLink[d.link] = { total: 0, days: [] });
+    k.days.push({ day: d.day, n: Number(d.n) || 0 });
+  }
+  for (const k of Object.keys(byLink)) byLink[k].days.sort((a, b) => (a.day < b.day ? -1 : 1));
+  return { ok: true, links: VISIT_LINKS, byLink };
+}
+
 async function listUsers(env) {
   const r = await env.DB.prepare('SELECT id, username, name, role, active, created_at, parent_id, rate, parent_rate FROM users ORDER BY created_at').all();
   return r.results.map((u) => ({
@@ -1077,8 +1131,16 @@ function ignoreExistsColumn(e) {
   if (/duplicate column|already exists/i.test(String((e && e.message) || e || ''))) return;
   throw e;
 }
+/* خطأ "الكائن موجود" متوقع أيضاً (جدول/فهرس مُنشأ مسبقاً) */
+function ignoreExistsObject(e) {
+  if (/already exists/i.test(String((e && e.message) || e || ''))) return;
+  throw e;
+}
 async function ensureSeed(env) {
   if (seeded) return;
+  /* جداول القياس تُنشأ أولاً لأنها لا تعتمد على أي جدول آخر: إن فشل أي تعديل
+     أعمدة أدناه (قاعدة ناقصة/غير مهيّأة) لا يُسقط إنشاء جدول الزيارات. */
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visits (day TEXT NOT NULL, link TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, link))').run().catch(ignoreExistsObject);
   // جداول وأعمدة جديدة بعد النشر الأول: تُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS login_fail (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first_at TEXT NOT NULL, until TEXT)').run();
   // أعمدة المندوب (هيكل متعدد المستويات ونسب العمولة)

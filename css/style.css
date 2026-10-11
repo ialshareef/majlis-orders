@@ -2631,6 +2631,13 @@ body.portal { background: var(--bg); }
 .link-actions { display: flex; gap: 6px; }
 .link-actions input { flex: 1; min-width: 0; min-height: 44px; font-size: .8rem; background: var(--input-bg); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 0 10px; }
 .link-actions .btn { min-height: 44px; flex: none; }
+    /* إحصاءات حركة الزوار (صفحة عن التطبيق — للمدير) */
+    .visit-table { width: 100%; border-collapse: collapse; font-size: .82rem; margin-bottom: 8px; }
+    .visit-table th, .visit-table td { padding: 8px 6px; text-align: start; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+    .visit-table th { color: var(--ink-3); font-weight: 700; font-size: .76rem; white-space: nowrap; }
+    .visit-table td.num, .visit-table th.num { text-align: center; white-space: nowrap; }
+    .visit-table td small.hint { display: block; font-size: .7rem; color: var(--ink-3); margin-top: 2px; white-space: normal; }
+    .visit-table tbody tr:last-child td { border-bottom: none; }
 @media (max-width: 400px) {
   .link-actions { flex-wrap: wrap; }
   .link-actions input { flex: 1 1 100%; }
