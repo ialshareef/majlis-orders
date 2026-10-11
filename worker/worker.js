@@ -173,9 +173,9 @@ async function route(request, env, url) {
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.49';
-// بصمة asalh-najd-1.0.49.apk — تُملأ بعد بناء CI (قبلها فارغة فيرفض التطبيق التنزيل)
+// بصمة asalh-najd-1.0.49.apk (إصدار GitHub v1.0.49، بناء CI الموقّع)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = '9fea3621dc08130d5f16146bafd0f2473e5593a8418a976dde2b516cf26bd5d5';
 const UPDATE_FALLBACK_NOTES = [
   'جديد: إحصاءات حركة الزوار في صفحة «عن التطبيق» (للمدير فقط)',
   'عدّ يومي للزيارات الفعلية + عدّاد نقراتك، بلا تخزين أي بيانات شخصية',
