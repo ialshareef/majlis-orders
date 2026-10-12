@@ -1,0 +1,206 @@
+/* ======================================================================
+   نظام الشرح والمساعدة — تنسيقات مشتركة (موظف + عميل + تجريبي)
+   مبنية على متغيرات المشروع الحالية فتتبع الوضع الليلي تلقائياً.
+   تدعم RTL (المشروع RTL أصلاً) وتعمل من عرض 320px حتى الشاشات الكبيرة.
+   ====================================================================== */
+
+/* منع تمرير الخلفية أثناء فتح نافذة الشرح/الدليل */
+html.hj-lock, html.hj-lock body { overflow: hidden; }
+
+/* --------------------------------- النافذة --------------------------------- */
+.hj-tour, .hj-manual {
+  position: fixed; inset: 0; z-index: 200;
+  background: var(--scrim);
+  display: flex; align-items: center; justify-content: center;
+  padding: 18px;
+  opacity: 0; visibility: hidden;
+  transition: opacity .2s var(--ease, ease), visibility .2s;
+}
+.hj-tour.show, .hj-manual.show { opacity: 1; visibility: visible; }
+
+.hj-tour-card, .hj-manual-card {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: var(--r-xl);
+  box-shadow: var(--shadow-lg, 0 18px 50px rgba(0, 0, 0, .28));
+  width: 100%;
+  max-width: 440px;
+  max-height: min(88vh, 820px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  display: flex; flex-direction: column;
+  transform: translateY(10px) scale(.985);
+  transition: transform .22s var(--ease, ease);
+}
+.hj-tour.show .hj-tour-card, .hj-manual.show .hj-manual-card { transform: none; }
+.hj-manual-card { max-width: 560px; }
+
+/* --------------------------------- الرأس --------------------------------- */
+.hj-tour-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 14px 14px 8px 20px;
+  padding-inline-start: 20px;
+  position: sticky; top: 0; z-index: 2;
+  background: var(--surface);
+  border-bottom: 1px solid var(--line-soft);
+}
+.hj-tour-head .hj-mtitle { margin: 0; font-size: 1.02rem; font-weight: 700; }
+
+.hj-dots { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; }
+.hj-dots i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--line-strong); display: block;
+  transition: width .2s var(--ease, ease), background .2s;
+}
+.hj-dots i.on { background: var(--accent); width: 18px; border-radius: 4px; }
+
+.hj-x {
+  flex: none;
+  width: 32px; height: 32px; border-radius: 50%;
+  border: 1px solid var(--line-soft); background: transparent;
+  color: var(--ink-3); font-size: 1.15rem; line-height: 1;
+  cursor: pointer; display: grid; place-items: center;
+}
+.hj-x:hover { background: var(--surface-2); color: var(--ink); }
+
+/* --------------------------------- المحتوى --------------------------------- */
+.hj-tour-body, .hj-manual-body {
+  padding: 16px 20px 4px;
+  display: grid; gap: 10px;
+  overflow: auto;
+}
+.hj-manual-body { padding-bottom: 20px; }
+
+.hj-h { margin: 0; font-size: 1.06rem; font-weight: 700; color: var(--ink); }
+.hj-p { margin: 0; font-size: .94rem; line-height: 1.85; color: var(--ink-2); }
+.hj-tip {
+  margin: 0; font-size: .85rem; line-height: 1.75; color: var(--ink-3);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+  border-inline-start: 3px solid var(--accent-line);
+  border-radius: var(--r); padding: 9px 12px;
+}
+.hj-minro {
+  margin: 0; padding: 12px 20px 0;
+  font-size: .88rem; color: var(--ink-3); line-height: 1.7;
+}
+
+/* --------------------------------- التبويبات (الدليل) --------------------------------- */
+.hj-tabs {
+  display: flex; gap: 6px; flex-wrap: wrap;
+  padding: 12px 20px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  position: sticky; top: 45px; z-index: 2; background: var(--surface);
+}
+.hj-tabs button {
+  border: 1px solid var(--line); background: var(--surface-2);
+  color: var(--ink-2); border-radius: 999px;
+  padding: 5px 12px; font-size: .8rem; cursor: pointer;
+  font-family: inherit;
+  transition: background .15s, color .15s;
+}
+.hj-tabs button:hover { background: var(--accent-soft); }
+.hj-tabs button.on {
+  background: var(--accent-fill); border-color: var(--accent-fill);
+  color: var(--on-accent, #FFF9F0); font-weight: 700;
+}
+
+/* --------------------------------- الأزرار --------------------------------- */
+.hj-tour-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 20px 10px;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 8px;
+}
+.hj-nav { display: flex; gap: 8px; }
+
+.hj-btn {
+  font-family: inherit; font-size: .88rem; cursor: pointer;
+  border-radius: var(--r); padding: 9px 16px; min-height: 40px;
+  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
+  transition: background .15s, opacity .15s;
+}
+.hj-btn:hover:not(:disabled) { background: var(--row-hover); }
+.hj-btn:disabled { opacity: .42; cursor: default; }
+.hj-btn.hj-ghost { background: transparent; border-color: transparent; color: var(--ink-3); }
+.hj-btn.hj-ghost:hover:not(:disabled) { background: var(--surface-2); color: var(--ink); }
+.hj-btn.hj-primary {
+  background: var(--accent-fill); border-color: var(--accent-fill);
+  color: var(--on-accent, #FFF9F0); font-weight: 700;
+}
+.hj-btn.hj-primary:hover:not(:disabled) { background: var(--accent-fill-hover); }
+
+/* تذييل الدليل: زر إعادة الشرح + إغلاق */
+.hj-manual-foot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--line-soft);
+  position: sticky; bottom: 0; background: var(--surface);
+}
+
+/* --------------------------------- خيار عدم الإظهار --------------------------------- */
+.hj-nofilter {
+  display: flex; align-items: center; gap: 8px;
+  padding: 0 20px 16px; margin: 0;
+  font-size: .82rem; color: var(--ink-3); cursor: pointer;
+}
+.hj-nofilter input { width: 17px; height: 17px; accent-color: var(--accent-fill); cursor: pointer; }
+
+/* --------------------------------- زر فتح الدليل --------------------------------- */
+/* زر مساعد صغير في بارك البوابة / القائمة الجانبية — يتلوّن حسب الواجهة.
+   الحد الأدنى 44×44 مطابق لمعيار مساحة اللمس في المشروع (اختبار touch-44). */
+.hj-help-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  border: 1px solid var(--line-soft); background: var(--surface-2);
+  color: var(--ink-2); border-radius: var(--r);
+  padding: 6px 14px; font-size: .8rem; cursor: pointer;
+  font-family: inherit; min-height: 44px; min-width: 44px;
+  transition: background .15s, color .15s;
+}
+.hj-help-btn:hover { background: var(--accent-soft); color: var(--ink); }
+.hj-help-btn svg { width: 16px; height: 16px; }
+
+/* ============================================================
+   تكيّف مع الشاشات الصغيرة (320 / 360 / 430)
+   ============================================================ */
+@media (max-width: 380px) {
+  .hj-tour, .hj-manual { padding: 0; align-items: flex-end; }
+  .hj-tour-card, .hj-manual-card {
+    max-width: none; border-radius: var(--r-xl) var(--r-xl) 0 0;
+    max-height: 92vh; padding-bottom: env(safe-area-inset-bottom, 0);
+  }
+  .hj-h { font-size: 1rem; }
+  .hj-p { font-size: .9rem; line-height: 1.75; }
+  .hj-tour-foot { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
+  .hj-nav { justify-content: space-between; }
+  .hj-nav .hj-btn { flex: 1; }
+  .hj-tour-foot .hj-btn.hj-ghost[data-hj="skip"] { text-align: center; }
+  .hj-tabs { top: 44px; padding: 10px 16px 8px; }
+  .hj-tabs button { font-size: .76rem; padding: 5px 10px; }
+  .hj-tour-body, .hj-manual-body { padding: 14px 16px 4px; }
+  .hj-nofilter { padding: 0 16px 14px; }
+  .hj-tour-head { padding-inline-start: 16px; }
+  .hj-manual-foot { padding: 10px 16px 14px; }
+}
+
+@media (min-width: 381px) and (max-width: 520px) {
+  .hj-tour, .hj-manual { padding: 14px; }
+  .hj-p { font-size: .92rem; }
+}
+
+/* على الشاشات الكبيرة: شريط علوي ثابت للدليل مع تخطيط عمودي مريح */
+@media (min-width: 900px) {
+  .hj-tour-card { max-width: 460px; }
+  .hj-manual-card { max-width: 620px; }
+  .hj-p { font-size: .96rem; }
+}
+
+/* تقليل الحركة لمن يفضّل ذلك */
+@media (prefers-reduced-motion: reduce) {
+  .hj-tour, .hj-manual, .hj-tour-card, .hj-manual-card, .hj-dots i, .hj-btn { transition: none; }
+}
+
+/* الطباعة: لا نطبع نوافذ الشرح */
+@media print {
+  .hj-tour, .hj-manual { display: none !important; }
+}

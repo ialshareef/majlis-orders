@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+<head><meta charset="utf-8"><title>help responsive (iframe)</title>
+<style>
+ body{margin:0;font:12px monospace}
+ #out{padding:4px;background:#fff;position:sticky;top:0;z-index:10;border-bottom:2px solid #000}
+ iframe{border:1px solid #888;display:block;margin:6px auto;height:640px}
+</style>
+</head>
+<body>
+<div id="out">…</div>
+<div id="frames"></div>
+<script>
+/* يقيس نافذة الشرح داخل iframe بعرض viewport حقيقي لكل مقاس
+   (320 / 360 / 430 / 1280) — لأن headless لا يحترم --window-size. */
+const SIZES=[320,360,430,1280];
+const results={};
+let done=0;
+
+function frameReady(f){
+  return new Promise((res)=>{
+    f.onload=()=>res();
+  });
+}
+
+function measure(win,w){
+  const T={pass:0,fail:0,lines:[]};
+  const t=(n,ok,i)=>{ok?T.pass++:T.fail++;T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));};
+  const d=win.document;
+  try{
+    const W=win.innerWidth, H=win.innerHeight;
+    const card=d.querySelector('.hj-tour-card');
+    const ov=d.querySelector('.hj-tour');
+    t('tour visible', !!(ov&&ov.classList.contains('show')));
+    if(!card){ t('card exists',false); return T; }
+    const cr=card.getBoundingClientRect();
+    t('no horizontal overflow', d.documentElement.scrollWidth<=W+2, 'scrollW='+d.documentElement.scrollWidth+' vp'+W);
+    t('card within width', cr.left>=-1&&cr.right<=W+1, 'L'+Math.round(cr.left)+' R'+Math.round(cr.right)+' w'+Math.round(cr.width));
+    t('card has height', cr.height>120, Math.round(cr.height)+'px');
+    t('card fits vertically', cr.top>=-1&&cr.bottom<=H+2, 'T'+Math.round(cr.top)+' B'+Math.round(cr.bottom)+' vp'+H);
+    t('card not absurdly wide', cr.width<=Math.min(W,520), 'w='+Math.round(cr.width)+' max='+Math.min(W,520));
+    const p=d.querySelector('.hj-p');
+    const st=win.getComputedStyle(p);
+    const fs=parseFloat(st.fontSize), lh=parseFloat(st.lineHeight);
+    t('font >=13px', fs>=13, fs+'px');
+    t('line-height >=1.5', lh>=fs*1.5, lh+'/px');
+    // عناصر داخل البطاقة
+    let outside=[];
+    d.querySelectorAll('.hj-tour-card *').forEach(el=>{
+      const r=el.getBoundingClientRect();
+      if(r.width>0 && (r.right>cr.right+1.5 || r.left<cr.left-1.5)) outside.push(el.className||el.tagName);
+    });
+    t('no element escapes card', outside.length===0, outside.slice(0,3).join(','));
+    // أزرار قابلة للضغط
+    const btns=d.querySelectorAll('.hj-tour [data-hj="next"], .hj-tour [data-hj="prev"], .hj-tour [data-hj="skip"]');
+    let small=[];
+    btns.forEach(b=>{const r=b.getBoundingClientRect(); if(r.height<38||r.width<44) small.push((b.getAttribute('data-hj'))+':'+Math.round(r.width)+'x'+Math.round(r.height));});
+    t('buttons >= 38x44', small.length===0, small.join(' '));
+    const nf=d.querySelector('.hj-nofilter').getBoundingClientRect();
+    t('no-again row visible', nf.height>=16&&nf.width>100, Math.round(nf.width)+'x'+Math.round(nf.height));
+    // الدليل
+    d.querySelector('.hj-tour [data-hj="close"]').click();
+    d.getElementById('pHelp').click();
+    const man=d.querySelector('.hj-manual');
+    t('manual visible', !!(man&&man.classList.contains('show')));
+    const mc=d.querySelector('.hj-manual-card').getBoundingClientRect();
+    t('manual within width', mc.left>=-1&&mc.right<=W+1, 'L'+Math.round(mc.left)+' R'+Math.round(mc.right));
+    t('manual no h-overflow', d.documentElement.scrollWidth<=W+2, 'scrollW='+d.documentElement.scrollWidth);
+    let mo=[];
+    d.querySelectorAll('.hj-manual-card *').forEach(el=>{
+      const r=el.getBoundingClientRect();
+      if(r.width>0 && (r.right>mc.right+1.5||r.left<mc.left-1.5)) mo.push(el.className||el.tagName);
+    });
+    t('no element escapes manual', mo.length===0, mo.slice(0,3).join(','));
+    const tb=d.querySelectorAll('.hj-tabs button');
+    t('tabs exist', tb.length>0, tb.length+' tabs');
+    let tsmall=0; Array.prototype.forEach.call(tb, x=>{ if(x.getBoundingClientRect().height<26) tsmall++; });
+    t('tabs tappable (>=26px)', tsmall===0, tsmall+' too small');
+    const mt=d.querySelector('.hj-mtitle').textContent;
+    t('arabic intact', /[\u0600-\u06FF]/.test(mt)&&!/\uFFFD|\u00C2/.test(mt), mt);
+  }catch(e){ t('measure completed', false, e.message); }
+  return T;
+}
+
+(async function(){
+  const host=document.getElementById('frames');
+  const out=document.getElementById('out');
+  let total={pass:0,fail:0,lines:[]};
+  for(const w of SIZES){
+    const f=document.createElement('iframe');
+    f.style.width=w+'px';
+    f.src='/test/help-responsive-fixture.html';
+    host.appendChild(f);
+    await frameReady(f);
+    const win=f.contentWindow, d=f.contentDocument;
+    // امسح تفضيل الشرح داخل الإطار ثم شغّل (مع ربط زر الدليل)
+    win.localStorage.clear();
+    win.MajlisHelp.init({key:'resp', manualBtn:'#pHelp'});
+    await new Promise(r=>setTimeout(r,300));
+    const T=measure(win,w);
+    total.pass+=T.pass; total.fail+=T.fail;
+    total.lines.push('===== عرض '+w+'px =====');
+    T.lines.forEach(l=>total.lines.push('  '+l));
+  }
+  out.textContent='PASS='+total.pass+'  FAIL='+total.fail+'\n\n'+total.lines.join('\n');
+  document.title='DONE p'+total.pass+'f'+total.fail;
+})();
+</script>
+</body></html>

@@ -172,13 +172,15 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.49';
-// بصمة asalh-najd-1.0.49.apk (إصدار GitHub v1.0.49، بناء CI الموقّع)
+const UPDATE_FALLBACK_VERSION = '1.0.50';
+// بصمة asalh-najd-1.0.50.apk — تُملأ بعد بناء CI (قبلها فارغة فيرفض التطبيق التنزيل)
 // ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '9fea3621dc08130d5f16146bafd0f2473e5593a8418a976dde2b516cf26bd5d5';
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'جديد: إحصاءات حركة الزوار في صفحة «عن التطبيق» (للمدير فقط)',
-  'عدّ يومي للزيارات الفعلية + عدّاد نقراتك، بلا تخزين أي بيانات شخصية',
+  'إحصاءات الزوار: اليوم وآخر ٧ و٣٠ يومًا، مع تمييز الزائر الفريد',
+  'أدوات التكبير أسفل المخطط، ورسوم أوضح لأنواع الجلسات',
+  'قائمة إكسسوارات مبسّطة مع لوحة إجراءات وقسم «الإكسسوارات المضافة»',
+  'نظام شرح ودليل استخدام لكل واجهة (عميل/موظف/مندوب)',
 ];
 
 function versionCodeOfName(v) {
@@ -1016,44 +1018,111 @@ const VISIT_LINKS = {
 // روبوتات/مكشّفون شائعون لا تُعدّ زياراتهم (تفقد الدقة إن استُثنوا، فلا تبالَغ)
 const BOT_RE = /bot|crawler|spider|crawling|slurp|bingpreview|facebookexternalhit|whatsapp|telegrambot|discordbot|curl\/|wget|python-requests|headlesschrome|lighthouse|uptime|monitor|preview|scrapy|semrush|ahrefs|petalbot|applebot|ia_archiver|semrushbot/i;
 
-function visitDayKey(env) {
-  // يوم محلي (الرياض UTC+3) لا UTC: العدّ يتوافق مع يوم صاحب المحل
-  const off = Number(env && env.VISIT_TZ_OFFSET_MIN) || 180;
-  return new Date(Date.now() + off * 60000).toISOString().slice(0, 10);
+/* المنطقة الزمنية: يوم الرياض (UTC+3). كل حدود الفترات تُحسب بتوقيت المحل،
+   لا UTC — وإلا انزلق حدّ «اليوم» و«آخر ٧ أيام» بساعة أو ثلث يوم. */
+function visitTzOffset(env) { return Number(env && env.VISIT_TZ_OFFSET_MIN) || 180; }
+
+function visitDayKey(env, ts) {
+  return new Date((ts || Date.now()) + visitTzOffset(env) * 60000).toISOString().slice(0, 10);
+}
+/** تاريخ اليوم قبل N يوماً بتوقيت المحل — يُستخدم لحدود الفترات */
+function visitDayOffset(env, daysAgo) {
+  const t = Date.now() - (Number(daysAgo) || 0) * 86400000;
+  return visitDayKey(env, t);
+}
+/* بصمة زائر مجزّأة: تُبنى من IP + User-Agent + اليوم ثم تُجزّأ بـ SHA-256.
+   لا يُخزَّن أي عنوان IP ولا مُعرّف جهاز — بصمة يومية فقط، تنتهي صلاحيتها مع اليوم،
+   فلا يمكن التعرّف على شخص من سجل سابق. */
+async function visitorFingerprint(request, day) {
+  const ip = request.headers.get('cf-connecting-ip') || request.headers.get('x-forwarded-for') || '';
+  const ua = request.headers.get('user-agent') || '';
+  const salt = 'majlis-visit-v1|' + day + '|' + ip + '|' + ua;
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(salt));
+  return Array.from(new Uint8Array(buf)).slice(0, 16).map((b) => b.toString(16).padStart(2, '0')).join('');
 }
 
 /** تسجيل زيارة رابط (تجاهل الروبوتات؛ الأخطاء لا تُفشل تقديم الصفحة) */
 async function recordVisit(env, request, link) {
   try {
     if (!env.DB || !VISIT_LINKS[link]) return;
-    // ضمان الجدول محلياً: لا نعتمد على ensureSeed لأنه قد يتوقف عند خطأ غير متعلق
-    await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visits (day TEXT NOT NULL, link TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, link))').run().catch(ignoreExistsObject);
+    // ضمان الجداول محلياً: لا نعتمد على ensureSeed لأنه قد يتوقف عند خطأ غير متعلق
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visits (day TEXT NOT NULL, link TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, link))').run().catch(ignoreExistsObject);
+  /* زوار فريدون: بصمة مجزّأة لكل (يوم، رابط) — تميّز «زائر واحد مرتين» عن «زيارتين».
+     لا تُخزَّن عناوين IP ولا مُعرّفات الأجهزة؛ البصمة مشتقة من اليوم فينتهي أثرها مع اليوم.
+     يُحذف ما قبل ٤٠ يوماً عند كل تسجيل فلا ينمو الجدول بلا سقف. */
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visitors (day TEXT NOT NULL, link TEXT NOT NULL, fp TEXT NOT NULL, PRIMARY KEY (day, link, fp))').run().catch(ignoreExistsObject);
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visitors (day TEXT NOT NULL, link TEXT NOT NULL, fp TEXT NOT NULL, PRIMARY KEY (day, link, fp))').run().catch(ignoreExistsObject);
     const ua = (request.headers.get('user-agent') || '');
     if (!ua || BOT_RE.test(ua)) return;
-    // لا يُحتسب الطلب البرمجي المجرّد (بلا متصفح) كزيارة بشرية
-    // نمط upsert محمول: قراءة الزيادة ثم INSERT OR REPLACE (بدل ON CONFLICT المدعوم في D1
-    // فقط) — ينتج نفس السلوك ويبقى آمناً إن نُفِّذ على محرك أقدم
     const day = visitDayKey(env);
+    // زائر فريد: بصمة اليوم — تحديث الصفحة لا يُنشئ زائراً جديداً لنفس الجهاز
+    const fp = await visitorFingerprint(request, day);
+    await env.DB.prepare('INSERT OR IGNORE INTO link_visitors (day, link, fp) VALUES (?, ?, ?)').bind(day, link, fp).run();
+    // نمط upsert محمول: قراءة الزيادة ثم INSERT OR REPLACE (بدل ON CONFLICT المدعوم في D1 فقط)
     const cur = await env.DB.prepare('SELECT n FROM link_visits WHERE day = ? AND link = ?').bind(day, link).first();
     const next = (Number(cur && cur.n) || 0) + 1;
     await env.DB.prepare('INSERT OR REPLACE INTO link_visits (day, link, n) VALUES (?, ?, ?)').bind(day, link, next).run();
+    // تنظيف دوري: بصمة اليوم تكفي للفترات المطلوبة فلا ينمو الجدول بلا سقف
+    await env.DB.prepare('DELETE FROM link_visitors WHERE day < ?').bind(visitDayOffset(env, 40)).run();
   } catch (e) { console.warn('recordVisit failed:', e && e.message); /* إحصاء لا يعطّل الخدمة */ }
 }
 
 /** قراءة الإحصاءات للمدير: إجمالي لكل رابط + تفصيل آخر ٣٠ يوماً */
+/** إحصاءات الروابط للمدير — ثلاثة نطاقات زمنية واضحة، كلها بتوقيت المحل:
+    اليوم / آخر ٧ أيام / آخر ٣٠ يوماً. لكل نطاق رقمان مستقلان:
+    «زيارات» (كل فتح للصفحة) و«زوار» (بصمة جهاز واحدة لا تُحتسب مرتين في اليوم).
+    لا أرقام وهمية: كل قيمة مجموع فعلي من السجلات، وغياب البيانات يعطي صفراً. */
+/** إحصاءات الروابط للمدير — ثلاثة نطاقات زمنية واضحة، كلها بتوقيت المحل:
+    اليوم / آخر ٧ أيام / آخر ٣٠ يوماً. لكل نطاق رقمان مستقلان:
+    «زيارات» (كل فتح للصفحة) و«زوار» (بصمة جهاز واحدة لا تُحتسب مرتين في اليوم).
+    لا أرقام وهمية: كل قيمة مجموع فعلي من السجلات وغياب البيانات = صفر. */
 async function linkVisits(env) {
-  const totals = await env.DB.prepare('SELECT link, SUM(n) AS total FROM link_visits GROUP BY link').all();
-  const days = await env.DB.prepare('SELECT day, link, SUM(n) AS n FROM link_visits WHERE day >= ? GROUP BY day, link')
-    .bind(new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10)).all();
+  const today = visitDayKey(env);
+  const d7 = visitDayOffset(env, 6);    // اليوم + ٦ أيام سابقة = ٧ أيام تقويمية
+  const d30 = visitDayOffset(env, 29);  // اليوم + ٢٩ يوماً سابقاً = ٣٠ يوماً تقويمية
+  const vis = await env.DB.prepare(
+    `SELECT link,
+       COALESCE(SUM(CASE WHEN day = ? THEN n ELSE 0 END), 0) AS today_n,
+       COALESCE(SUM(CASE WHEN day >= ? THEN n ELSE 0 END), 0) AS d7_n,
+       COALESCE(SUM(CASE WHEN day >= ? THEN n ELSE 0 END), 0) AS d30_n,
+       COALESCE(SUM(n), 0) AS all_n
+     FROM link_visits GROUP BY link`).bind(today, d7, d30).all();
+  const uq = await env.DB.prepare(
+    `SELECT link,
+       COALESCE(SUM(CASE WHEN day = ? THEN 1 ELSE 0 END), 0) AS today_u,
+       COALESCE(SUM(CASE WHEN day >= ? THEN 1 ELSE 0 END), 0) AS d7_u,
+       COALESCE(SUM(CASE WHEN day >= ? THEN 1 ELSE 0 END), 0) AS d30_u
+     FROM link_visitors WHERE day >= ? GROUP BY link`).bind(today, d7, d30, d30).all();
+  const days = await env.DB.prepare('SELECT day, link, SUM(n) AS n FROM link_visits WHERE day >= ? GROUP BY day, link').bind(d30).all();
+  const blank = () => ({ today: { visits: 0, visitors: 0 }, d7: { visits: 0, visitors: 0 }, d30: { visits: 0, visitors: 0 }, all: 0, days: [] });
   const byLink = {};
-  for (const t of (totals.results || [])) byLink[t.link] = { total: Number(t.total) || 0, days: [] };
-  for (const d of (days.results || [])) {
-    const k = byLink[d.link] || (byLink[d.link] = { total: 0, days: [] });
-    k.days.push({ day: d.day, n: Number(d.n) || 0 });
+  for (const r of (vis.results || [])) {
+    const k = byLink[r.link] || (byLink[r.link] = blank());
+    k.today.visits = Number(r.today_n) || 0;
+    k.d7.visits = Number(r.d7_n) || 0;
+    k.d30.visits = Number(r.d30_n) || 0;
+    k.all = Number(r.all_n) || 0;
+  }
+  for (const r of (uq.results || [])) {
+    const k = byLink[r.link] || (byLink[r.link] = blank());
+    k.today.visitors = Number(r.today_u) || 0;
+    k.d7.visitors = Number(r.d7_u) || 0;
+    k.d30.visitors = Number(r.d30_u) || 0;
+  }
+  for (const r of (days.results || [])) {
+    const k = byLink[r.link] || (byLink[r.link] = blank());
+    k.days.push({ day: r.day, n: Number(r.n) || 0 });
   }
   for (const k of Object.keys(byLink)) byLink[k].days.sort((a, b) => (a.day < b.day ? -1 : 1));
-  return { ok: true, links: VISIT_LINKS, byLink };
+  return {
+    ok: true, links: VISIT_LINKS, byLink, today,
+    tzOffsetMin: visitTzOffset(env),
+    periods: { today: 'اليوم', d7: 'آخر ٧ أيام', d30: 'آخر ٣٠ يوماً' },
+    note: 'الزيارات = كل فتح للصفحة. الزوار = بصمة جهاز واحدة في اليوم (لا تُحتسب مرتين). الروبوتات والطلبات بلا متصفح مستبعدة.',
+  };
 }
+
+
 
 async function listUsers(env) {
   const r = await env.DB.prepare('SELECT id, username, name, role, active, created_at, parent_id, rate, parent_rate FROM users ORDER BY created_at').all();

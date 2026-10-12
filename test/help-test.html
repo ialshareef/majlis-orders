@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>help system test</title>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:9999;overflow:auto;font:12px/1.7 monospace;padding:10px;direction:ltr;text-align:left}</style>
+</head>
+<body>
+<pre id="rep">…</pre>
+<button id="fakeHelpBtn" type="button">دليل الاستخدام</button>
+<script src="/js/help.js"></script>
+<script>
+/* اختبار نظام الشرح والمساعدة — تشغيل فعلي للوحدة في المتصفح:
+   - محرك الشرح: فتح، التالي/السابق، نقاط التقدم، تخطّي، إغلاق، تعديل النص
+   - التفضيل: يظهر مرة واحدة، ولا يعود بعد التخطي/الإغلاق
+   - الدليل: كل الأدوار، التبويبات، إعادة الشرح
+   - العزل: لا مساس بمنطق التطبيق
+   */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
+const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
+
+(async function(){
+  try{
+    localStorage.clear();
+    const H=window.MajlisHelp;
+    t('module exposed (MajlisHelp)', !!H);
+    t('API shape', !!(H.init && H.manualOpen && H.CONTENT && H.Tour && H.Manual), Object.keys(H||{}).join(','));
+    t('version', H.version==='1.0', 'v'+H.version);
+
+    /* ---------- المحتوى ---------- */
+    const C=H.CONTENT;
+    t('content: customer/staff/mandoub/customer_exp', !!(C.customer&&C.staff&&C.mandoub&&C.customer_exp), Object.keys(C).join(','));
+    for(const k of ['customer','staff','mandoub','customer_exp']){
+      const c=C[k];
+      t('  '+k+': title+intro+steps', !!(c&&c.title&&c.intro&&Array.isArray(c.steps)&&c.steps.length>=4), c?c.steps.length+' steps':'-');
+      const bad=c.steps.filter(s=>!(s&&s.h&&s.p));
+      t('  '+k+': every step has h & p', bad.length===0, bad.length+' bad');
+    }
+    // محتوى دليل العميل يغطي خطوات التصميم الفعلية
+    const cust=C.customer.steps.map(s=>s.h).join(' | ');
+    for(const w of ['الغرفة','المعمارية','المجلس','الأثاث','المراجعة']) {
+      t('  customer covers: '+w, cust.indexOf(w)>=0);
+    }
+    // أدوار مختلفة = محتوى مختلف
+    t('staff !== mandoub content', JSON.stringify(C.staff.steps)!==JSON.stringify(C.mandoub.steps));
+    t('customer !== staff content', JSON.stringify(C.customer.steps)!==JSON.stringify(C.staff.steps));
+
+    /* ---------- 1) يظهر مرة واحدة ---------- */
+    H.init({key:'t1', manualBtn:'#fakeHelpBtn'});
+    await wait(120);
+    let tour=document.querySelector('.hj-tour');
+    t('tour shown on first use', !!tour && tour.classList.contains('show'));
+    t('  lock scroll on open', document.documentElement.classList.contains('hj-lock'));
+    const steps=H.CONTENT.t1?0:C.customer.steps.length;
+    const body=document.querySelector('.hj-tour-body');
+    t('  step content rendered', !!(body && body.textContent.trim().length>10), (body&&body.textContent.trim().slice(0,28))||'');
+    t('  dots rendered', document.querySelectorAll('.hj-dots i').length===C.customer.steps.length);
+    t('  prev disabled at first step', document.querySelector('[data-hj="prev"]').disabled===true);
+    t('  next says التالي', document.querySelector('[data-hj="next"]').textContent.trim()==='التالي');
+
+    /* ---------- 2) التالي / السابق ---------- */
+    const h0=body.textContent;
+    document.querySelector('[data-hj="next"]').click(); await wait(30);
+    t('next advances', body.textContent!==h0);
+    t('  prev now enabled', document.querySelector('[data-hj="prev"]').disabled===false);
+    t('  dot 2 active', document.querySelectorAll('.hj-dots i.on')[0]===document.querySelectorAll('.hj-dots i')[1]);
+    document.querySelector('[data-hj="prev"]').click(); await wait(30);
+    t('prev goes back', body.textContent===h0);
+    t('  prev disabled again', document.querySelector('[data-hj="prev"]').disabled===true);
+
+    /* ---------- 3) عدم الإظهار checkbox ---------- */
+    const nf=document.querySelector('[data-hj="nofilter"]');
+    t('no-again checkbox exists', !!nf && nf.type==='checkbox');
+
+    /* ---------- 4) التخطي يحفظ التفضيل ---------- */
+    document.querySelector('[data-hj="skip"]').click(); await wait(60);
+    t('tour hidden after skip', !document.querySelector('.hj-tour').classList.contains('show'));
+    t('  lock released', !document.documentElement.classList.contains('hj-lock'));
+    t('  preference saved', seen('t1')==='1', 'val='+seen('t1'));
+
+    /* ---------- 5) لا يعود بعد التخطي ---------- */
+    H.init({key:'t1'});
+    await wait(120);
+    const tour2=document.querySelector('.hj-tour');
+    t('does NOT reappear after skip', !tour2.classList.contains('show'));
+
+    /* ---------- 6) الإغلاق بـ x لا يترك أثراً غير مرغوب ---------- */
+    H.init({key:'t2'}); await wait(120);
+    document.querySelector('.hj-tour [data-hj="close"]').click(); await wait(40);
+    t('close marks seen (won\'t return)', seen('t2')==='1', 'val='+seen('t2'));
+
+    /* ---------- 7) الدليل الدائم يفتح من الزر ---------- */
+    document.getElementById('fakeHelpBtn').click(); await wait(60);
+    const man=document.querySelector('.hj-manual');
+    t('manual opens from button', !!man && man.classList.contains('show'));
+    t('  manual title set', document.querySelector('.hj-mtitle').textContent.trim().length>3, document.querySelector('.hj-mtitle').textContent);
+    const tabs=document.querySelectorAll('.hj-tabs button');
+    t('  one tab per step', tabs.length===C.customer.steps.length, tabs.length+' tabs');
+    t('  first tab active', document.querySelectorAll('.hj-tabs button.on').length===1);
+    const mb=document.querySelector('.hj-manual-body');
+    const first=mb.textContent;
+    tabs[2].click(); await wait(30);
+    t('  tab switches content', mb.textContent!==first);
+    t('  switched tab active', document.querySelectorAll('.hj-tabs button.on')[0]===tabs[2]);
+    // الأقسام بلا أرقام في التبويب (نظافة)
+    t('  tab labels cleaned (no digits prefix)', !/^\s*[٠-٩0-9]+[.\-]/.test(tabs[0].textContent), '"'+tabs[0].textContent.trim()+'"');
+    // إعادة الشرح من الدليل
+    document.querySelector('.hj-manual [data-hm="replay"]').click(); await wait(60);
+    t('  replay opens tour', document.querySelector('.hj-tour').classList.contains('show'));
+    document.querySelector('.hj-tour [data-hj="close"]').click(); await wait(40);
+    t('  tour closed after replay', !document.querySelector('.hj-tour').classList.contains('show'));
+    document.querySelector('.hj-manual [data-hm="close"]').click(); await wait(40);
+    t('manual close works', !document.querySelector('.hj-manual').classList.contains('show'));
+    t('  lock released after manual close', !document.documentElement.classList.contains('hj-lock'));
+
+    /* ---------- 8) أدوار الواجهة:Manual ---------- */
+    for(const k of ['staff','mandoub']){
+      const m=H.manualOpen(k);
+      await wait(30);
+      const ok=document.querySelector('.hj-manual').classList.contains('show');
+      const title=document.querySelector('.hj-mtitle').textContent;
+      const tabsN=document.querySelectorAll('.hj-tabs button').length;
+      t('manual for '+k+' opens with its own title', ok && title===H.CONTENT[k].title, 'title="'+title+'" steps='+tabsN);
+      t('  '+k+' tabs match its steps', tabsN===H.CONTENT[k].steps.length);
+      m.close();
+    }
+
+    /* ---------- 9) نافذة واحدة فقط في DOM مهما تكرر init ---------- */
+    document.querySelector('.hj-tour [data-hj="close"]').click(); await wait(40);
+    H.init({key:'t9', auto:false}); await wait(60);
+    t('auto:false does not open', !document.querySelector('.hj-tour').classList.contains('show'));
+    H.init({key:'t10'}); await wait(80);
+    t('only ONE tour node in DOM', document.querySelectorAll('.hj-tour').length===1, document.querySelectorAll('.hj-tour').length+' nodes');
+    t('only ONE manual node in DOM', document.querySelectorAll('.hj-manual').length===1, document.querySelectorAll('.hj-manual').length+' nodes');
+    t('no duplicate cards inside', document.querySelectorAll('.hj-tour-card').length===1);
+    t('auto:true opens for unseen key', document.querySelector('.hj-tour').classList.contains('show'));
+
+    /* ---------- 10) لا أسرار في المصدر ---------- */
+    const src=await (await fetch('/js/help.js')).text();
+    t('no token/secret strings', !/api[_-]?key|secret|password|bearer\s|t\.cf-token/i.test(src));
+    t('no DB writes (localStorage only)', !/indexedDB|\/api\/.*POST|fetch\s*\(\s*['"]\/api/i.test(src));
+
+    /* ---------- 11) نص عربي سليم ---------- */
+    const ar=(src.match(/[\u0600-\u06FF]/g)||[]).length;
+    t('has arabic content', ar>500, ar+' chars');
+    t('no mojibake markers', !/\u00C2|\u00D8[\u0080-\u00BF]{2}|\uFFFD/.test(src));
+  }catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+  flush();
+})();
+</script>
+</body></html>

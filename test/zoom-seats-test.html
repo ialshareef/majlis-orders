@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>zoom + seats test</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>
+ body{margin:0;font:11px monospace}
+ #out{padding:6px;background:#fff;position:sticky;top:0;z-index:9999;border-bottom:2px solid #000;max-height:40vh;overflow:auto}
+ iframe{border:1px solid #999;display:block;margin:4px auto}
+</style>
+</head>
+<body>
+<div id="out">…</div><div id="frames"></div>
+<script>
+/* يفحص في iframe بعرض حقيقي (320/360/430/1280):
+   1) شريط التقريب أسفل المخطط وليس طبقة فوقه (لا absolute، ولا تقاطع هندسي)
+   2) لا عناصر من شريط التقريب تتجاوز حدود المخطط
+   3) أنواع الجلسات: ٤ أنواع بأسماء فريدة ورسم لكل نوع + اسم تحت الأيقونة */
+const SIZES=[320,360,430,1280];
+let pass=0,fail=0,lines=[];
+function t(n,ok,i){ok?pass++:fail++;lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+
+function mk(html,css){
+  return '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">'
+    +'<link rel="stylesheet" href="/css/style.css">'
+    +'<link rel="stylesheet" href="/css/portal-expanded.css">'
+    +'<style>'+css+'</style></head><body>'+html+'</body></html>';
+}
+
+// نسخة مصغّرة من بنية الصفحة الحقيقية: مخطط + شريط التقريب
+const MINI = `
+<div class="portal"><main id="pDesign" class="p-view">
+  <header class="p-bar"><b>تصميم المجلس</b></header>
+  <div class="p-canvas-col">
+    <div class="canvas-wrap p-canvas"><canvas id="c1" width="300" height="200"></canvas></div>
+    <div class="p-zoombar" role="group">
+      <button type="button" class="btn" id="z1">تصغير −</button>
+      <button type="button" class="btn" id="z2">ملاءمة</button>
+      <button type="button" class="btn" id="z3">تكبير +</button>
+    </div>
+  </div>
+</main></div>
+<div class="px-canvas-col">
+  <div class="canvas-wrap px-canvas"><canvas id="c2" width="300" height="200"></canvas></div>
+  <div class="px-zoombar" role="group">
+    <button type="button" class="icon-btn" id="x1">−</button>
+    <button type="button" class="icon-btn" id="x2">ملاءمة</button>
+    <button type="button" class="icon-btn" id="x3">+</button>
+  </div>
+</div>`;
+
+const SEATS = `
+<div class="px-canvas-col"><div class="px-panel">
+  <div class="px-seats" role="group">
+    ${['floor','sofa','arabic','raised'].map(k=>`<button type="button" class="px-seat" data-seat="${k}">
+      <span class="px-seat-art" aria-hidden="true"><svg viewBox="0 0 64 40">${
+        {floor:'<rect x="4" y="28" width="56" height="6" rx="2"/><rect x="9" y="23" width="46" height="5" rx="2"/><rect x="16" y="33" width="8" height="3" rx="1.5"/><rect x="40" y="33" width="8" height="3" rx="1.5"/>',
+         sofa:'<path d="M11 27v-9a3 3 0 0 1 3-3h36a3 3 0 0 1 3 3v9z"/><path d="M6 27a4 4 0 0 1 4-3h44a4 4 0 0 1 4 3v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/><path d="M22 24v10M42 24v10"/>',
+         arabic:'<rect x="7" y="26" width="18" height="7" rx="2"/><rect x="4" y="14" width="6" height="20" rx="2"/><rect x="39" y="26" width="18" height="7" rx="2"/><rect x="27" y="23" width="10" height="5" rx="1.5"/><rect x="31.5" y="28" width="1.6" height="7"/>',
+         raised:'<rect x="8" y="22" width="48" height="7" rx="2"/><rect x="12" y="29" width="40" height="7" rx="2"/><rect x="6" y="13" width="9" height="9" rx="2"/><rect x="49" y="13" width="9" height="9" rx="2"/><rect x="15" y="16" width="34" height="3" rx="1.5"/>'}[k]
+      }</svg></span>
+      <span>${{floor:'جلسة أرضية',sofa:'جلسة كنب',arabic:'جلسة عربية',raised:'جلسة مرتفعة'}[k]}</span>
+      <small>${k==='floor'?'مقاعد أرضية مباشرة بلا كنب — تناسب المجالس المفتوحة.':k==='sofa'?'مقاعد مرتفعة مع مسند وظهر.':k==='arabic'?'مقاعد أرضية مع مسند جانبي وطاولة وسط.':'دكان مرتفع مع مقاعد على الجانبين.'}</small>
+    </button>`).join('')}
+  </div>
+</div></div>`;
+
+(async function(){
+  const out=document.getElementById('out'), host=document.getElementById('frames');
+  const pxr=await (await fetch('/js/portal-expanded.js')).text();
+  const ART=pxr.match(/var SEAT_ART = \{[\s\S]*?\r\n  \};/);
+  for(const w of SIZES){
+    const f=document.createElement('iframe');
+    f.style.width=w+'px'; f.height='900px';
+    const doc='<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><link rel="stylesheet" href="/css/style.css"><link rel="stylesheet" href="/css/portal-expanded.css"></head><body>'+MINI+SEATS+'</body></html>';
+    f.srcdoc=doc; host.appendChild(f);
+    await new Promise(r=>{f.onload=r;});
+    const d=f.contentDocument, win=f.contentWindow, W=f.contentWindow.innerWidth;
+    lines.push('===== عرض '+w+'px =====');
+
+    /* 1) شريط التقريب: ليس absolute */
+    for(const sel of ['.p-zoombar','.px-zoombar']){
+      const bar=d.querySelector(sel);
+      if(!bar){ t(sel+' موجود',false); continue; }
+      const cs=win.getComputedStyle(bar);
+      t(sel+' ليس absolute (في التدفق)', cs.position!=='absolute'&&cs.position!=='fixed', 'position='+cs.position);
+      t(sel+' مرئي', cs.display!=='none'&&bar.getBoundingClientRect().height>0, 'display='+cs.display+' h='+Math.round(bar.getBoundingClientRect().height));
+    }
+
+    /* 2) لا تقاطع هندسي بين الشريط والمخطط */
+    for(const [bar,can] of [['.p-zoombar','.p-canvas'],['.px-zoombar','.px-canvas']]){
+      const b=d.querySelector(bar), c=d.querySelector(can);
+      if(!b||!c){ continue; }
+      const br=b.getBoundingClientRect(), cr=c.getBoundingClientRect();
+      const overlap = !(br.bottom<=cr.top+1 || br.top>=cr.bottom-1);
+      t(bar+' لا يتقاطع مع المخطط', !overlap, 'bar '+Math.round(br.top)+'-'+Math.round(br.bottom)+' vs canvas '+Math.round(cr.top)+'-'+Math.round(cr.bottom));
+      t(bar+' أسفل المخطط فعلاً', br.top>=cr.bottom-1, 'top='+Math.round(br.top)+' >= bottom='+Math.round(cr.bottom));
+      t(bar+' داخل العرض', br.left>=-1&&br.right<=W+1, 'L'+Math.round(br.left)+' R'+Math.round(br.right)+' vp'+W);
+    }
+
+    /* 3) لا تجاوز أفقي */
+    t('لا تمرير أفقي', d.documentElement.scrollWidth<=W+2, 'scrollW='+d.documentElement.scrollWidth+' vp'+W);
+
+    /* 4) أنواع الجلسات */
+    const seats=d.querySelectorAll('.px-seat');
+    t('٤ أنواع جلسات', seats.length===4, seats.length+'');
+    const names=Array.from(seats).map(s=>s.querySelector('span:nth-of-type(2)')?s.querySelectorAll('span')[1].textContent.trim():'');
+    t('أسماء فريدة بلا تكرار', new Set(names).size===4, names.join(' / '));
+    t('كل نوع له رسم SVG', Array.from(seats).every(s=>s.querySelector('svg')&&s.querySelector('svg').innerHTML.trim().length>10));
+    t('كل نوع له اسم تحت الأيقونة', Array.from(seats).every(s=>s.querySelectorAll('span').length>=2));
+    t('كل نوع له وصف', Array.from(seats).every(s=>s.querySelector('small')&&s.querySelector('small').textContent.trim().length>8));
+    // رسوم مختلفة فعلياً (لا نفس الشكل لكل الأنواع)
+    const arts=Array.from(seats).map(s=>s.querySelector('svg').innerHTML.trim());
+    t('رسوم مختلفة لكل نوع', new Set(arts).size===4, new Set(arts).size+' رسوم فريدة');
+    t('لا اسم عربي مكرر', !names.some((n,i)=>names.indexOf(n)!==i), names.join(','));
+    // حجم الأيقونة اسمتحقق
+    t('أيقونات بحجم ثابت', Array.from(seats).every(s=>{const a=s.querySelector('.px-seat-art'); return a && a.getBoundingClientRect().width>=40;}));
+  }
+  out.textContent='PASS='+pass+'  FAIL='+fail+'\n\n'+lines.join('\n');
+  document.title='DONE p'+pass+'f'+fail;
+})();
+</script>
+</body></html>

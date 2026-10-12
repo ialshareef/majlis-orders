@@ -42,6 +42,9 @@ $files = @(
   @{ url = '/js/update.js';  path = 'js\update.js' },
   @{ url = '/js/portal.js';  path = 'js\portal.js' },
   @{ url = '/js/app.js';     path = 'js\app.js' },
+  # نظام الشرح والمساعدة (وحدة مشتركة بين الموظف والعميل)
+  @{ url = '/js/help.js';    path = 'js\help.js' },
+  @{ url = '/css/help.css';  path = 'css\help.css' },
   @{ url = '/manifest.json'; path = 'manifest.json'; ct = 'application/manifest+json' },
   @{ url = '/sw.js';         path = 'sw.js' },
   @{ url = '/icons/icon-192.png';          path = 'icons\icon-192.png' },

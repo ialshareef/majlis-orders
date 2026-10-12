@@ -1103,6 +1103,57 @@ body[data-page="order"] main { padding-top: 10px; }
 .acc-buttons .sw { width: 13px; height: 13px; border-radius: 2px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0, 0, 0, .12); }
 /* المساحة الحرة بلا لون صنف: مربّع متقطّع كما تُرسم على المخطط */
 .acc-buttons .sw-free { background: rgba(90, 116, 134, .12); border: 1px dashed #5A7486; box-shadow: none; }
+/* اختيار الإكسسوارات: شبكة أيقونة + اسم فقط (لا خانة كمية ولا زر إضافة دائم) */
+.acc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px; }
+.acc-grid .acc-tile {
+  position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 5px; min-height: 84px; padding: 9px 6px;
+  border: 1px solid var(--line-soft); border-radius: var(--r);
+  background: var(--surface); color: var(--ink-2);
+  font-family: inherit; font-size: .76rem; font-weight: 500; line-height: 1.35;
+  text-align: center; cursor: pointer; overflow: hidden;
+  transition: background .15s, border-color .15s, transform .1s;
+}
+.acc-grid .acc-tile:hover { background: var(--row-hover); border-color: var(--accent-line); }
+.acc-grid .acc-tile:active { transform: scale(.97); }
+.acc-grid .acc-tile.has { border-color: var(--accent); background: var(--accent-soft); }
+.acc-grid .acc-tile .acc-ico { width: 30px; height: 30px; flex: none; }
+.acc-grid .acc-tile span {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  overflow: hidden; word-break: break-word; max-width: 100%;
+}
+.acc-grid .acc-badge {
+  position: absolute; inset-block-start: 5px; inset-inline-end: 5px;
+  min-width: 19px; height: 19px; padding: 0 5px; border-radius: 999px;
+  background: var(--accent-fill); color: var(--on-accent, #FFF9F0);
+  font-size: .68rem; font-weight: 700; display: grid; place-items: center;
+}
+/* قسم الإكسسوارات المضافة */
+.acc-added { margin-top: 14px; border-top: 1px solid var(--line-soft); padding-top: 12px; }
+.acc-added-title { margin: 0 0 8px; font-size: .84rem; font-weight: 700; color: var(--ink-2); }
+.acc-added-list { display: grid; gap: 5px; }
+.acc-added-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 8px; border-radius: var(--r); background: var(--surface-2);
+  border: 1px solid var(--line-soft); min-height: 40px;
+}
+.acc-added-row .acc-ico { width: 22px; height: 22px; flex: none; }
+.acc-added-name { flex: 1; min-width: 0; font-size: .82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acc-added-n { font-size: .86rem; min-width: 22px; text-align: center; }
+.acc-added-row .acc-edit { width: 34px; height: 34px; flex: none; }
+.acc-bulk { display: grid; gap: 7px; margin-top: 10px; }
+/* لوحة إجراءات العنصر */
+.acc-panel { display: grid; gap: 12px; }
+.acc-stepper { display: flex; gap: 8px; }
+.acc-stepper .btn { min-width: 52px; min-height: 44px; font-size: 1.15rem; font-weight: 700; }
+.acc-actions { justify-content: flex-end; }
+/* تعديل جميع الإكسسوارات */
+.acc-bulk-list { display: grid; gap: 7px; }
+.acc-bulk-row { display: flex; align-items: center; gap: 9px; }
+.acc-bulk-row .acc-ico { width: 22px; height: 22px; flex: none; }
+.acc-bulk-row span { flex: 1; min-width: 0; font-size: .85rem; }
+.acc-bulk-row input { width: 84px; flex: none; text-align: center; min-height: 40px; }
 
 
 /* الكانفس */
@@ -2435,7 +2486,7 @@ body.portal { background: var(--bg); }
 .p-bar .icon-btn { width: 44px; height: 44px; }
 .p-savestate { font-size: .78rem; color: var(--ink-3); min-width: 52px; text-align: end; }
 /* خطوات التصميم: عرض متساوٍ لكل خطوة (رقم ثابت على اليمين) فلا تتعرّج
-   Eisenhower بع��د حروف «الغرفة» و«المجلس» أقصر من «العناصر المعمارية». */
+   Eisenhower بعد حروف «الغرفة» و«المجلس» أقصر من «العناصر المعمارية». */
 .p-steps { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 6px; margin: 6px 0 12px; }
 .p-steps button {
   display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px;
@@ -2472,7 +2523,13 @@ body.portal { background: var(--bg); }
 .portal #pDesign .p-canvas canvas { width: 100%; height: 100%; display: block; }
 /* أدوات التكبير مخفية في صفحة العميل (تأخذ مساحة ولا يحتاجها العميل —
    يكفيه أن يظهر الرسم كاملًا في الإطار). تبقى موجودة في تطبيق الموظفين. */
-.portal #pDesign .p-zoombar { display: none; }
+.portal #pDesign .p-zoombar {
+  /* شريط التقريب أسفل مساحة الرسم: عنصر في التدفق لا طبقة عائمة فوق المخطط،
+     فلا يغطي أي جزء من المخطط أو الأبعاد أو عناصر التصميم. */
+  display: flex; gap: 6px; justify-content: center;
+  flex: 0 0 auto; margin-top: 2px;
+}
+.portal #pDesign .p-zoombar .btn { min-height: 44px; flex: 1 1 0; max-width: 160px; }
 /* شريط التنقل يلتصق بأسفل الشاشة فيبقى «التالي» في المتناول مهما طالت الصفحة */
 .portal #pDesign .p-footbar {
   position: sticky; bottom: 0; z-index: 6;
@@ -2638,6 +2695,16 @@ body.portal { background: var(--bg); }
     .visit-table td.num, .visit-table th.num { text-align: center; white-space: nowrap; }
     .visit-table td small.hint { display: block; font-size: .7rem; color: var(--ink-3); margin-top: 2px; white-space: normal; }
     .visit-table tbody tr:last-child td { border-bottom: none; }
+    /* ثلاثة نطاقات زمنية: الرقم = زيارات، والتحته الزوار الفريدون */
+    .visit-table-3p td { text-align: center; }
+    .visit-table-3p td:first-child { text-align: start; font-weight: 600; }
+    .visit-table-3p small.hint { display: block; font-size: .68rem; color: var(--ink-3); margin-top: 1px; }
+    .visit-table-3p b { font-size: .95rem; }
+    /* تفصيل الأيام الثلاثين */
+    .visit-days { margin-top: 10px; display: grid; gap: 5px; }
+    .visit-days-row { font-size: .72rem; color: var(--ink-3); line-height: 1.9; word-break: break-word; }
+    .visit-days-row b { color: var(--ink-2); margin-inline-end: 4px; }
+    .visit-days-row span { display: inline-block; min-width: 20px; text-align: center; }
 @media (max-width: 400px) {
   .link-actions { flex-wrap: wrap; }
   .link-actions input { flex: 1 1 100%; }

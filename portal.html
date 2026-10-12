@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#F6F2EB">
 <title>صمّم مجلسك | أصالة نجد</title>
 <link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/help.css">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 </head>
 <body class="portal">
@@ -40,6 +41,10 @@
     <p class="p-tag" id="pTagline">صمّم مجلسك حسب مقاسات غرفتك، ثم أرسل التصميم لنا لمراجعته.</p>
     <button type="button" class="btn primary block lg" id="pStart">ابدأ تصميم مجلسك</button>
     <button type="button" class="link-btn" id="pResume" hidden>متابعة تصميمي السابق</button>
+    <button type="button" class="hj-help-btn" id="pHelp" style="margin-top:10px">
+      <svg aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.9c-.6.2-.8.6-.8 1.1v.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>
+      <span>دليل الاستخدام</span>
+    </button>
   </div>
   <nav class="p-links" id="pLinks" aria-label="تواصل مع المحل">
     <a id="plMaps" class="p-link" target="_blank" rel="noopener"><svg><use href="#p-pin"/></svg><span>موقعنا</span></a>
@@ -68,11 +73,11 @@
     </section>
     <div class="canvas-wrap p-canvas">
       <canvas id="pCanvas" aria-label="مخطط الغرفة"></canvas>
-      <div class="p-zoombar" role="group" aria-label="التكبير والتصغير">
-        <button type="button" class="btn" id="pZoomOut">تصغير −</button>
-        <button type="button" class="btn" id="pZoomFit">ملاءمة</button>
-        <button type="button" class="btn" id="pZoomIn">تكبير +</button>
-      </div>
+    </div>
+    <div class="p-zoombar" role="group" aria-label="التكبير والتصغير">
+      <button type="button" class="btn" id="pZoomOut">تصغير −</button>
+      <button type="button" class="btn" id="pZoomFit">ملاءمة</button>
+      <button type="button" class="btn" id="pZoomIn">تكبير +</button>
     </div>
     <div id="pSheet" class="inspector p-sheet" hidden></div>
   </div>
@@ -136,5 +141,10 @@
 
 <script src="/js/designer.js"></script>
 <script src="/js/portal.js"></script>
+<script src="/js/help.js"></script>
+<script>
+  /* نظام الشرح والمساعدة — بوابة العميل: شرح أول مرة + دليل دائم (زر #pHelp) */
+  MajlisHelp.init({ key: 'customer', manualBtn: '#pHelp' });
+</script>
 </body>
 </html>

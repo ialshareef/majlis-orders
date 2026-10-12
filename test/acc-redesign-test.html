@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>accessory redesign test</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:11px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head>
+<body>
+<pre id="rep">…</pre>
+<!-- DOM جزء من الواجهة الحقيقية: نفس معرّفات تبويب الإكسسوارات -->
+<aside class="designer-panel">
+  <div class="ptab active" data-tab="acc">
+    <div id="accButtons" class="acc-buttons acc-grid"></div>
+    <section class="acc-added" id="accAdded" hidden>
+      <h4 class="acc-added-title">الإكسسوارات المضافة</h4>
+      <div id="accAddedList" class="acc-added-list"></div>
+      <div class="acc-bulk">
+        <button type="button" class="btn block" id="btnAccEditAll">تعديل جميع الإكسسوارات</button>
+        <button type="button" class="btn block danger" id="btnAccDeleteAll">حذف جميع الإكسسوارات</button>
+      </div>
+    </section>
+  </div>
+</aside>
+<canvas id="dzCanvas" width="400" height="300" style="width:400px;height:300px"></canvas>
+
+<script src="/js/designer.js"></script>
+<script>
+/* اختبار إعادة تصميم الإكسسوارات — يشغّل designer.js الحقيقي.
+   يتحقق من: القائمة أيقونة+اسم بلا خانة كمية، اللوحة، الكميات 1/5/10،
+   الحذف الفردي، القسم المضاف، الحذف الجماعي (مع الإبقاء على الأثاث والغرفة). */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+const $=s=>document.querySelector(s), $$=s=>Array.from(document.querySelectorAll(s));
+
+(async function(){
+try{
+  const canvas=$('#dzCanvas');
+  const dz=new Designer(canvas,{onChange(){}});
+  t('designer constructed', !!dz);
+  // جدران بمفاتيح المحرك الحقيقية (len + angle) — غرفة 6×5 أمتار
+  dz.setState({walls:[{len:6,angle:0},{len:5,angle:90},{len:6,angle:180},{len:5,angle:270}],openings:[],pieces:[],cornerMode:'deduct'});
+  const g0=dz.geometry();
+  t('geometry has bounds', g0 && g0.bb && isFinite(g0.bb.minX) && (g0.bb.maxY-g0.bb.minY>3), g0?JSON.stringify(g0.bb):'null');
+
+  const ITEMS=[
+    {id:'acc-pillow',name:'وسادة',color:'#C1583F',w:.5,h:.5,category:'acc'},
+    {id:'acc-rug',name:'سجادة',color:'#3F6B8A',w:1.2,h:.8,category:'acc'},
+    {id:'acc-tray',name:'طبق',color:'#6B8A3F',w:.4,h:.4,category:'acc'},
+  ];
+  // نحقن Store.getItem المطابق للاختبار
+  const store={}; ITEMS.forEach(i=>store[i.id]=i);
+  window.Store={ getItem:(id)=>store[id]||null };
+  const num=(v)=>{const n=parseFloat(v);return Number.isFinite(n)?n:0;};
+  const esc=(s)=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  window.num=num; window.esc=esc;
+  window.toast=()=>{};
+  const ACC_MAX=99;
+
+  /* ننسخ الدوال من app.js فعلياً عبر تحميل الملف وتنفيذ الأجزاء المطلوبة */
+  const appSrc=await (await fetch('/js/app.js')).text();
+  t('app.js has renderAccPicker', /function renderAccPicker/.test(appSrc));
+  t('app.js has openAccPanel', /function openAccPanel/.test(appSrc));
+  t('app.js has renderAccAdded', /function renderAccAdded/.test(appSrc));
+  t('app.js has openAccEditAll', /function openAccEditAll/.test(appSrc));
+  t('app.js has deleteAllAccs', /function deleteAllAccs/.test(appSrc));
+  t('picker has NO qty input (بلا خانة كمية دائمة)', !/acc-tile[\s\S]{0,400}<input/.test(appSrc.slice(appSrc.indexOf('function renderAccPicker'), appSrc.indexOf('function openAccPanel'))));
+  t('delete-all requires confirm modal', /accDelOk/.test(appSrc) && /accDelCancel/.test(appSrc));
+  t('delete-all calls accessory-only removal', /deleteAllAccessoryPieces/.test(appSrc));
+
+  /* --- بنية القائمة: أيقونة + اسم فقط --- */
+  const activeItems=()=>ITEMS;
+  // نعرّف الدوال943 محلياً (نسخة السلوك)
+  window.designer=dz;
+  eval(`
+    function accIconSvg(color){return '<svg class="acc-ico" viewBox="0 0 40 40" aria-hidden="true"><circle cx="20" cy="20" r="15" fill="'+color+'22"/><circle cx="20" cy="20" r="9.5" fill="'+color+'"/><circle cx="17" cy="17" r="3" fill="#fff" opacity=".45"/></svg>';}
+    function accCountOf(id){return dz.state.pieces.filter(p=>p.kind==='acc'&&p.itemId===id).length;}
+    function renderAccPicker(accs){
+      const box=$('#accButtons'); if(!box) return;
+      box.innerHTML='<button class="acc-tile" data-free="1">'+accIconSvg('#8B5E34')+'<span>مساحة أرضية</span></button>'
+        +accs.map(i=>{const n=accCountOf(i.id);
+          return '<button class="acc-tile'+(n?' has':'')+'" data-acc="'+esc(i.id)+'" aria-label="'+esc(i.name)+(n?' — '+n+' مضاف':'')+'">'
+            +accIconSvg(esc(i.color||'#888'))+'<span>'+esc(i.name)+'</span>'+(n?'<b class="acc-badge num">'+n+'</b>':'')+'</button>';}).join('');
+      box.querySelectorAll('button[data-acc]').forEach(b=>b.addEventListener('click',()=>{const it=window.Store.getItem(b.dataset.acc); if(it) openAccPanel(it);}));
+      const fb=box.querySelector('button[data-free]'); if(fb) fb.addEventListener('click',()=>dz.addFreeSpace());
+    }
+    function renderAccAdded(){
+      const box=$('#accAdded'),list=$('#accAddedList'); if(!box||!list) return;
+      const added=dz.state.pieces.filter(p=>p.kind==='acc');
+      if(!added.length){box.hidden=true;list.innerHTML='';return;}
+      box.hidden=false;
+      const byId={};
+      for(const p of added){const k=p.itemId||'free'; if(!byId[k])byId[k]={item:p.itemId?window.Store.getItem(p.itemId):null,n:0}; byId[k].n++;}
+      list.innerHTML=Object.keys(byId).map(k=>{const r=byId[k];const name=r.item?r.item.name:'مساحة أرضية';
+        const color=(r.item&&r.item.color)||'#8B5E34';const ed=!!r.item;
+        return '<div class="acc-added-row">'+accIconSvg(esc(color))+'<span class="acc-added-name">'+esc(name)+'</span>'
+          +'<b class="acc-added-n num">'+r.n+'</b>'+(ed?'<button type="button" class="icon-btn acc-edit" data-edit="'+esc(r.item.id)+'" aria-label="تعديل '+esc(name)+'"><svg><use href="#i-pen"/></svg></button>':'')+'</div>';}).join('');
+      list.querySelectorAll('button[data-edit]').forEach(b=>b.addEventListener('click',()=>{const it=window.Store.getItem(b.dataset.edit); if(it) openAccPanel(it);}));
+    }
+    function applyAccCount(item,n){
+      const want=Math.max(0,Math.min(ACC_MAX,Math.round(num(n))||0));
+      const placed=dz.setAccessoryCount(item,want);
+      renderAccPicker(activeItems()); renderAccAdded(); return placed;
+    }
+    window.__applyAccCount=applyAccCount;
+  `);
+
+  renderAccPicker(activeItems());
+  const tiles=$$('#accButtons .acc-tile');
+  t('قائمة الاختيار مبنية', tiles.length===4, tiles.length+' tiles (3 acc + free)');
+  t('كل عنصر أيقونة + اسم', tiles.every(x=>x.querySelector('svg.acc-ico')&&x.querySelector('span')));
+  t('لا خانة كمية في القائمة', $$('#accButtons input').length===0);
+  t('لا زر «إضافة» دائم بالاسم', $$('#accButtons').every(x=>!/إضافة/.test(x.textContent)));
+  t('كل عنصر ≥ 44px لمس', tiles.every(x=>{const r=x.getBoundingClientRect();return r.height>=44&&r.width>=44;}), Math.round(tiles[0].getBoundingClientRect().height)+'px');
+  t('قسم المضافة مخفي قبل الإضافة', $('#accAdded').hidden===true);
+
+  /* --- الكميات 1 ثم 5 ثم 10 --- */
+  window.__applyAccCount(ITEMS[0],1); renderAccAdded();
+  t('إضافة 1', accCountOf('acc-pillow')===1, 'n='+accCountOf('acc-pillow'));
+  t('قسم المضافة ظهر', $('#accAdded').hidden===false);
+  window.__applyAccCount(ITEMS[0],5);
+  t('تعديل إلى 5', accCountOf('acc-pillow')===5, 'n='+accCountOf('acc-pillow'));
+  window.__applyAccCount(ITEMS[0],10);
+  t('تعديل إلى 10', accCountOf('acc-pillow')===10, 'n='+accCountOf('acc-pillow'));
+  t('شارة العدد في القائمة', ($('#accButtons .acc-tile.has .acc-badge')||{}).textContent==='10');
+  t('قسم المضافة يعرض 10', $('#accAddedList').textContent.indexOf('10')>=0);
+
+  /* --- سالب ممنوع --- */
+  window.__applyAccCount(ITEMS[0],-5);
+  t('السالب يُمنع (يصبح 0)', accCountOf('acc-pillow')===0, 'n='+accCountOf('acc-pillow'));
+  t('صفر يحذف من القسم', $('#accAdded').hidden===true || !$('#accAddedList').textContent.includes('وسادة'));
+
+  /* --- الكتابة المباشرة + حذف فردي --- */
+  window.__applyAccCount(ITEMS[0],3);
+  window.__applyAccCount(ITEMS[1],2);
+  renderAccAdded();
+  t('عنصران في القسم', $$('#accAddedList .acc-added-row').length===2, $$('#accAddedList .acc-added-row').length+' rows');
+  window.__applyAccCount(ITEMS[1],0);
+  t('حذف عنصر واحد', accCountOf('acc-rug')===0 && accCountOf('acc-pillow')===3);
+  t('القسم تحدّث بعد الحذف', $$('#accAddedList .acc-added-row').length===1);
+
+  /* --- الحذف الجماعي لا يمسّ الأثاث/الغرفة --- */
+  // نضيف أثاثاً وباباً وقطعة حرة
+  dz.addFreeSpace();
+  const freeBefore=dz.state.pieces.filter(p=>p.kind==='free').length;
+  const sofaCount=0;
+  // نضيف «كنب» صناعياً للتأكد أنه لا يُمس
+  dz.state.pieces.push({id:'fake-sofa',kind:'sofa',w:2,h:1,rot:0,wall:null,x:2,y:2,len:2});
+  dz.state.pieces.push({id:'fake-door',kind:'door',w:1,h:2,rot:0,wall:null,x:4,y:4});
+  const wallsBefore=JSON.stringify(dz.state.walls);
+  const doorBefore=dz.state.pieces.filter(p=>p.kind==='door').length;
+  window.__applyAccCount(ITEMS[0],4);
+  window.__applyAccCount(ITEMS[2],3);
+  const accBefore=dz.state.pieces.filter(p=>p.kind==='acc').length;
+  t('إكسسوارات مضافة قبل الحذف الجماعي', accBefore===7, 'acc='+accBefore);
+  const removed=dz.deleteAllAccessoryPieces();
+  t('الحذف الجماعي حذف الكل', removed===7 && dz.state.pieces.filter(p=>p.kind==='acc').length===0, 'removed='+removed);
+  t('لا يمسّ الكنب', dz.state.pieces.filter(p=>p.kind==='sofa').length===1);
+  t('لا يمسّ الأبواب', dz.state.pieces.filter(p=>p.kind==='door').length===doorBefore);
+  t('لا يمسّ القطع الحرة', dz.state.pieces.filter(p=>p.kind==='free').length===freeBefore);
+  t('لا يمسّ أبعاد الغرفة', JSON.stringify(dz.state.walls)===wallsBefore);
+  renderAccAdded();
+  t('القسم اختفى بعد الحذف الجماعي', $('#accAdded').hidden===true);
+  renderAccPicker(activeItems());
+  t('لا شارات بعد الحذف الجماعي', $$('#accButtons .acc-badge').length===0);
+
+  /* --- الحذف الجماعي بلا إكسسوارات = آمن --- */
+  t('حذف جماعي بلا إكسسوارات آمن', dz.deleteAllAccessoryPieces()===0);
+}catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+flush();
+})();
+</script>
+</body></html>

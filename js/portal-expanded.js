@@ -36,10 +36,28 @@
     raised: 'دكان مرتفع مع مقاعد على الجانبين.'
   };
   var SEAT_ART = {
-    floor: '<path d="M4 30h56v8H4z"/><path d="M8 30V18h48v12"/><path d="M14 18v-6h36v6"/>',
-    sofa: '<path d="M8 26v-8a4 4 0 0 1 4-4h40a4 4 0 0 1 4 4v8"/><path d="M4 26a4 4 0 0 1 4 4v6h48v-6a4 4 0 0 1 8 0v10H4z"/>',
-    arabic: '<path d="M6 32h52v6H6z"/><path d="M10 32V20h16v12"/><path d="M38 32V22h16v10"/><path d="M26 32v-8h10v8"/>',
-    raised: '<path d="M6 34h52v4H6z"/><path d="M12 34V22h20v12"/><path d="M36 34V24h16v10"/><path d="M10 22h24v-4H10z"/>'
+    // رسوم تصف كل نوع بما يميّزه فعلاً — لا شكل عام واحد لكل الأنواع:
+    // أرضية: مقاعد مسطّحة بلا ظهر ولا أرائك.
+    floor: '<rect x="4" y="28" width="56" height="6" rx="2"/>'
+           + '<rect x="9" y="23" width="46" height="5" rx="2"/>'
+           + '<rect x="16" y="33" width="8" height="3" rx="1.5"/>'
+           + '<rect x="40" y="33" width="8" height="3" rx="1.5"/>',
+    // كنب: أرنكة بظهر عالٍ وفواصل مقاعد.
+    sofa: '<path d="M11 27v-9a3 3 0 0 1 3-3h36a3 3 0 0 1 3 3v9z"/>'
+          + '<path d="M6 27a4 4 0 0 1 4-3h44a4 4 0 0 1 4 3v7a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2z"/>'
+          + '<path d="M22 24v10M42 24v10"/>',
+    // عربية: مقاعد أرضية + مسند جانبي على اليسار + طاولة وسط.
+    arabic: '<rect x="7" y="26" width="18" height="7" rx="2"/>'
+           + '<rect x="4" y="14" width="6" height="20" rx="2"/>'
+           + '<rect x="39" y="26" width="18" height="7" rx="2"/>'
+           + '<rect x="27" y="23" width="10" height="5" rx="1.5"/>'
+           + '<rect x="31.5" y="28" width="1.6" height="7"/>',
+    // مرتفعة: دكان (قاعدة) مرتفع بمقعدين على الجانبين.
+    raised: '<rect x="8" y="22" width="48" height="7" rx="2"/>'
+           + '<rect x="12" y="29" width="40" height="7" rx="2"/>'
+           + '<rect x="6" y="13" width="9" height="9" rx="2"/>'
+           + '<rect x="49" y="13" width="9" height="9" rx="2"/>'
+           + '<rect x="15" y="16" width="34" height="3" rx="1.5"/>',
   };
   var SEAT_ORDER = ['floor', 'sofa', 'arabic', 'raised'];
 

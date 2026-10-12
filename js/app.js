@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.49';
+  const APP_VERSION = '1.0.50';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -256,6 +256,23 @@
         }
       } catch (_) { /* silent */ }
     }, 2500);
+    // الشرح والمساعدة: يبدأ بعد الدخول فقط، لأن محتوى الدليل يختلف بين الموظف والمندوب.
+    // مفتاح التفضيل منفصل لكل دور فيحتفظ كلٌّ منهم بحالته، ولا تتكرر النافذة بعد التخطي.
+    setTimeout(() => {
+      try {
+        if (window.MajlisHelp) {
+          window.MajlisHelp.init({
+            key: isMandoubRole() ? 'mandoub' : 'staff',
+            manualBtn: '#btnHelp',
+          });
+        }
+      } catch (_) { /* الشرح لا يعطّل الدخول */ }
+    }, 700);
+  }
+
+  /** المندوب دور مستقل يختلف محتواه عن الموظف — نتحقق من الدور الفعلي */
+  function isMandoubRole() {
+    return !!currentUser && currentUser.role === 'mandoub';
   }
 
   /** رابط صفحة تصميم العميل من شاشة الدخول: نفس المنشأ (يعمل إنتاج/تجريبي/محلي)،
@@ -972,15 +989,184 @@ function canEditOrder(o) {
 
     const accs = activeItems('acc');
     // «مساحة أرضية» مدمجة لا صنف لها في صفحة الأصناف: تُعلّم فراغاً في المجلس بلا سعر
-    $('#accButtons').innerHTML = '<button class="btn" data-free="1"><span class="sw sw-free"></span>مساحة أرضية</button>'
+    renderAccPicker(accs);
+    renderAccAdded();
+  }
+
+  /* ============ اختيار الإكسسوارات: أيقونة + اسم فقط، والكمية بلوحة إجراءات ============
+     (1) قائمة اختيار بسيطة بلا خانة كمية ولا زر إضافة دائم،
+     (2) لوحة إجراءات واحدة تُفتح عند الضغط على أي عنصر (كمية/±/تأكيد/حذف/إغلاق)،
+     (3) قسم «الإكسسوارات المضافة» يعرض الكميات ويتيح التعديل والحذف الجماعي. */
+
+  // أيقونة إكسسوار موحّدة الأسلوب: شكل هندسي مشتق من لون الصنف (بلا صور خارجية)
+  function accIconSvg(color) {
+    return `<svg class="acc-ico" viewBox="0 0 40 40" aria-hidden="true">`
+      + `<circle cx="20" cy="20" r="15" fill="${color}22"/>`
+      + `<circle cx="20" cy="20" r="9.5" fill="${color}"/>`
+      + `<circle cx="17" cy="17" r="3" fill="#fff" opacity=".45"/>`
+      + `</svg>`;
+  }
+
+  function accCountOf(itemId) {
+    return designer.state.pieces.filter((p) => p.kind === 'acc' && p.itemId === itemId).length;
+  }
+
+  /** قائمة الاختيار: أيقونة + اسم فقط — لا خانة كمية ولا زر إضافة دائم */
+  function renderAccPicker(accs) {
+    const box = $('#accButtons');
+    if (!box) return;
+    box.innerHTML = '<button class="acc-tile" data-free="1">'
+        + accIconSvg('#8B5E34') + '<span>مساحة أرضية</span></button>'
       + (accs.length
-        ? accs.map((i) => `<button class="btn" data-acc="${i.id}"><span class="sw" style="background:${esc(i.color || '#888')}"></span>${esc(i.name)}</button>`).join('')
+        ? accs.map((i) => {
+            const n = accCountOf(i.id);
+            return '<button class="acc-tile' + (n ? ' has' : '') + '" data-acc="' + esc(i.id) + '"'
+              + ' aria-label="' + esc(i.name) + (n ? ' — ' + n + ' مضاف' : '') + '">'
+              + accIconSvg(esc(i.color || '#888')) + '<span>' + esc(i.name) + '</span>'
+              + (n ? '<b class="acc-badge num">' + n + '</b>' : '') + '</button>';
+          }).join('')
         : '<span class="hint">لا توجد إكسسوارات مسعّرة. أضفها من صفحة الأصناف.</span>');
     $$('#accButtons button[data-acc]').forEach((b) => b.addEventListener('click', () => {
       const it = Store.getItem(b.dataset.acc);
-      if (it) addAccessoryWithQty(it);
+      if (it) openAccPanel(it);
     }));
-    $('#accButtons button[data-free]').addEventListener('click', () => designer.addFreeSpace());
+    const fb = $('#accButtons button[data-free]');
+    if (fb) fb.addEventListener('click', () => designer.addFreeSpace());
+  }
+
+  /** لوحة إجراءات العنصر: كتابة الكمية، أزرار ±، تأكيد، حذف، إغلاق */
+  function openAccPanel(item) {
+    const have = accCountOf(item.id);
+    openModal(item.name, `
+      <div class="acc-panel">
+        <label>الكمية (العدد الكلي في التصميم) <input id="accQty" type="number" min="0" max="${ACC_MAX}" step="1" inputmode="numeric" enterkeyhint="done" value="${have}"></label>
+        <div class="acc-stepper" role="group" aria-label="تعديل الكمية">
+          <button type="button" class="btn" data-accstep="-1" aria-label="إنقاص">−</button>
+          <button type="button" class="btn" data-accstep="1" aria-label="زيادة">+</button>
+        </div>
+        <p class="hint" id="accPanelHint">الكمية صفر تحذف العنصر من التصميم.</p>
+        <div class="btn-row acc-actions">
+          <button class="btn" id="accClose">إغلاق</button>
+          ${have ? '<button class="btn danger" id="accDelete">حذف العنصر</button>' : ''}
+          <button class="btn primary" id="accOk">${have ? 'تحديث الكمية' : 'إضافة'}</button>
+        </div>
+      </div>`, (b) => {
+        const inp = $('#accQty', b);
+        const clamp = (v) => Math.max(0, Math.min(ACC_MAX, Math.round(num(v)) || 0));
+        $$('[data-accstep]', b).forEach((sb) => sb.addEventListener('click', () => {
+          inp.value = clamp(num(inp.value) + (+sb.dataset.accstep));
+        }));
+        inp.addEventListener('change', () => { inp.value = clamp(inp.value); });
+        $('#accClose', b).onclick = closeModal;
+        const del = $('#accDelete', b);
+        if (del) del.onclick = () => { closeModal(); applyAccCount(item, 0); };
+        const apply = () => { closeModal(); applyAccCount(item, clamp(inp.value)); };
+        $('#accOk', b).onclick = apply;
+        inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); apply(); } });
+        setTimeout(() => { inp.focus(); inp.select(); }, 80);
+      });
+  }
+
+  /** تطبيق الكمية: ٠ يحذف العنصر (القاعدة المعتمدة)، والسالب/الأكبر من الحد يُمنع */
+  function applyAccCount(item, n) {
+    const want = Math.max(0, Math.min(ACC_MAX, Math.round(num(n)) || 0));
+    const placed = designer.setAccessoryCount(item, want);
+    if (placed < want) toast(`المساحة المتاحة لا تكفي لـ ${want} ${item.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
+    renderAccPicker(activeItems('acc'));
+    renderAccAdded();
+  }
+
+  /** قسم «الإكسسوارات المضافة»: الأسماء والكميات + زر التعديل لكل عنصر */
+  function renderAccAdded() {
+    const box = $('#accAdded');
+    const list = $('#accAddedList');
+    if (!box || !list) return;
+    const added = designer.state.pieces.filter((p) => p.kind === 'acc');
+    if (!added.length) { box.hidden = true; list.innerHTML = ''; return; }
+    box.hidden = false;
+    const byId = {};
+    for (const p of added) {
+      const k = p.itemId || 'free';
+      if (!byId[k]) byId[k] = { item: p.itemId ? Store.getItem(p.itemId) : null, n: 0 };
+      byId[k].n++;
+    }
+    list.innerHTML = Object.keys(byId).map((k) => {
+      const r = byId[k];
+      const name = r.item ? r.item.name : 'مساحة أرضية';
+      const color = (r.item && r.item.color) || '#8B5E34';
+      const editable = !!r.item;
+      return '<div class="acc-added-row">'
+        + accIconSvg(esc(color))
+        + '<span class="acc-added-name">' + esc(name) + '</span>'
+        + '<b class="acc-added-n num">' + r.n + '</b>'
+        + (editable ? `<button type="button" class="icon-btn acc-edit" data-edit="${esc(r.item.id)}" aria-label="تعديل ${esc(name)}"><svg><use href="#i-pen"/></svg></button>` : '')
+        + '</div>';
+    }).join('');
+    $$('#accAddedList button[data-edit]').forEach((b) => b.addEventListener('click', () => {
+      const it = Store.getItem(b.dataset.edit);
+      if (it) openAccPanel(it);
+    }));
+  }
+
+  /** تعديل جميع الإكسسوارات: لوحة واحدة بكميات كل عنصر دفعة واحدة */
+  function openAccEditAll() {
+    const added = designer.state.pieces.filter((p) => p.kind === 'acc');
+    if (!added.length) return;
+    const byId = {};
+    for (const p of added) if (p.itemId) byId[p.itemId] = (byId[p.itemId] || 0) + 1;
+    const rows = Object.keys(byId).map((id) => {
+      const it = Store.getItem(id);
+      if (!it) return '';
+      return '<label class="acc-bulk-row">'
+        + accIconSvg(esc(it.color || '#888'))
+        + '<span>' + esc(it.name) + '</span>'
+        + `<input type="number" min="0" max="${ACC_MAX}" step="1" inputmode="numeric" data-q="${esc(id)}" value="${byId[id]}">`
+        + '</label>';
+    }).join('');
+    openModal('تعديل جميع الإكسسوارات', `
+      <div class="acc-bulk-list">${rows}</div>
+      <p class="hint">الكمية صفر تحذف العنصر. التغيير يُطبَّق دفعة واحدة.</p>
+      <div class="btn-row">
+        <button class="btn" id="accBulkCancel">إلغاء</button>
+        <button class="btn primary" id="accBulkOk">تطبيق</button>
+      </div>`, (b) => {
+      $('#accBulkCancel', b).onclick = closeModal;
+      $('#accBulkOk', b).onclick = () => {
+        const jobs = $$('input[data-q]', b).map((inp) => ({
+          item: Store.getItem(inp.dataset.q),
+          n: Math.max(0, Math.min(ACC_MAX, Math.round(num(inp.value)) || 0)),
+        })).filter((j) => j.item);
+        closeModal();
+        for (const j of jobs) {
+          const placed = designer.setAccessoryCount(j.item, j.n);
+          if (placed < j.n) toast(`المساحة لا تكفي لـ ${j.n} ${j.item.name}، تم وضع ${placed}.`, true);
+        }
+        renderAccPicker(activeItems('acc'));
+        renderAccAdded();
+      };
+    });
+  }
+
+  /** حذف جميع الإكسسوارات فقط: تأكيد إجباري، ولا يمسّ الأثاث ولا الغرفة ولا الأبواب */
+  function deleteAllAccs() {
+    const added = designer.state.pieces.filter((p) => p.kind === 'acc');
+    if (!added.length) return;
+    openModal('حذف جميع الإكسسوارات', `
+      <p>سيُحذف <b class="num">${added.length}</b> قطعة إكسسوار من التصميم.</p>
+      <p class="hint">لن يتأثر الأثاث (الكنب) ولا أبعاد الغرفة ولا الأبواب والمشب. ويمكنك التراجع بزر «تراجع».</p>
+      <div class="btn-row">
+        <button class="btn" id="accDelCancel">إلغاء</button>
+        <button class="btn danger" id="accDelOk">حذف الإكسسوارات</button>
+      </div>`, (b) => {
+      $('#accDelCancel', b).onclick = closeModal;
+      $('#accDelOk', b).onclick = () => {
+        closeModal();
+        deleteAllAccessoryPieces();
+        renderAccPicker(activeItems('acc'));
+        renderAccAdded();
+        toast('تم حذف جميع الإكسسوارات');
+      };
+    });
   }
 
   const SOFA_SEL = { wood: '#sofaWoodSel', fabric: '#sofaFabricSel', foam: '#sofaFoamSel' };
@@ -2376,6 +2562,9 @@ function canEditOrder(o) {
     const el = $('#attList');
     if (el) el.scrollIntoView({ behavior: smoothScroll(), block: 'start' });
   });
+  // إجراءات جماعية للإكسسوارات (تأكيد مطلوب للحذف الجماعي)
+  $('#btnAccEditAll').addEventListener('click', openAccEditAll);
+  $('#btnAccDeleteAll').addEventListener('click', deleteAllAccs);
 
   $('#attList').addEventListener('click', (e) => {
     const slot = e.target.closest('.att');
@@ -4617,23 +4806,40 @@ function canEditOrder(o) {
     } catch (e) { err = (e && e.message) || 'تعذّر تحميل الإحصاءات'; }
     const rows = [['customer', 'واجهة العميل'], ['expanded', 'التصميم الموسّع (تجريبي)'], ['staff', 'واجهة الموظفين']];
     const B = (server && server.byLink) || {};
+    const P0 = (server && server.periods) || { today: 'اليوم', d7: 'آخر ٧ أيام', d30: 'آخر ٣٠ يوماً' };
     let html = '';
-    if (err) html += '<p class="hint" style="color:#c00">تعذّر تحميل الزيارات: ' + esc(err) + '</p>';
-    html += '<table class="visit-table"><thead><tr><th>الرابط</th><th>زيارات فعلية</th><th>آخر ٧ أيام</th><th>نقراتك</th></tr></thead><tbody>';
-    for (const [k, label] of rows) {
-      const rec = B[k] || null;
-      const total = rec ? rec.total : 0;
-      const days = rec ? rec.days : [];
-      const last7 = days.slice(-7).reduce((a, d) => a + (Number(d.n) || 0), 0);
-      const spark = days.length
-        ? days.slice(-7).map((d) => '<span title="' + esc(d.day) + ': ' + d.n + '">' + num(d.n) + '</span>').join(' · ')
-        : '<span class="hint">لا بيانات</span>';
-      html += '<tr><td>' + esc(label) + '</td><td class="num">' + num(total) + '</td>' +
-        '<td class="num">' + (days.length ? num(last7) : '—') + ' <small class="hint">' + spark + '</small></td>' +
-        '<td class="num">' + num(Number(clicks[k]) || 0) + '</td></tr>';
+    if (err) {
+      html += '<p class="hint" style="color:#c00">تعذّر تحميل الزيارات: ' + esc(err) + '</p>';
+    } else if (!Object.keys(B).length) {
+      html += '<p class="hint">لا توجد زيارات مسجّلة بعد. الأرقام تظهر هنا فور وصول أول زائر للصفحات العامة (تفتح من جهازك تُحتسب ضمنها).</p>';
     }
-    html += '</tbody></table>';
-    html += '<p class="hint">نقراتك على أزرار الفتح/النسخ/المشاركة: <b class="num">' + num(clickTotal) + '</b> — والزيارات الفعلية تُسجَّل على الخادم (تشمل فتح الرابط من جهازك عند الضغط «فتح»).</p>';
+    if (!err) {
+      html += '<table class="visit-table visit-table-3p"><thead><tr><th>الرابط</th><th>اليوم</th><th>آخر ٧ أيام</th><th>آخر ٣٠ يومًا</th></tr></thead><tbody>';
+      for (const [k, label] of rows) {
+        const rec = B[k] || null;
+        const cell = (p) => {
+          const v = rec && rec[p] ? rec[p] : { visits: 0, visitors: 0 };
+          return '<b class="num">' + num(v.visits) + '</b> <small class="hint">' + num(v.visitors) + ' زائر</small>';
+        };
+        html += '<tr><td>' + esc(label) + '</td><td>' + cell('today') + '</td><td>' + cell('d7') + '</td><td>' + cell('d30') + '</td></tr>';
+      }
+      html += '</tbody></table>';
+      html += '<p class="hint">الرقم الكبير = إجمالي الزيارات، وتحته عدد الزوار الفريدين (جهاز واحد يُحتسب مرة واحدة في اليوم). الروبوتات والطلبات المبرمجة مستبعدة، والتوقيت ' + ((server && server.tzOffsetMin) ? ('+' + server.tzOffsetMin + ' ساعة عن UTC') : 'المحلي') + '.</p>';
+      // تفاصيل ٣٠ يوماً كسطر اختياري تحت الجدول (أيام مرقّمة، بلا أرقام وهمية)
+      const anyDays = rows.some(([k]) => B[k] && B[k].days && B[k].days.length);
+      if (anyDays) {
+        html += '<div class="visit-days">';
+        for (const [k, label] of rows) {
+          const ds = (B[k] && B[k].days) || [];
+          if (!ds.length) continue;
+          html += '<div class="visit-days-row"><b>' + esc(label) + '</b> ';
+          html += ds.map((d) => '<span title="' + esc(d.day) + ': ' + num(d.n) + ' زيارة">' + num(d.n) + '</span>').join(' · ');
+          html += '</div>';
+        }
+        html += '</div>';
+      }
+    }
+    html += '<p class="hint">نقراتك على أزرار الفتح/النسخ/المشاركة: <b class="num">' + num(clickTotal) + '</b> — عدّاد محلي على هذا الجهاز فقط.</p>';
     if (body) body.innerHTML = html;
   }
 

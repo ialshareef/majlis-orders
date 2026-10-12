@@ -604,6 +604,24 @@
       return placed;
     }
 
+    /** حذف جميع قطع الإكسسوار فقط — عملية واحدة في سجل التراجع.
+        لا تمسّ الأثاث (kind==='sofa' أو 'free') ولا الغرفة ولا الأبواب والمشب. */
+    deleteAllAccessoryPieces() {
+      const before = this.state.pieces.length;
+      const drop = new Set(this.state.pieces.filter((p) => p.kind === 'acc').map((p) => p.id));
+      if (!drop.size) return 0;
+      this.state.pieces = this.state.pieces.filter((p) => !drop.has(p.id));
+      if (this.sel && this.sel.type === 'piece' && drop.has(this.sel.id)) this.sel = null;
+      // إزالة المجموعات التي لم تعد تحوي قطعاً (حتى لا يبقى معرّف يتيم)
+      const left = new Set(this.state.pieces.filter((p) => p.group).map((p) => p.group));
+      for (const g of new Set([...this.state.pieces.map((p) => p.group)].filter((g) => g && !left.has(g)))) {
+        this.state.pieces = this.state.pieces.filter((p) => p.group !== g);
+      }
+      this.select(null);
+      this.changed();
+      return before - this.state.pieces.length;
+    }
+
     /** محاولة إلصاق قطعة كنب بأقرب جدار مطابق للاتجاه */
     _trySnapToWall(p, g = this.geometry(), tol = 0.25) {
       if (p.kind !== 'sofa') { delete p.wall; delete p.t; return false; }

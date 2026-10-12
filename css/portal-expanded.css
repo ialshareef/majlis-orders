@@ -44,11 +44,13 @@
 .px-canvas-col { display: flex; flex-direction: column; gap: 10px; padding: 0 12px; }
 .px-canvas { position: relative; height: clamp(240px, 32dvh, 360px); }
 .px-canvas canvas { width: 100%; height: 100%; display: block; touch-action: none; }
+/* شريط التكبير أسفل مساحة الرسم: عنصر في التدفق (لا absolute) فلا يغطي
+   المخطط ولا الأبعاد ولا أي عنصر تصميم. */
 .px-zoombar {
-  position: absolute; inset-inline-start: 6px; inset-block-end: 6px;
-  display: flex; align-items: center; gap: 4px;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  flex: 0 0 auto;
   padding: 4px; border-radius: 999px;
-  background: rgba(255,255,255,.94); border: 1px solid var(--line); box-shadow: 0 2px 8px rgba(0,0,0,.08);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
 }
 .px-zoombar .icon-btn { width: 38px; height: 38px; border-radius: 50%; }
 .px-zoombar .icon-btn svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }

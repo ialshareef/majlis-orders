@@ -8,6 +8,7 @@
 <title>التصميم الموسّع — نسخة تجريبية | أصالة نجد</title>
 <link rel="stylesheet" href="/css/style.css">
 <link rel="stylesheet" href="/css/portal-expanded.css">
+<link rel="stylesheet" href="/css/help.css">
 <link rel="icon" type="image/png" sizes="192x192" href="/icons/icon-192.png">
 </head>
 <body class="portal px">
@@ -52,6 +53,10 @@
     <p class="px-tag" id="pxTagline">صمّم مجلسك حسب مقاسات غرفتك، ثم أرسل التصميم لنا لمراجعته.</p>
     <button type="button" class="btn primary block lg" id="pxStart">ابدأ تصميم مجلسك</button>
     <button type="button" class="link-btn" id="pxResume" hidden>متابعة تصميمي السابق</button>
+    <button type="button" class="hj-help-btn" id="pxHelp" style="margin-top:10px">
+      <svg aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.9c-.6.2-.8.6-.8 1.1v.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>
+      <span>دليل الاستخدام</span>
+    </button>
   </div>
   <nav class="px-links" id="pxLinks" aria-label="تواصل مع المحل">
     <a id="xlMaps" class="px-link" target="_blank" rel="noopener"><svg><use href="#x-pin"/></svg><span>موقعنا</span></a>
@@ -79,12 +84,12 @@
     <!-- الرسم أولاً على الجوال: الخيارات أسفله قابلة للتمرير الطبيعي -->
     <div class="canvas-wrap px-canvas">
       <canvas id="pxCanvas" aria-label="مخطط الغرفة"></canvas>
-      <div class="px-zoombar" role="group" aria-label="التكبير والتصغير">
-        <button type="button" class="icon-btn" id="pxZoomOut" aria-label="تصغير"><svg><use href="#x-zoom-out"/></svg></button>
-        <button type="button" class="icon-btn" id="pxZoomFit" aria-label="ملاءمة"><svg><use href="#x-fit"/></svg></button>
-        <button type="button" class="icon-btn" id="pxZoomIn" aria-label="تكبير"><svg><use href="#x-zoom-in"/></svg></button>
-        <span class="px-zoomval num" id="pxZoomVal">100%</span>
-      </div>
+    </div>
+    <div class="px-zoombar" role="group" aria-label="التكبير والتصغير">
+      <button type="button" class="icon-btn" id="pxZoomOut" aria-label="تصغير"><svg><use href="#x-zoom-out"/></svg></button>
+      <button type="button" class="icon-btn" id="pxZoomFit" aria-label="ملاءمة"><svg><use href="#x-fit"/></svg></button>
+      <button type="button" class="icon-btn" id="pxZoomIn" aria-label="تكبير"><svg><use href="#x-zoom-in"/></svg></button>
+      <span class="px-zoomval num" id="pxZoomVal">100%</span>
     </div>
 
     <section class="px-panel" aria-live="polite">
@@ -136,5 +141,10 @@
 
 <script src="/js/designer.js"></script>
 <script src="/js/portal-expanded.js"></script>
+<script src="/js/help.js"></script>
+<script>
+  /* نظام الشرح والمساعدة — التصميم الموسّع (نسخة تجريبية): نفس خطوات دليل العميل */
+  MajlisHelp.init({ key: 'customer_exp', manualBtn: '#pxHelp' });
+</script>
 </body>
 </html>
