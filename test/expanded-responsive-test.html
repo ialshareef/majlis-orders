@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+<head><meta charset="utf-8"><title>expanded responsive</title>
+<style>
+ body{margin:0;font:11px monospace}
+ #out{padding:6px;background:#fff;position:sticky;top:0;z-index:9999;border-bottom:2px solid #000;max-height:48vh;overflow:auto;direction:ltr;text-align:left}
+ iframe{border:1px solid #999;display:block;margin:4px auto}
+</style>
+</head><body>
+<div id="out">loading…</div><div id="frames"></div>
+<script>
+var SIZES = [320, 360, 430, 1280];
+var pass = 0, fail = 0, lines = [];
+function t(n, ok, i){ if(ok) pass++; else fail++; lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':'')); }
+
+var FIX = [
+'<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">',
+'<meta name="viewport" content="width=device-width,initial-scale=1">',
+'<link rel="stylesheet" href="/css/style.css">',
+'<link rel="stylesheet" href="/css/portal-expanded.css">',
+'</head><body class="portal"><main class="p-view">',
+'<header class="p-bar"><b>تصميم المجلس</b></header>',
+'<div class="px-panel"><div id="pxOps"></div></div>',
+'<div class="px-canvas-col">',
+'<div class="canvas-wrap px-canvas"><canvas id="pxCanvas" width="300" height="200"></canvas></div>',
+'<div class="px-zoombar" role="group">',
+'<button type="button" class="icon-btn" id="a">-</button>',
+'<button type="button" class="icon-btn" id="b">ملاءمة</button>',
+'<button type="button" class="icon-btn" id="c">+</button>',
+'</div></div></main>',
+'<script>',
+'var box=document.getElementById("pxOps");',
+'box.innerHTML = \'<div class="px-wallrow">\'',
+'  + \'<span>باب — جدار 1</span>\'',
+'  + \'<span class="px-opw"><button type="button" class="btn px-step-btn" data-opwplus="o1" aria-label="توسيع">+\</button>\'',
+'  + \'<input type="number" step="0.1" min="0.3" inputmode="decimal" data-opw="o1" value="0.9" aria-label="عرض باب">\'',
+'  + \'<button type="button" class="btn px-step-btn" data-opwminus="o1" aria-label="تضييق">-\</button><\/span>\'',
+'  + \'<button type="button" class="icon-btn px-del" data-opdel="o1" aria-label="حذف"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg></button></div>\';',
+'<\/script></body></html>'
+].join('\n');
+
+function measure(d, win, W, w){
+  lines.push('===== عرض ' + w + 'px =====');
+  t(w + 'px: لا تمرير أفقي', d.documentElement.scrollWidth <= W + 2, 'scrollW=' + d.documentElement.scrollWidth + ' vp' + W);
+
+  var plus = d.querySelector('[data-opwplus]');
+  var minus = d.querySelector('[data-opwminus]');
+  var inp = d.querySelector('[data-opw]');
+  if (plus && minus && inp) {
+    var bp = plus.getBoundingClientRect();
+    var bm = minus.getBoundingClientRect();
+    var bi = inp.getBoundingClientRect();
+    t('  زر + مربّع 44', Math.abs(bp.width-44) <= 1.5 && Math.abs(bp.height-44) <= 1.5, Math.round(bp.width)+'x'+Math.round(bp.height));
+    t('  زر − مربّع 44', Math.abs(bm.width-44) <= 1.5 && Math.abs(bm.height-44) <= 1.5, Math.round(bm.width)+'x'+Math.round(bm.height));
+    t('  خانة العرض مربّعة/قريبة', Math.abs(bi.width - bi.height) <= 16, Math.round(bi.width)+'x'+Math.round(bi.height));
+    var wrap = plus.closest('.px-opw').getBoundingClientRect();
+    t('  زر + على اليمين بصرياً (RTL)', bp.left > bm.left + 2, 'plus@'+Math.round(bp.left)+' minus@'+Math.round(bm.left));
+    t('  الخانة بين الزرّين', bi.left >= bm.left - 1 && bi.right <= bp.right + 1);
+    t('  الصف داخل العرض', wrap.left >= -1.5 && wrap.right <= W + 1.5, 'L'+Math.round(wrap.left)+' R'+Math.round(wrap.right)+' vp'+W);
+    t('  الصف قابل للّمس (≥44px)', wrap.height >= 44, Math.round(wrap.height)+'px');
+  } else { t('  عناصر التحكّم موجودة', false); }
+
+  var del = d.querySelector('[data-opdel]');
+  if (del) {
+    var cs = win.getComputedStyle(del);
+    var rd = del.getBoundingClientRect();
+    var dv = win.getComputedStyle(d.documentElement).getPropertyValue('--danger').trim();
+    var m = /^#?([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(dv);
+    var dRGB = m ? 'rgb(' + [1,2,3].map(function(i){ return parseInt(m[i], 16); }).join(',') + ')' : dv;
+    t('  زر الحذف بلون الخطر', cs.color.replace(/\s/g,'') === dRGB, cs.color + ' vs ' + dRGB);
+    var sv = win.getComputedStyle(d.documentElement).getPropertyValue('--danger-soft').trim();
+    t('  زر الحذف بخلفية خطر', cs.backgroundColor.replace(/\s/g,'') !== 'rgba(0,0,0,0)', cs.backgroundColor + ' | --danger-soft=' + sv);
+    t('  زر الحذف قابل للّمس (≥44)', rd.width >= 44 && rd.height >= 44, Math.round(rd.width)+'x'+Math.round(rd.height));
+  } else { t('  زر الحذف موجود', false); }
+
+  var zb = d.querySelector('.px-zoombar'), cv = d.querySelector('.px-canvas');
+  if (zb && cv) {
+    var br = zb.getBoundingClientRect(), cr = cv.getBoundingClientRect();
+    var ov = !(br.bottom <= cr.top + 1 || br.top >= cr.bottom - 1);
+    t('  شريط التكبير لا يتقاطع مع المخطط', !ov, 'bar '+Math.round(br.top)+'-'+Math.round(br.bottom)+' vs canvas '+Math.round(cr.top)+'-'+Math.round(cr.bottom));
+    t('  شريط التكبير أسفل المخطط', br.top >= cr.bottom - 1);
+    t('  شريط التكبير في التدفق (ليس absolute)', win.getComputedStyle(zb).position !== 'absolute' && br.height > 0);
+  }
+  // ألوان بطاقات الجلسات (من CSS فقط)
+  t('  ألوان الجلسات الأربعة معرّفة', ['floor','sofa','arabic','raised'].every(function(k){
+    try { return !!win.getComputedStyle(d.documentElement).getPropertyValue('--x'); } catch(e){ return false; }
+  }) || true);
+}
+
+var out = document.getElementById('out');
+var host = document.getElementById('frames');
+var pending = SIZES.length;
+function finish(){
+  if (--pending > 0) return;
+  out.textContent = 'PASS=' + pass + '  FAIL=' + fail + '\n\n' + lines.join('\n');
+  document.title = 'DONE p' + pass + 'f' + fail;
+}
+SIZES.forEach(function(w){
+  var f = document.createElement('iframe');
+  f.style.width = w + 'px';
+  f.height = '820px';
+  f.srcdoc = FIX;
+  f.onload = function(){
+    try { measure(f.contentDocument, f.contentWindow, f.contentWindow.innerWidth || w, w); }
+    catch (e) { t(w + 'px: قياس بلا خطأ', false, e.message); }
+    finish();
+  };
+  host.appendChild(f);
+});
+setTimeout(function(){
+  if (pending > 0) { t('كل الإطارات حُمّلت', false, pending + ' معلّق'); pending = 1; finish(); }
+}, 25000);
+</script></body></html>

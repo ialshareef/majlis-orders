@@ -87,6 +87,28 @@
 .px-seat .px-seat-art { width: 100%; height: 46px; }
 .px-seat .px-seat-art svg { width: 100%; height: 100%; fill: none; stroke: currentColor; stroke-width: 1.6; }
 .px-seat small { font-weight: 400; font-size: .7rem; line-height: 1.4; color: inherit; opacity: .85; }
+/* ---------- قسم المعمارية: تحكّم عرض مربّع + حذف أحمر ---------- */
+/* الترتيب في RTL: أول عنصر في DOM يظهر يميناً، فالزر + أول و− أخير (يسار). */
+.px-wallrow { display: flex; align-items: center; gap: 8px; }
+.px-wallrow > span:first-child { flex: 1; min-width: 0; font-size: .82rem; }
+.px-opw { display: flex; align-items: center; gap: 4px; flex: none; }
+.px-opw input {
+  width: 54px; height: 44px; min-width: 0; flex: none;
+  text-align: center; padding: 0 2px; font-size: .84rem;
+}
+.px-opw .px-step-btn {
+  width: 44px; height: 44px; min-width: 44px; flex: none;
+  padding: 0; display: grid; place-items: center;
+  font-size: 1.15rem; font-weight: 700; line-height: 1;
+}
+/* زر الحذف أحمر: خطر واضح لا يُخلط بإجراءات عادية */
+.px-del {
+  width: 44px; height: 44px; flex: none;
+  color: var(--danger); background: var(--danger-soft);
+  border: 1px solid var(--danger-line); border-radius: var(--r);
+}
+.px-del:hover { background: var(--danger); color: #fff; border-color: var(--danger); }
+.px-del svg { stroke: currentColor; }
 
 /* ---------- المرحلة ٤: شبكة الإكسسوارات مع إدخال الكمية مباشرة ---------- */
 /* بلا تمرير داخلي: الشبكة ترتفع بقطعانها والنزول في الصفحة نفسها */
@@ -263,3 +285,11 @@
 .xp-endfoot { margin-top: auto; font-size: 9pt; color: #6A5F54; border-top: 1px dashed #D5C8B4; padding-top: 3mm; width: 100%; }
 /* الرقم بصيغة دولية: يُعرض LTR داخل سطر عربي وإلا انتقلت علامة + إلى آخر الرقم */
 .xp-endfoot span[dir="ltr"] { display: inline-block; direction: ltr; unicode-bidi: isolate; }
+/* ---------- لون بطاقة الجلسة يطابق لونها في المخطط ---------- */
+.px-seat[data-seat="floor"] { --px-seat-c: #B98A4B; }
+.px-seat[data-seat="sofa"] { --px-seat-c: #7A4E2D; }
+.px-seat[data-seat="arabic"] { --px-seat-c: #5E6B4A; }
+.px-seat[data-seat="raised"] { --px-seat-c: #6A4A63; }
+.px-seat .px-seat-art svg { stroke: var(--px-seat-c, currentColor); }
+.px-seat > span:not(.px-seat-art) { color: var(--ink); }
+.px-seat[aria-pressed="true"] > span:not(.px-seat-art) { color: var(--on-accent); }

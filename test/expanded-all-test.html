@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>expanded portal — all steps</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:11px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head>
+<body>
+<pre id="rep">…</pre>
+<div id="out" hidden></div>
+<canvas id="pxCanvas" width="900" height="620" style="width:900px;height:620px"></canvas>
+<script src="/js/designer.js"></script>
+<script>
+/* اختبار متكامل للنسخة التجريبية (designer.js الحقيقي):
+   1) المعمارية: ترتيب −/+، مربّع، حذف أحمر
+   2) فرش الكل: لا تداخل، داخل الحدود، تنبيه عند نقص المساحة
+   3) حدود الغرفة تراعي الحجم والاتجاه
+   4) المحاذاة الذكية: انجذاب مرة واحدة ثم حرية ثم انجذاب جديد
+   5) أنواع الجلسات: ٤ ألوان مختلفة
+   6) طبقة القياسات فوق القطع
+   7) الأصول دون تغيير (خيارات معطّلة = البوابة الأصلية لم تتأثر) */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+const $=(s)=>document.querySelector(s), $$=(s)=>Array.from(document.querySelectorAll(s));
+
+(async function(){
+try{
+  const src=await (await fetch('/js/portal-expanded.js')).text();
+  const dsrc=await (await fetch('/js/designer.js')).text();
+
+  /* ===== 1) المعمارية ===== */
+  t('portal-expanded فعّل smartSnap', /smartSnap:\s*true/.test(src));
+  t('portal-expanded فعّل boundAware', /boundAware:\s*true/.test(src));
+  t('portal-expanded فعّل dimsOnTop', /dimsOnTop:\s*true/.test(src));
+  t('portal-expanded فعّل pieceArt', /pieceArt:\s*true/.test(src));
+  t('portal-expanded فعّل pieceTint', /pieceTint:\s*true/.test(src));
+  // البوابة الأصلية بلا هذه الأعلام
+  const pj=await (await fetch('/js/portal.js')).text();
+  t('البوابة الأصلية بلا الأعلام (لم تتأثر)', !/smartSnap|boundAware|dimsOnTop|pieceArt|pieceTint/.test(pj));
+
+  // ترتيب الأزرار: + أولاً في DOM ثم input ثم − (في RTL: + يمين، − يسار)
+  const iPlus=src.indexOf('data-opwplus'), iInp=src.indexOf('data-opw="'), iMinus=src.indexOf('data-opwminus');
+  t('ترتيب DOM: + ثم input ثم −', iPlus>0&&iPlus<iInp&&iInp<iMinus, `plus@${iPlus} inp@${iInp} minus@${iMinus}`);
+  t('زر الحذف يحمل صنف px-del', /data-opdel="\' \+ esc\(o\.id\) \+ \'" class="icon-btn px-del"/.test(src)||/icon-btn px-del/.test(src));
+  const css=await (await fetch('/css/portal-expanded.css')).text();
+  t('CSS: .px-del أحمر', /\.px-del\s*\{[^}]*color:\s*var\(--danger\)/.test(css));
+  t('CSS: .px-opw input مربّع', /\.px-opw input\s*\{[^}]*width:\s*54px[^}]*height:\s*44px/.test(css));
+  t('CSS: .px-step-btn مربّع 44', /\.px-opw \.px-step-btn\s*\{[^}]*width:\s*44px[^}]*height:\s*44px/.test(css));
+
+  /* ===== محرك حقيقي ===== */
+  const dz=new Designer($('#pxCanvas'),{getItem:()=>null,onChange(){},onSelect(){},smartSnap:true,boundAware:true,dimsOnTop:true,pieceArt:true,pieceTint:true});
+  const mk=(w,h,cm)=>dz.setState({walls:[{len:w,angle:0},{len:h,angle:90},{len:w,angle:180},{len:h,angle:270}],openings:[],pieces:[],cornerMode:cm||'deduct'});
+  const outside=(p)=>{const bb=dz.geometry().bb;let n=0;
+    for(const c of dz.corners(p)) if(c.x<bb.minX-0.005||c.x>bb.maxX+0.005||c.y<bb.minY-0.005||c.y>bb.maxY+0.005) n++;
+    return n;};
+  const SPEC={depth:0.8,seating:'floor'};
+
+  /* ===== 2) فرش الكل ===== */
+  for(const [lbl,w,h,depth] of [['كبيرة 8×6',8,6,0.8],['متوسطة 5×4',5,4,0.8],['صغيرة 2.5×2.5',2.5,2.5,0.8],['عميقة 6×2.4',6,2.4,1.2]]){
+    mk(w,h); const n=dz.fillAllWalls({depth,seating:'floor'});
+    const ps=dz.state.pieces;
+    let oob=ps.filter(p=>outside(p)>0).length;
+    let onOpen=0;
+    for(const p of ps.filter(x=>x.wall!=null))
+      for(const o of dz.state.openings){ if(o.wall!==p.wall)continue;
+        if(p.t-p.w/2<o.t+o.w/2-0.01 && p.t+p.w/2>o.t-o.w/2+0.01) onOpen++; }
+    t(`فرش الكل ${lbl}: ${n} قطعة`, true);
+    t(`  ${lbl}: لا خروج عن الحدود`, oob===0, 'out='+oob);
+    t(`  ${lbl}: لا تداخل مع الفتحات`, onOpen===0, 'onOpening='+onOpen);
+    t(`  ${lbl}: تقرير lastFill موجود`, !!dz.lastFill && typeof dz.lastFill.added==='number' && Array.isArray(dz.lastFill.skipped),
+        dz.lastFill?`added=${dz.lastFill.added} skipped=[${dz.lastFill.skipped}]`:'none');
+  }
+  // غرفة لا تتسع كلياً => skipped غير فارغ
+  mk(6,2.4); dz.fillAllWalls({depth:1.6,seating:'raised'});
+  t('نقص المساحة يُبلَّغ عنه (skipped غير فارغ)', (dz.lastFill.skipped||[]).length>0,
+     `added=${dz.lastFill.added} skipped=[${dz.lastFill.skipped}] total=${dz.lastFill.total}`);
+
+  /* ===== 3) حدود تراعي الحجم والاتجاه ===== */
+  mk(5,4);
+  const big={id:'b',kind:'sofa',x:4.9,y:2,w:3,h:0.9,rot:0};
+  dz.state.pieces=[big]; dz._clampPieceToRoom(big);
+  t('كنبة كبيرة: داخل الحدود', outside(big)===0, 'outside='+outside(big)+` x=${big.x}`);
+  const rot={id:'r',kind:'acc',itemId:'z',x:4.8,y:2,w:2,h:0.6,rot:90};
+  dz.state.pieces=[rot]; dz._clampPieceToRoom(rot);
+  t('قطعة مُدارة 90°: داخل الحدود', outside(rot)===0, 'outside='+outside(rot));
+  // مقارنة: التقييد القديم بالمركز كان يخرج
+  mk(5,4);
+  const b2={id:'b2',kind:'sofa',x:4.9,y:2,w:3,h:0.9,rot:0};
+  dz.state.pieces=[b2]; dz._clampToRoom(b2);
+  t('السلوك القديم (مركز فقط) كان يخرج — تأكيد الإصلاح', outside(b2)>0, 'outside='+outside(b2));
+
+  /* ===== 4) محاذاة ذكية (بإحداثيات الغرفة الحقيقية من هندسة الجدار) ===== */
+  mk(6,4);
+  dz.fillAllWalls({depth:0.8,seating:'floor'});
+  const sg=dz.state.pieces.find(x=>x.kind==='sofa'&&x.wall===0);
+  const g0=dz.geometry();
+  // نقطة على جدار بعينه: mid + n*(h/2)  (الجلسة贴着 الجدار من الداخل)
+  function onWall(wi, tRoom){
+    const w=g0.walls[wi];
+    const sT = Math.max(0.5, Math.min(w.len-0.5, tRoom));
+    return { x: w.A.x + w.dir.x*sT + w.n.x*(sg.h/2), y: w.A.y + w.dir.y*sT + w.n.y*(sg.h/2) };
+  }
+  function tryDrag(roomX,roomY){
+    const p=dz.piece(sg.id);
+    dz.drag={mode:'move',off:{x:0,y:0},snapRel:{}};
+    p.x=roomX; p.y=roomY;
+    const snapped=dz._trySnapToWall(p,dz.geometry());
+    const o={snapped,wall:p.wall,t:p.t};
+    dz.drag=null;
+    return o;
+  }
+  const pA=onWall(0,1.5);
+  const r1=tryDrag(pA.x,pA.y);
+  t('انجذاب أول عند الاقتراب من الجدار', r1.snapped===true && r1.wall!=null, JSON.stringify(r1));
+  // ننتقل على طول الجدار نفسه: يجب ألا يقفز
+  const pB=onWall(0,4.5);
+  const r2=tryDrag(pB.x,pB.y);
+  t('استمرار حر على نفس الجدار بلا قفز', r2.wall===r1.wall, JSON.stringify(r2));
+  const pC=onWall(0,0.8);
+  const r3=tryDrag(pC.x,pC.y);
+  t('متابعة السحب تكمل بلا قفز', r3.wall===r1.wall, JSON.stringify(r3));
+  // ابتعاد كامل لوسط الغرفة: يفكّ الانجذاب
+  const far=tryDrag(3,2);
+  t('ابتعاد كامل يفكّ الانجذاب', far.snapped===false && far.wall==null, JSON.stringify(far));
+  // اقتراب من جدار موازٍ آخر بعد تدوير القطعة لتطابقه (جداران أفقيان: 0 و 2)
+  const pz2=dz.piece(sg.id); pz2.rot=180;
+  const pD=onWall(2,3);
+  const r4=tryDrag(pD.x,pD.y);
+  t('انجذاب جديد على جدار موازٍ مختلف', r4.snapped===true && r4.wall!=null && r4.wall!==far.wall, JSON.stringify(r4));
+  // انجذاب فوق فتحة ممنعة = لا
+  mk(6,4);
+  const doorO=dz.addOpening(0,'door');
+  dz.fillAllWalls({depth:0.8,seating:'floor'});
+  const pz=dz.state.pieces.find(x=>x.kind==='sofa'&&x.wall===0);
+  const gz=dz.geometry();
+  const w0=gz.walls[0];
+  const over={ x: w0.A.x + w0.dir.x*doorO.t + w0.n.x*(pz.h/2), y: w0.A.y + w0.dir.y*doorO.t + w0.n.y*(pz.h/2) };
+  dz.drag={mode:'move',off:{x:0,y:0},snapRel:{}};
+  pz.x=over.x; pz.y=over.y;
+  dz._trySnapToWall(pz,gz);
+  const onDoor = pz.wall===0 && Math.abs(pz.t-doorO.t) < doorO.w/2;
+  dz.drag=null;
+  t('لا يلتصق فوق فتحة مانعة (باب)', !onDoor, 'wall='+pz.wall+' t='+pz.t+' door t='+doorO.t+' w='+doorO.w);
+
+  /* ===== 5) أنواع الجلسات: ألوان مختلفة ===== */
+  const SEAT_COLOR_SRC=src.match(/var SEAT_COLOR = \{[\s\S]*?\n\s*\};/);
+  t('SEAT_COLOR موجود', !!SEAT_COLOR_SRC);
+  if(SEAT_COLOR_SRC){
+    const colors=[...SEAT_COLOR_SRC[0].matchAll(/'#([0-9A-Fa-f]{6})'/g)].map(m=>m[1].toLowerCase());
+    t('٤ ألوان أساسية للجلسات', colors.length>=8, colors.length+' hex');
+    t('ألوان الجلسات كلها مختلفة', new Set(colors).size===colors.length, new Set(colors).size+' فريدة');
+  }
+  t('mixHex يدمج لون الجلسة مع القماش', /function mixHex/.test(src) && /mixHex\(sc\.base, f\.color/.test(src));
+  t('pieceTint يرسم شريط لون النوع', /pieceTint && item\.light/.test(dsrc));
+
+  /* ===== 6) طبقة القياسات فوق القطع ===== */
+  t('designer فيه _drawDimsTop', /_drawDimsTop\(ctx, v, W, opt\)/.test(dsrc));
+  t('تُستدعى بعد رسم القطع', dsrc.indexOf('this._drawDimsTop(ctx, v, W, opt)') > dsrc.indexOf('this._drawOrder().forEach'));
+  t(' gated بـ opts.dimsOnTop', /if \(this\.opts\.dimsOnTop\)/.test(dsrc));
+  t('خلفية بيضاء خلف الرقم', /rgba\(255,255,255,0\.93\)/.test(dsrc));
+
+  /* ===== 7) أشكال القطع ===== */
+  t('_pieceArt موجودة', /_pieceArt\(ctx, p, pw, ph, fs, k\)/.test(dsrc));
+  t(' gated بـ pieceArt', /this\.opts\.pieceArt && p\.kind === 'acc'/.test(dsrc));
+  const art=dsrc.match(/_pieceArt\(ctx, p, pw, ph, fs, k\) \{[\s\S]*?\n  \}/);
+  if(art){
+    t('رسوم متعددة (صحن/سجادة/مخدّة/طاولة)', /tray/.test(art[0])&&/rug/.test(art[0])&&/pillow/.test(art[0])&&/table/.test(art[0]));
+  }
+
+  /* ===== 8) المحرك: خيارات معطّلة = سلوك البوابة الأصلية ===== */
+  const plain=new Designer($('#pxCanvas'),{getItem:()=>null,onChange(){},onSelect(){}});
+  t('بدون أعلام: _clampPieceToRoom غير مستدعاة في السحب', !/_clampPieceToRoom/.test(dsrc.split('d.mode === \'move\'')[1].split('}')[0]));
+  t('plain.lastFill يعمل أيضاً (متوافق)', typeof plain.fillAllWalls({depth:0.8,seating:'floor'})==='number');
+
+  /* ===== 9) الرسم لا يرمي (فحص فعلي) ===== */
+  mk(6,4); dz.fillAllWalls(SPEC);
+  let drawErr='';
+  try{ dz.fitView(); dz.render(); dz._drawDimsTop && dz.render(); }catch(e){ drawErr=e.message; }
+  t('الرسم يعمل بلا استثناء (pieceArt + dimsOnTop + tint)', drawErr==='', drawErr);
+  // إكسسوار了许多
+  try{ dz.setAccessoryCount({id:'acc1',name:'سجادة',w:1.2,h:0.9,shape:'rug'},2); dz.setAccessoryCount({id:'acc2',name:'طبق',w:0.4,h:0.4,shape:'tray'},3); dz.render(); }catch(e){ drawErr=e.message; }
+  t('الرسم مع إكسسوارات Karls', drawErr==='', drawErr);
+}catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+flush();
+})();
+</script>
+</body></html>

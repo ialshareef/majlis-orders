@@ -59,6 +59,13 @@
            + '<rect x="49" y="13" width="9" height="9" rx="2"/>'
            + '<rect x="15" y="16" width="34" height="3" rx="1.5"/>',
   };
+/* لون مميّز لكل نوع جلسة داخل المخطط: تجعل النوع يتضح بالمظهر لا بالمزاج فقط. */
+  var SEAT_COLOR = {
+    floor: { base: '#B98A4B', light: '#D9B183' },
+    sofa: { base: '#7A4E2D', light: '#A5744B' },
+    arabic: { base: '#5E6B4A', light: '#87946E' },
+    raised: { base: '#6A4A63', light: '#957A8E' }
+  };
   var SEAT_ORDER = ['floor', 'sofa', 'arabic', 'raised'];
 
   var STEPS = [
@@ -266,6 +273,19 @@
     if (!i) return { id: id, name: 'صنف', price: 0 };
     return { id: i.id, name: i.name, price: 0, color: i.color, fabric: i.fabric, depth: i.depth, w: i.w, h: i.h, shape: i.shape, category: i.category };
   }
+  /* مزج لونين hex بنسبة: يُستخدم لدمج لون نوع الجلسة مع لون القماش */
+  function mixHex(a, b, t) {
+    var pa = hexToRgb(a), pb = hexToRgb(b);
+    if (!pa || !pb) return a || b;
+    return '#' + [0, 1, 2].map(function (i) {
+      var v = Math.round(pa[i] + (pb[i] - pa[i]) * t);
+      return Math.max(0, Math.min(255, v)).toString(16).padStart(2, '0');
+    }).join('');
+  }
+  function hexToRgb(h) {
+    var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(String(h || ''));
+    return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : null;
+  }
   function pieceLabel(p) {
     if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? a.name : 'إكسسوار'; }
     if (p.kind === 'free') return 'مساحة أرضية';
@@ -417,14 +437,23 @@
     wireStatic();
     var dz = new Designer($('#pxCanvas'), {
       getItem: getCatItem,
+      // تحسينات خاصة بالنسخة التجريبية فقط (البوابة الأصلية بلا هذه الأعلام):
+      smartSnap: true,    // انجذاب للجدار مرة واحدة ثم سحب حر حتى الفكّ
+      boundAware: true,   // حدود الغرفة تراعي حجم القطعة واتجاهها
+      dimsOnTop: true,    // أرقام المقاسات فوق الأثاث فلا يحجبها
+      pieceArt: true,     // شكل رمزي للإكسسوار بدل اسمه الصغير
+      pieceTint: true,    // شريط بلون نوع الجلسة يميّز الجلسات داخل المخطط
       onRevert: function (why) {
         toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود' : 'يبقى العنصر داخل حدود الغرفة', true);
       },
       pieceSpecLabel: function () { return ''; },
       pieceStyle: function (p) {
-        if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? { name: a.name, color: a.color } : null; }
+        if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? { name: a.name, color: a.color, art: a.shape || a.name } : null; }
         var f = S.catMap[p.fabricId];
-        return { name: pieceLabel(p), color: f && f.color ? f.color : '#8b5a2b' };
+        var sc = SEAT_COLOR[p.seating] || SEAT_COLOR.floor;
+        // لون الجلسة هو الأساس، والقماش يغيّر النبرة فقط — فيبقى النوع مقروءاً
+        var col = f && f.color ? mixHex(sc.base, f.color, 0.35) : sc.base;
+        return { name: pieceLabel(p), color: col, light: sc.light, art: pieceLabel(p) };
       },
       onChange: function () { markDirty(); },
       onSelect: function (info) { renderSheet(info); }
@@ -572,7 +601,17 @@
     var spec = currentSpec();
     var n = dz.fillAllWalls(spec);
     var kind = SEATING[spec.seating] || SEATING.floor;
-    toast(n ? ('تم فرش ' + n + ' من ' + kind + ' — يمكنك تعديل أي قطعة بالسحب') : 'لا توجد مساحات فارغة على الجدران', n ? false : 'info');
+    // تقرير الجدران التي لم تتسع: يُعرض صراحةً بدل صمت أو تراكب
+    var rep = dz.lastFill || { added: n, skipped: [], total: (dz.state.walls || []).length };
+    var wl = dz.state.walls || [];
+    var names = (rep.skipped || []).map(function (i) { return 'جدار ' + ((i || 0) + 1) + ' (' + Math.round((wl[i] || {}).len * 10) / 10 + ' م)'; });
+    if (!n && !names.length) {
+      toast('لا توجد مساحة كافية لفرش ' + kind + ' — كبّر الغرفة أو اختر مقاساً أصغر', true);
+    } else if (names.length) {
+      toast('تم فرش ' + rep.added + ' جداراً. لم تتسع لـ ' + kind + ': ' + names.join(' و') + ' — لم يُوضع شيء متداخل فيها', true);
+    } else {
+      toast('تم فرش ' + n + ' من ' + kind + ' — يمكنك تعديل أي قطعة بالسحب');
+    }
     renderSheet(null);
   }
 
@@ -633,10 +672,10 @@
         + '<div id="pxOps">' + (ops.length ? ops.map(function (o) {
             var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
             return '<div class="px-wallrow"><span>' + onm + ' — جدار ' + (o.wall + 1) + '</span>'
-              + '<span class="px-opw"><button type="button" class="btn" data-opwminus="' + esc(o.id) + '" aria-label="تضييق">−</button>'
+              + '<span class="px-opw"><button type="button" class="btn px-step-btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع ' + onm + '">+</button>'
               + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-opw="' + esc(o.id) + '" value="' + o.w + '" aria-label="عرض ' + onm + '">'
-              + '<button type="button" class="btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع">+</button></span>'
-              + '<button type="button" class="icon-btn" data-opdel="' + esc(o.id) + '" aria-label="حذف"><svg><use href="#x-trash"/></svg></button></div>';
+              + '<button type="button" class="btn px-step-btn" data-opwminus="' + esc(o.id) + '" aria-label="تضييق ' + onm + '">−</button></span>'
+              + '<button type="button" class="icon-btn px-del" data-opdel="' + esc(o.id) + '" aria-label="حذف ' + onm + '" title="حذف ' + onm + '"><svg><use href="#x-trash"/></svg></button></div>';
           }).join('') : '') + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو مشبًا بعد.</p>' : '') + '</div>';
       $$('button[data-add]', box).forEach(function (b) {
         b.addEventListener('click', function () { addOpeningOf(b.dataset.add); renderPanel(); });

@@ -516,11 +516,19 @@
     fillAllWalls(spec) {
       const order = this.state.walls.map((w, i) => ({ i, len: w.len })).sort((a, b) => (b.len - a.len) || (a.i - b.i));
       let count = 0;
+      const skipped = [];
       // خطوة واحدة في سجل التراجع مهما كان عدد القطع المضافة
       this._suspendHistory = true;
-      try { for (const { i } of order) if (this.addSofaOnWall(i, spec)) count++; }
+      try {
+        for (const { i } of order) {
+          if (this.addSofaOnWall(i, spec)) count++;
+          else skipped.push(i);
+        }
+      }
       finally { this._suspendHistory = false; }
       if (count) this.changed();
+      // تقرير لمن يريد عرضه: أي الجدران لم تتسع لكتبة كاملة
+      this.lastFill = { added: count, skipped: skipped, total: order.length };
       return count;
     }
 
@@ -623,21 +631,51 @@
     }
 
     /** محاولة إلصاق قطعة كنب بأقرب جدار مطابق للاتجاه */
-    _trySnapToWall(p, g = this.geometry(), tol = 0.25) {
+    /* انجذاب ذكي (للنسخة التجريبية عبر opts.smartSnap):
+     يلتقط الجدار مرة واحدة ثم يسمح بالسحب الحر حتى يبتعد العنصر بما يتجاوز
+     حدّ الفكّ (أوسع من حدّ الالتقاط)، فلا يقفز إلا عند جدار جديد.
+     ولا يلتصق فوق فتحة مانعة. بلا الخيار: السلوك القديم حرفياً. */
+  _trySnapToWall(p, g = this.geometry(), tol = 0.25) {
       if (p.kind !== 'sofa') { delete p.wall; delete p.t; return false; }
+      const d = this.drag;
+      if (this.opts.smartSnap && d && d.mode === 'move') {
+        const rel = d.snapRel || (d.snapRel = {});
+        const tolRel = tol * 2.4;
+        let best = null, bestD = Infinity;
+        for (const w of g.walls) {
+          if (angDiff(p.rot, w.rot) > 10) continue;
+          const { t, s } = this.wallCoords(w, { x: p.x, y: p.y });
+          if (t < -0.3 || t > w.len + 0.3) continue;
+          const ds = Math.abs(s - p.h / 2);
+          const held = rel[w.i] != null && Math.abs(rel[w.i] - t) <= tolRel;
+          if (!held && ds >= tol) continue;
+          if (ds >= bestD) continue;
+          if (this._spansOpening({ wall: w.i, t: t, w: p.w }, w.i)) continue;
+          bestD = ds; best = { w: w, t: t };
+        }
+        if (best) {
+          p.wall = best.w.i; p.t = round(best.t, 3); this._placeOnWall(p, best.w);
+          rel[best.w.i] = p.t;
+          for (const k of Object.keys(rel)) if (+k !== best.w.i) delete rel[k];
+          return true;
+        }
+        for (const k of Object.keys(rel)) delete rel[k];
+        delete p.wall; delete p.t;
+        return false;
+      }
       let best = null, bestD = Infinity;
       for (const w of g.walls) {
         if (angDiff(p.rot, w.rot) > 10) continue;
         const { t, s } = this.wallCoords(w, { x: p.x, y: p.y });
         const ds = Math.abs(s - p.h / 2);
-        if (ds < tol && t > -0.3 && t < w.len + 0.3 && ds < bestD) { bestD = ds; best = { w, t }; }
+        if (ds < tol && t > -0.3 && t < w.len + 0.3 && ds < bestD) { bestD = ds; best = { w: w, t: t }; }
       }
       if (best) { p.wall = best.w.i; p.t = round(best.t, 3); this._placeOnWall(p, best.w); return true; }
       delete p.wall; delete p.t;
       return false;
     }
 
-    updateSelected(props) {
+  updateSelected(props) {
       const p = this.selectedPiece();
       if (!p) return;
       const rotChanged = props.rot != null && norm360(+props.rot) !== p.rot;
@@ -884,7 +922,33 @@
     }
 
     /** إبقاء مركز القطعة داخل مستطيل الغرفة (لا تخرج من اللوحة بصمت) */
-    _clampToRoom(p, g = this.geometry(), margin = 0.05) {
+    /* حدود الغرفة تراعي الحجم والاتجاه الفعليين للقطعة: تقييد المركز وحده
+     يسمح لقطعة كبيرة أو مُدارة أن تخرج عن المخطط. */
+  _halfExtent(p) {
+      const c = Math.abs(Math.cos(rad(p.rot || 0))), sn = Math.abs(Math.sin(rad(p.rot || 0)));
+      return { hx: (c * p.w + sn * p.h) / 2, hy: (sn * p.w + c * p.h) / 2 };
+  }
+
+  /** يعيد الموضع داخل حدود الغرفة اعتماداً على نصف امتداد القطعة الفعلي */
+  _clampPieceToRoom(p, g = this.geometry(), margin = 0.02) {
+      const bb = g.bb;
+      const { hx, hy } = this._halfExtent(p);
+      const loX = bb.minX + hx + margin, hiX = bb.maxX - hx - margin;
+      const loY = bb.minY + hy + margin, hiY = bb.maxY - hy - margin;
+      p.x = round(hiX < loX ? (bb.minX + bb.maxX) / 2 : clamp(p.x, loX, hiX), 3);
+      p.y = round(hiY < loY ? (bb.minY + bb.maxY) / 2 : clamp(p.y, loY, hiY), 3);
+      return p;
+  }
+
+  /** هل تمتد القطعة على هذا الجدار فوق فتحة مانعة (باب/مشب)؟ */
+  _spansOpening(p, wallIndex) {
+      if (p.wall == null || p.wall !== wallIndex) return false;
+      const t0 = p.t - p.w / 2, t1 = p.t + p.w / 2;
+      return this.state.openings.some((o) => o.blocks && o.wall === p.wall
+        && t0 < o.t + o.w / 2 - 0.01 && t1 > o.t - o.w / 2 + 0.01);
+  }
+
+  _clampToRoom(p, g = this.geometry(), margin = 0.05) {
       const bb = g.bb;
       p.x = round(clamp(p.x, bb.minX + margin, Math.max(bb.minX + margin, bb.maxX - margin)), 3);
       p.y = round(clamp(p.y, bb.minY + margin, Math.max(bb.minY + margin, bb.maxY - margin)), 3);
@@ -1083,8 +1147,12 @@
       if (d.mode === 'move') {
         p.x = round(snap(pt.x + d.off.x), 3);
         p.y = round(snap(pt.y + d.off.y), 3);
-        this._clampToRoom(p, g);
+        // حدود تراعي الحجم والاتجاه (boundAware) أو تقييد المركز كسابقتها
+        if (this.opts.boundAware) this._clampPieceToRoom(p, g);
+        else this._clampToRoom(p, g);
         this._trySnapToWall(p, g);
+        // بعد الانجذاب قد تتجاوز زوايا القطعة المدارة الحدّ: نصحّحها
+        if (this.opts.boundAware && p.wall == null) this._clampPieceToRoom(p, g);
       } else if (d.mode === 'resizeW') {
         const l = this.toLocal(o, pt);
         let nw = Math.max(MIN_SIZE, round(snap(l.x + o.w / 2), 2));
@@ -1231,7 +1299,77 @@
       return { lx0: a - p.t, lx1: b - p.t };
     }
 
-    _draw(ctx, v, W, H, opt) {
+    /* ---------- أشكال الأثاث والإكسسوارات ----------
+     الاسم داخل مساحة صغيرة غير مقروء، فيُستبدل برسم رمزي (طبق/سجادة/مخدّة/table).
+     الاسم والكمية يبقيان في لوحة المعلومات وعند التحديد (opts.pieceArt). */
+  _pieceArt(ctx, p, pw, ph, fs, k) {
+      const shape = String(p.shape || p.art || p.itemId || '');
+      const r = Math.min(pw, ph) * 0.28;
+      ctx.lineWidth = Math.max(1, 1.1 * k);
+      ctx.strokeStyle = 'rgba(255,255,255,0.92)';
+      ctx.fillStyle = 'rgba(255,255,255,0.30)';
+      if (/tray|plate|صحن|طبق/i.test(shape)) {
+        const R2 = Math.min(pw, ph) * 0.30;
+        ctx.beginPath(); ctx.arc(0, 0, R2, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.arc(0, 0, R2 * 0.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-R2 * 0.95, 0); ctx.lineTo(-R2 * 1.4, 0);
+        ctx.moveTo(R2 * 0.95, 0); ctx.lineTo(R2 * 1.4, 0);
+        ctx.stroke();
+      } else if (/rug|carpet|سجادة/i.test(shape)) {
+        ctx.strokeRect(-pw / 2 + 2, -ph / 2 + 2, pw - 4, ph - 4);
+        const n2 = Math.max(2, Math.min(8, Math.floor(ph / (4 * k))));
+        ctx.beginPath();
+        for (let i = 1; i < n2; i++) { const yy = -ph / 2 + (ph / n2) * i; ctx.moveTo(-pw / 2 + 3, yy); ctx.lineTo(pw / 2 - 3, yy); }
+        ctx.stroke();
+      } else if (/pillow|cushion|وسادة|مخدة/i.test(shape)) {
+        roundRect(ctx, -pw / 2 + 2, -ph / 2 + 2, pw - 4, ph - 4, r); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-pw / 2 + 5, 0);
+        ctx.quadraticCurveTo(0, fs * 0.28, pw / 2 - 5, 0); ctx.stroke();
+      } else if (/table|طاولة|مكتب/i.test(shape)) {
+        roundRect(ctx, -pw / 2 + 3, -ph / 2 + 3, pw - 6, ph - 6, r); ctx.fill(); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-pw / 2 + 3, -ph / 2 + 3); ctx.lineTo(pw / 2 - 3, ph / 2 - 3);
+        ctx.moveTo(pw / 2 - 3, -ph / 2 + 3); ctx.lineTo(-pw / 2 + 3, ph / 2 - 3);
+        ctx.stroke();
+      } else if (/majlis|كرسي|مركى/i.test(shape)) {
+        roundRect(ctx, -pw / 2 + 2, -ph / 2 + 2, pw - 4, ph * 0.6, r); ctx.fill(); ctx.stroke();
+        ctx.beginPath(); ctx.rect(-pw / 2 + 2, -ph / 2 + 2, pw - 4, ph * 0.2); ctx.stroke();
+      } else {
+        const R3 = Math.min(pw, ph) * 0.3;
+        ctx.beginPath(); ctx.arc(0, 0, R3, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      }
+  }
+
+  /* ---------- طبقة القياسات العلوية ----------
+     تُرسم فوق كل القطع (opts.dimsOnTop) بتسمية ذات خلفية بيضاء،
+     فلا يحجبها أثاث يُسحب فوقها، وتبقى المقاسات الحقيقية كما هي. */
+  _drawDimsTop(ctx, v, W, opt) {
+      const g = this.geometry();
+      const S = v.scale;
+      const P = (x, y) => this.toScreen(x, y, v);
+      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const fs = Math.max(9 * k, Math.min(13 * k, S * 0.34));
+      ctx.save();
+      for (const w of g.walls) {
+        const lp = { x: (P(w.A.x, w.A.y).x + P(w.B.x, w.B.y).x) / 2, y: (P(w.A.x, w.A.y).y + P(w.B.x, w.B.y).y) / 2 };
+        const off = Math.max(16, 24 * S);
+        const num = round(w.len, 2) + ' م';
+        ctx.font = `700 ${fs}px ${FONT}`;
+        const tw = ctx.measureText(num).width;
+        const y = lp.y + off;
+        ctx.fillStyle = 'rgba(255,255,255,0.93)';
+        roundRect(ctx, lp.x - tw / 2 - 5, y - fs * 0.85, tw + 10, fs * 1.45, 3);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.12)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = '#2A2622';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+        ctx.fillText(num, lp.x, y - fs * 0.78);
+      }
+      ctx.restore();
+  }
+
+  _draw(ctx, v, W, H, opt) {
       const g = this.geometry();
       const getItem = this.opts.getItem || (() => null);
       const bad = opt.export ? new Set() : this.overlaps();
@@ -1460,6 +1598,8 @@
         const isSel = !opt.export && this.sel && this.sel.type === 'piece' && this.sel.id === p.id;
         const isBad = bad.has(p.id);
         const color = item.color || (p.kind === 'sofa' ? '#8b5a2b' : '#7f8c8d');
+        // لون فاتح يمنح كل نوع جلسة تمييزاً داخل المخطط (opts.pieceTint)
+        const light = this.opts.pieceTint && item.light ? item.light : shade(color, 22);
         const span = this._visualSpan(p, g, idx);
         const cen = P(p.x, p.y);
 
@@ -1480,6 +1620,13 @@
           ctx.stroke();
           ctx.setLineDash([]);
         } else if (p.kind === 'sofa') {
+          if (this.opts.pieceTint && item.light) {
+            // شريط رفيع بلون النوع أعلى الكنبة: يميّز الجلسة بلا تغطية القماش
+            const barH = Math.max(2, Math.min(6, ph * 0.14));
+            ctx.fillStyle = light;
+            roundRect(ctx, x0, -ph / 2, pw, barH, Math.min(6, pw / 6, barH / 2));
+            ctx.fill();
+          }
           ctx.shadowColor = 'rgba(0,0,0,0.18)'; ctx.shadowBlur = Math.max(2, 0.06 * S); ctx.shadowOffsetY = Math.max(1, 0.02 * S);
           ctx.fillStyle = color;
           roundRect(ctx, x0, -ph / 2, pw, ph, Math.min(6, pw / 6, ph / 6));
@@ -1565,9 +1712,11 @@
           } else if (pw > fs * 2) {
             ctx.fillText(dimsLabel, 0, (flip ? -1 : 1) * back * 0.3);
           }
-        } else if (pw > fs * 1.5) {
+        } else if (pw > fs * 1.5 && !(this.opts.pieceArt && p.kind === 'acc')) {
           ctx.fillText(fitText(ctx, label, maxW), 0, 0);
         }
+        // شكل رمزي للإكسسوار بدل اسمه داخل مساحة صغيرة (الاسم يبقى في اللوحة)
+        if (this.opts.pieceArt && p.kind === 'acc') this._pieceArt(ctx, p, pw, ph, fs, k);
         ctx.restore();
 
         // تحديد / تداخل
@@ -1597,6 +1746,9 @@
           ctx.restore();
         }
       });
+
+      // طبقة القياس فوق القطع: تبقى الأرقام واضحة مهما جرت قطعة فوقها
+      if (this.opts.dimsOnTop) this._drawDimsTop(ctx, v, W, opt);
 
       if (!g.closed && !opt.export) {
         ctx.fillStyle = '#A23B2C';
