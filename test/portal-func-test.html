@@ -265,7 +265,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       // نقرأ الموضع بعد استقرار التخطيط في كل مرحلة (الرسم ينمو بين الفحوص)
       var dReSync = function () { dzp.fitView(); dR = dCv.getBoundingClientRect(); };
       // نقطة بعيدة عن المقابض (أعلى يسار القطعة) حتى يقع النقر على الجسم لا على مقبض تغيير الحجم
-      var dPos = dzp.toScreen(dSofa.x - dSofa.w / 4, dSofa.y - dSofa.h / 4);
+      // نمسك جسم الكنبة من 중심ها لا من ربعها العلوي: مقبض العمق لم يعد قابلاً للالتقاط
+  var dPos = dzp.toScreen(dSofa.x - dSofa.w * 0.15, dSofa.y - dSofa.h * 0.2);
       var ptype = function (type, x, y) { dCv.dispatchEvent(new PointerEvent(type, { pointerId: 7, pointerType: 'touch', clientX: dR.left + x, clientY: dR.top + y, bubbles: true, cancelable: true, isPrimary: true, button: 0 })); };
       dzp.select({ type: 'piece', id: dSofa.id });
       await waitFor(function () { return !q('#pSheet').hidden; }, 60000);

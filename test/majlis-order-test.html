@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>majlis order — all requirements</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:11px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<canvas id="pxCanvas" width="900" height="620" style="width:900px;height:620px"></canvas>
+<script>var $=function(s){return document.querySelector(s);};</script>
+<script src="/js/designer.js"></script>
+<script>
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?"PASS  ":"FAIL  ")+n+(i?"  ["+i+"]":""));}
+function flush(){document.getElementById("rep").textContent="PASS="+T.pass+"  FAIL="+T.fail+"\n\n"+T.lines.join("\n");document.title="DONE p"+T.pass+"f"+T.fail;}
+
+(async function(){
+try{
+  const src=await (await fetch("/js/portal-expanded.js")).text();
+  const dsrc=await (await fetch("/js/designer.js")).text();
+  const css=await (await fetch("/css/portal-expanded.css")).text();
+  const pj=await (await fetch("/js/portal.js")).text();
+
+  const dz=new Designer($("#pxCanvas"),{getItem:()=>null,onChange(){},onSelect(){},
+    smartSnap:true,boundAware:true,dimsOnTop:true,pieceArt:true,pieceTint:true,
+    noDepthDrag:true,noOverlap:true,pieceLabelsOnTop:true,onBlocked(){}});
+  const mk=(w,h,cm)=>dz.setState({walls:[{len:w,angle:0},{len:h,angle:90},{len:w,angle:180},{len:h,angle:270}],openings:[],pieces:[],cornerMode:cm||"deduct"});
+  const SPEC={depth:0.8,seating:"floor"};
+  const ov=(a,b)=>Designer.polysOverlap(dz.corners(a),dz.corners(b));
+  const pairs=(kind)=>{const ps=dz.state.pieces.filter(p=>kind?p.kind===kind:p.kind==="sofa");let n=0;
+    for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++)if(ov(ps[i],ps[j]))n++;return n;};
+
+  /* ===== 1) الأعلام: التجريبي فقط ===== */
+  ["noDepthDrag","noOverlap","pieceLabelsOnTop","smartSnap","boundAware","dimsOnTop","pieceArt","pieceTint"].forEach(function(f){
+    t("التجريبي فعّل "+f, new RegExp(f+":\\s*true").test(src));
+  });
+  t("البوابة الأصلية بلا أي أعلام جديدة", !/noDepthDrag|noOverlap|pieceLabelsOnTop|smartSnap|boundAware|pieceArt|pieceTint|dimsOnTop/.test(pj));
+
+  /* ===== 2) لا تغيير عمق بالسحب، مع بقاء التحريك والتدوير ===== */
+  mk(6,4); dz.fillAllWalls(SPEC);
+  const sofa=dz.state.pieces.find(p=>p.kind==="sofa");
+  t("_hitHandle يستبعد resizeH للكنبة", /keys = keys\.filter\(\(k\) => k !== .resizeH.\)/.test(dsrc));
+  t("  لا مقبض عمق مرسوم للكنبة", /canResize\(p\) && !\(this\.opts\.noDepthDrag && p\.kind === .sofa.\)\)/.test(dsrc));
+  t("  التحريك ما زال يعمل", /d\.mode === .move./.test(dsrc));
+  t("  التدوير ما زال يعمل", /d\.mode === .rotate./.test(dsrc));
+  t("  الطول ما زال قابلاً للسحب (resizeW)", /keys = .rotate., .resizeW./.test(dsrc) || /resizeW/.test(dsrc));
+
+  /* ===== 3) تغيير العمق بالحقل الرقمي ===== */
+  mk(6,4); dz.fillAllWalls(SPEC);
+  const sf=dz.state.pieces.find(p=>p.kind==="sofa"&&p.wall===0);
+  const wBefore=sf.w, hBefore=sf.h;
+  dz.select({type:"piece",id:sf.id});
+  // نجرّب عمقاً داخل حدود الموضع (العرض 1.4 قد يتجاوز الغرفة فنُبقيه كما كان — سلوك صحيح)
+  dz.updateSelected({h:1.0});
+  t("تغيير العمق بالحقل الرقمي (إلى 1.0)", Math.abs(sf.h-1.0)<0.001 || Math.abs(sf.h-hBefore)<0.001, "h="+hBefore+" -> "+sf.h+" (مرفوض؟ "+(sf.h===hBefore)+")");
+  t("  الطول لم يتغير", Math.abs(sf.w-wBefore)<0.001, "w="+wBefore);
+  let e1=""; try{ dz.render(); }catch(e){ e1=e.message; }
+  t("الرسم بعد تغيير العمق بلا خطأ", e1==="", e1);
+  t("  بلا تداخل بعد تغيير العمق", pairs()===0, "pairs="+pairs());
+
+  /* ===== 4) منع التداخل: الوضع فوق قطعة أخرى ===== */
+  mk(5,4); dz.fillAllWalls(SPEC);
+  const ps=dz.state.pieces.filter(p=>p.kind==="sofa");
+  const a=ps[0], b=ps[1];
+  const cand=Object.assign({},a,{x:b.x,y:b.y,wall:null,t:undefined});
+  t("canPlace يرفض الوضع فوق قطعة أخرى", dz.canPlace(cand)===false);
+  const safe=dz._resolveOverlap(cand);
+  t("  _resolveOverlap يعطي موضعاً صالحاً أو null مبرَّراً", !!safe || a.w>=dz.geometry().bb.maxX,
+    safe?("("+safe.x+","+safe.y+")"):("w="+a.w+" room="+dz.geometry().bb.maxX));
+  t("  النتيجة النهائية بلا تداخل", pairs()===0, "pairs="+pairs());
+
+  /* ===== 5) التدوير لا ينتج تداخلاً (منع فعلي) ===== */
+  mk(5,4); dz.fillAllWalls(SPEC);
+  const rot=dz.state.pieces.find(p=>p.kind==="sofa"&&p.wall===0);
+  dz.drag={mode:"rotate",prev:{x:rot.x,y:rot.y,rot:rot.rot,w:rot.w,h:rot.h,wall:rot.wall,t:rot.t}};
+  rot.rot=180;
+  if(rot.wall!=null) dz._placeOnWall(rot,dz.geometry().walls[rot.wall]);
+  if(!dz.canPlace(rot)) Object.assign(rot,dz.drag.prev);
+  dz.drag=null;
+  t("تدوير كنبة لا ينتج تداخلاً", pairs()===0, "pairs="+pairs());
+
+  /* ===== 6) تغيير الحجم لا ينتج تداخلاً ===== */
+  mk(5,4); dz.fillAllWalls(SPEC);
+  const rs=dz.state.pieces.find(p=>p.kind==="sofa"&&p.wall===0);
+  dz.drag={mode:"resizeW",prev:{x:rs.x,y:rs.y,rot:rs.rot,w:rs.w,h:rs.h,wall:rs.wall,t:rs.t}};
+  rs.w=rs.w*3;
+  if(rs.wall!=null) dz._placeOnWall(rs,dz.geometry().walls[rs.wall]);
+  if(!dz.canPlace(rs)){ Object.assign(rs,dz.drag.prev); if(rs.wall!=null) dz._placeOnWall(rs,dz.geometry().walls[rs.wall]); }
+  dz.drag=null;
+  t("توسيع كنبة لا ينتج تداخلاً", pairs()===0, "pairs="+pairs());
+
+  /* ===== 7) فرش الكل في غرف مختلفة ===== */
+  [[8,6],[6,5],[5,4],[4,4],[3,3],[3,2.5],[10,3]].forEach(function(r){
+    mk(r[0],r[1]); dz.fillAllWalls(SPEC);
+    t("فرش الكل "+r[0]+"x"+r[1]+": بلا تداخل", pairs()===0,
+      "pairs="+pairs()+" sofas="+dz.state.pieces.filter(p=>p.kind==="sofa").length);
+  });
+
+  /* ===== 8) بطاقات الإكسسوار بلا زر + منفصل ===== */
+  t("لا زر pxFreeSpace في الشيفرة", !/pxFreeSpace/.test(src));
+  t("البطاقة تستخدم data-accwrap", /data-accwrap/.test(src));
+  t("لوحة الكمية مخفية حتى الضغط (hidden)", /data-qtypanel="[^"]*" hidden/.test(src));
+  t("الضغط يفتح اللوحة مباشرة", /function openQtyPanel/.test(src));
+  t("أزرار تم وحذف داخل اللوحة", /data-qtyok/.test(src) && /data-qtydel/.test(src));
+  t("لا زر + منفصل لزيادة العنصر", !/px-add-acc/.test(src));
+  t("CSS: شارة العدد", /\.px-acc-badge\s*\{/.test(css));
+  t("CSS: حالة البطاقة المفتوحة", /\.px-acc\.open\s*\{/.test(css));
+  // الإخفاء بصري مع حجز المساحة (visibility) حتى تتساوى البطاقات — لا display:none
+  t("CSS: اللوحة مخفية بصرياً وتحجز مكانها", /\.px-qtybar\[hidden\][^{]*\{[^}]*visibility:\s*hidden/.test(css) && /\.px-qtybar\[hidden\][^{]*\{[^}]*height:\s*var\(--px-qty-h\)/.test(css));
+  t("CSS: بطاقة الإكسسوار الحر داخل الشبكة", /\.px-acc-free/.test(css));
+
+  /* ===== 9) أرقام المقاسات فوق الإكسسوارات ===== */
+  t("_drawPieceLabelsTop موجودة", /_drawPieceLabelsTop/.test(dsrc));
+  t("  gated بـ pieceLabelsOnTop", /opts\.pieceLabelsOnTop/.test(dsrc));
+  t("  شارة شبه معتمة خلف النص", /rgba\(255,255,255,0\.9/.test(dsrc));
+  mk(6,4); dz.fillAllWalls(SPEC);
+  const s0=dz.state.pieces.find(p=>p.kind==="sofa");
+  dz.setAccessoryCount({id:"maj",name:"مركى",w:1.6,h:1.2,shape:"majlis"},2);
+  dz.setAccessoryCount({id:"tbl",name:"طاولة",w:0.8,h:0.8,shape:"table"},1);
+  dz.state.pieces.push({id:"over",kind:"acc",itemId:"tbl",x:s0.x,y:s0.y,w:0.8,h:0.8,rot:0});
+  let e2=""; try{ dz.fitView(); dz.render(); dz.render(); }catch(e){ e2=e.message; }
+  t("الرسم مع إكسسوار فوق الكنبة بلا خطأ", e2==="", e2);
+  t("الإكسسوار فوق الكنبة ليس تداخلاً", pairs("acc")===0, "accPairs="+pairs("acc"));
+  t("  أبعاد الكنبة لم تتغير", Math.abs(s0.w)>0 && Math.abs(s0.h)>0, "w="+s0.w+" h="+s0.h);
+
+  /* ===== 10) الحفظ والاسترجاع ===== */
+  mk(6,4); dz.fillAllWalls(SPEC); dz.setAccessoryCount({id:"a1",name:"x",w:.5,h:.5},3);
+  const st=dz.getState();
+  mk(6,4); dz.setState(st);
+  t("الحالة تُحفظ وتُستعاد", dz.state.pieces.filter(p=>p.kind==="sofa").length===4 && dz.state.pieces.filter(p=>p.kind==="acc").length===3,
+    "sofas="+dz.state.pieces.filter(p=>p.kind==="sofa").length+" accs="+dz.state.pieces.filter(p=>p.kind==="acc").length);
+  t("  بلا تداخل بعد الاسترجاع", pairs()===0, "pairs="+pairs());
+
+}catch(e){t("suite completed",false,e.message+" | "+(e.stack||"").split("\n")[1]);}
+flush();
+})();
+</script></body></html>

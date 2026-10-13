@@ -675,9 +675,11 @@
       return false;
     }
 
-  updateSelected(props) {
+    updateSelected(props) {
       const p = this.selectedPiece();
       if (!p) return;
+      // حالة قبل التعديل: تُستعاد إن استُبعد الموضع الجديد (منع التداخل)
+      const prevProps = { w: p.w, h: p.h, rot: p.rot, x: p.x, y: p.y, wall: p.wall, t: p.t };
       const rotChanged = props.rot != null && norm360(+props.rot) !== p.rot;
       // مقاس الإكسسوار محكوم ببطاقة الصنف: يُقبل فقط مع تغيير الصنف نفسه
       if (!Designer.canResize(p) && props.itemId === undefined) { props = Object.assign({}, props); delete props.w; delete props.h; }
@@ -688,6 +690,18 @@
       const g = this.geometry();
       if (p.wall != null && !rotChanged) this._placeOnWall(p, g.walls[p.wall]);
       else this._trySnapToWall(p, g, 0.12);
+      // الحقول الرقمية مسار تعديل مباشر: يُفحص التداخل هنا أيضاً (noOverlap)
+      if (this.opts.noOverlap && !this.canPlace(p)) {
+        const safe = this._resolveOverlap(p);
+        if (safe) {
+          Object.assign(p, safe);
+          if (safe.wall != null && g.walls[safe.wall]) this._placeOnWall(p, g.walls[safe.wall]);
+        } else {
+          Object.assign(p, prevProps);
+          if (p.wall != null && g.walls[p.wall]) this._placeOnWall(p, g.walls[p.wall]);
+        }
+        if (this.opts.onBlocked) this.opts.onBlocked(p, "props");
+      }
       this.changed();
     }
 
@@ -889,7 +903,9 @@
 
     _hitHandle(p, sx, sy, tol) {
       const hs = this._handles(p);
-      const keys = Designer.canResize(p) ? ['rotate', 'resizeW', 'resizeH'] : ['rotate'];
+      let keys = Designer.canResize(p) ? ['rotate', 'resizeW', 'resizeH'] : ['rotate'];
+      // العمق للكنبة يُغيَّر من الحقل الرقمي فقط (noDepthDrag): الطول والتدوير يبقيان
+      if (this.opts.noDepthDrag && p.kind === 'sofa') keys = keys.filter((k) => k !== 'resizeH');
       for (const k of keys) {
         if (Math.hypot(hs[k].x - sx, hs[k].y - sy) <= tol) return k;
       }
@@ -946,6 +962,54 @@
       const t0 = p.t - p.w / 2, t1 = p.t + p.w / 2;
       return this.state.openings.some((o) => o.blocks && o.wall === p.wall
         && t0 < o.t + o.w / 2 - 0.01 && t1 > o.t - o.w / 2 + 0.01);
+  }
+
+  /* منع التداخل هندسياً: هل يمكن وضع القطعة candidate في مكانها؟
+     الفحص بزوايا القطعة بعد التدوير (corners) لا بنقطة مركزها ولا بمستطيل غير مطابق،
+     فالتدوير ٩٠° محسوب فعلاً. نتجاهل القطع المجانية (أرضية) لأنها ليست أثاثاً،
+     ونسمح بتراكب الإكسسوار فوق الكنب كالمعتاد (وسائد). */
+  canPlace(cand, opts = {}) {
+      const mine = this.corners(cand);
+      const myKind = cand.kind || 'sofa';
+      for (const q of this.state.pieces) {
+        if (q.id === cand.id) continue;
+        // المساحة الحرة إطار أرضي: ما يوضع فوقها ليس تداخلاً
+        if (q.kind === 'free') continue;
+        // الإكسسوار فوق أثاث (والعكس) تصرّف طبيعي: وسائد وطاولات صغيرة
+        if ((q.kind === 'acc') !== (myKind === 'acc')) continue;
+        // معاً في وضع «طول الجدار كامل»: زوايا الجدارات تتشارك عمداً
+        if (this.state.cornerMode === 'full' && myKind === 'sofa' && q.kind === 'sofa'
+          && cand.wall != null && q.wall != null && cand.wall !== q.wall) continue;
+        // ذراعا كنب الزاوية يلتقيان عمداً
+        if (cand.group && cand.group === q.group) continue;
+        if (opts.ignore && opts.ignore.includes(q.id)) continue;
+        if (Designer.polysOverlap(mine, this.corners(q))) return false;
+      }
+      return true;
+  }
+
+  /** يمنع التداخل: يرفض الموضع أو يبحث عن أقرب موضع صالح ضمن نصف قطر
+      متدرّج. يعيد { x, y, rot, wall, t } صالحاً أو null إن لم يوجد. */
+  _resolveOverlap(cand, opts = {}) {
+      if (this.canPlace(cand)) return cand;
+      const g = this.geometry();
+      const base = Object.assign({}, cand);
+      const steps = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.5];
+      for (const rad of steps) {
+        for (let k = 0; k < 16; k++) {
+          const a = (k / 16) * Math.PI * 2;
+          const t = Object.assign({}, base, {
+            x: round(base.x + Math.cos(a) * rad, 3),
+            y: round(base.y + Math.sin(a) * rad, 3),
+            wall: null, t: undefined
+          });
+          this._clampPieceToRoom(t, g);
+          if (this.canPlace(t, opts)) {
+            return Object.assign({}, base, { x: t.x, y: t.y, wall: null, t: undefined });
+          }
+        }
+      }
+      return null;
   }
 
   _clampToRoom(p, g = this.geometry(), margin = 0.05) {
@@ -1142,6 +1206,8 @@
       }
       const p = this.piece(d.id);
       if (!p) return;
+      // نلتقط الموضع مرة واحدة عند بدء السحب لنرجع إليه إن استُبعد موضع جديد
+      if (d.prev == null) d.prev = { x: p.x, y: p.y, rot: p.rot, w: p.w, h: p.h, wall: p.wall, t: p.t };
       const o = d.orig;
       const a = rad(o.rot), c = Math.cos(a), s = Math.sin(a);
       if (d.mode === 'move') {
@@ -1153,6 +1219,15 @@
         this._trySnapToWall(p, g);
         // بعد الانجذاب قد تتجاوز زوايا القطعة المدارة الحدّ: نصحّحها
         if (this.opts.boundAware && p.wall == null) this._clampPieceToRoom(p, g);
+        // منع التداخل هندسياً (noOverlap): نُبقي أقرب موضع صالح أو نُرجع للأصل
+        if (this.opts.noOverlap) {
+          if (!this.canPlace(p)) {
+            const safe = this._resolveOverlap(p);
+            if (safe) { p.x = safe.x; p.y = safe.y; if (safe.wall == null) { delete p.wall; delete p.t; } }
+            else { Object.assign(p, d.prev || {}); }
+            if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked");
+          }
+        }
       } else if (d.mode === 'resizeW') {
         const l = this.toLocal(o, pt);
         let nw = Math.max(MIN_SIZE, round(snap(l.x + o.w / 2), 2));
@@ -1166,18 +1241,24 @@
           const dd = (nw - o.w) / 2;
           p.w = nw; p.x = round(o.x + c * dd, 3); p.y = round(o.y + s * dd, 3);
         }
+        if (this.opts.noOverlap && !this.canPlace(p)) { Object.assign(p, d.prev || {}); if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked"); }
       } else if (d.mode === 'resizeH') {
         const l = this.toLocal(o, pt);
         const nh = Math.max(MIN_SIZE, round(snap(l.y + o.h / 2), 2));
         if (p.wall != null && g.walls[p.wall]) { p.h = nh; this._placeOnWall(p, g.walls[p.wall]); }
         else { const dd = (nh - o.h) / 2; p.h = nh; p.x = round(o.x - s * dd, 3); p.y = round(o.y + c * dd, 3); }
+        if (this.opts.noOverlap && !this.canPlace(p)) { Object.assign(p, d.prev || {}); if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked"); }
       } else if (d.mode === 'rotate') {
         const cs = this.toScreen(o.x, o.y);
         let ang = (Math.atan2(sy - cs.y, sx - cs.x) * 180) / Math.PI + 90;
         if (!e.shiftKey) ang = Math.round(ang / 15) * 15;
-        p.rot = norm360(ang);
-        p.x = o.x; p.y = o.y;
-        this._trySnapToWall(p, g, 0.12);
+        if (this.opts.noDepthDrag && p.kind === 'sofa') { d.mode = 'move'; p.x = o.x; p.y = o.y; this._trySnapToWall(p, g); }
+        else {
+          p.rot = norm360(ang);
+          p.x = o.x; p.y = o.y;
+          this._trySnapToWall(p, g, 0.12);
+          if (this.opts.noOverlap && !this.canPlace(p)) { Object.assign(p, d.prev || {}); if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked"); }
+        }
       }
       d.moved = true;
       this.render();
@@ -1365,6 +1446,47 @@
         ctx.fillStyle = '#2A2622';
         ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         ctx.fillText(num, lp.x, y - fs * 0.78);
+      }
+      ctx.restore();
+  }
+
+  /* ---------- طبقة أرقام المقاسات العلوية ----------
+     تُرسم بعد كل القطع (opts.pieceLabelsOnTop): حين يوضع إكسسوار فوق
+     كنبة تحجب خطوط القياس، تبقى الأرقام مقروءة بتسمية داكنة على شارة فاتحة.
+     الشارة تُرسم خلف النص وحده — لا تُغطّي الرسمة بأكملها. */
+  _drawPieceLabelsTop(ctx, v, W, opt) {
+      const S = v.scale;
+      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.font = `700 ${fs}px ${FONT}`;
+      for (const p of this._drawOrder()) {
+        if (p.kind === 'free') continue;
+        const span = this._visualSpan(p, this.geometry(), this.state.pieces.indexOf(p));
+        const cen = this.toScreen(p.x, p.y, v);
+        const ph = p.h * S;
+        const pw = Math.max(0, (span.lx1 - span.lx0) * S);
+        const txt = round(p.w, 2) + ' × ' + round(p.h, 2) + ' م';
+        const useShort = ctx.measureText(txt).width > pw - 4;
+        const label = useShort ? round(p.w, 2) + ' م' : txt;
+        if (pw < fs * 1.6 || ph < fs * 0.7) continue;
+        ctx.save();
+        ctx.translate(cen.x, cen.y);
+        ctx.rotate(rad(p.rot));
+        const cx = p.kind === 'sofa' ? ((span.lx0 + span.lx1) / 2) * S : 0;
+        ctx.translate(cx, 0);
+        const flip = p.rot > 90 && p.rot < 270;
+        if (flip) ctx.rotate(Math.PI);
+        const tw = ctx.measureText(label).width;
+        // شارة خلف النص فقط: خلفية معتمة خفيفة تُبقي الرقم مقروءاً فوق أي لون
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        roundRect(ctx, -tw / 2 - 4, -fs * 0.62, tw + 8, fs * 1.24, 3);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(0,0,0,0.14)'; ctx.lineWidth = 1; ctx.stroke();
+        ctx.fillStyle = '#2A2622';
+        ctx.fillText(label, 0, 0);
+        ctx.restore();
       }
       ctx.restore();
   }
@@ -1738,10 +1860,9 @@
           ctx.save();
           ctx.strokeStyle = SEL; ctx.lineWidth = 1.5; ctx.setLineDash([]);
           ctx.beginPath(); ctx.moveTo(hs.top.x, hs.top.y); ctx.lineTo(hs.rotate.x, hs.rotate.y); ctx.stroke();
-          if (Designer.canResize(p)) {
-            drawHandle(ctx, hs.resizeW, SEL, '↔');
-            drawHandle(ctx, hs.resizeH, SEL, '↕');
-          }
+          if (Designer.canResize(p)) drawHandle(ctx, hs.resizeW, SEL, '↔');
+          // مقبض العمق مخفي للكنبة: يُضبط من الحقل الرقمي في اللوحة
+          if (Designer.canResize(p) && !(this.opts.noDepthDrag && p.kind === 'sofa')) drawHandle(ctx, hs.resizeH, SEL, '↕');
           drawHandle(ctx, hs.rotate, SEL_ROT, '↻');
           ctx.restore();
         }
@@ -1749,6 +1870,8 @@
 
       // طبقة القياس فوق القطع: تبقى الأرقام واضحة مهما جرت قطعة فوقها
       if (this.opts.dimsOnTop) this._drawDimsTop(ctx, v, W, opt);
+      // طبقة أرقام مقاسات القطع فوق كل الرسومات (مركى/طاولة فوق كنبة لا تحجبها)
+      if (this.opts.pieceLabelsOnTop) this._drawPieceLabelsTop(ctx, v, W, opt);
 
       if (!g.closed && !opt.export) {
         ctx.fillStyle = '#A23B2C';

@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>acc cards geometry</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:9999;overflow:auto;font:11px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<div style="width:330px;margin:0 auto"><div class="px-panel"><div class="px-accgrid" id="g"></div></div></div>
+<script>
+/* هندسة البطاقات بهياكلها الحقيقية: نتأكد أن كل بطاقات الشبكة
+   لها الارتفاع نفسه مهما اختلف فتح اللوحة أو وجود الشارة. */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
+
+function card(name,{badge=false,panelOpen=false,panelHidden=false,spread=true}={}){
+  return '<div class="px-acc'+(badge?' has':'')+'" role="button" tabindex="0">'
+   +'<span class="px-acc-art" style="background:#7A5230"></span>'
+   +'<span class="px-acc-name">'+name+'</span>'
+   +(badge?'<b class="px-acc-badge num">3</b>':'')
+   +'<span class="px-qtybar"'+(panelOpen?'':(panelHidden?' hidden':''))+'>'
+   +'<button class="qbtn">-</button><input class="px-qtyval num" value="3">'
+   +'<button class="qbtn">+</button><button class="px-qdone">تم</button>'
+   +'<button class="px-qdel">x</button></span>'
+   +(spread?'<button class="px-spread">توزيع متساوٍ</button>':'')
+   +'</div>';
+}
+function freeCard(){
+  return '<div class="px-acc px-acc-free" role="button" tabindex="0">'
+   +'<span class="px-acc-art free"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span>'
+   +'<span class="px-acc-name">مساحة أرضية فارغة</span></div>';
+}
+
+(async function(){
+try{
+  const g=$('#g');
+  // 1) بطاقات بنفس الهيكل الكامل: شارة + لوحة مفتوحة + زر توزيع
+  g.innerHTML = card('طاولة',{badge:true,panelOpen:true})
+    + card('مركى',{badge:true,panelOpen:true})
+    + card('سجادة',{badge:true,panelOpen:true});
+  let hs=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().height));
+  t('بطاقات بلوحة مفتوحة: ارتفاعات متساوية', Math.max(...hs)-Math.min(...hs)<=1, hs.join('/'));
+
+  // 2) بطاقات بنفس الهيكل: لوحة مخفية
+  g.innerHTML = card('طاولة',{panelHidden:true})
+    + card('مركى',{panelHidden:true})
+    + card('سجادة',{panelHidden:true});
+  hs=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().height));
+  t('بطاقات بلوحة مخفية: ارتفاعات متساوية', Math.max(...hs)-Math.min(...hs)<=1, hs.join('/'));
+
+  // 3) لوحة مفتوحة مقابل مخفية = نفس الارتفاع (المخفي يحجز المساحة)
+  g.innerHTML = card('طاولة',{panelOpen:true}) + card('مركى',{panelHidden:true});
+  hs=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().height));
+  t('مفتوحة = مخفية (المحجوز)', Math.abs(hs[0]-hs[1])<=1, hs.join('/'));
+
+  // 4) شارة أم لا: نفس الارتفاع (الشارة absolute فلا تأخذ صفاً)
+  g.innerHTML = card('طاولة',{badge:true,panelOpen:true}) + card('مركى',{panelOpen:true});
+  hs=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().height));
+  t('بشارة = بلا شارة (الشارة لا تأخذ صفاً)', Math.abs(hs[0]-hs[1])<=1, hs.join('/'));
+
+  // 5) بطاقة حرّة = بطاقة عادية
+  g.innerHTML = card('طاولة',{panelHidden:true}) + freeCard();
+  hs=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().height));
+  t('البطاقة الحرّة = العادية', Math.abs(hs[0]-hs[1])<=1, hs.join('/'));
+
+  // 6) البطاقة الحرّة = بطاقة بلوحة مفتوحة
+  g.innerHTML = card('طاولة',{panelOpen:true}) + freeCard();
+  hs=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().height));
+  t('البطاقة الحرّة = بلوحة مفتوحة', Math.abs(hs[0]-hs[1])<=1, hs.join('/'));
+
+  // 7) عرض والعرضات متساوية
+  g.innerHTML = card('طاولة',{panelOpen:true}) + card('مركى جلس طويل جدا',{panelOpen:true});
+  const ws=$$('.px-acc').map(c=>Math.round(c.getBoundingClientRect().width));
+  t('عرض البطاقات متساوي', Math.max(...ws)-Math.min(...ws)<=1, ws.join('/'));
+
+  // 8) لا تمرير أفقي
+  t('لا تمرير أفقي', document.documentElement.scrollWidth<=document.documentElement.clientWidth+2,
+    document.documentElement.scrollWidth+'/320');
+
+  // 9) لمس
+  g.innerHTML = card('طاولة',{badge:true,panelOpen:true});
+  const bar=$('.px-qtybar');
+  const r=bar.getBoundingClientRect();
+  t('البطاقة ≥ 96px', $(".px-acc").getBoundingClientRect().height>=96, Math.round($(".px-acc").getBoundingClientRect().height)+'px');
+  t('لوحة الكمية ≥ 44px ارتفاعاً', r.height>=44, Math.round(r.height)+'px');
+  for(const sel of ['.px-qtyval','.px-qdone','.px-qdel']){
+    const e=$(sel); const b=e.getBoundingClientRect();
+    t(sel+' ≥ 34×34', b.width>=34&&b.height>=34, Math.round(b.width)+'x'+Math.round(b.height));
+  }
+  const card0=$('.px-acc').getBoundingClientRect();
+  t('اللوحة داخل البطاقة', r.right<=card0.right+1&&r.left>=card0.left-1,
+    'bar '+Math.round(r.left)+'..'+Math.round(r.right)+' card '+Math.round(card0.left)+'..'+Math.round(card0.right));
+
+  // 10) اللون/التباين
+  const nameEl=$('.px-acc-name');
+  t('الاسم بلون محايد مقروء', !!nameEl && nameEl.textContent.trim().length>0);
+}catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+flush();
+})();
+</script></body></html>

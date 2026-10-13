@@ -1,3 +1,8 @@
+/root-placeholder-never/
+  /* ارتفاع لوحة الكمية الموحّد: تستعمله اللوحة وحجز المساحة في كل البطاقات */
+  --px-qty-h: 48px;
+}
+
 /* ======================================================================
    التصميم الموسّع — نسخة تجريبية (منفصلة عن واجهة العميل الحالية)
    كل القواعد هنا تحت .px أو .px-* فلا تمسّ .portal ولا أي واجهة أخرى.
@@ -112,44 +117,7 @@
 
 /* ---------- المرحلة ٤: شبكة الإكسسوارات مع إدخال الكمية مباشرة ---------- */
 /* بلا تمرير داخلي: الشبكة ترتفع بقطعانها والنزول في الصفحة نفسها */
-.px-accgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
 @media (min-width: 560px) { .px-accgrid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
-.px-acc {
-  display: grid; grid-template-columns: 40px minmax(0, 1fr); grid-template-rows: auto auto;
-  gap: 4px 8px; align-items: center;
-  padding: 8px 10px; text-align: start;
-  border: 1px solid var(--line); border-radius: var(--r-lg); background: var(--surface);
-  min-height: 56px;
-}
-.px-acc[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
-.px-acc-art {
-  grid-row: 1 / span 2; width: 40px; height: 40px; border-radius: var(--r);
-  display: flex; align-items: center; justify-content: center; color: #fff;
-}
-.px-acc-art svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.px-acc-art.circle { border-radius: 50%; }
-.px-acc-name { font-size: .86rem; font-weight: 700; line-height: 1.3; }
-/* شريط الكمية: − [حقل قابل للضغط] + — الحقل يفتح لوحة أرقام الجوال */
-.px-qtybar { display: flex; align-items: center; gap: 4px; }
-.px-qtybar .qbtn {
-  width: 40px; height: 40px; flex: none; border-radius: var(--r);
-  border: 1px solid var(--line); background: var(--surface-2); color: var(--ink);
-  display: flex; align-items: center; justify-content: center; font-size: 1.15rem; font-weight: 700;
-}
-.px-qtybar .qbtn:active { background: var(--accent-fill); color: var(--on-accent); }
-.px-qtybar .qbtn:disabled { opacity: .4; }
-.px-qtybar .qbtn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
-/* الرقم نفسه زر يفتح لوحة الأرقام — inputmode=numeric تفتح لوحة أرقام الجوال */
-.px-qtyval {
-  min-width: 48px; height: 40px; flex: 1;
-  border: 2px dashed var(--line-strong); border-radius: var(--r);
-  background: var(--surface); color: var(--ink);
-  font-size: 1.05rem; font-weight: 800; text-align: center;
-  font-variant-numeric: tabular-nums;
-}
-.px-qtyval:focus, .px-qtyval[aria-expanded="true"] { border-style: solid; border-color: var(--accent); outline: none; }
-.px-acc-foot { grid-column: 1 / -1; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.px-acc-foot .hint { margin: 0; font-size: .7rem; }
 /* توزيع متساوٍ: زر ثانوي */
 .px-spread { border: 1px solid var(--line); border-radius: 999px; background: var(--surface-2); color: var(--ink-3); font-size: .72rem; font-weight: 700; min-height: 34px; padding: 0 10px; }
 
@@ -222,13 +190,12 @@
 .px-contact .btn-row { display: grid; gap: 8px; }
 
 /* ---------- أهداف اللمس على الشاشات اللمسية ---------- */
-@media (pointer: coarse) {
-  .px-acc { min-height: 64px; }
-  .px-qtybar .qbtn, .px-qtyval { height: 48px; }
-  .px-qtybar .qbtn { width: 48px; }
-  .px-tools .tbtn { min-height: 64px; }
-  .px-steps button { min-height: 52px; }
-}
+/* ---------- أهداف اللمس: موحّدة لكل الأجهزة (لوحة الكمية 46px والبطاقة ≥96px) ---------- */
+.px-acc { min-height: 96px; }
+.px-qtybar .qbtn, .px-qtyval { height: var(--px-qty-h); }
+.px-qtybar .qbtn { width: 32px; }
+.px-tools .tbtn { min-height: 64px; }
+.px-steps button { min-height: 52px; }
 
 /* ======================================================================
    ملف PDF للنسخة الموسّعة — بادئة xp (لا تلمس .inv المستخدمة في البوابة الحالية)
@@ -293,3 +260,78 @@
 .px-seat .px-seat-art svg { stroke: var(--px-seat-c, currentColor); }
 .px-seat > span:not(.px-seat-art) { color: var(--ink); }
 .px-seat[aria-pressed="true"] > span:not(.px-seat-art) { color: var(--on-accent); }
+
+/* ---------- بطاقات اختيار الأثاث والإكسسوارات ----------
+   بطاقة = أيقونة داخل مربّع + اسم أسفله، والاسم له حد أدنى بارتفاع سطرين
+   ليبقى شكل كل البطاقات واحداً مهما اختلف طول الأسماء.
+   خانة العدد تظهر عند الضغط على البطاقة فقط (تُفتح مباشرة). */
+.px-accgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(122px, 1fr)); gap: 8px; }
+.px-acc {
+  position: relative;
+  display: grid; grid-template-rows: auto auto var(--px-qty-h) 30px;
+  justify-items: center; align-content: start; gap: 6px;
+  padding: 10px 8px 8px; min-height: 96px;
+  border: 1px solid var(--line); border-radius: var(--r-lg);
+  background: var(--surface); cursor: pointer;
+  transition: border-color .15s, background .15s, box-shadow .15s;
+}
+.px-acc:hover { border-color: var(--accent-line); background: var(--row-hover); }
+.px-acc:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.px-acc.has { border-color: var(--accent); background: var(--accent-soft); }
+.px-acc.open { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent-line); }
+.px-acc-art { display: grid; place-items: center; width: 46px; height: 46px; border-radius: 12px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.10); }
+.px-acc-art svg { width: 24px; height: 24px; fill: none; stroke: rgba(255,255,255,.95); stroke-width: 1.9; }
+.px-acc-art.circle { border-radius: 50%; }
+.px-acc-art.free { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); }
+.px-acc-art.free svg { stroke: var(--ink-3); }
+.px-acc-name {
+  grid-column: 1 / -1; grid-row: 2; font-size: .76rem; font-weight: 600; line-height: 1.35; color: var(--ink-2);
+  text-align: center; max-width: 100%; min-height: 2.7em; align-self: start;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.px-acc-badge {
+  position: absolute; inset-block-start: 6px; inset-inline-end: 6px;
+  min-width: 20px; height: 20px; padding: 0 5px; border-radius: 999px;
+  background: var(--accent-fill); color: var(--on-accent, #FFF9F0);
+  font-size: .7rem; font-weight: 700; display: grid; place-items: center;
+}
+/* لوحة الكمية: الصف الثاني. المخفي يحجز نفس الارتفاع فتتساوى البطاقات */
+.px-qtybar {
+  grid-column: 1 / -1; grid-row: 3; grid-row: 2; width: 100%; min-width: 0;
+  display: grid; grid-template-columns: 34px minmax(34px, 1fr) 34px auto 34px;
+  align-items: center; gap: 3px; height: var(--px-qty-h);
+  padding: 4px; border-radius: var(--r);
+  background: var(--surface-2); border: 1px solid var(--line-soft);
+}
+.px-qtybar[hidden] { display: grid !important; visibility: hidden; height: var(--px-qty-h); padding: 4px; border: 1px solid transparent; }
+.px-qtybar .qbtn {
+  width: 34px; height: 34px; border: 0; background: transparent; color: var(--ink-3);
+  cursor: pointer; display: grid; place-items: center; border-radius: var(--r-sm);
+}
+.px-qtybar .qbtn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2.2; }
+.px-qtybar .qbtn:hover { background: var(--row-hover); color: var(--ink); }
+.px-qtyval {
+  min-width: 0; width: 100%; height: 34px; text-align: center; font-size: .84rem; font-weight: 700;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface); color: var(--ink);
+}
+.px-qdone {
+  min-width: 36px; height: 34px; padding: 0 8px; border: 0; border-radius: var(--r-sm);
+  background: var(--accent-fill); color: var(--on-accent, #FFF9F0); font-size: .74rem; font-weight: 700; cursor: pointer; font-family: inherit;
+}
+.px-qdel {
+  width: 34px; height: 34px; border: 0; border-radius: var(--r-sm);
+  background: var(--danger-soft); color: var(--danger); cursor: pointer; display: grid; place-items: center;
+}
+.px-qdel svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 2; }
+.px-spread {
+  grid-column: 1 / -1; grid-row: 4; grid-row: 3; width: 100%; height: 30px; border: 1px solid var(--line-soft); background: transparent;
+  color: var(--ink-3); font-size: .72rem; border-radius: var(--r-sm); cursor: pointer; font-family: inherit;
+}
+.px-spread:hover { background: var(--surface-2); color: var(--ink); }
+.px-acc-free { border-style: dashed; }
+.px-acc-free::before { content: ''; grid-column: 1 / -1; grid-row: 3; height: var(--px-qty-h); } height: var(--px-qty-h); }
+.px-acc-free::after { content: ''; grid-column: 1 / -1; grid-row: 4; height: 30px; } height: 30px; }
+.px-acc-free::before { content: ''; grid-column: 1 / -1; grid-row: 2; height: var(--px-qty-h); }
+.px-acc-free::after { content: ''; grid-column: 1 / -1; grid-row: 3; height: 30px; }
+.px-acc-free .px-acc-name { color: var(--ink-3); }
+

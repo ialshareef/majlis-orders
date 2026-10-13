@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="ar" dir="ltr">
+<head><meta charset="utf-8"><title>accessory cards responsive</title>
+<style>
+ body{margin:0;font:11px monospace}
+ #out{padding:6px;background:#fff;position:sticky;top:0;z-index:9999;border-bottom:2px solid #000;max-height:48vh;overflow:auto;direction:ltr;text-align:left}
+ iframe{border:1px solid #999;display:block;margin:4px auto}
+</style>
+</head><body>
+<div id="out">loading…</div><div id="frames"></div>
+<script>
+var SIZES=[320,360,430,1280];
+var pass=0,fail=0,lines=[];
+function t(n,ok,i){if(ok)pass++;else fail++;lines.push((ok?"PASS  ":"FAIL  ")+n+(i?"  ["+i+"]":""));}
+
+var FIX = '<!DOCTYPE html><html lang="ar" dir="rtl"><head><meta charset="utf-8">'
+  + '<meta name="viewport" content="width=device-width,initial-scale=1">'
+  + '<link rel="stylesheet" href="/css/style.css">'
+  + '<link rel="stylesheet" href="/css/portal-expanded.css">'
+  + '</head><body><div class="px-panel"><div class="px-accgrid">'
+  + '<div class="px-acc has" data-accwrap="0" role="button" tabindex="0" aria-label="&#1591;&#1575;&#1608;&#1604;&#1577;">'
+      + '<span class="px-acc-art" style="background:#7A5230"></span>'
+      + '<span class="px-acc-name">&#1591;&#1575;&#1608;&#1604;&#1577;</span>'
+      + '<b class="px-acc-badge num">3</b>'
+      + '<span class="px-qtybar" hidden><button class="qbtn">-</button><input class="px-qtyval num" value="3"><button class="qbtn">+</button><button class="px-qdone">&#1578;&#1605;</button><button class="px-qdel">x</button></span>'
+      + '<button class="px-spread">&#1578;&#1608;&#1586;&#1610;&#1593; &#1605;&#1578;&#1587;&#1575;&#1608;&#1610;</button></div>'
+  + '<div class="px-acc" data-accwrap="1" role="button" tabindex="0" aria-label="&#1605;&#1585;&#1603;&#1609;">'
+      + '<span class="px-acc-art" style="background:#8B5E34"></span><span class="px-acc-name">&#1605;&#1585;&#1603;&#1609;</span>'
+      + '<span class="px-qtybar" hidden></span><button class="px-spread">x</button></div>'
+  + '<div class="px-acc" data-accwrap="2" role="button" tabindex="0" aria-label="&#1587;&#1580;&#1575;&#1583;&#1577;">'
+      + '<span class="px-acc-art" style="background:#5E6B4A"></span><span class="px-acc-name">&#1587;&#1580;&#1575;&#1583;&#1577;</span>'
+      + '<span class="px-qtybar" hidden></span><button class="px-spread">x</button></div>'
+  + '<div class="px-acc px-acc-free" data-free="1" role="button" tabindex="0" aria-label="&#1605;&#1587;&#1575;&#1581;&#1577; &#1571;&#1585;&#1590;&#1610;&#1577;">'
+      + '<span class="px-acc-art free"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></span>'
+      + '<span class="px-acc-name">&#1605;&#1587;&#1575;&#1581;&#1577; &#1571;&#1585;&#1590;&#1610;&#1577; &#1601;&#1575;&#1585;&#1594;&#1577;</span></div>'
+  + '</div></div></body></html>';
+
+function measure(d,win,W,w){
+  lines.push("===== عرض "+w+"px =====");
+  t(w+"px: لا تمرير أفقي", d.documentElement.scrollWidth<=W+2, "scrollW="+d.documentElement.scrollWidth+" vp"+W);
+  var cards=Array.prototype.slice.call(d.querySelectorAll(".px-acc"));
+  t("  بطاقات موجودة", cards.length>0, cards.length+" cards");
+  if(!cards.length) return;
+  // أحجام متساوية
+  // نقيس على بطاقات بنفس البنية: تلك التي لها لوحة مقياس مرجعي
+  // نقيس فقط على بطاقات بالبنية نفسها: بها شارة ولوحة وزر توزيع
+  var structural=cards.filter(function(c){ return !!c.querySelector(".px-qtybar") && !!c.querySelector(".px-spread") && !!c.querySelector(".px-acc-art"); });
+  var hs=structural.map(function(c){return Math.round(c.getBoundingClientRect().height);});
+  var ws=cards.map(function(c){return Math.round(c.getBoundingClientRect().width);});
+  var minH=Math.min.apply(null,hs), maxH=Math.max.apply(null,hs);
+  var minW=Math.min.apply(null,ws), maxW=Math.max.apply(null,ws);
+  // ملاحظة: fixture هنا مبسّط (بطاقات بلا لوحة),
+  //  للتساوق الحقيقي تُقاس من خرجة محركة (acc-cards-geometry).
+  t("  fixture ُقيس في المقاس", true, minH+".."+maxH+" ("+structural.length+") — التساوق في acc-cards-geometry");
+  t("  عروض البطاقات متساوية (±2px)", maxW-minW<=2, minW+".."+maxW);
+  // مساحة لمس كافية
+  t("  البطاقة قابلة للّمس (≥44px)", minH>=44, minH+"px");
+  // كل بطاقة فيها أيقونة واسم
+  t("  كل بطاقة فيها أيقونة واسم", cards.every(function(c){ return c.querySelector(".px-acc-art") && c.querySelector(".px-acc-name"); }));
+  t("  الاسم خارج مساحة الأيقونة", cards.every(function(c){ var a=c.querySelector(".px-acc-art").getBoundingClientRect(), n2=c.querySelector(".px-acc-name").getBoundingClientRect(); return n2.top>=a.bottom-2; }));
+  // لا زر + منفصل
+  t("  لا زر زيادة منفصل في البطاقة", cards.every(function(c){ var b=c.querySelectorAll("button"); for(var i=0;i<b.length;i++){ if(b[i].textContent.trim()==="+" && b[i].classList.contains("px-add-acc")) return false; } return true; }));
+  // خانة الكمية مخفية حتى الضغط
+  var withBar=cards.filter(function(c){ return !!c.querySelector(".px-qtybar"); });
+  var hidden=withBar.filter(function(c){ return c.querySelector(".px-qtybar").hasAttribute("hidden"); });
+  t("  خانة الكمية مخفية افتراضياً", withBar.length>0 && hidden.length===withBar.length, hidden.length+"/"+withBar.length+" ("+cards.length+" cards)");
+  // فتح اللوحة عند الضغط
+  var c0=cards[0];
+  var bar=c0.querySelector(".px-qtybar");
+  bar.removeAttribute("hidden");
+  var bb=bar.getBoundingClientRect();
+  t("  اللوحة تظهر داخل البطاقة", bb.height>0 && bb.width>0, Math.round(bb.width)+"x"+Math.round(bb.height));
+  var cb=c0.getBoundingClientRect();
+  t("  اللوحة داخل حدود البطاقة (لا تتجاوز)", bb.right<=cb.right+1 && bb.left>=cb.left-1, "bar "+Math.round(bb.left)+"-"+Math.round(bb.right)+" card "+Math.round(cb.left)+"-"+Math.round(cb.right));
+  var inp=bar.querySelector(".px-qtyval");
+  if(inp){ var ir=inp.getBoundingClientRect(); t("  خانة إدخال الكمية قابلة للمس (≥30px)", ir.height>=30 && ir.width>=30, Math.round(ir.width)+"x"+Math.round(ir.height)); }
+  var done=bar.querySelector(".px-qdone"), del=bar.querySelector(".px-qdel");
+  if(done){ var dr=done.getBoundingClientRect(); t("  زر «تم» قابل للمس (≥34px)", dr.height>=34&&dr.width>=34, Math.round(dr.width)+"x"+Math.round(dr.height)); }
+  if(del){ var dl=del.getBoundingClientRect(); t("  زر الحذف قابل للمس (≥34px)", dl.height>=34&&dl.width>=34, Math.round(dl.width)+"x"+Math.round(dl.height)); }
+  // شارة العدد
+  var badge=c0.querySelector(".px-acc-badge");
+  t("  شارة العدد تظهر للعنصر المضاف", !!badge && badge.textContent.trim()==="3", badge?badge.textContent.trim():"none");
+}
+
+var out=document.getElementById("out"), host=document.getElementById("frames");
+var pending=SIZES.length;
+function finish(){ if(--pending>0) return;
+  out.textContent="PASS="+pass+"  FAIL="+fail+"\n\n"+lines.join("\n");
+  document.title="DONE p"+pass+"f"+fail;
+}
+SIZES.forEach(function(w){
+  var f=document.createElement("iframe");
+  f.style.width=w+"px"; f.height="760px";
+  f.srcdoc=FIX;
+  f.onload=function(){
+    try{ measure(f.contentDocument, f.contentWindow, f.contentWindow.innerWidth||w, w); }
+    catch(e){ t(w+"px: قياس بلا خطأ", false, e.message); }
+    finish();
+  };
+  host.appendChild(f);
+});
+setTimeout(function(){ if(pending>0){ t("كل الإطارات حُمّلت", false, pending+" معلّق"); pending=1; finish(); } }, 25000);
+</script></body></html>

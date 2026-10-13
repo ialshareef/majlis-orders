@@ -443,6 +443,13 @@
       dimsOnTop: true,    // أرقام المقاسات فوق الأثاث فلا يحجبها
       pieceArt: true,     // شكل رمزي للإكسسوار بدل اسمه الصغير
       pieceTint: true,    // شريط بلون نوع الجلسة يميّز الجلسات داخل المخطط
+      noDepthDrag: true,   // عمق الكنبة من الحقل الرقمي فقط، لا من مقبض السحب
+      noOverlap: true,     // منع التداخل هندسياً: أقرب موضع صالح أو تراجع مع تنبيه
+      pieceLabelsOnTop: true, // أرقام مقاسات القطع فوق كل الرسومات
+      onBlocked: function (p, why) {
+        // تنبيه مفهوم عند عدم إمكانية الوضع بلا تداخل
+        toast('لا توجد مساحة لهذه القطعة هنا — أبقيناها في أقرب موضع لا يتداخل.', true);
+      },
       onRevert: function (why) {
         toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود' : 'يبقى العنصر داخل حدود الغرفة', true);
       },
@@ -753,22 +760,34 @@
     } else if (S.step === 'furn') {
       var accs = catItems('acc');
       box.innerHTML = ''
-        + '<h4 class="px-subhead">الإكسسوارات <small>— ' + accs.length + ' عنصر · اضغط الرقم لتكتب العدد مباشرة</small></h4>'
+        + '<h4 class="px-subhead">الأثاث والإكسسوارات <small>— ' + accs.length + ' عنصر · اضغط العنصر لتكتب العدد</small></h4>'
         + '<div class="px-accgrid" id="pxAccGrid">' + (accs.length ? accs.map(function (a) {
             var n = accCount(a.id);
-            return '<div class="px-acc" data-accwrap="' + esc(a.id) + '" aria-pressed="' + (n ? 'true' : 'false') + '">'
+            /* بطاقة متناسقة: أيقونة داخل مربّع والاسم أسفله خارج مساحة الرسم.
+               خانة العدد لا تظهر إلا عند الضغط على البطاقة، فتفتح مباشرة. */
+            return '<div class="px-acc' + (n ? ' has' : '') + '" data-accwrap="' + esc(a.id) + '" role="button" tabindex="0"'
+              + ' aria-label="' + esc(a.name) + (n ? ' — ' + n + ' مضاف' : '') + '">'
               + '<span class="px-acc-art' + (a.shape === 'circle' ? ' circle' : '') + '" style="background:' + esc(a.color || '#7A5230') + '" aria-hidden="true">'
               + (CHAN_ICON[a.shape === 'circle' ? 'map' : 'pin'] || '') + '</span>'
               + '<span class="px-acc-name">' + esc(a.name) + '</span>'
-              + '<span class="px-qtybar">'
+              + (n ? '<b class="px-acc-badge num">' + n + '</b>' : '')
+              /* لوحة الكمية: تظهر عند الضغط على البطاقة فقط، لا دائماً */
+              + '<span class="px-qtybar" data-qtypanel="' + esc(a.id) + '" hidden>'
               + '<button type="button" class="qbtn" data-qtyminus="' + esc(a.id) + '" aria-label="إنقاص ' + esc(a.name) + '"><svg><use href="#x-minus"/></svg></button>'
               + '<input class="px-qtyval num" data-qtyin="' + esc(a.id) + '" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0" max="' + MAX_QTY + '" value="' + n + '" aria-label="عدد ' + esc(a.name) + '">'
               + '<button type="button" class="qbtn" data-qtyplus="' + esc(a.id) + '" aria-label="زيادة ' + esc(a.name) + '"><svg><use href="#x-plus"/></svg></button>'
+              + '<button type="button" class="px-qdone" data-qtyok="' + esc(a.id) + '">تم</button>'
+              + '<button type="button" class="px-qdel" data-qtydel="' + esc(a.id) + '" aria-label="حذف ' + esc(a.name) + '"><svg><use href="#x-trash"/></svg></button>'
               + '</span>'
-              + '<span class="px-acc-foot"><button type="button" class="px-spread" data-spread="' + esc(a.id) + '">توزيع متساوٍ</button></span>'
+              + '<button type="button" class="px-spread" data-spread="' + esc(a.id) + '">توزيع متساوٍ</button>'
               + '</div>';
           }).join('') : '<p class="hint">لا توجد إكسسوارات متاحة حالياً.</p>') + '</div>'
-        + '<button type="button" class="btn ghost block" id="pxFreeSpace">+ مساحة أرضية فارغة</button>'
+        /* المساحة الأرضية بطاقة ضمن الشبكة — بلا زر + منفصل */
+        + '<div class="px-acc px-acc-free" data-free="1" role="button" tabindex="0" aria-label="مساحة أرضية فارغة">'
+        + '<span class="px-acc-art free" aria-hidden="true"><svg><use href="#x-plus"/></svg></span>'
+        + '<span class="px-acc-name">مساحة أرضية فارغة</span>'
+        + '</div>'
+        + '<p class="hint">اضغط على العنصر لتكتب عدده. اكتب 0 لحذفه. الحد الأقصى ' + MAX_QTY + ' قطعة.</p>';
         + '<p class="hint">اكتب 0 في مربع العدد لحذف العنصر من التصميم. الحد الأقصى ' + MAX_QTY + ' قطعة.</p>';
 
       $$('button[data-qtyminus]', box).forEach(function (b) {
@@ -814,7 +833,50 @@
       $$('button[data-spread]', box).forEach(function (b) {
         b.addEventListener('click', function (e) { e.stopPropagation(); spreadAcc(b.dataset.spread); renderPanel(); });
       });
-      $('#pxFreeSpace').onclick = function () { dz.addFreeSpace(); renderPanel(); };
+      /* الضغط على البطاقة يفتح لوحة الكمية مباشرة (بلا زر + منفصل) */
+      function openQtyPanel(card) {
+        var panel = card && card.querySelector('.px-qtybar');
+        if (!panel) return;
+        $('.px-qtybar', box).forEach(function (x) { if (x !== panel) { x.hidden = true; x.parentNode && x.parentNode.classList.remove('open'); } });
+        card.classList.add('open');
+        panel.hidden = false;
+        var inp = panel.querySelector('input[data-qtyin]');
+        if (inp) { inp.focus(); inp.select(); }
+      }
+      $('[data-accwrap]', box).forEach(function (card) {
+        card.addEventListener('click', function (e) {
+          if (e.target.closest('button, input')) return;
+          openQtyPanel(card);
+        });
+        card.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); openQtyPanel(card); }
+        });
+      });
+      var freeCard = box.querySelector('[data-free]');
+      if (freeCard) freeCard.addEventListener('click', function () {
+        dz.addFreeSpace();
+        renderPanel();
+      });
+      $('button[data-qtyok]', box).forEach(function (b) {
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var id = b.dataset.qtyok;
+          var inp = box.querySelector('input[data-qtyin="' + id + '"]');
+          var raw = inp ? inp.value.trim() : '';
+          var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : null;
+          if (v == null) { if (inp) inp.value = String(accCount(id)); toast('أدخل عددًا صحيحًا (0 أو أكثر).', true); return; }
+          if (v > MAX_QTY) { v = MAX_QTY; toast('الحد الأقصى ' + MAX_QTY + ' قطعة.', true); }
+          setAccQty(id, v);
+          renderPanel();
+        });
+      });
+      $('button[data-qtydel]', box).forEach(function (b) {
+        b.addEventListener('click', function (e) {
+          e.stopPropagation();
+          setAccQty(b.dataset.qtydel, 0);
+          renderPanel();
+        });
+      });
 
     } else if (S.step === 'review') {
       renderReviewPanel(box, dz);
