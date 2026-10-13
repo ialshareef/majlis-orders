@@ -174,10 +174,7 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.53';
 // بصمة asalh-najd-1.0.53.apk (إصدار GitHub v1.0.53، بناء CI الموقّع).
-// تُثبَّت البصمة الحقيقية بعد اكتمال البناء في CI — قيمة فارغة = fail-closed
-// فترفض النسخة الحالية Downloads حتى لا تُثبَّت حزمة غير موثوقة.
-// ملاحظات الإصدار اختيارية (تتجاهلها النسخ القديمة): تُعرض في نافذة التحديث فقط
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = '3263e5faee3dbacefc48356424b81c09d23c0dde96f5303fe2899c2da311f26e';
 const UPDATE_FALLBACK_NOTES = [
   'منع وضع الكنبة أمام الباب أو المشب هندسياً في السحب والتدوير والحقول والتوزيع',
   'منع تداخل الكنبات فعلياً: أقرب موضع صالح أو رجوع لآخر موضع، مع رسالة واضحة',
