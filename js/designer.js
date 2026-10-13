@@ -289,17 +289,20 @@
       }
       this.state.openings = this.state.openings.filter((o) => g.walls[o.wall]);
       /* الفتحات التي خرجت عن جدارها بسبب تقصيره: نُبلغ ولا نحذف ولا ننقل صامتاً.
-         السحب التلقائي لحدود الجدار يبقى احتياطاً أخيراً بعد تسجيل التحذير. */
+         نُبلغ ولا نحذف ولا ننقل صامتاً. moved تحفظ ما نُقل اضطراراً في checkRoomHealth */
       const clipped = [];
       for (const o of this.state.openings) {
         const w = g.walls[o.wall];
         const prevT = o.t, prevW = o.w;
         o.w = Math.min(Math.max(0.3, +o.w || 0.9), w.len);
         o.t = clamp(+o.t || 0, o.w / 2, w.len - o.w / 2);
-        if (Math.abs(o.t - prevT) > 0.01 || o.w !== prevW) clipped.push({ id: o.id, type: o.type, wall: o.wall });
+        if (Math.abs(o.t - prevT) > 0.01 || o.w !== prevW) {
+          /* حركنا الفتحة إجباراً لتبقي داخل الجدار: نسجّلها كتحذير صريح
+             («انقلها أو كبّر الجدار») ولا نعتبرها تعديلاً مقبولاً بصمت. */
+          clipped.push({ id: o.id, type: o.type, wall: o.wall, fromT: prevT, toT: o.t });
+        }
       }
-      if (clipped.length) this._warnOpeningOutOfWall = clipped.concat(this._openingsOutOfWall());
-      else this._warnOpeningOutOfWall = this._openingsOutOfWall();
+      this._clippedOpenings = clipped;
     }
 
     setRect(w, h) {
@@ -531,7 +534,15 @@
       }));
       const msgs = [];
       if (!gi.closed) msgs.push('الغرفة غير مغلقة — يوجد فجوة ' + gi.gap.toFixed(2) + ' م. اضغط «إغلاق الغرفة» أو عدّل الجدار الأخير.');
-      openingOut.forEach((o) => {
+      /* فتحات نُقلت إجباراً لتبقي داخل جدار قُصِّر: نصرّح بذلك ونطلب المعالجة
+         بدل اعتبار النقل الصامت تعديلاً مقبولاً. */
+      (this._clippedOpenings || []).forEach((o) => {
+        const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب';
+        msgs.push(name + ' على الجدار ' + ((o.wall || 0) + 1) + ' خرج عن الجدار فنُقل تلقائياً من '
+          + round(o.fromT, 2) + ' م إلى ' + round(o.toT, 2) + ' م — انقله بنفسك أو كبّر الجدار.');
+      });
+      const clippedIds = new Set((this._clippedOpenings || []).map((o) => o.id));
+      openingOut.filter((o) => !clippedIds.has(o.id)).forEach((o) => {
         const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب';
         msgs.push(name + ' على الجدار ' + ((o.wall || 0) + 1) + ' خرج عن حدود الجدار بعد تقصيره — انقله أو كبّر الجدار.');
       });
@@ -901,8 +912,14 @@ addSofaOnWall(wallIndex, spec) {
      يلتقط الجدار مرة واحدة ثم يسمح بالسحب الحر حتى يبتعد العنصر بما يتجاوز
      حدّ الفكّ (أوسع من حدّ الالتقاط)، فلا يقفز إلا عند جدار جديد.
      ولا يلتصق فوق فتحة مانعة. بلا الخيار: السلوك القديم حرفياً. */
+  /** هل يُطبَّق على هذه القطعة منطق المحاذاة إلى الجدار؟
+        المحاذاة خاصية حصرياً للكنب والجلسات: هي التي تُلصق الكنبة بالجدار
+        وتحفظ واجهتها موازية له. الإكسسوار لا يُلصق ولا يقفز إلى الجدار أبداً،
+        ولا عند بدء السحب ولا أثناءه ولا عند إنهائه ولا عند تدويره. */
+  static wantsWallSnap(p) { return !!p && p.kind === 'sofa'; }
+
   _trySnapToWall(p, g = this.geometry(), tol = 0.25) {
-      if (p.kind !== 'sofa') { delete p.wall; delete p.t; return false; }
+      if (!Designer.wantsWallSnap(p)) { delete p.wall; delete p.t; return false; }
       const d = this.drag;
       if (this.opts.smartSnap && d && d.mode === 'move') {
         const rel = d.snapRel || (d.snapRel = {});
@@ -1353,18 +1370,22 @@ addSofaOnWall(wallIndex, spec) {
       if (this.canPlace(cand, opts)) return cand;
       const g = opts.geom || this.geometry();
       const base = Object.assign({}, cand);
-      // 1) الالتصاق بالجدار أولاً: نفس اتجاه دوران القطعة على كل جدار
-      for (const w of g.walls) {
-          if (angDiff(base.rot || 0, w.rot) > 10) continue;
-          const half = base.w / 2;
-          for (let k = 0; k <= 8; k++) {
-              const tt = Math.min(Math.max(half + 0.02 + k * (w.len - half * 2 - 0.04) / 8, half), w.len - half);
-              const t = Object.assign({}, base, { wall: w.i, t: round(tt, 3) });
-              this._placeOnWall(t, w);
-              if (this.canPlace(t, opts)) {
-                  return Object.assign({}, base, { x: t.x, y: t.y, wall: w.i, t: t.t, rot: w.rot });
-              }
-          }
+      // 1) الالتصاق بالجدار أولاً: خاص بالكنب والجلسات فقط.
+      //    الإكسسوار مستثنى بالكامل: لو دخل هنا لقفز إلى الجدار عند أول تعارض،
+      //    وهو ما يجعله يهرب من الإصبع ويصعب سحبه بحرية.
+      if (Designer.wantsWallSnap(base)) {
+        for (const w of g.walls) {
+            if (angDiff(base.rot || 0, w.rot) > 10) continue;
+            const half = base.w / 2;
+            for (let k = 0; k <= 8; k++) {
+                const tt = Math.min(Math.max(half + 0.02 + k * (w.len - half * 2 - 0.04) / 8, half), w.len - half);
+                const t = Object.assign({}, base, { wall: w.i, t: round(tt, 3) });
+                this._placeOnWall(t, w);
+                if (this.canPlace(t, opts)) {
+                    return Object.assign({}, base, { x: t.x, y: t.y, wall: w.i, t: t.t, rot: w.rot });
+                }
+            }
+        }
       }
       const steps = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.5, 2, 3];
       for (const rad of steps) {
@@ -1841,7 +1862,9 @@ addSofaOnWall(wallIndex, spec) {
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
       ctx.font = `700 ${fs}px ${FONT}`;
       for (const p of this._drawOrder()) {
-        if (p.kind === 'free') continue;
+        /* أبعاد الكنبات والجلسات فقط. الإكسسوار يُبقى اسمه ووظيفته ولا يُرسم له
+           قياس: طلب المستخدم أن لا تظهر أبعاد الإكسسوارات بلا حاجة صريحة. */
+        if (p.kind !== 'sofa') continue;
         const span = this._visualSpan(p, this.geometry(), this.state.pieces.indexOf(p));
         const cen = this.toScreen(p.x, p.y, v);
         const ph = p.h * S;
@@ -1866,6 +1889,71 @@ addSofaOnWall(wallIndex, spec) {
         ctx.fillStyle = '#2A2622';
         ctx.fillText(label, 0, 0);
         ctx.restore();
+      }
+      ctx.restore();
+  }
+
+  /* ---------- طبقة قياسات الفتحات (باب/مشب) ----------
+     المسافة من بداية الجدار إلى بداية الفتحة، ومن نهاية الفتحة إلى نهاية الجدار.
+     تُرسم في طبقة مستقلة فوق الكنبات والإكسسوارات والقياسات الأخرى فلا يخفيها
+     أي عنصر، وتظهر عند التحديد وبعد انتهاء السحب معاً، وتُحدَّث لحظياً مع
+     تحريك الفتحة أو تغيير عرضها أو تغيير طول الجدار. تعمل في التصدير أيضاً. */
+  _drawOpeningDimsTop(ctx, v, W, opt) {
+      const g = this.geometry();
+      const S = v.scale;
+      const P = (x, y) => this.toScreen(x, y, v);
+      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
+      const sel = this.sel && this.sel.type === 'opening' ? this.sel.id : null;
+      const dragging = this.drag && this.drag.mode === 'opening' ? this.drag.id : null;
+      ctx.save();
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      for (const o of this.state.openings) {
+        if (o.type !== 'door' && o.type !== 'mashab') continue;
+        if (opt.export && o.id !== sel && o.id !== dragging) continue;   // في PDF: المحدد فقط
+        const w = g.walls[o.wall];
+        if (!w) continue;
+        const gaps = this.openingGaps(o.id);
+        if (!gaps) continue;
+        const t0 = o.t - o.w / 2, t1 = o.t + o.w / 2;
+        const sIn = 0.34;                     // خط القياس داخل الغرفة أمتار
+        const pt = (t, s) => P(w.A.x + w.dir.x * t + w.n.x * s, w.A.y + w.dir.y * t + w.n.y * s);
+        const aStart = pt(0, sIn), aOpen0 = pt(t0, sIn);
+        const bOpen1 = pt(t1, sIn), bEnd = pt(w.len, sIn);
+        ctx.strokeStyle = o.id === sel ? SEL : '#8A7A66';
+        ctx.lineWidth = Math.max(1, 1.2 * k);
+        ctx.setLineDash([4 * k, 3 * k]);
+        for (const seg of [[aStart, aOpen0], [bOpen1, bEnd]]) {
+          ctx.beginPath();
+          ctx.moveTo(seg[0].x, seg[0].y);
+          ctx.lineTo(seg[1].x, seg[1].y);
+          ctx.stroke();
+        }
+        ctx.setLineDash([]);
+        /* أطراف القيم (الواسط): خط صغير عمودي يجعل المسافة مقروءة كقياس لا كنقطة */
+        for (const e of [aStart, aOpen0, bOpen1, bEnd]) {
+          ctx.beginPath();
+          ctx.moveTo(e.x, e.y - fs * 0.5);
+          ctx.lineTo(e.x, e.y + fs * 0.5);
+          ctx.stroke();
+        }
+        const cm = (v) => Math.round(v * 100) + ' سم';
+        const mStart = { x: (aStart.x + aOpen0.x) / 2, y: (aStart.y + aOpen0.y) / 2 - fs * 1.5 };
+        const mEnd = { x: (bOpen1.x + bEnd.x) / 2, y: (bOpen1.y + bEnd.y) / 2 - fs * 1.5 };
+        // الأرقام فوق الطبقة بلا تراكب: إن تبادلت نزيح أحدها لأسفل
+        const near = Math.hypot(mStart.x - mEnd.x, mStart.y - mEnd.y) < fs * 5;
+        if (near) mStart.y -= fs * 1.6;
+        for (const [m, v] of [[mStart, gaps.left], [mEnd, gaps.right]]) {
+          if (v <= 0.001) continue;              // لا نرسم قياساً صفرياً بلا معنى
+          const txt = cm(v);
+          ctx.font = `700 ${fs}px ${FONT}`;
+          const tw = ctx.measureText(txt).width;
+          ctx.fillStyle = o.id === sel ? 'rgba(165,100,44,.95)' : 'rgba(42,38,34,.88)';
+          roundRect(ctx, m.x - tw / 2 - 5, m.y - fs * 0.85, tw + 10, fs * 1.7, 3);
+          ctx.fill();
+          ctx.fillStyle = '#fff';
+          ctx.fillText(txt, m.x, m.y);
+        }
       }
       ctx.restore();
   }
@@ -2043,29 +2131,8 @@ addSofaOnWall(wallIndex, spec) {
           ctx.fillStyle = '#fff';
           ctx.fillText(lab, lp.x, lp.y);
         }
-        // مسافات حية أثناء سحب الباب/المشب: قراءة كل طرف من حافة العنصر لزاوية الجدار (سم)
-        if ((o.type === 'door' || o.type === 'mashab') && this.drag && this.drag.mode === 'opening' && this.drag.id === o.id) {
-          const gaps = this.openingGaps(o.id);
-          if (gaps) {
-            const gfs = Math.max(10, Math.min(13, S * 0.18));
-            ctx.font = `700 ${gfs}px ${FONT}`;
-            ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-            const inOff = 0.35;
-            const marks = [
-              { v: gaps.left, px: w.A.x + w.n.x * inOff, py: w.A.y + w.n.y * inOff },
-              { v: gaps.right, px: w.B.x + w.n.x * inOff, py: w.B.y + w.n.y * inOff },
-            ];
-            for (const mk of marks) {
-              const txt = Math.round(mk.v * 100) + ' سم';
-              const sp = P(mk.px, mk.py);
-              const sw = ctx.measureText(txt).width + 12;
-              ctx.fillStyle = 'rgba(42,38,34,.88)';
-              roundRect(ctx, sp.x - sw / 2, sp.y - gfs * 0.85, sw, gfs * 1.7, 3); ctx.fill();
-              ctx.fillStyle = '#fff';
-              ctx.fillText(txt, sp.x, sp.y);
-            }
-          }
-        }
+        /* قياسات المسافة إلى طرفَي الجدار تُرسم في طبقة منفصلة (_drawOpeningDimsTop)
+           فوق كل العناصر وتعمل أثناء السحب وبعده — لا تُكرَّر هنا. */
         ctx.restore();
       }
 
@@ -2252,6 +2319,9 @@ addSofaOnWall(wallIndex, spec) {
       if (this.opts.dimsOnTop) this._drawDimsTop(ctx, v, W, opt);
       // طبقة أرقام مقاسات القطع فوق كل الرسومات (مركى/طاولة فوق كنبة لا تحجبها)
       if (this.opts.pieceLabelsOnTop) this._drawPieceLabelsTop(ctx, v, W, opt);
+      // طبقة قياسات الباب/المشب: خط قياس وأرقام من طرفي الجدار إلى الفتحة.
+      // في طبقة مستقلة فوق كل شيء — لا يخفيها كنبة ولا إكسسوار ولا قياس آخر.
+      if (this.opts.dimsOnTop) this._drawOpeningDimsTop(ctx, v, W, opt);
 
       if (!g.closed && !opt.export) {
         ctx.fillStyle = '#A23B2C';

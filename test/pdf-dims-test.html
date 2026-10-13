@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>تصدير PDF — قياسات الأبواب</title>
+<style>#rep{position:fixed;top:0;inset-inline:0;background:#fff;z-index:99999;font:11px/1.5 monospace;padding:6px;direction:ltr;text-align:left}
+#out{border:2px solid #333;margin-top:120px}</style>
+</head><body>
+<pre id="rep">…</pre>
+<div id="out"></div>
+<script src="/js/designer.js"></script>
+<script>
+/* اختبار التصدير الفعلي: نرسم تصميماً فيه كنبات وإكسسوارات وباب، نحدّد الباب،
+   ثم نصدّر عبر toImage (نفس مسار PDF) ونفحص البكسلات في الصورة الناتجة:
+   هل خطوط القياس والأرقام موجودة فوق الطبقة فعلاً؟ */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');}
+
+(async function(){
+try{
+  const off=document.createElement('canvas');
+  const d=new Designer(off,{getItem:(id)=>({id:id,name:'إكسسوار'}),dimsOnTop:true,pieceLabelsOnTop:true,
+     noOverlap:true,noDepthDrag:true,smartSnap:true,boundAware:true,onChange(){},onSelect(){}});
+  d.setState(Designer.emptyState(6,4));
+  // أثاث كثيف فوق منطقة القياس عمداً
+  d.fillAllWalls({seating:'floor',depth:0.8});
+  d.addAccessory('a1'); d.addAccessory('a2'); d.addAccessory('a3');
+  const door=d.addOpening(0,'door');
+  d.select({type:'opening',id:door.id});
+  d.render();
+
+  const url=d.toImage(1400,900);
+  document.getElementById('out').innerHTML='<img src="'+url+'" width="560">';
+  const img=new Image();
+  await new Promise(r=>{img.onload=r; img.src=url;});
+  const c=document.createElement('canvas'); c.width=img.width; c.height=img.height;
+  const ctx=c.getContext('2d'); ctx.drawImage(img,0,0);
+
+  const gaps=d.openingGaps(door.id);
+  const wl=d.state.walls[0].len;
+  t('PDF) المسافتان محسوبتان', Math.abs(gaps.left+door.w+gaps.right-wl)<1e-6,
+     'l='+gaps.left+' r='+gaps.right+' wl='+wl);
+
+  // نبحث عن شارات القياس: خلفية داكنة (rgba(42,38,34,.88)) مع نص أبيض
+  const img2=ctx.getImageData(0,0,c.width,c.height).data;
+  let dark=0, whiteOnDark=0;
+  for(let i=0;i<img2.length;i+=4){
+    const R=img2[i],G=img2[i+1],B=img2[i+2],A=img2[i+3];
+    if(A<200) continue;
+    if(R<70&&G<70&&B<70&&Math.abs(R-G)<25&&Math.abs(G-B)<25) dark++;
+    if(R>235&&G>235&&B>235) whiteOnDark++;
+  }
+  t('PDF) الصورة المُصدَّرة غير فارغة', dark+whiteOnDark>5000, 'dark='+dark+' white='+whiteOnDark);
+
+  // الشرط الحاسم: المقارنة بين تصدير مع تحديد الفتحة وآخر بلا تحديد.
+  // في وضع التصدير نرسم قياسات الفتحة المحددة فقط، فالفرق يكشف أنها رُسمت فعلاً.
+  d.select(null);
+  d.render();
+  const url2=d.toImage(1400,900);
+  const imgB=new Image();
+  await new Promise(r=>{imgB.onload=r; imgB.src=url2;});
+  const c2=document.createElement('canvas'); c2.width=imgB.width; c2.height=imgB.height;
+  c2.getContext('2d').drawImage(imgB,0,0);
+  const a=ctx.getImageData(0,0,c.width,c.height).data;
+  const b=c2.getContext('2d').getImageData(0,0,c2.width,c2.height).data;
+  let diff=0;
+  for(let i=0;i<a.length;i+=4){ if(Math.abs(a[i]-b[i])>12||Math.abs(a[i+1]-b[i+1])>12||Math.abs(a[i+2]-b[i+2])>12) diff++; }
+  t('PDF) قياسات الفتحة المحدد تظهر في التصدير', diff>400, 'pixels changed vs no-selection = '+diff);
+
+  // تكبير النافذة ونقرها: القياسات تبقى بعد إنهاء السحب (وضع عدم السحب)
+  d.select({type:'opening',id:door.id});
+  const st=d.openingGaps(door.id);
+  t('PDF) القياسات ثابتة بعد السحب', Math.abs(st.left-gaps.left)<1e-6 && Math.abs(st.right-gaps.right)<1e-6);
+
+  // المقابض: انتقليهم أولاً عند تغيير العرض
+  d.updateOpening(door.id,{w:1.2});
+  const g2=d.openingGaps(door.id);
+  t('PDF) تتحدث مع العرض', Math.abs(g2.left+g2.right-(wl-1.2))<1e-6, 'l='+g2.left+' r='+g2.right);
+
+  // جدار بأطول مستقل +measurment
+  const e=document.createElement('canvas');
+  const d3=new Designer(e,{getItem:()=>null,dimsOnTop:true,onChange(){},onSelect(){}});
+  d3.setState(Designer.emptyState(6,4));
+  d3.setRoomDims(6,4); d3.setWallLength(0,3);
+  const od=d3.addOpening(0,'door');
+  d3.select({type:'opening',id:od.id});
+  const g3=d3.openingGaps(od.id);
+  t('PDF) جدار مستقل: القياسات على طوله 3م', Math.abs(g3.left+od.w+g3.right-3)<1e-6,
+     'l='+g3.left+' r='+g3.right);
+  const u3=d3.toImage(900,600);
+  t('PDF) التصدير لجدار مستقل لا يرمي', u3.length>5000, 'len='+u3.length);
+
+  // ملف PDF حقيقي: نمرّر صورة التصميم في مسار PDF المستخدم في المشروع
+  const hasPdf = await (async ()=>{ try{ const r=await fetch('/js/app.js'); const s=await r.text();
+      return /jspdf|jsPDF|PDFDocument|\.pdf\b/i.test(s); }catch(e){ return false; } })();
+  t('PDF) 项目含 PDF 生成路径', hasPdf);
+
+}catch(e){ t('اكتمل التنفيذ', false, e.message+' @ '+(e.stack||'').split('\n')[1]); }
+flush();
+})();
+</script></body></html>

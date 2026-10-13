@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>إصلاح الإكسسوارات والقياسات — اختبار</title>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:11px/1.55 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<canvas id="cv" width="900" height="620"></canvas>
+<script src="/js/designer.js"></script>
+<script>
+/* اختبارات الأجزاء ١-٤ من المهمة على الكود الحقيقي (designer.js). */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');}
+function eng(o){
+  const d=new Designer(document.getElementById('cv'), Object.assign({getItem:(id)=>({id:id,name:'إكسسوار'}),onChange(){},onSelect(){}},
+    {smartSnap:true,boundAware:true,noDepthDrag:true,noOverlap:true,dimsOnTop:true,pieceLabelsOnTop:true}, o||{}));
+  d.setState(Designer.emptyState(6,4));
+  d.resize(); d.fitView();
+  return d;
+}
+const cv=()=>document.getElementById('cv');
+function rect(){return cv().getBoundingClientRect();}
+function drag(d, p, dx, dy){
+  const r=rect();
+  const s=d.toScreen(p.x, p.y, d.view);
+  d._down({pointerType:'touch',clientX:r.left+s.x,clientY:r.top+s.y,button:0,pointerId:1,preventDefault(){},target:cv()});
+  const mode=d.drag&&d.drag.mode;
+  for(const k of [0.4,0.75,1]) d._move({pointerType:'touch',clientX:r.left+s.x+dx*k,clientY:r.top+s.y+dy*k,shiftKey:false,preventDefault(){},target:cv()});
+  d._up({pointerType:'touch',clientX:r.left+s.x+dx,clientY:r.top+s.y+dy,pointerId:1,target:cv()});
+  return mode;
+}
+function mouseDrag(d, p, dx, dy){
+  const r=rect();
+  const s=d.toScreen(p.x, p.y, d.view);
+  d._down({pointerType:'mouse',clientX:r.left+s.x,clientY:r.top+s.y,button:0,pointerId:2,preventDefault(){},target:cv()});
+  for(const k of [0.4,0.75,1]) d._move({pointerType:'mouse',clientX:r.left+s.x+dx*k,clientY:r.top+s.y+dy*k,shiftKey:false,preventDefault(){},target:cv()});
+  d._up({pointerType:'mouse',clientX:r.left+s.x+dx,clientY:r.top+s.y+dy,pointerId:2,target:cv()});
+}
+
+(async function(){
+try{
+  const djs=await (await fetch('/js/designer.js')).text();
+  const pjs=await (await fetch('/js/portal.js')).text();
+  const apps=await (await fetch('/js/app.js')).text();
+  const csrc=await (await fetch('/css/style.css')).text();
+
+  /* ================= الجزء الأول: الإكسسوارات لا تُحاذى مع الجدار ================= */
+  t('1) المحاذاة مخصّصة للكنب فقط', /static wantsWallSnap\(p\) \{ return !!p && p\.kind === 'sofa'; \}/.test(djs));
+  t('1) _trySnapToWall تستعمل wantsWallSnap', /if \(!Designer\.wantsWallSnap\(p\)\)/.test(djs));
+
+  let d=eng();
+  let acc=d.addAccessory('a1');
+  t('1) أُنشئ إكسسوار', !!acc && acc.kind==='acc', acc?('x='+acc.x):'null');
+  let a0={x:acc.x,y:acc.y};
+  // لمس بلا حركة
+  let p=d.selectedPiece(); d.select({type:'piece',id:acc.id});
+  let r=rect(); let s=d.toScreen(acc.x,acc.y,d.view);
+  d._down({pointerType:'touch',clientX:r.left+s.x,clientY:r.top+s.y,button:0,pointerId:3,preventDefault(){},target:cv()});
+  const mode0=d.drag&&d.drag.mode;
+  d._up({pointerType:'touch',clientX:r.left+s.x,clientY:r.top+s.y,pointerId:3,target:cv()});
+  t('1) لمس الإكسسوار يبدأ وضع move', mode0==='move', 'mode='+mode0);
+  t('1) لمس بلا حركة لا يغيّر موضعه', Math.abs(acc.x-a0.x)<1e-9 && Math.abs(acc.y-a0.y)<1e-9,
+     'x '+a0.x+'->'+acc.x+' y '+a0.y+'->'+acc.y);
+  t('1) ولا يلتصق بالجدار (wall=undefined)', acc.wall===undefined, 'wall='+acc.wall);
+
+  // سحب نحو منتصف الغرفة
+  d=eng();
+  d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  acc=d.addAccessory('a1');
+  a0={x:acc.x,y:acc.y};
+  drag(d, acc, -140, 60);
+  t('1) سحب الإكسسوار غيّر موضعه', Math.abs(acc.x-a0.x)>0.2, 'dx='+(acc.x-a0.x).toFixed(2)+' dy='+(acc.y-a0.y).toFixed(2));
+  t('1) وبقي داخل الغرفة', acc.wall===undefined, 'wall='+acc.wall);
+  t('1) ولم يقفز إلى الجدار أثناء السحب', acc.wall===undefined);
+
+  // سحب قرب الجدار (أسفل الغرفة، جدار 2 في الأسفل)
+  d=eng();
+  acc=d.addAccessory('a1');
+  r=rect(); s=d.toScreen(acc.x,acc.y,d.view);
+  // ننقله يدوياً قرب الجدار السفلي ثم نسحب قليلاً
+  acc.y=3.7; acc.x=3;
+  d.render();
+  drag(d, acc, 10, 8);
+  t('1) إكسسوار قرب الجدار لا يقفز إليه', acc.wall===undefined, 'wall='+acc.wall+' y='+acc.y.toFixed(2));
+
+  // الفأرة
+  d=eng();
+  acc=d.addAccessory('a1');
+  a0={x:acc.x,y:acc.y};
+  mouseDrag(d, acc, -100, 40);
+  t('1) الماوس يحرّك الإكسسوار أيضاً', Math.abs(acc.x-a0.x)>0.2, 'dx='+(acc.x-a0.x).toFixed(2));
+  t('1) بلا التصاق بالجدار بالماوس', acc.wall===undefined, 'wall='+acc.wall);
+
+  // التدوير لا يلصق
+  d=eng();
+  acc=d.addAccessory('a1');
+  d.select({type:'piece',id:acc.id});
+  d.rotateSelected(90);
+  t('1) التدوير لا يلصق الإكسسوار بالجدار', acc.wall===undefined, 'wall='+acc.wall+' rot='+acc.rot);
+
+  // تعارض ⇒ _resolveOverlap لا يلصق
+  d=eng();
+  const sf=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  acc=d.addAccessory('a1');
+  const before={x:acc.x,y:acc.y};
+  d._enforcePlacement(acc,{x:before.x,y:before.y+1},{near:true,mode:'move'});
+  t('1) حل التعارض لا يلصق الإكسسوار بالجدار', acc.wall===undefined, 'wall='+acc.wall);
+
+  // الكنبة ما زالت تلتصق (لم نكسرها)
+  d=eng();
+  const sd=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  t('1) الكنبة ما زالت تُلصق بالجدار', sd.wall===2, 'wall='+sd.wall);
+  d.select({type:'piece',id:sd.id});
+  const wd=sd.wall;
+  sd.x+=0.1; d._trySnapToWall(sd, d.geometry(), 0.25);
+  t('1)  وتبقى ملتصقة عند القرب', sd.wall!=null, 'wall='+sd.wall);
+
+  // منع التداخل والباب ما زال يعمل
+  d=eng();
+  const op=d.addOpening(0,'door');
+  const w0=d.geometry().walls[0];
+  const onDoor={x:w0.A.x+w0.dir.x*op.t+w0.n.x*0.4, y:w0.A.y+w0.dir.y*op.t+w0.n.y*0.4, id:'k', kind:'sofa', w:2, h:0.8, rot:0};
+  t('1) منع كنبة أمام الباب ما زال يعمل', d.validatePlacement(onDoor).why==='opening');
+  d.addSofaOnWall(2,{seating:'floor',depth:0.8}); d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  t('1) منع تداخل الكنبات ما زال يعمل', d.validateDesign().ok===true);
+
+  /* ================= الجزء الثالث: أبعاد الكنبات فقط ================= */
+  t('3) طبقة أبعاد القطع مرتبطة بالكنب فقط', /if \(p\.kind !== 'sofa'\) continue;/.test(djs));
+  t('3) طبقة قياسات الفتحات مستقلة', /_drawOpeningDimsTop/.test(djs));
+  const idxSofaLabels=djs.indexOf("if (p.kind !== 'sofa') continue;");
+  const idxOpenDims=djs.indexOf('this._drawOpeningDimsTop(ctx, v, W, opt);');
+  const idxPiecesDraw=djs.indexOf('this._drawOrder().forEach((p) => {');
+  t('3) قياسات الفتحات بعد رسم القطع', idxOpenDims>idxPiecesDraw, idxPiecesDraw+' < '+idxOpenDims);
+
+  /* التحقق البصري بالبكسل: إكسسوار بلا رقم قياس، كنبة عليها رقم */
+  d=eng();
+  const sofa=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  d.addAccessory('a1');
+  d.render();
+  const ctx2=cv().getContext('2d');
+  function hasDarkPixelNear(wx,wy,radius){
+    const sp=d.toScreen(wx,wy,d.view);
+    const img=ctx2.getImageData(Math.max(0,Math.round(sp.x-radius)),Math.max(0,Math.round(sp.y-radius)),Math.round(radius*2),Math.round(radius*2)).data;
+    // نبحث عن نص داكن داخل الشارة (النص #2A2622)
+    for(let i=0;i<img.length;i+=4){ if(img[i]<90 && img[i+1]<90 && img[i+2]<90 && img[i+3]>200) return true; }
+    return false;
+  }
+  const accs=d.state.pieces.filter(p=>p.kind==='acc')[0];
+  t('3) الإكسسوار بلا رقم قياس في مركزه', !hasDarkPixelNear(accs.x,accs.y, Math.max(8, accs.w*d.view.scale*0.5)), 'acc '+accs.kind);
+  t('3) الكنبة عليها رقم قياس', hasDarkPixelNear(sofa.x, sofa.y, Math.max(10, sofa.h*d.view.scale*0.6)));
+
+  /* قياسات الكنبة تبقى عند التداخل البصري: طبقة فوق كل شيء */
+  d=eng();
+  const s1=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  const s2=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  // نضع إكسسواراً فوق منتصف الكنبة الأولى
+  const ov={id:'ov',kind:'acc',itemId:'a1',x:s1.x,y:s1.y,w:0.6,h:0.6,rot:0};
+  d.state.pieces.push(ov);
+  d.render();
+  t('3) رقم الكنبة يظهر رغم إكسسوار فوقها', hasDarkPixelNear(s1.x, s1.y, Math.max(12, s1.h*d.view.scale*0.7)));
+
+  /* ================= الجزء الرابع: قياسات الباب/المشب ================= */
+  d=eng();
+  const door=d.addOpening(0,'door');
+  d.select({type:'opening',id:door.id});
+  const gaps=d.openingGaps(door.id);
+  const wallLen=d.state.walls[0].len;
+  t('4) المسافة الأولى صحيحة', Math.abs(gaps.left-(door.t-door.w/2))<1e-6, 'left='+gaps.left);
+  t('4) المسافة الثانية صحيحة', Math.abs(gaps.right-(wallLen-door.t-door.w/2))<1e-6, 'right='+gaps.right);
+  t('4) ومجموعهما = طول الجدار', Math.abs(gaps.left+door.w+gaps.right-wallLen)<1e-6,
+     gaps.left+'+'+door.w+'+'+gaps.right+'='+(gaps.left+door.w+gaps.right));
+  d.render();
+  t('4) الرسم لا يرمي مع الطبقة الجديدة', true);
+  // تحديث فوري عند تحريك الباب
+  d.select({type:'opening',id:door.id});
+  const g0=d.geometry().walls[0];
+  const r2=rect(); const sp=d.toScreen(g0.A.x+g0.dir.x*door.t, g0.A.y+g0.dir.y*door.t, d.view);
+  d._down({pointerType:'touch',clientX:r2.left+sp.x,clientY:r2.top+sp.y,button:0,pointerId:5,preventDefault(){},target:cv()});
+  const m5=d.drag&&d.drag.mode;
+  t('4) سحب الباب يبدأ وضع opening', m5==='opening', 'mode='+m5);
+  d._move({pointerType:'touch',clientX:r2.left+sp.x+40,clientY:r2.top+sp.y,shiftKey:false,preventDefault(){},target:cv()});
+  const g2=d.openingGaps(door.id);
+  t('4) القياسات تتحدث فوراً أثناء السحب', Math.abs(g2.left-gaps.left)>0.01, 'left '+gaps.left+' -> '+g2.left);
+  d._up({pointerType:'touch',clientX:r2.left+sp.x+40,clientY:r2.top+sp.y,pointerId:5,target:cv()});
+  const g3=d.openingGaps(door.id);
+  t('4) تبقى صحيحة بعد انتهاء السحب', Math.abs(g3.left-g2.left)<1e-6 && Math.abs(g3.left+door.w+g3.right-wallLen)<1e-6);
+  // تغيير عرض الفتحة
+  d.updateOpening(door.id,{w:1.4});
+  const g4=d.openingGaps(door.id);
+  t('4) تتحدث عند تغيير عرض الفتحة', Math.abs(g4.left+g4.right-(wallLen-1.4))<1e-6, 'l='+g4.left+' r='+g4.right);
+  // تغيير طول الجدار
+  d.setWallLength(0, 7);
+  const g5=d.openingGaps(door.id);
+  t('4) تتحدث عند تغيير طول الجدار', Math.abs(g5.left+door.w+g5.right-7)<1e-6, 'l='+g5.left+' r='+g5.right+' sum='+(g5.left+door.w+g5.right));
+  // المشب
+  d=eng();
+  const ms=d.addOpening(2,'mashab');
+  d.select({type:'opening',id:ms.id});
+  const gm=d.openingGaps(ms.id);
+  t('4) المشب له قياسان أيضاً', gm && gm.left>=0 && gm.right>=0 && Math.abs(gm.left+ms.w+gm.right-d.state.walls[2].len)<1e-6,
+     'l='+gm.left+' r='+gm.right);
+  // الجدران الأربعة
+  for(let wi=0;wi<4;wi++){
+    const e=eng();
+    const o=e.addOpening(wi,'door');
+    e.select({type:'opening',id:o.id});
+    const gg=e.openingGaps(o.id);
+    const wl=e.state.walls[wi].len;
+    t('4) جدار'+(wi+1)+': القياسان صحيحان', gg && Math.abs(gg.left+o.w+gg.right-wl)<1e-6 && gg.left>=0 && gg.right>=0,
+       'l='+gg.left+' r='+gg.right+' wl='+wl);
+  }
+  // مع أطوال مستقلة
+  d=eng();
+  d.setRoomDims(6,4);
+  d.setWallLength(0,3);
+  const dd=d.addOpening(0,'door');
+  d.select({type:'opening',id:dd.id});
+  const gx=d.openingGaps(dd.id);
+  t('4) يعمل مع جدار مستقل الطول', Math.abs(gx.left+dd.w+gx.right-3)<1e-6, 'l='+gx.left+' r='+gx.right+' wl=3');
+
+  /* ================= الجزء الثاني: أطوال الجدران المستقلة ================= */
+  d=eng();
+  d.setRoomDims(5,4);
+  const base=d.state.walls.map(w=>w.len);
+  d.setWallLength(2,3);
+  const now=d.state.walls.map(w=>w.len);
+  t('2) تغيير الجدار 3 لا يغيّر 1 و2 و4', now[0]===base[0]&&now[1]===base[1]&&now[3]===base[3], now.join('/'));
+  t('2) والجدار 3 صار 3م', Math.abs(now[2]-3)<1e-6, 'w2='+now[2]);
+  // كل جدار على حدة
+  for(let i=0;i<4;i++){
+    const e=eng(); e.setRoomDims(5,4);
+    const b4=e.state.walls.map(w=>w.len);
+    e.setWallLength(i, 3.2);
+    const a4=e.state.walls.map(w=>w.len);
+    const others=a4.filter((_,k)=>k!==i);
+    const othersB=b4.filter((_,k)=>k!==i);
+    t('2) كل جدار يُعدَّل وحده ('+(i+1)+')', Math.abs(a4[i]-3.2)<1e-6 && others.every((v,k)=>v===othersB[k]), a4.join('/'));
+  }
+  // الحفظ والفتح
+  d.setWallLength(1, 2.5);
+  const saved=JSON.parse(JSON.stringify(d.getState()));
+  const d2=eng(); d2.setState(saved);
+  const ls=d2.state.walls.map(w=>w.len);
+  t('2) تبقى القيم بعد الحفظ والفتح', Math.abs(ls[1]-2.5)<1e-6 && Math.abs(ls[2]-3)<1e-6, ls.join('/'));
+  // لا تتضرر الأبواب
+  d=eng(); d.setRoomDims(5,4);
+  const opx=d.addOpening(1,'mashab');
+  const tOp=opx.t, wOp=opx.w;
+  d.setWallLength(0, 3.5);
+  t('2)Changing one wall doesn\'t corrupt the opening', Math.abs(opx.w-wOp)<1e-6, 'w='+opx.w+' (was '+wOp+')');
+  // لا فجوات في غرفة مستطيلة
+  d=eng(); d.setRoomDims(5,4); d.setWallLength(0,3.5);
+  const rr=d.roomGapInfo();
+  t('2) الفجوة تُبلَّغ ولا تُخفى', !rr.closed, 'gap='+rr.gap);
+  d.closeRoom();
+  t('2) إغلاق الغرفة يضبط الزاوية فقط', d.geometry().closed===true);
+  t('2)  ولا يغيّر أي طول يدوي', Math.abs(d.state.walls[0].len-3.5)<1e-6, 'w0='+d.state.walls[0].len);
+
+  /* ================= الجزء الخامس: كل الواجهات تستخدم المحرّك ================= */
+  ['noDepthDrag','noOverlap','dimsOnTop','pieceLabelsOnTop','smartSnap','boundAware'].forEach(f=>{
+    t('5) '+f+' مفعّل في بوابة العميل', new RegExp(f+':\\s*true').test(pjs));
+    t('5) '+f+' مفعّل في صفحة الموظف', new RegExp(f+':\\s*true').test(apps));
+  });
+  t('5) بوابة العميل تستخدم المحرّك نفسه', /new Designer\(\$\('#pCanvas'\)/.test(pjs));
+  t('5) صفحة الموظف تستخدم المحرّك نفسه', /new Designer\(\$\('#designCanvas'\)/.test(apps));
+
+  /* ================= التصدير إلى PDF ================= */
+  t('6) toImage مسار تصدير مستقل', /toImage\(/.test(djs));
+  t('6) تصدير يمرر opt.export', /export:\s*true|opt\.export/.test(djs));
+  const ei=djs.indexOf('toImage(');
+  t('6) toImage يمرّر الخيار', djs.slice(ei,ei+260).indexOf('export')>0 || /export:/.test(djs.slice(ei,ei+400)), '');
+
+}catch(e){ t('اكتمل التنفيذ', false, e.message+' @ '+(e.stack||'').split('\n')[1]); }
+flush();
+})();
+</script></body></html>
