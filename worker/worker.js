@@ -174,7 +174,7 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.54';
 // بصمة asalh-najd-1.0.54.apk (إصدار GitHub v1.0.54، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = 'ee6463efa88c321462b1a39454171feaadeaba04c1a12b0ba8754ebfc3e38d6b';
 const UPDATE_FALLBACK_NOTES = [
   'إصلاح قفزة الإكسسوارات إلى الجدار: الإكسسوار يُحرَّك بحرية ولا يُحاذى مع الجدران إطلاقاً',
   'قياسات المسافة من طرفي الجدار إلى فتحة الباب أو المشب بخطوط وأرقام، في المحرّر وفي PDF',
