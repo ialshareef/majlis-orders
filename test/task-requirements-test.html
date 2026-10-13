@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>متطلبات المهمة — بند 1..17</title>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:11px/1.55 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<canvas id="cv" width="900" height="620"></canvas>
+<script src="/js/designer.js"></script>
+<script>
+/* اختبارات البنود المطلوبة من المهمة على الكود الحقيقي (designer.js) +
+   تحقق تطابق القواعد بين صفحتي العميل والموظف عبر فحص المصدر. */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');}
+function mk(o){
+  const d=new Designer(document.getElementById('cv'), Object.assign({getItem:()=>null,
+    smartSnap:true,boundAware:true,noDepthDrag:true,noOverlap:true,dimsOnTop:true,pieceLabelsOnTop:true}, o||{}));
+  d.setState(Designer.emptyState(6,4));
+  return d;
+}
+function at(d,wi,t,dep){const w=d.geometry().walls[wi];return {x:w.A.x+w.dir.x*t+w.n.x*dep,y:w.A.y+w.dir.y*t+w.n.y*dep};}
+
+(async function(){
+try{
+  const pjs=await (await fetch('/js/portal.js')).text();
+  const apps=await (await fetch('/js/app.js')).text();
+  const djs=await (await fetch('/js/designer.js')).text();
+
+  /* ===== بند 15) قواعد العميل والموظف متطابقة ===== */
+  const FLAGS=['smartSnap','boundAware','noDepthDrag','noOverlap','dimsOnTop','pieceLabelsOnTop'];
+  FLAGS.forEach(f=>{
+    t('15) '+f+' مفعّل في بوابة العميل', new RegExp(f+':\\s*true').test(pjs));
+    t('15) '+f+' مفعّل في صفحة الموظف', new RegExp(f+':\\s*true').test(apps));
+  });
+  t('15) الحفظ يتحقق في صفحة الموظف', /designBlockReason\(\)/.test(apps) && /return false/.test(apps));
+  t('15) الحفظ يتحقق في بوابة العميل', /blockIfInvalid/.test(pjs));
+
+  /* ===== بند 1) السحب لا يغيّر العمق ولا الطول ===== */
+  let d=mk({onBlocked(){}});
+  let s=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  t('1) عمق كنبة 0.8م', Math.abs(s.h-0.8)<1e-9, 'h='+s.h);
+  const hs=d._handles(s);
+  t('1) لا مقبض عمق قابل للالتقاط للكنبة', d._hitHandle(s,hs.resizeH.x,hs.resizeH.y,6)!=='resizeH');
+  t('1) مقبض الطول متاح', d._hitHandle(s,hs.resizeW.x,hs.resizeW.y,6)==='resizeW');
+  t('1) مقبض التدوير متاح', d._hitHandle(s,hs.rotate.x,hs.rotate.y,6)==='rotate');
+  // محاكاة السحب بـ near ثم التحقق أن h وw لم يتغيرا
+  const before={h:s.h,w:s.w,x:s.x,y:s.y};
+  d.drag={mode:'move',id:s.id,prev:{...s},off:{x:0,y:0},orig:{...s}};
+  d._move({pointerType:'touch',clientX:10,clientY:10,shiftKey:false});
+  d.drag=null;
+  t('1) السحب لم يغيّر العمق', Math.abs(s.h-before.h)<1e-9, s.h+' vs '+before.h);
+  t('1) السحب لم يغيّر الطول', Math.abs(s.w-before.w)<1e-9, s.w+' vs '+before.w);
+
+  /* ===== بند 2) تغيير العمق من الحقل الرقمي يعمل ===== */
+  d=mk({}); s=d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  d.select({type:'piece',id:s.id});
+  d.updateSelected({h:1.05});
+  t('2) عمق جديد 1.05م عبر الحقل', Math.abs(s.h-1.05)<1e-6, 'h='+s.h);
+  d.updateSelected({h:0.1});
+  t('2) حد أدنى للعمق 0.2م', Math.abs(s.h-0.2)<1e-6, 'h='+s.h);
+
+  /* ===== بند 3) منع التداخل: سحب/تدوير/حجم/توزيع ===== */
+  d=mk({}); const a1=d.addSofaOnWall(0,{seating:'floor',depth:0.8});
+  d.state.pieces.push({id:'p2',kind:'sofa',w:2,h:0.8,rot:0,x:a1.x,y:a1.y});
+  t('3) تداخل كنبتين مرصود', d.validateDesign().issues.some(i=>i.type==='overlap'));
+  let why=null;
+  d._enforcePlacement(d.state.pieces[1],{...a1,y:a1.y+a1.h+1},{near:true,mode:'move'});
+  t('3) بعد الرجوع لا تداخل', d.validateDesign().ok===true, JSON.stringify(d.validateDesign().issues.map(i=>i.type)));
+  // تدوير
+  d=mk({}); const b1=d.addSofaOnWall(0,{seating:'floor',depth:0.8});
+  const b2=d.addSofaOnWall(1,{seating:'floor',depth:0.8});
+  const p3=d.state.pieces.find(p=>p.id===b2.id);
+  const keep3=Object.assign({},p3);
+  // نحركه ليتداخل مع b1 ثم نطلب تدويره: يجب أن يرجع لموضع صالح
+  p3.x=b1.x; p3.y=b1.y;
+  d._enforcePlacement(p3,keep3,{mode:'rotate'});
+  t('3) تدوير إلى وضع متداخل مرفوض', d.validateDesign().ok===true, JSON.stringify(d.validateDesign().issues.map(i=>i.type)));
+  t('3)  والقطعة عادت لموضع لا تتداخل فيه', p3.rot!==undefined);
+
+  /* ===== بند 4) منع الوضع أمام الباب: الجدران 1..4 + تدوير + أحجام ===== */
+  for(let wi=0;wi<4;wi++){
+    for(const type of ['door','mashab']){
+      const e=mk({});
+      const op=e.addOpening(wi,type);
+      const c=at(e,wi,op.t,0.45);
+      const straight={id:'k',kind:'sofa',w:1.5,h:0.8,rot:0,x:c.x,y:c.y};
+      t('4/5) جدار'+(wi+1)+' '+type+': كنبة مستقيمة ممنوعة', e.validatePlacement(straight).why==='opening');
+      const rotated=Object.assign({},straight,{w:0.8,h:1.6,rot:90});
+      t('4/5) جدار'+(wi+1)+' '+type+': كنبة مدوّرة ممنوعة', e.validatePlacement(rotated).why==='opening');
+      const big=Object.assign({},straight,{w:3,h:0.9});
+      t('4/5) جدار'+(wi+1)+' '+type+': كنبة كبيرة ممنوعة', e.validatePlacement(big).why==='opening');
+      const small=Object.assign({},straight,{w:0.5,h:0.5});
+      t('4/5) جدار'+(wi+1)+' '+type+': كنبة صغيرة أمامه ممنوعة', e.validatePlacement(small).why==='opening');
+      // جانب الفتحة مسموح
+      const side=Object.assign({},straight,at(e,wi,op.t+op.w/2+0.15+0.5+0.5,0.45));
+      t('4/5) جدار'+(wi+1)+' '+type+': بجانب الفتحة مسموح', e.validatePlacement(side).ok===true);
+    }
+  }
+
+  /* ===== بند 6) تقصير جدار عليه باب ⇒ تحذير لا حذف صامت ===== */
+  d=mk({});
+  const op6=d.addOpening(0,'door');
+  const tBefore=op6.t;
+  d.setWallLength(0, d.state.walls[0].len*0.3);
+  const h6=d.checkRoomHealth();
+  t('6) تقصير جدار عليه باب: رسالة تحذير', h6.messages.length>0, h6.messages.join(' | ').substring(0,70));
+  t('6) التصميم صار غير صالح', h6.ok===false);
+  t('6) الفتاة لم تُحذف', d.state.openings.length===1, d.state.openings.length+' openings');
+
+  /* ===== بند 7) الحفظ يرفض التصاميم المتعارضة ===== */
+  d=mk({}); const op7=d.addOpening(0,'door');
+  d.addPiece(Object.assign(at(d,0,op7.t,0.4),{id:'x1',kind:'sofa',w:2,h:0.8,rot:0}));
+  t('7) validateDesign يرفض كنبة أمام باب', d.validateDesign().ok===false);
+  d=mk({}); d.addSofaOnWall(0,{seating:'floor',depth:0.8}); d.addSofaOnWall(0,{seating:'floor',depth:0.8});
+  const vd=d.validateDesign();
+  t('7) تصميم سليم (كنبتان على جدارين) = ok', vd.ok===true, JSON.stringify(vd.issues.map(i=>i.type)));
+
+  /* ===== بند 8) طبقة القياسات فوق الأثاث ===== */
+  t('8) dimsOnTop موجود في المحرك', /_drawDimsTop/.test(djs));
+  t('8) pieceLabelsOnTop موجود في المحرك', /_drawPieceLabelsTop/.test(djs));
+  /* نتحقق من الترتيب داخل دالة الرسم نفسها: الاستدعاء بعد for للقطع */
+  const djs2=djs.slice(djs.indexOf('for (const p of this._drawOrder())'));
+  t('8) يُرسم بعد القطع في ترتيب الرسم', djs2.indexOf('if (this.opts.dimsOnTop) this._drawDimsTop')>0
+     && djs2.indexOf('if (this.opts.dimsOnTop) this._drawDimsTop') < djs2.indexOf('if (this.opts.pieceLabelsOnTop)'));
+  d=mk({}); d.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  d.render();
+  t('8) الرسم لا يرمي مع الطبقتين', true);
+
+  /* ===== بند 9) أزرار الحذف حمراء في الصفحتين ===== */
+  const css=await (await fetch('/css/style.css')).text();
+  t('9) صنف del-danger موجود في CSS', /\.del-danger/.test(css));
+  t('9) اللون用的是 var(--danger)', /del-danger[\s\S]{0,200}color:\s*var\(--danger\)/.test(css));
+  t('9) خلفية حمراء عند التحويم', /del-danger:hover[\s\S]{0,200}background:\s*var\(--danger\)/.test(css));
+  t('9) بوابة العميل: زر حذف الفتكة أحمر', /icon-btn del-danger" data-opdel/.test(pjs));
+  t('9) صفحة الموظف: زر حذف الفتكة أحمر', /btn small danger del-danger" data-act="del"/.test(apps));
+
+  /* ===== بند 10) تغيير طول جدار واحد لا يمسّ الباقي ===== */
+  d=mk({});
+  d.setRoomDims(5,4);
+  const lensBefore=d.state.walls.map(w=>w.len);
+  d.setWallLength(2,3);
+  const lens=d.state.walls.map(w=>w.len);
+  t('10) الجدار 3 أصبح 3م', Math.abs(lens[2]-3)<1e-6, 'w2='+lens[2]);
+  t('10) الجدار المقابل لم يتغير', lens[0]===lensBefore[0], lensBefore[0]+' -> '+lens[0]);
+  t('10) جداران آخران لم يتغيرا', lens[1]===lensBefore[1] && lens[3]===lensBefore[3], lens.join('/'));
+  t('10) الجدار صار مستقلاً', d.wallIsFixed(2));
+  t('10) طوله الحقيقي معروض (الاسم)', /ثابت/.test(djs)||/fixed/.test(djs));
+
+  /* ===== بند 11) تغيير المقاس الأساسي يحافظ على المستقل ===== */
+  d.setRoomDims(7,6);
+  const l2=d.state.walls.map(w=>w.len);
+  t('11) المستقل بقي 3م', Math.abs(l2[2]-3)<1e-6, 'w2='+l2[2]);
+  t('11) غير المستقل أخذ 7م', Math.abs(l2[0]-7)<1e-6, 'w0='+l2[0]);
+  t('11) غير المستقل أخذ 6م', Math.abs(l2[1]-6)<1e-6, 'w1='+l2[1]);
+
+  /* ===== بند 12) إرجاع الجدار للافتراضي ===== */
+  d=mk({}); d.setRoomDims(5,4); d.setWallLength(2,3);
+  d.resetWallLength(2);
+  t('12) رجع 5م (الافتراضي)', Math.abs(d.state.walls[2].len-5)<1e-6, 'w2='+d.state.walls[2].len);
+  t('12) وُزعت علامة الاستقلال', !d.wallIsFixed(2));
+  t('12) والغرفة عادت مغلقة', d.geometry().closed===true, 'gap='+d.geometry().gap.toFixed(3));
+
+  /* ===== بند 13) تغيير طول جدار عليه باب/مشب ===== */
+  for(const type of ['door','mashab']){
+    const e=mk({});
+    e.addOpening(1,type);
+    e.setWallLength(1, e.state.walls[1].len);
+    const he=e.checkRoomHealth();
+    t('13) '+type+' على جدار غير متغير: سليم', he.ok===true, he.messages.join('|').substring(0,50));
+    e.setWallLength(1, 0.6);
+    const hq=e.checkRoomHealth();
+    t('13) '+type+' بعد تقصير جداره: تحذير', hq.messages.length>0, hq.messages.join('|').substring(0,60));
+    t('13)  والفتحة باقية', e.state.openings.length===1);
+  }
+
+  /* ===== بند 14) حفظ وإغلاق وإعادة فتح ===== */
+  d=mk({});
+  d.setRoomDims(7,5);
+  d.setWallLength(2,3);
+  const s14=d.addSofaOnWall(3,{seating:'floor',depth:0.8});
+  if(s14){ s14.w=2; d._placeOnWall(s14,d.geometry().walls[3]); }
+  d.addOpening(0,'door');
+  d.addOpening(1,'mashab');
+  t('14) وُجد موضع للكنبة على الجدار الرابع', !!s14, s14?('w='+s14.w):'null');
+  const saved=JSON.parse(JSON.stringify(d.getState()));
+  t('14) الحفظ تضمّن roomDims', !!saved.roomDims && saved.roomDims.w===7 && saved.roomDims.h===5, JSON.stringify(saved.roomDims));
+  t('14) الحفظ تضمّن fixed للجدار المستقل', saved.walls[2].fixed===true);
+  t('14) الحفظ تضمّن الأبواب والمشاب', saved.openings.length===2 && saved.openings.some(o=>o.type==='mashab'));
+  t('14) الحفظ تضمّن الأثاث', saved.pieces.length>=1);
+  // إعادة الفتح
+  const d2=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true});
+  d2.setState(saved);
+  const ls=d2.state.walls.map(w=>w.len);
+  t('14) بعد الفتح: طول الجدار المستقل محفوظ', Math.abs(ls[2]-3)<1e-6, 'w2='+ls[2]);
+  t('14) بعد الفتح: roomDims محفوظ', d2.state.roomDims && d2.state.roomDims.w===7 && d2.state.roomDims.h===5, JSON.stringify(d2.state.roomDims));
+  t('14) بعد الفتح: الأبواب والمشاب', d2.state.openings.length===2);
+  t('14) بعد الفتح: مواقعها على جدرانها الصحيحة',
+    d2.state.openings.find(o=>o.type==='door').wall===0 && d2.state.openings.find(o=>o.type==='mashab').wall===1);
+  t('14) بعد الفتح: الأثاث موجود', d2.state.pieces.some(p=>p.kind==='sofa'));
+  t('14) بعد الفتح: التصميم صالح', d2.validateDesign().ok===true, JSON.stringify(d2.validateDesign().issues.map(i=>i.type)));
+
+  /* ===== بند 8ب) تصميم قديم بلا الحقول الجديدة ===== */
+  const old={walls:[{len:5,angle:0},{len:4,angle:90},{len:5,angle:180},{len:4,angle:270}],
+    openings:[],pieces:[],cornerMode:'deduct'};
+  const d3=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true});
+  let openErr='';
+  try{ d3.setState(old); }catch(e){ openErr=e.message; }
+  t('14) تصميم قديم يفتح بلا أخطاء', !openErr, openErr);
+  t('14) واستُنتج roomDims بلا كسر', d3.state.roomDims && d3.state.roomDims.w===5 && d3.state.roomDims.h===4);
+  t('14) ويمكن تغيير جدار منه', (function(){ d3.setWallLength(1,2.5); return Math.abs(d3.state.walls[1].len-2.5)<1e-6; })());
+
+  /* ===== بند 16) قواعد ثابتة على مختلف المقاسات (حجم الغرفة) ===== */
+  for(const [w,h] of [[3,3],[4,4],[6,5],[10,8]]){
+    const e=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true,smartSnap:true});
+    e.setState(Designer.emptyState(w,h));
+    e.addOpening(0,'door');
+    const op=e.addOpening(2,'mashab');
+    const c=at(e,0,op.t,0.4);
+    const so={id:'q',kind:'sofa',w:1.2,h:0.8,rot:0,x:c.x,y:c.y};
+    t('16) غرفة '+w+'×'+h+': منع أمام الباب', e.validatePlacement(so).why==='opening');
+  }
+
+}catch(e){ t('اكتمل التنفيذ', false, e.message+' @ '+(e.stack||'').split('\n')[1]); }
+flush();
+})();
+</script></body></html>

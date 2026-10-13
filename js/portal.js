@@ -410,6 +410,21 @@ function portalAddAcc(itemId) {
     wireStatic();
     var dz = new Designer($('#pCanvas'), {
       getItem: getCatItem,
+      /* قواعد التصميم المفعّلة لبوابة العميل (نفسها في صفحة الموظف):
+         smartSnap: الانجذاب للجدار مرة واحدة ثم سحب حر.
+         boundAware: حدود الغرفة تراعي حجم القطعة واتجاهها الفعليين.
+         noDepthDrag: عمق الكنبة من الحقل الرقمي فقط — السحب يحرّك الموضع فقط.
+         noOverlap: منع التداخل وأمام الباب/المشب هندسياً في كل المسارات.
+         dimsOnTop/pieceLabelsOnTop: أرقام المقاسات فوق الأثاث فلا يحجبها. */
+      smartSnap: true,
+      boundAware: true,
+      noDepthDrag: true,
+      noOverlap: true,
+      dimsOnTop: true,
+      pieceLabelsOnTop: true,
+      onBlocked: function (p, why) {
+        toast(Designer.blockingMessage(why), true);
+      },
       onRevert: function (why) {
         toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود' : 'يبقى العنصر داخل حدود الغرفة', true);
       },
@@ -482,7 +497,7 @@ function portalAddAcc(itemId) {
   function gotoStep(id) {
     if (!STEP_INDEX.hasOwnProperty(id)) return;
     S.step = id;
-    if (id !== 'openings') setChosenWall(null);
+    if (id !== 'openings' && id !== 'room') setChosenWall(null);
     buildSteps();
     renderPanel();
     renderNav();
@@ -532,7 +547,12 @@ function portalAddAcc(itemId) {
        صف أزرار المراجعة (#pSubmitDesign → submitDesign) حتى لا يختلف السلوك بينهما. */
     $('#pNextStep').onclick = function () {
       var nx = STEPS[STEP_INDEX[S.step] + 1];
-      if (nx) { gotoStep(nx.id); return; }
+      if (nx) {
+        /* منع التصميم الفاسد: لا ننتقل وقد تُعرض رسالة واضحة تُكمل التعديل */
+        if ((nx.id === 'review' || nx.id === 'furn') && !blockIfInvalid()) return;
+        gotoStep(nx.id);
+        return;
+      }
       finishDesign();
     };
   }
@@ -555,6 +575,49 @@ function portalAddAcc(itemId) {
     var p = dz.selectedPiece();
     if (p && p.wall != null) return p.wall;
     return 0;
+  }
+
+  /* اختيار جدار بأطوال مستقلة داخل مرحلة الغرفة: يُحفظ بين التصييرات */
+  function wallPickSet(i) { setChosenWall(i); }
+
+  /* تنبيه واضح بعد أي تغيير في أطوال الجدران: فجوة، فتحة خرجت، تعارض أثاث.
+     لا نغيّر العنصر بصمت — نعرض ما حدث ونسأل المستخدم. */
+  function markRoomHealth() {
+    var dz = S.designer;
+    var box = $('#pfWallWarn');
+    if (!dz || !box) return;
+    var h = dz.checkRoomHealth();
+    if (!h.messages.length) {
+      box.innerHTML = '';
+      return;
+    }
+    var hasGap = !h.gap.closed;
+    box.innerHTML = '<div class="warnbox' + (hasGap ? ' warn-gap' : '') + '">'
+      + '<p>' + h.messages.slice(0, 4).map(function (m) { return '• ' + m; }).join('<br>') + '</p>'
+      + (hasGap ? '<button type="button" class="btn small" id="pfWallClose">إغلاق الغرفة الآن</button>' : '')
+      + '</div>';
+    var cb = $('#pfWallClose');
+    if (cb) cb.addEventListener('click', function () {
+      dz.closeRoom();
+      toast('ضُبط زاوية الجدار الأخير فقط ليغلق الشكل — لم يتغير أي طول.');
+      renderPanel();
+    });
+  }
+
+  /* شرح صريح للجدار المحدد: طوله الحالي، افتراضيه، وأثر التغيير على الغرفة. */
+  function updateWallPickNote() {
+    var dz = S.designer;
+    var el = $('#pfWallNote');
+    if (!dz || !el) return;
+    var i = targetWall();
+    var w = dz.state.walls[i];
+    if (!w) { el.textContent = ''; return; }
+    var def = dz.wallDefaultLen(i);
+    var ex = dz.explainWallChange(i, w.len);
+    var bits = ['طوله الآن ' + w.len + ' م', 'الافتراضي ' + def + ' م'];
+    if (w.fixed) bits.push('معدّل يدوياً (لن يتغير بتغيير مقاس الغرفة)');
+    if (ex && !ex.unchanged) bits.push('الجدار المقابل (رقم ' + (ex.oppositeWall + 1) + ') يبقى ' + ex.oppositeLen + ' م');
+    el.textContent = bits.join(' · ');
   }
 
   /* تركيبة الكنبة: نوع المجلس (افتراضي أرضية دائماً) + قماش + إسفنج + عمق.
@@ -631,30 +694,71 @@ function portalAddAcc(itemId) {
     if (!dz) { box.innerHTML = ''; return; }
     if (S.step === 'room') {
       var ws = (dz.state && dz.state.walls) || [];
-      /* المرحلة ١ مبسّطة: العرض والطول فقط. لا قوائم أطوال الجدران ولا زر «إضافة جدار»
-         — العميل لا يحتاج التحكم في كل جدار، والغرفة تتحدّد كاملة من المقاسين.
-         الحقول أرقام عادية (بلا أسهم خطوة) وعند اللمس يُحدَّد الرقم كله
-         فيكتب فوقه العميل مباشرة بلا تحديد الكل يدويًا. */
+      /* المرحلة ١: المقاس الأساسي للغرفة، وتحته تحكّم مستقل في طول كل جدار على حدة.
+         القواعد نفسها لصفحة الموظف (renderer واحد في app.js). */
       box.innerHTML = ''
-        + '<div class="row2"><label>عرض الغرفة (متر)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[0] ? ws[0].len : 5) + '"></label>'
-        + '<label>طول الغرفة (متر)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (ws[1] ? ws[1].len : 4) + '"></label></div>'
-        + '<p class="hint">اضغط على الرقم فيتحدّد كاملًا — اكتب المقاس الجديد مباشرة.</p>';
-      /* تحديث حي: الكتابة تعدّل الجدارين الأولين مباشرة (يحافظ على الغرف
-         المخصصة عبر setWallLength)، بلا زر تطبيق وبلا فقدان التركيز */
-      var liveDim = function (idx, input) {
+        + '<div class="row2"><label>عرض الغرفة (متر)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (dz.state.roomDims ? dz.state.roomDims.w : (ws[0] ? ws[0].len : 5)) + '"></label>'
+        + '<label>طول الغرفة (متر)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (dz.state.roomDims ? dz.state.roomDims.h : (ws[1] ? ws[1].len : 4)) + '"></label></div>'
+        + '<p class="hint">اضغط على الرقم فيتحدّد كاملًا — اكتب المقاس الجديد مباشرة.</p>'
+        + '<div class="wallpick" id="pfWallPick">'
+        + '<p class="hint"><b>أطوال الجدران بشكل مستقل:</b> اختر جداراً لتغيير طوله وحده. الجدار المقابل لا يتغير تلقائياً.</p>'
+        + '<div class="wallpick-row" role="group" aria-label="اختر جداراً لتغيير طوله">'
+        + ws.map(function (w, i) {
+            const fixed = !!w.fixed;
+            const sel = i === targetWall();
+            return '<button type="button" class="wallpick-btn' + (sel ? ' sel' : '') + (fixed ? ' fixed' : '') + '" data-wallpick="' + i + '" aria-pressed="' + (sel ? 'true' : 'false') + '">'
+              + 'جدار ' + (i + 1) + '<small>' + w.len + ' م' + (fixed ? ' • مستقل' : '') + '</small></button>';
+          }).join('')
+        + '</div>'
+        + '<div class="row2 wallpick-edit">'
+        + '<label>طول الجدار المحدد (متر)<input id="pfWallLen" type="number" step="0.05" min="0.3" max="40" inputmode="decimal" value="' + (ws[targetWall()] ? ws[targetWall()].len : 3) + '"></label>'
+        + '<label>&nbsp;<button type="button" class="btn ghost" id="pfWallReset">إرجاع للافتراضي</button></label>'
+        + '</div>'
+        + '<p class="hint" id="pfWallNote"></p>'
+        + '<div id="pfWallWarn"></div>'
+        + '</div>';
+      /* المقاس الأساسي: يحدّث الجدران غير المعدّلة فقط ويحافظ على المستقلة. */
+      var liveDim = function (key, input) {
         var v = parseFloat(input.value);
         if (!Number.isFinite(v) || v < 0.5 || v > 30) return;
-        dz.setWallLength(idx, Math.round(v * 10) / 10);
+        var d = dz.state.roomDims || { w: 5, h: 4 };
+        dz.setRoomDims(key === 'w' ? v : d.w, key === 'h' ? v : d.h);
+        markRoomHealth();
       };
       /* لمسة واحدة = تحديد الرقم كاملًا (يحل مشكلة «المؤشر بجانب الرقم») */
-      ['#pfW', '#pfH'].forEach(function (sel) {
+      ['#pfW', '#pfH', '#pfWallLen'].forEach(function (sel) {
         var el = $(sel);
-        el.addEventListener('input', function () { liveDim(sel === '#pfW' ? 0 : 1, el); });
+        if (!el) return;
         el.addEventListener('focus', function () { try { el.select(); } catch (_) { /* noop */ } });
         el.addEventListener('pointerdown', function () {
           setTimeout(function () { try { el.select(); } catch (_) { /* noop */ } }, 0);
         });
       });
+      $('#pfW').addEventListener('input', function () { liveDim('w', this); });
+      $('#pfH').addEventListener('input', function () { liveDim('h', this); });
+      /* تغيير طول جدار واحد فقط — بلا تعديل صامت للجدار المقابل */
+      var wi = targetWall();
+      $('#pfWallLen').addEventListener('input', function () {
+        var v = parseFloat(this.value);
+        if (!Number.isFinite(v) || v < 0.3 || v > 40) return;
+        dz.setWallLength(wi, Math.round(v * 100) / 100);
+        markRoomHealth();
+        updateWallPickNote();
+      });
+      $('#pfWallReset').addEventListener('click', function () {
+        dz.resetWallLength(wi);
+        $('#pfWallLen').value = dz.state.walls[wi].len;
+        toast('أُرجع الجدار ' + (wi + 1) + ' إلى طوله الافتراضي.');
+        renderPanel();
+      });
+      /* اختيار الجدار بالنقر على زر */
+      $$('#pfWallPick [data-wallpick]').forEach(function (b) {
+        b.addEventListener('click', function () {
+          wallPickSet(+b.dataset.wallpick);
+          renderPanel();
+        });
+      });
+      updateWallPickNote();
     } else if (S.step === 'openings') {
       var walls = (dz.state && dz.state.walls) || [];
       var ops = (dz.state && dz.state.openings) || [];
@@ -679,7 +783,7 @@ function portalAddAcc(itemId) {
             + '<span class="p-opw"><button type="button" class="btn" data-opwminus="' + esc(o.id) + '" aria-label="تضييق">−</button>'
             + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-opw="' + esc(o.id) + '" value="' + o.w + '" aria-label="عرض ' + onm + '">'
             + '<button type="button" class="btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع">+</button></span>'
-            + '<button type="button" class="icon-btn" data-opdel="' + esc(o.id) + '" aria-label="حذف"><svg><use href="#p-trash"/></svg></button></div>';
+            + '<button type="button" class="icon-btn del-danger" data-opdel="' + esc(o.id) + '" aria-label="حذف"><svg><use href="#p-trash"/></svg></button></div>';
         }).join('') : '')
         + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو مشبًا بعد.</p>' : '')
         + '</div>';
@@ -797,7 +901,7 @@ function portalAddAcc(itemId) {
         + '<input id="psOW" type="number" step="0.1" min="0.3" inputmode="decimal" aria-label="العرض بالمتر" value="' + o.w + '">'
         + '<button type="button" class="btn" data-owplus aria-label="توسيع">+</button></span>'
         + '<button type="button" class="btn small" data-close>تم</button>'
-        + '<button type="button" class="link-btn danger-text" data-del>حذف</button></div>';
+        + '<button type="button" class="link-btn danger-text del-danger" data-del>حذف</button></div>';
     } else {
       var p = info.piece;
       var nm = pieceLabel(p);
@@ -1020,8 +1124,29 @@ function portalAddAcc(itemId) {
   /* الإجراء الوحيد للإنهاء: يقرؤ الاسم والجوال من لوحة المراجعة نفسها، ويحرس نفسه
      أثناء التنفيذ فلا يُنهي التصميم مرتين بضغط متتابع على الزرين. */
   var finishing = false;
+  /* التحقق قبل الحفظ: يمنع حفظ تصميم فيه تداخل كنبات أو كنبة تسدّ باباً/مشباً.
+     القاعدة نفسها المستعملة أثناء التعديل — لا تكفي حدود حمراء. */
+  function blockIfInvalid() {
+    var dz = S.designer;
+    if (!dz) return true;
+    var v = dz.validateDesign();
+    if (v.ok) return true;
+    var msgs = [];
+    var seen = {};
+    v.issues.forEach(function (i) {
+      if (i.type === 'opening') {
+        var nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+        if (!seen['o' + nm]) { msgs.push('كنبة تسدّ ' + nm + ' — انقلها بعيداً عنه.'); seen['o' + nm] = 1; }
+      } else if (i.type === 'overlap') {
+        if (!seen.ov) { msgs.push('تداخل بين قطعتين في التصميم — أعد توزيعهما.'); seen.ov = 1; }
+      }
+    });
+    toast(msgs.join(' ') || 'التصميم فيه تعارض — عالجه قبل الحفظ.', true);
+    return false;
+  }
   async function finishDesign() {
     if (finishing) return;
+    if (!blockIfInvalid()) return;
     var box = $('#pPanel');
     var btns = [$('#pSubmitDesign', box), $('#pNextStep')].filter(Boolean);
     if (btns.some(function (b) { return b.disabled; })) return;

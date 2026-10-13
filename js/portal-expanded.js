@@ -810,6 +810,7 @@
       });
       /* الإدخال اليدوي: يُطبَّق عند blur أو Enter (لا استجابة لكل ضغطة مفتاح) */
       $$('input[data-qtyin]', box).forEach(function (inp) {
+        var panel = inp.closest('.px-qtybar');
         inp.addEventListener('click', function (e) { e.stopPropagation(); inp.select(); });
         var commit = function () {
           var id = inp.dataset.qtyin;
@@ -822,9 +823,15 @@
           }
           if (v > MAX_QTY) { toast('الحد الأقصى ' + MAX_QTY + ' قطعة.', true); }
           setAccQty(id, v);
-          renderPanel();
+          syncTile(id);
         };
-        inp.addEventListener('blur', commit);
+        /* blur بسبب نقرة على زر داخل البطاقة لا يُعتبر تعديلًا:
+           نترك القيمة كما كتبها المستخدم وبجانبها زر «تم».
+           نكتفي بتحديث الرقم والشارة في مكانهما بلا إعادة بناء */
+        inp.addEventListener('blur', function (e) {
+          if (e.relatedTarget && panel.contains(e.relatedTarget)) return;
+          commit();
+        });
         inp.addEventListener('change', commit);
         inp.addEventListener('keydown', function (e) {
           if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
@@ -833,17 +840,39 @@
       $$('button[data-spread]', box).forEach(function (b) {
         b.addEventListener('click', function (e) { e.stopPropagation(); spreadAcc(b.dataset.spread); renderPanel(); });
       });
+      /* تحديث بطاقة واحدة في مكانها (خانة الكمية + الشارة) بلا إعادة بناء القائمة:
+         إعادة البناء كانت تقتل النقر لأن اللوحة تُغلق فور تحديثها. */
+      function syncTile(id) {
+        var n = accCount(id);
+        var wrap = box.querySelector('[data-accwrap="' + id + '"]');
+        if (!wrap) return;
+        var inp = wrap.querySelector('input[data-qtyin]');
+        if (inp && document.activeElement !== inp) inp.value = String(n);
+        var badge = wrap.querySelector('.px-acc-badge');
+        if (n > 0) {
+          if (!badge) {
+            badge = document.createElement('b');
+            badge.className = 'px-acc-badge num';
+            wrap.appendChild(badge);
+            wrap.classList.add('has');
+          }
+          badge.textContent = String(n);
+        } else {
+          if (badge) badge.remove();
+          wrap.classList.remove('has');
+        }
+      }
       /* الضغط على البطاقة يفتح لوحة الكمية مباشرة (بلا زر + منفصل) */
       function openQtyPanel(card) {
         var panel = card && card.querySelector('.px-qtybar');
         if (!panel) return;
-        $('.px-qtybar', box).forEach(function (x) { if (x !== panel) { x.hidden = true; x.parentNode && x.parentNode.classList.remove('open'); } });
+        $$('.px-qtybar', box).forEach(function (x) { if (x !== panel) { x.hidden = true; x.parentNode && x.parentNode.classList.remove('open'); } });
         card.classList.add('open');
         panel.hidden = false;
         var inp = panel.querySelector('input[data-qtyin]');
         if (inp) { inp.focus(); inp.select(); }
       }
-      $('[data-accwrap]', box).forEach(function (card) {
+      $$('[data-accwrap]', box).forEach(function (card) {
         card.addEventListener('click', function (e) {
           if (e.target.closest('button, input')) return;
           openQtyPanel(card);
@@ -857,7 +886,7 @@
         dz.addFreeSpace();
         renderPanel();
       });
-      $('button[data-qtyok]', box).forEach(function (b) {
+      $$('button[data-qtyok]', box).forEach(function (b) {
         b.addEventListener('click', function (e) {
           e.stopPropagation();
           var id = b.dataset.qtyok;
@@ -870,7 +899,7 @@
           renderPanel();
         });
       });
-      $('button[data-qtydel]', box).forEach(function (b) {
+      $$('button[data-qtydel]', box).forEach(function (b) {
         b.addEventListener('click', function (e) {
           e.stopPropagation();
           setAccQty(b.dataset.qtydel, 0);

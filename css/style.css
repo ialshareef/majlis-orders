@@ -305,6 +305,27 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .icon-btn:focus-visible { outline: none; box-shadow: var(--focus); }
 .icon-btn:disabled { opacity: .35; cursor: not-allowed; }
 .icon-btn svg { width: 19px; height: 19px; }
+/* زر حذف الباب/المشب/العنصر: أحمر واضح في صفحتي العميل والموظف معاً.
+   أصناف متعددة حتى يعمل على .icon-btn و.btn وكل ما يحمل data-del. */
+.icon-btn.del-danger,
+.btn.del-danger,
+button[data-opdel].del-danger,
+button[data-del].del-danger,
+[data-del].del-danger,
+[data-act="del"].del-danger {
+  color: var(--danger); background: var(--danger-soft);
+  border-color: var(--danger-line); font-weight: 700;
+}
+.icon-btn.del-danger:hover,
+.btn.del-danger:hover,
+button[data-opdel].del-danger:hover,
+button[data-del].del-danger:hover,
+[data-del].del-danger:hover,
+[data-act="del"].del-danger:hover {
+  background: var(--danger); color: #fff; border-color: var(--danger);
+}
+.icon-btn.del-danger svg { stroke: currentColor; }
+[data-opdel] svg, [data-del] svg, [data-act="del"] svg { stroke: currentColor; fill: none; }
 
 .link-btn {
   background: none; border: 0; padding: 0; font: inherit; font-weight: 600;
@@ -1203,6 +1224,20 @@ body[data-page="order"] main { padding-top: 10px; }
   padding: 5px 12px; border-radius: var(--r-sm); pointer-events: none;
 }
 .canvas-alert svg { width: 15px; height: 15px; }
+/* تنبيه هندسي بعد تغيير أطوال الجدران — يظهر تلقائياً عند وجود رسائل */
+#roomWarn { position: absolute; top: 12px; inset-inline: 12px; z-index: 3; pointer-events: auto; }
+#roomWarn:not(:empty) { display: block; }
+#roomWarn[hidden] { display: none; }
+#roomWarn .warnbox { box-shadow: var(--shadow-2, 0 6px 20px rgba(42,38,34,.14)); }
+/* صف الجدار المستقل (طول يدوي لا يتغير بتغيير مقاس الغرفة) */
+.walls-table tr.wall-fixed { background: var(--accent-soft); }
+.wall-fixed-tag {
+  display: inline-block; margin-inline-start: 4px; padding: 1px 5px;
+  border-radius: 999px; background: var(--accent); color: var(--on-accent, #FFF9F0);
+  font-size: .66rem; font-weight: 700; vertical-align: middle;
+}
+.walls-actions { display: flex; gap: 2px; align-items: center; }
+.walls-actions .icon-btn { width: 34px; height: 34px; }
 /* أدوات التكبير: صف أسفل المخطط (لا يغطي الرسم) */
 .zoom-ctl {
   display: flex; align-items: center; justify-content: flex-end; gap: 4px; flex-wrap: wrap;
@@ -2563,6 +2598,39 @@ body.portal { background: var(--bg); }
 .p-optgrid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .p-optgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @media (max-width: 359px) { .p-optgrid.two { grid-template-columns: 1fr; } .p-optgrid.three { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+/* ============ أطوال الجدران المستقلة (بوابة العميل وصفحة الموظف) ============
+   اختيار الجدار + حقل طوله + تنبيه الفجوة/التعارض. نفس الأصناف في الصفحتين. */
+.wallpick { display: grid; gap: 8px; margin-top: 4px; }
+.wallpick .hint { margin: 0; }
+.wallpick-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
+@media (max-width: 359px) { .wallpick-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.wallpick-btn {
+  display: grid; gap: 2px; justify-items: center;
+  min-height: 46px; padding: 5px 4px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--surface); color: var(--ink-2);
+  font-family: inherit; font-size: .78rem; font-weight: 700; line-height: 1.25;
+}
+.wallpick-btn small { font-size: .68rem; font-weight: 500; color: var(--ink-3); }
+.wallpick-btn:hover { border-color: var(--accent-line); background: var(--row-hover); }
+.wallpick-btn.sel { border-color: var(--accent); background: var(--accent-soft); color: var(--ink); box-shadow: 0 0 0 2px var(--accent-line); }
+.wallpick-btn.sel small { color: var(--ink-2); font-weight: 700; }
+/* جدار معدّل يدوياً: إطار مميّز + وسم */
+.wallpick-btn.fixed { border-color: var(--accent); }
+.wallpick-btn.fixed small::after { content: ' ✎'; }
+.wallpick-edit { align-items: end; }
+.wallpick-edit .btn.ghost { min-height: 44px; }
+/* صندوق التنبيه: تعارض هندسي بعد تغيير أطوال الجدران أو الأثاث */
+.warnbox {
+  display: grid; gap: 6px; padding: 8px 10px; margin: 0;
+  border: 1px solid var(--danger-line, var(--danger)); border-radius: var(--r);
+  background: var(--danger-soft); color: var(--ink);
+}
+.warnbox p { margin: 0; font-size: .8rem; line-height: 1.6; }
+.warnbox.warn-gap { border-color: var(--accent); background: var(--accent-soft); }
+.warnbox .btn { justify-self: start; }
+@media (max-width: 359px) { .wallpick-edit { grid-template-columns: 1fr; } }
 /* أوصاف الأزرار في خطوة المراجعة */
 /* حقل مخفي يبقى للقراءة فقط (توافق مع الحفظ والجلسات) */
 .p-hidden-sel { display: none !important; }

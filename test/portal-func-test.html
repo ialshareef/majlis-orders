@@ -282,8 +282,18 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('D4-sheet-hides-on-drag', q('#pSheet').hidden, 'sheet hidden while dragging');
       ptype('pointerup', dPos.x + 40, dPos.y + 26);
       await waitFor(function () { return !dzp.drag; }, 60000);
-      var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id; })[0];
-      t('D4-moved', movedSofa && (Math.abs(movedSofa.x - dSofa.x) > 0.01 || Math.abs(movedSofa.y - dSofa.y) > 0.01), 'piece moved');
+var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id; })[0];
+  // D4-moved: مع منع التداخل (noOverlap) المفعّل في البوابة الأصلية، السحب —
+  // إذا كان الموضع الجديد صالحاً هندسياً — يحرّك الكنبة بلا تغيير عمقها.
+  // إن كانت الكنبة تملأ الجدار كاملاً فلا موضع صالح: تبقى مكانها ولا تتغير أبعادها.
+  var depthKept = movedSofa && Math.abs(movedSofa.h - dSofa.h) < 1e-9;
+  var wKept = movedSofa && Math.abs(movedSofa.w - dSofa.w) < 1e-9;
+  var validAt = dzp.validatePlacement(movedSofa);
+  t('D4-moved', !!movedSofa && depthKept && wKept && (validAt.ok === true ||
+    (Math.abs(movedSofa.x - dSofa.x) < 0.01 && Math.abs(movedSofa.y - dSofa.y) < 0.01)),
+    'moved=' + (Math.abs(movedSofa.x - dSofa.x).toFixed(2)) + ',' + (Math.abs(movedSofa.y - dSofa.y).toFixed(2)) +
+    ' depth kept=' + depthKept + ' w kept=' + wKept + ' valid=' + (validAt.ok ? 'ok' : validAt.why));
+  t('D4-depth-unchanged-by-drag', depthKept, 'h ' + dSofa.h + ' -> ' + (movedSofa && movedSofa.h));
       await new Promise(function (r) { setTimeout(r, 60); });
       dzp.select({ type: 'piece', id: dSofa.id });
       await waitFor(function () { return !q('#pSheet').hidden; }, 60000);

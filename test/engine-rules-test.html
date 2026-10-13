@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>engine unit test</title>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:12px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<canvas id="cv" width="900" height="620" style="display:none"></canvas>
+<script src="/js/designer.js"></script>
+<script>
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');}
+
+function mk(){ const dz=new Designer(document.getElementById('cv'),{getItem:()=>null}); dz.setState(Designer.emptyState(5,4)); return dz; }
+
+(async function(){
+ try{
+  /* ===== 1) هندسة أساسية لم تتغير ===== */
+  let dz=mk();
+  let g=dz.geometry();
+  t('geometry: 4 جدران', g.walls.length===4, g.walls.length+'');
+  t('geometry: مغلقة', g.closed===true, 'gap='+g.gap);
+  t('geometry: 4.5م×3.6م بعد setRoomDims', true);
+  dz.setRoomDims(4.5,3.6);
+  g=dz.geometry();
+  t('setRoomDims: مستطيل جديد', g.closed && Math.abs(g.walls[0].len-4.5)<1e-6 && Math.abs(g.walls[1].len-3.6)<1e-6,
+     g.walls.map(w=>w.len).join('/'));
+
+  /* ===== 2) أطوال مستقلة: تغيير جدار واحد لا يمسّ الباقي ===== */
+  dz=mk(); dz.setRoomDims(5,4);
+  const before=dz.state.walls.map(w=>w.len);
+  dz.setWallLength(2, 3);            // الجدار رقم 3 (فهرس 2)
+  const after=dz.state.walls.map(w=>w.len);
+  t('تغيير جدار واحد: الجدار المختار تغيّر', Math.abs(after[2]-3)<1e-6, 'w2='+after[2]);
+  t('  الجدار المقابل لم يتغيّر', after[0]===before[0], before[0]+' -> '+after[0]);
+  t('  بقية الجدران لم تتغيّر', after[1]===before[1] && after[3]===before[3], after.join('/'));
+  t('  الجدار صار مستقلاً (fixed)', dz.wallIsFixed(2)===true);
+  t('  غيره ليس مستقلاً', dz.wallIsFixed(0)===false);
+  const gi=dz.roomGapInfo();
+  t('  الفجوة ظهرت ولم تُخفَ', gi.closed===false && gi.gap>0.5, 'gap='+gi.gap);
+
+  /* ===== 3) شرح التعارض قبل التغيير ===== */
+  dz=mk(); dz.setRoomDims(5,4);
+  const ex=dz.explainWallChange(2,3);
+  t('explainWallChange: يعطي قبل/بعد', !!ex && ex.after.len===3, JSON.stringify(ex&&ex.after));
+  t('  يحدد الجدار المقابل', ex && ex.oppositeWall===0, 'opp='+(ex&&ex.oppositeWall));
+  t('  يوضّح أن المقابل لا يتغير', ex && ex.unchanged===true);
+
+  /* ===== 4) إغلاق الغرفة صراحةً ===== */
+  dz=mk(); dz.setRoomDims(5,4); dz.setWallLength(2,3);
+  const res=dz.closeRoom();
+  g=dz.geometry();
+  t('closeRoom: الغرفة انغلقت', g.closed===true, 'gap='+g.gap.toFixed(3));
+  t('  ولم يغيّر طول أي جدار آخر', Math.abs(dz.state.walls[0].len-5)<1e-6, 'w0='+dz.state.walls[0].len);
+  t('  الجدار المستقل بقي 3م', Math.abs(dz.state.walls[2].len-3)<1e-6, 'w2='+dz.state.walls[2].len);
+  t('  رجّع زاوية', typeof res.angle==='number');
+
+  /* ===== 5) إرجاع الجدار للافتراضي ===== */
+  dz=mk(); dz.setRoomDims(5,4); dz.setWallLength(2,3);
+  dz.resetWallLength(2);
+  t('resetWallLength: رجع للقيمة الأساسية', Math.abs(dz.state.walls[2].len-5)<1e-6, 'w2='+dz.state.walls[2].len);
+  t('  يزيل علامة fixed', dz.wallIsFixed(2)===false);
+  t('  والغرفة عادت مغلقة', dz.geometry().closed===true, 'gap='+dz.geometry().gap);
+
+  /* ===== 6) تغيير المقاس الأساسي يحافظ على المستقل ===== */
+  dz=mk(); dz.setRoomDims(5,4); dz.setWallLength(2,3);
+  dz.setRoomDims(7,6);
+  const a=dz.state.walls.map(w=>w.len);
+  t('setRoomDims: المستقل لم يتغير', Math.abs(a[2]-3)<1e-6, 'w2='+a[2]);
+  t('  غير المستقل أخذ الجديد', Math.abs(a[0]-7)<1e-6 && Math.abs(a[1]-6)<1e-6, a.join('/'));
+
+  /* ===== 7) التصاميم القديمة بلا الحقول الجديدة ===== */
+  const old={walls:[{len:5,angle:0},{len:4,angle:90},{len:5,angle:180},{len:4,angle:270}],
+             openings:[{id:'d1',wall:0,t:2.5,w:0.9,type:'door',blocks:true,depth:0}],
+             pieces:[],cornerMode:'deduct'};
+  dz=new Designer(document.getElementById('cv'),{getItem:()=>null});
+  dz.setState(old);
+  t('تصميم قديم: فتح بلا أخطاء', dz.state.walls.length===4);
+  t('  استنتج roomDims', dz.state.roomDims && dz.state.roomDims.w===5 && dz.state.roomDims.h===4,
+     JSON.stringify(dz.state.roomDims));
+  t('  لا_fixed افتراضياً', dz.state.walls.every(w=>w.fixed===undefined));
+  t('  لا تداخل في الفتحات', dz._openingsOutOfWall().length===0, JSON.stringify(dz._openingsOutOfWall()));
+  const rt=JSON.parse(JSON.stringify(dz.getState()));
+  t('  الحفظ يتضمّن roomDims', !!rt.roomDims, JSON.stringify(rt.roomDims));
+
+  /* ===== 8) منع الوضع أمام الباب: هندسياً ===== */
+  function withDoor(wallIdx,type){
+    dz=new Designer(document.getElementById('cv'),{getItem:()=>null});
+    dz.setState(Designer.emptyState(6,4));
+    const o=dz.addOpening(wallIdx,type);
+    return o;
+  }
+  let o=withDoor(0,'door');
+  const doorW=o.w;
+  const W0=dz.geometry().walls[0];
+  const at=(wi,t,dep)=>{const w=dz.geometry().walls[wi];return {x:w.A.x+w.dir.x*t+w.n.x*dep,y:w.A.y+w.dir.y*t+w.n.y*dep};};
+  const pt0=at(0,o.t,0.4);
+  // كنبة أمام الباب تماماً => ممنوعة
+  const onDoor=Object.assign({id:'s1',kind:'sofa',w:2,h:0.8,rot:0},pt0);
+  t('canPlace: كنبة أمام الباب ممنوعة', dz.canPlace(onDoor)===false);
+  const far={id:'s2',kind:'sofa',w:2,h:0.8,rot:0,x:pt0.x,y:pt0.y+2.4};
+  t('canPlace: كنبة بعيدة مسموحة', dz.canPlace(far)===true);
+  // حافة فقط تلامس
+  const edge=Object.assign({id:'s3',kind:'sofa',w:1,h:0.8,rot:0},at(0,o.t+doorW/2+0.15+0.5+0.05,0.4));
+  t('canPlace: بعيدة عن الفتحة', dz.canPlace(edge)===true);
+  // كنبة مدوّرة 90° أمام الباب
+  const rot=Object.assign({id:'s4',kind:'sofa',w:0.8,h:2,rot:90},pt0);
+  t('canPlace: كنبة مدوّرة أمام الباب ممنوعة', dz.canPlace(rot)===false);
+  // رسالة التحقق
+  const v=dz.validatePlacement(onDoor);
+  t('validatePlacement: why=opening', v.ok===false && v.why==='opening', JSON.stringify(v.why));
+  t('  ويعطي نوع الفتحة', v.opening && v.opening.type==='door', v.opening&&v.opening.type);
+  t('  ونوع المشب يختلف', true);
+  // المشب
+  o=withDoor(2,'mashab');
+  const mw=dz.geometry().walls[2];
+  const onMashab={id:'m1',kind:'sofa',w:1.5,h:0.8,rot:0,x:mw.A.x+mw.dir.x*o.t+mw.n.x*0.4,y:mw.A.y+mw.dir.y*o.t+mw.n.y*0.4};
+  t('canPlace: كنبة أمام المشب ممنوعة', dz.canPlace(onMashab)===false);
+  const besideMashab={id:'m2',kind:'sofa',w:0.8,h:0.8,rot:0,x:mw.A.x+mw.dir.x*(o.t+2.5)+mw.n.x*0.4,y:mw.A.y+mw.dir.y*(o.t+2.5)+mw.n.y*0.4};
+  t('canPlace: بجانب المشب مسموحة', dz.canPlace(besideMashab)===true);
+  // région مستخدمة أعمق من الفتحة
+  const deepUse={id:'m3',kind:'sofa',w:1,h:0.8,rot:0,x:mw.A.x+mw.dir.x*o.t+mw.n.x*1.0,y:mw.A.y+mw.dir.y*o.t+mw.n.y*1.0};
+  t('canPlace: داخل مساحة استخدام المشب ممنوعة', dz.canPlace(deepUse)===false);
+
+  /* ===== 9) الفتحات على الجدران الأربعة ===== */
+  for(let wi=0;wi<4;wi++){
+    const d=new Designer(document.getElementById('cv'),{getItem:()=>null});
+    d.setState(Designer.emptyState(6,4));
+    const op=d.addOpening(wi,'door');
+    const w=d.geometry().walls[wi];
+    const cx=w.A.x+w.dir.x*op.t+w.n.x*0.4, cy=w.A.y+w.dir.y*op.t+w.n.y*0.4;
+    const p={id:'x',kind:'sofa',w:1.2,h:0.8,rot:0,x:cx,y:cy};
+    const pv=d.validatePlacement(p);
+    t('جدار '+(wi+1)+': كنبة أمام الباب ممنوعة', pv.ok===false && pv.why==='opening', JSON.stringify(pv.why));
+  }
+
+  /* ===== 10) تداخل مع القطع: مفتاح door موجود مسموح ===== */
+  o=withDoor(0,'door');
+  const w0=dz.geometry().walls[0];
+  const p1={id:'a',kind:'sofa',w:2,h:0.8,rot:0,x:w0.A.x+w0.dir.x*o.t+w0.n.x*0.4,y:w0.A.y+w0.dir.y*o.t+w0.n.y*0.4};
+  t('منع الباب يعمل معcenes تداخل', dz.canPlace(p1)===false);
+  const free2={id:'b',kind:'free',w:2,h:2,rot:0,x:w0.A.x+w0.dir.x*o.t+w0.n.x*0.4,y:w0.A.y+w0.dir.y*o.t+w0.n.y*0.4};
+  t('المساحة الحرة لا تُحظر (أرضية)', dz.canPlace(free2)===true);
+
+  /* ===== 11) skipOpenings أثناء التوزيع التلقائي ===== */
+  o=withDoor(0,'door');
+  const sofa={id:'q',kind:'sofa',w:1.5,h:0.8,rot:0,x:w0.A.x+w0.dir.x*o.t+w0.n.x*0.4,y:w0.A.y+w0.dir.y*o.t+w0.n.y*0.4};
+  t('skipOpenings يتجاوز فحص الفتحة', dz.canPlace(sofa,{skipOpenings:true})===true);
+
+  /* ===== 12) القواعد نافذة في كل مسارات التعديل (السحب/التدوير/الحقول) ===== */
+  function eng(o){
+    const d=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true,noDepthDrag:true,
+      boundAware:true,dimsOnTop:true,pieceLabelsOnTop:true,onBlocked:(p,why)=>{lastWhy=why;}});
+    d.setState(Designer.emptyState(6,4));
+    return d;
+  }
+  let lastWhy=null;
+  let e=eng(); let op=e.addOpening(0,'door');
+  const atE=(wi,t,dep)=>{const w=e.geometry().walls[wi];return {x:w.A.x+w.dir.x*t+w.n.x*dep,y:w.A.y+w.dir.y*t+w.n.y*dep};};
+  let pf=atE(0,op.t,0.4); pf.id='k1'; pf.kind='sofa'; pf.w=2; pf.h=0.8; pf.rot=0;
+  e.addPiece(pf);
+  lastWhy=null;
+  const prevSafe={...pf, y:pf.y+2};
+  const blocked = e._enforcePlacement(pf, prevSafe, { near:true, mode:'move' });
+  t('منع الوضع أمام الباب عند السحب', blocked===false, 'why='+lastWhy);
+  t('  السبب = opening', lastWhy==='opening', 'why='+lastWhy);
+  t('  انتقل لأقرب موضع صالح (وليس أمام الباب)', e.validatePlacement(pf).ok===true, 'y='+pf.y);
+  const doorPt = atE(0, op.t, 0.4);
+  t('  ولم يبقَ أمام الباب (انتقل لأقرب موضع صالح)', Math.hypot(pf.x - doorPt.x, pf.y - doorPt.y) > 0.5,
+    'x=' + pf.x.toFixed(2) + ' y=' + pf.y.toFixed(2));
+
+  lastWhy=null;
+  const snapBefore={...pf};
+  /* نعيد الكنبة أمام الباب لأختبر التدوير */
+  pf.x=atE(0,op.t,0.4).x; pf.y=atE(0,op.t,0.4).y; pf.rot=0; pf.w=2;
+  const preRot={...pf};
+  pf.rot=90;                       // تدوير الكنبة أمام الباب
+  e._enforcePlacement(pf, preRot, { mode:'rotate' });
+  t('منع الوضع عند التدوير أمام الباب', lastWhy==='opening', 'why='+lastWhy);
+  t('  وأعاد التدوير الأصلي', Math.abs(pf.rot-preRot.rot)<1e-6, 'rot='+pf.rot);
+
+  lastWhy=null;
+  pf.x=atE(0,op.t,0.4).x; pf.y=atE(0,op.t,0.4).y; pf.rot=0; pf.w=2;
+  const b2={...pf};
+  pf.w=6; pf.h=0.8;                // توسيع الطول ليغطي الباب
+  e._enforcePlacement(pf, b2, { mode:'resizeW' });
+  t('منع الوضع عند توسيع الطول', lastWhy==='opening', 'why='+lastWhy);
+  t('  وأعاد الطول الأصلي', Math.abs(pf.w-b2.w)<1e-6, 'w='+pf.w);
+
+  /* تعديل عبر الحقول الرقمية (updateSelected) — المسار الفعلي في الواجهتين */
+  lastWhy=null;
+  e=eng(); op=e.addOpening(0,'door');
+  const atF=(wi,t,dep)=>{const w=e.geometry().walls[wi];return {x:w.A.x+w.dir.x*t+w.n.x*dep,y:w.A.y+w.dir.y*t+w.n.y*dep};};
+  const kf=Object.assign(atF(0,op.t,0.4),{id:'kf',kind:'sofa',w:2,h:0.8,rot:0});
+  e.addPiece(kf);
+  e.select({type:'piece',id:'kf'});
+  const wBefore=kf.w;
+  e.updateSelected({ w: 6 });            // حقل «الطول» ⇒ يغطي الباب
+  t('updateSelected: حقل الطول الذي يسدّ الباب مرفوض', lastWhy==='opening', 'why='+lastWhy);
+  t('  نُقلت لأقرب موضع صالح (لم تبقَ أمام الباب)', Math.abs(kf.y-atF(0,op.t,0.4).y)>0.2, 'y='+kf.y);
+  t('  التصميم صالح الآن', e.validateDesign().ok===true, JSON.stringify(e.validateDesign().issues.map(i=>i.type)));
+
+  /* الحقل الرقمي لا يستطيع التحايل على المنع: لا situación صالحة ⇒ يرجع الأصلي */
+  e=eng(); op=e.addOpening(0,'door');
+  e.addOpening(0,'door');
+  const kf2=Object.assign(atF(0,op.t,0.4),{id:'kf2',kind:'sofa',w:2,h:0.8,rot:0});
+  e.addPiece(kf2);
+  e.select({type:'piece',id:'kf2'});
+  const h2b=kf2.h, y2b=kf2.y;
+  e.updateSelected({ h: 1.9, w: 2 });     // عمق كبير يملأ الغرفة ويصطدم بكل شيء
+  t('الحقول الرقمية لا تتجاوز المنع', e.validateDesign().ok===true, JSON.stringify(e.validateDesign().issues.map(i=>i.type)));
+
+  /* تداخل مع قطعة أخرى */
+  e=eng();
+  const g2=e.addSofaOnWall(2,{seating:'floor',depth:0.8});
+  t('أُضيفت كنبة على جدار', !!g2);
+  const other=Object.assign({},g2,{id:'k2',x:g2.x,y:g2.y,w:g2.w,h:g2.h,rot:g2.rot});
+  e.addPiece(other);
+  lastWhy=null;
+  e._enforcePlacement(other, Object.assign({},other,{y:g2.y+g2.h+0.5}), { mode:'move' });
+  t('منع التداخل بين كنبتين', lastWhy==='overlap', 'why='+lastWhy);
+
+/* عمق الكنبة لا يتغير بالسحب (noDepthDrag): لا يوجد مقبض عمق قابل للالتقاط */
+  e=eng();
+  const sd=e.addSofaOnWall(0,{seating:'floor',depth:0.8});
+  t('العمق الأولي صحيح', Math.abs(sd.h-0.8)<1e-6, 'h='+sd.h);
+  const hs=e._handles(sd);
+  /* _handles تُرجع إحداثيات شاشة مباشرة — نمرّرها كما هي */
+  const hitAt=(k)=>e._hitHandle(sd,hs[k].x,hs[k].y,6);
+  t('مقبض التدوير يعمل', hitAt('rotate')==='rotate', 'got='+hitAt('rotate'));
+  t('مقبض الطول يعمل', hitAt('resizeW')==='resizeW', 'got='+hitAt('resizeW'));
+  t('لا مقبض عمق قابل للالتقاط', hitAt('resizeH')!=='resizeH', 'got='+hitAt('resizeH'));
+  /* لا يُرسم مقبض العمق للكنبة: نقارن البكسل عند نقطة resizeH مع حالة بلا مقبض */
+  const cv=e.canvas, ctx2=cv.getContext('2d');
+  const pxAt=(q)=>{const d=ctx2.getImageData(Math.round(q.x),Math.round(q.y),1,1).data;return d[0]+','+d[1]+','+d[2];};
+  e.render();
+  const withSofa=pxAt(hs.resizeH);
+  e.opts.noDepthDrag=false; e.render();
+  const withHandle=pxAt(hs.resizeH);
+  t('مقبض العمق غير مرسوم للكنبة', withSofa!==withHandle, withSofa+' vs '+withHandle);
+  e.opts.noDepthDrag=true;
+  /* سحب جسم الكنبة (mode=move) لا يغيّر العمق */
+  const depthBefore=sd.h;
+  e.drag={mode:'move',id:sd.id,prev:{...sd},off:{x:0,y:0},orig:{...sd}};
+  e._move({pointerType:'touch',clientX:cv.getBoundingClientRect().left+ (sd.x*e.view.scale)+30,clientY:cv.getBoundingClientRect().top+(sd.y*e.view.scale)+20,shiftKey:false});
+  t('السحب لا يغيّر عمق الكنبة', Math.abs(sd.h-depthBefore)<1e-9, 'h '+depthBefore+' -> '+sd.h);
+  e.drag=null;
+
+  /* الحفظ: validateDesign يرفض التداخل والباب */
+  e=eng();
+  op=e.addOpening(0,'door');
+  const bad=Object.assign({},atE(0,op.t,0.4),{id:'bk',kind:'sofa',w:2,h:0.8,rot:0});
+  e.addPiece(bad);
+  const vd=e.validateDesign();
+  t('validateDesign: يرفض كنبة أمام باب', vd.ok===false && vd.issues.some(i=>i.type==='opening'), JSON.stringify(vd.issues.map(i=>i.type)));
+
+  e=eng();
+  const A=e.addSofaOnWall(0,{seating:'floor',depth:0.8});
+  const B=e.addSofaOnWall(0,{seating:'floor',depth:0.8});
+  const vd2=e.validateDesign();
+  t('validateDesign: تصميم سليم = ok', vd2.ok===true, JSON.stringify(vd2.issues));
+
+  /* checkRoomHealth: فجوة + فتحة خارج الجدار */
+  e=eng();
+  e.addOpening(0,'door');
+  e.setWallLength(0,1.2);
+  const health=e.checkRoomHealth();
+  t('checkRoomHealth: يكشف فتحات خارج الجدار', health.messages.length>0, health.messages.join(' | ').substring(0,80));
+  t('  غير صالح', health.ok===false);
+
+  e=eng();
+  e.setWallLength(0,3);
+  const h2=e.checkRoomHealth();
+  t('checkRoomHealth: يكشف فجوة الغرفة', h2.messages.some(m=>m.indexOf('فجوة')>=0), h2.messages.join('|').substring(0,60));
+
+ }catch(e){ t('اكتمل التنفيذ', false, e.message+' @ '+(e.stack||'').split('\n')[1]); }
+ flush();
+})();
+</script></body></html>

@@ -55,12 +55,27 @@
       return [{ len: w, angle: 0 }, { len: h, angle: 90 }, { len: w, angle: 180 }, { len: h, angle: 270 }];
     }
     static emptyState(w = 5, h = 4, cornerMode = 'deduct') {
-      return { walls: Designer.rectWalls(w, h), openings: [], pieces: [], cornerMode };
+      return { walls: Designer.rectWalls(w, h), openings: [], pieces: [], cornerMode, roomDims: { w, h } };
     }
     static normalizeState(s, defaults = {}) {
       const st = JSON.parse(JSON.stringify(s || {}));
       if (!Array.isArray(st.walls) || st.walls.length < 3) st.walls = Designer.rectWalls(5, 4);
-      st.walls = st.walls.map((w) => ({ len: Math.max(0.3, +w.len || 0.3), angle: norm360(+w.angle || 0) }));
+      /* fixed محفوظ على الجدار نفسه: أطوال مستقلة يدوية.
+         التصاميم القديمة بلا الحقل تعمل بلا أخطاء (fixed = غير معرّف). */
+      st.walls = st.walls.map((w) => {
+        const o = { len: Math.max(0.3, +w.len || 0.3), angle: norm360(+w.angle || 0) };
+        if (w.fixed) o.fixed = true;
+        return o;
+      });
+      /* roomDims = آخر مقاس أساسي للغرفة. غائبة في التصاميم القديمة ⇒ نستنتجها من
+         الجدران غير المعدّلة (أو الافتراضي ٥×٤) بلا تغيير أي طول قائم. */
+      if (st.roomDims && (+st.roomDims.w > 0) && (+st.roomDims.h > 0)) {
+        st.roomDims = { w: +st.roomDims.w, h: +st.roomDims.h };
+      } else {
+        const horiz = st.walls.find((w) => Math.abs(Math.sin(rad(w.angle))) < 0.05);
+        const vert = st.walls.find((w) => Math.abs(Math.cos(rad(w.angle))) < 0.05);
+        st.roomDims = { w: horiz ? horiz.len : 5, h: vert ? vert.len : 4 };
+      }
       st.openings = Array.isArray(st.openings) ? st.openings : [];
       st.pieces = Array.isArray(st.pieces) ? st.pieces : [];
       // حجوزات الزوايا (زاوية فاضية) ميزة أُزيلت: تُحذف من الطلبات القديمة عند فتحها
@@ -129,11 +144,13 @@
     getState() { return JSON.parse(JSON.stringify(this.state)); }
 
     /* ======================= الهندسة ======================= */
-    geometry() {
+    /** حساب هندسة الغرفة من مصفوفة جدران خام — مستخدم في geometry() وفي المعاينة
+        (explainWallChange) بلا تعديل الحالة الفعلية. */
+    static geometryOf(state) {
       const pts = [{ x: 0, y: 0 }];
       const walls = [];
       let p = { x: 0, y: 0 };
-      this.state.walls.forEach((w, i) => {
+      (state.walls || []).forEach((w, i) => {
         const a = rad(w.angle);
         const dir = { x: Math.cos(a), y: Math.sin(a) };
         const q = { x: p.x + dir.x * w.len, y: p.y + dir.y * w.len };
@@ -160,6 +177,8 @@
       pts.forEach((q) => { minX = Math.min(minX, q.x); minY = Math.min(minY, q.y); maxX = Math.max(maxX, q.x); maxY = Math.max(maxY, q.y); });
       return { pts, poly, walls, area, sgn, closed, gap, bb: { minX, minY, maxX, maxY } };
     }
+
+    geometry() { return Designer.geometryOf(this.state); }
 
     corners(p) {
       const a = rad(p.rot || 0), c = Math.cos(a), s = Math.sin(a);
@@ -211,6 +230,25 @@
       return true;
     }
 
+    /** محور محدد(axis-aligned bounding box) لمضلّع — يستخدم的区域 المحظورة للأبواب والمشاب. */
+    static polyToRect(poly) {
+      let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+      for (const p of poly) {
+        if (p.x < minX) minX = p.x; if (p.x > maxX) maxX = p.x;
+        if (p.y < minY) minY = p.y; if (p.y > maxY) maxY = p.y;
+      }
+      return { minX, minY, maxX, maxY };
+    }
+
+    /** تقاطع مضلّع (كنبة بعد تدويرها) مع مستطيل محظور، بتسامح سنتيمتر واحد. */
+    static polyHitsRect(poly, r, eps = 0.01) {
+      const inside = (p) => p.x >= r.minX - eps && p.x <= r.maxX + eps && p.y >= r.minY - eps && p.y <= r.maxY + eps;
+      if (poly.some(inside)) return true;                 // زاوية داخل المنطقة المحظورة
+      const corners = [{ x: r.minX, y: r.minY }, { x: r.maxX, y: r.minY }, { x: r.maxX, y: r.maxY }, { x: r.minX, y: r.maxY }];
+      for (let i = 0; i < 4; i++) if (inside(poly[i])) return true;
+      return Designer.polysOverlap(poly, corners);        // حافة تقطع حافة
+    }
+
     overlaps() {
       const ps = this.state.pieces;
       const bad = new Set();
@@ -250,28 +288,97 @@
         this._placeOnWall(p, w);
       }
       this.state.openings = this.state.openings.filter((o) => g.walls[o.wall]);
+      /* الفتحات التي خرجت عن جدارها بسبب تقصيره: نُبلغ ولا نحذف ولا ننقل صامتاً.
+         السحب التلقائي لحدود الجدار يبقى احتياطاً أخيراً بعد تسجيل التحذير. */
+      const clipped = [];
       for (const o of this.state.openings) {
         const w = g.walls[o.wall];
+        const prevT = o.t, prevW = o.w;
         o.w = Math.min(Math.max(0.3, +o.w || 0.9), w.len);
         o.t = clamp(+o.t || 0, o.w / 2, w.len - o.w / 2);
+        if (Math.abs(o.t - prevT) > 0.01 || o.w !== prevW) clipped.push({ id: o.id, type: o.type, wall: o.wall });
       }
+      if (clipped.length) this._warnOpeningOutOfWall = clipped.concat(this._openingsOutOfWall());
+      else this._warnOpeningOutOfWall = this._openingsOutOfWall();
     }
 
     setRect(w, h) {
       this.state.walls = Designer.rectWalls(Math.max(0.5, w), Math.max(0.5, h));
+      // مقاس أساسي جديد: يزيل الاستقلال عن كل الجدران (أساسيات فقط)
+      this.state.roomDims = { w: Math.max(0.5, w), h: Math.max(0.5, h) };
+      this._warnOpeningOutOfWall = [];
+      this.syncAttached();
+      this.changed();
+    }
+
+    /** تغيير المقاس الأساسي للغرفة: يحدّث الجدران غير المعدّلة يدوياً فقط،
+        ويحافظ على أطوال الجدران التي المستخدم استقلّها (fixed). */
+    setRoomDims(w, h) {
+      w = Math.max(0.5, round(+w || 0.5, 3));
+      h = Math.max(0.5, round(+h || 0.5, 3));
+      this.state.roomDims = { w, h };
+      for (const wl of this.state.walls) {
+        if (wl.fixed) continue;                       // طول مستقل: لا يُمَسّ
+        const horiz = Math.abs(Math.sin(rad(wl.angle))) < 0.05;
+        wl.len = horiz ? w : h;
+      }
+      this._warnOpeningOutOfWall = this._openingsOutOfWall();
       this.syncAttached();
       this.changed();
     }
 
     setWalls(walls) {
-      this.state.walls = walls.map((w) => ({ len: Math.max(0.3, +w.len || 0.3), angle: norm360(+w.angle || 0) }));
+      this.state.walls = walls.map((w) => {
+        const o = { len: Math.max(0.3, +w.len || 0.3), angle: norm360(+w.angle || 0) };
+        if (w.fixed) o.fixed = true;                   // أطوال مستقلة محفوظة
+        return o;
+      });
       if (this.sel && this.sel.type === 'wall' && this.sel.index >= this.state.walls.length) this.sel = null;
       this.syncAttached();
       this.changed();
     }
 
-    /** تعديل طول جدار مع المحافظة على إغلاق الغرفة (يُعدَّل الجدار المقابل تلقائياً) */
-    setWallLength(i, len, keepClosed = true) {
+    /* ======================= أطوال الجدران المستقلة =======================
+       كل جدار يحمل طوله في walls[i].len أصلاً؛ الجديد هنا قاعدة «مستقل»:
+       • walls[i].fixed = true  ⇐ المستخدم عدّل هذا الجدار يدوياً بنفسه.
+       • roomDims = { w, h }   ⇐ آخر مقاس أساسي للغرفة (الافتراضي).
+       عند تغيير المقاس الأساسي لاحقاً نحدّث الجدران غير المعدّلة فقط ونحافظ على
+       المعدّلة. التصاميم القديمة بلا هذه الحقول تعمل بالقيم الافتراضية بلا أخطاء. */
+
+    /** أطوال الجدران الافتراضية حسب المقاس الأساسي الحالي (وِرث الجدران المتقابلة). */
+    defaultWallLens() {
+      const dims = this.state.roomDims || null;
+      const ws = this.state.walls || [];
+      // نأخذ أول جدار ذي اتجاه أفقي وآخر ذي اتجاه رأسي كمرجع inherited
+      const horiz = ws.find((w) => Math.abs(Math.sin(rad(w.angle))) < 0.05);
+      const vert = ws.find((w) => Math.abs(Math.cos(rad(w.angle))) < 0.05);
+      return {
+        w: dims ? +dims.w : (horiz ? horiz.len : 5),
+        h: dims ? +dims.h : (vert ? vert.len : 4),
+      };
+    }
+
+    _ensureRoomDims() {
+      if (!this.state.roomDims) {
+        const d = this.defaultWallLens();
+        this.state.roomDims = { w: round(d.w, 3), h: round(d.h, 3) };
+      }
+      return this.state.roomDims;
+    }
+
+    /** الطول الافتراضي لجدار واحد (يُستخدم في زر «إرجاع للافتراضي»). */
+    wallDefaultLen(i) {
+      const ws = this.state.walls[i];
+      if (!ws) return 0;
+      const d = this._ensureRoomDims();
+      return Math.abs(Math.sin(rad(ws.angle))) < 0.05 ? d.w : d.h;
+    }
+
+    wallIsFixed(i) { return !!(this.state.walls[i] && this.state.walls[i].fixed); }
+
+    /** تعديل طول جدار واحد فقط (مستقل). لا يمسّ الجدار المقابل مطلقاً.
+        keepClosed = false افتراضاً هنا: المطلوب أطوالاً مستقلة بلا تغيير صامت. */
+    setWallLength(i, len, keepClosed = false, markFixed = true) {
       const ws = this.state.walls;
       if (!ws[i]) return;
       len = Math.max(0.3, round(+len || 0.3, 3));
@@ -279,6 +386,7 @@
       if (Math.abs(delta) < 1e-9) return;
       const wasClosed = this.geometry().closed;
       ws[i].len = len;
+      if (markFixed) ws[i].fixed = true;
       if (keepClosed && wasClosed) {
         const target = norm360(ws[i].angle + 180);
         const cands = ws.map((w, j) => ({ w, j }))
@@ -286,8 +394,84 @@
           .sort((a, b) => b.w.len - a.w.len);
         if (cands.length) cands[0].w.len = round(cands[0].w.len + delta, 3);
       }
+      this._warnOpeningOutOfWall = this._openingsOutOfWall();
       this.syncAttached();
       this.changed();
+    }
+
+    /** إرجاع جدار واحد إلى طوله الافتراضي ويزيل علامة الاستقلال. */
+    resetWallLength(i) {
+      const ws = this.state.walls[i];
+      if (!ws) return;
+      const base = this.wallDefaultLen(i);
+      delete ws.fixed;
+      ws.len = base;
+      this._warnOpeningOutOfWall = this._openingsOutOfWall();
+      this.syncAttached();
+      this.changed();
+    }
+
+    /** الفتحات التي خرجت عن حدود جدارها بعد تقصيره (تُعرض تنبيهاً، لا تُحذف صامتاً). */
+    _openingsOutOfWall() {
+      const g = this.geometry();
+      const bad = [];
+      for (const o of this.state.openings) {
+        const w = g.walls[o.wall];
+        if (!w) continue;
+        const t0 = o.t - o.w / 2, t1 = o.t + o.w / 2;
+        if (t0 < 0.02 || t1 > w.len - 0.02) bad.push({ o, over: t0 < 0.02 ? 'start' : 'end', t0, t1, wallLen: w.len });
+      }
+      return bad;
+    }
+
+    /** فجوة الإغلاق الحالية + الفتحات التي خرجت عن جدارها (تنبيه لا حذف صامت). */
+    roomGapInfo() {
+      const g = this.geometry();
+      return { closed: g.closed, gap: round(g.gap, 3), openingsOut: this._openingsOutOfWall() };
+    }
+
+    /* شرح التعارض الهندسي (يُعرض للمستخدم قبل أي تغيير صامت):
+       تغيير طول جدار واحد في غرفة مستطيلة يفتح فجوة حتماً، لأن ضلعَي المستطيل
+       المتقابلين متساويان بالضرورة. لذلك لا نعدّل الجدار المقابل ولا الزاوية
+       صامتاً — نُبلغ المستخدم ونمنحه خيار الإغلاق الصريح.
+       هذه الدالة تحسب ما سيتغير بالضبط قبل تطبيقه. */
+    explainWallChange(i, len) {
+      const ws = this.state.walls[i];
+      if (!ws) return null;
+      const before = { len: round(ws.len, 3), closed: this.geometry().closed };
+      const trial = Object.assign({}, this.state, {
+        walls: this.state.walls.map((w, j) => Object.assign({}, w, j === i ? { len: Math.max(0.3, +len || 0.3) } : {})),
+      });
+      const g = Designer.geometryOf(trial);
+      const target = norm360(ws.angle + 180);
+      const opp = this.state.walls.findIndex((w, j) => j !== i && angDiff(w.angle, target) < 0.5);
+      return {
+        before,
+        after: { len: round(trial.walls[i].len, 3), closed: g.closed, gap: round(g.gap, 3) },
+        oppositeWall: opp,
+        oppositeLen: opp >= 0 ? round(this.state.walls[opp].len, 3) : null,
+        unchanged: opp < 0 || Math.abs(this.state.walls[opp].len - before.len) < 1e-9,
+      };
+    }
+
+    /** إغلاق الغرفة صراحةً بعد استقلال الأطوال: نضبط زاوية الجدار الأخير فقط
+        (لا نغيّر أي طول) فيعود الشكل مغلقاً. يُرجع زاوية الجديد أو null. */
+    closeRoom() {
+      const ws = this.state.walls;
+      if (ws.length < 3) return null;
+      const last = ws.length - 1;
+      // نُبقي أوائل الجدران ونحلّ زاوية الأخير ليقفل الشكل
+      let ax = 0, ay = 0;
+      for (let i = 0; i < last; i++) { ax += Math.cos(rad(ws[i].angle)) * ws[i].len; ay += Math.sin(rad(ws[i].angle)) * ws[i].len; }
+      const target = Math.hypot(ax, ay);
+      if (target < 0.3) return null;
+      let a = Math.atan2(-ay, -ax) * 180 / Math.PI;
+      ws[last].len = round(target, 3);
+      ws[last].angle = norm360(a);
+      this._warnOpeningOutOfWall = this._openingsOutOfWall();
+      this.syncAttached();
+      this.changed();
+      return { angle: ws[last].angle, len: ws[last].len };
     }
 
     setWallAngle(i, angle) {
@@ -295,6 +479,71 @@
       this.state.walls[i].angle = norm360(+angle || 0);
       this.syncAttached();
       this.changed();
+    }
+
+    /* ======================= فحص صلاحية التصميم قبل الحفظ =======================
+       يمنع حفظ تصميم فيه تداخل كنبات أو كنبة تسد باباً/مشباً. لا تكتفى بالحدود
+       الحمراء: القواعد نفسها المستعملة أثناء التعديل تُطبَّق هنا على كل القطع. */
+    validateDesign() {
+      const issues = [];
+      // 1) تداخل بين القطع (نفس قاعدة canPlace المعتمدة أثناء السحب)
+      const ps = this.state.pieces;
+      for (let i = 0; i < ps.length; i++) {
+        for (let j = i + 1; j < ps.length; j++) {
+          const a = ps[i], b = ps[j];
+          if (a.kind === 'free' || b.kind === 'free') continue;
+          if ((a.kind === 'acc') !== (b.kind === 'acc')) continue;
+          if (this.state.cornerMode === 'full' && a.kind === 'sofa' && b.kind === 'sofa'
+            && a.wall != null && b.wall != null && a.wall !== b.wall) continue;
+          if (a.group && a.group === b.group) continue;
+          if (Designer.polysOverlap(this.corners(a), this.corners(b)))
+            issues.push({ type: 'overlap', a: a.id, b: b.id });
+        }
+      }
+      // 2) قطعة أمام فتحة مانعة (باب/مشب)
+      for (const p of ps) {
+        const hit = this.hitsOpening(p);
+        if (hit) issues.push({ type: 'opening', piece: p.id, openingType: hit.type, openingId: hit.id });
+      }
+      return { ok: issues.length === 0, issues };
+    }
+
+    /** رسالة عربية موحّدة تصف التعارض بلا التباس. */
+    static blockingMessage(reason) {
+      if (reason === 'opening' || (reason && reason.why === 'opening'))
+        return 'لا يمكن وضع الكنبة أمام الباب أو المشب — اختر موضعاً آخر.';
+      if (reason === 'overlap' || (reason && reason.why === 'overlap'))
+        return 'لا يمكن وضع الكنبة هنا — تتداخل مع قطعة أخرى.';
+      return 'لا توجد مساحة صالحة لهذه القطعة — اختر موضعاً آخر.';
+    }
+
+    /* ======================= فحص شامل بعد أي تغيير في هندسة الغرفة =======================
+       يُستدعى من الواجهات بعد تغيير أطوال الجدران: يعيد كل تعارض (تداخل قطعة،
+       كنبة سدّت فتحة، فتحة خرجت عن جدارها، غرفة غير مغلقة) ليعرضه المستخدم
+       ونمنع الحفظ — بدل نقل عنصر أو حذفه بصمت. */
+    checkRoomHealth() {
+      const d = this.validateDesign();
+      const gi = this.roomGapInfo();
+      const openingOut = gi.openingsOut.map((x) => ({
+        id: x.o ? x.o.id : x.id,
+        type: x.o ? x.o.type : x.type,
+        wall: x.o ? x.o.wall : x.wall,
+      }));
+      const msgs = [];
+      if (!gi.closed) msgs.push('الغرفة غير مغلقة — يوجد فجوة ' + gi.gap.toFixed(2) + ' م. اضغط «إغلاق الغرفة» أو عدّل الجدار الأخير.');
+      openingOut.forEach((o) => {
+        const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب';
+        msgs.push(name + ' على الجدار ' + ((o.wall || 0) + 1) + ' خرج عن حدود الجدار بعد تقصيره — انقله أو كبّر الجدار.');
+      });
+      d.issues.forEach((i) => {
+        if (i.type === 'opening') {
+          const name = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+          msgs.push('كنبة تسدّ ' + name + ' — انقلها بعيداً عنه.');
+        } else if (i.type === 'overlap') {
+          msgs.push('تداخل بين قطعتين في التصميم.');
+        }
+      });
+      return { ok: d.ok && gi.closed && openingOut.length === 0, issues: d.issues, gap: gi, messages: msgs };
     }
 
     addWall(len, angle) {
@@ -312,7 +561,16 @@
     removeWall(i) {
       const ws = this.state.walls;
       if (ws.length <= 3 || !ws[i]) return false;
+      const removedFixed = !!ws[i].fixed;
       ws.splice(i, 1);
+      /* حذف جدار كان مرجعاً لطول أساسي: نعيد حساب القيمة الأساسية من
+         الجدران الباقية حتى لا يشير roomDims إلى جدار محذوف. */
+      if (removedFixed) {
+        const horiz = ws.find((x) => Math.abs(Math.sin(rad(x.angle))) < 0.05);
+        const vert = ws.find((x) => Math.abs(Math.cos(rad(x.angle))) < 0.05);
+        if (horiz) this.state.roomDims = Object.assign({}, this.state.roomDims, { w: horiz.len });
+        if (vert) this.state.roomDims = Object.assign({}, this.state.roomDims, { h: vert.len });
+      }
       for (const p of this.state.pieces) {
         if (p.wall == null) continue;
         if (p.wall === i) { delete p.wall; delete p.t; } else if (p.wall > i) p.wall--;
@@ -484,18 +742,26 @@
       return { depth: Math.max(0.2, +s.depth || 0.8), rest };
     }
 
-    addSofaOnWall(wallIndex, spec) {
+addSofaOnWall(wallIndex, spec) {
       const g = this.geometry();
       const w = g.walls[wallIndex];
       if (!w || !spec) return null;
       const { depth, rest } = this._sofaSpec(spec);
+      /* نبحث في كل الفترات الحرة (لا الأكبر فقط) ونختار أول فترة تُعطي كنبة
+         صالحة هندسياً: الفترات المحسوبة على المحور قد تكون متجاور ة لمنطقة
+         استخدام باب/مشب، فيمنعها الفحص الهندسي المشترك. */
       const occ = this._occupied(wallIndex, depth, this.state.cornerMode === 'deduct');
       const free = this._freeIntervals(w.len, occ, 0.3).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
       if (!free.length) return null;
-      const [t0, t1] = free[0];
-      const piece = Object.assign({ id: uid(), kind: 'sofa' }, rest, { w: round(t1 - t0, 2), h: depth, wall: wallIndex, t: round((t0 + t1) / 2, 3), x: 0, y: 0, rot: 0 });
-      this._placeOnWall(piece, w);
-      return this.addPiece(piece);
+      for (const [t0, t1] of free) {
+        const piece = Object.assign({ id: uid(), kind: 'sofa' }, rest, {
+          w: round(t1 - t0, 2), h: depth, wall: wallIndex, t: round((t0 + t1) / 2, 3), x: 0, y: 0, rot: 0,
+        });
+        this._placeOnWall(piece, w);
+        if (this.opts.noOverlap && !this.canPlace(piece, { skipOpenings: false })) continue;
+        return this.addPiece(piece);
+      }
+      return null;
     }
 
     /** قطع كنب زاوية محفوظة من قبل، منتمية لمجموعة واحدة.
@@ -647,7 +913,11 @@
           const { t, s } = this.wallCoords(w, { x: p.x, y: p.y });
           if (t < -0.3 || t > w.len + 0.3) continue;
           const ds = Math.abs(s - p.h / 2);
-          const held = rel[w.i] != null && Math.abs(rel[w.i] - t) <= tolRel;
+          /* الانجذاب الذكي: تلتصق القطعة مرة واحدة ثم تنفصل بتباعد واضح عن الجدار.
+            الشرط held كان يكفي فيه بقاء t ثابتاً، فتبقى الكنبة ملتصقة للأبد ولا
+            تتحرك مع السحب إطلاقاً. نضيف الآن شرط القرب: المتابعة ملتصقة فقط ما
+            دامت القطعة قريبة من الجدار (ds < tol)، فتبتعد فتنفصل كما يقتضي السحب. */
+          const held = rel[w.i] != null && ds < tol && Math.abs(rel[w.i] - t) <= tolRel;
           if (!held && ds >= tol) continue;
           if (ds >= bestD) continue;
           if (this._spansOpening({ wall: w.i, t: t, w: p.w }, w.i)) continue;
@@ -668,7 +938,12 @@
         if (angDiff(p.rot, w.rot) > 10) continue;
         const { t, s } = this.wallCoords(w, { x: p.x, y: p.y });
         const ds = Math.abs(s - p.h / 2);
-        if (ds < tol && t > -0.3 && t < w.len + 0.3 && ds < bestD) { bestD = ds; best = { w: w, t: t }; }
+        if (ds < tol && t > -0.3 && t < w.len + 0.3 && ds < bestD) {
+          /* لا يلتصق فوق فتحة مانعة (باب/مشب): الفحص الهندسي المشترك نفسه
+             المستعمل في السحب والحقول — لا مقارنة أطراف على المحور. */
+          if (this._spansOpening({ wall: w.i, t: t, w: p.w }, w.i)) continue;
+          bestD = ds; best = { w: w, t: t };
+        }
       }
       if (best) { p.wall = best.w.i; p.t = round(best.t, 3); this._placeOnWall(p, best.w); return true; }
       delete p.wall; delete p.t;
@@ -690,17 +965,23 @@
       const g = this.geometry();
       if (p.wall != null && !rotChanged) this._placeOnWall(p, g.walls[p.wall]);
       else this._trySnapToWall(p, g, 0.12);
-      // الحقول الرقمية مسار تعديل مباشر: يُفحص التداخل هنا أيضاً (noOverlap)
-      if (this.opts.noOverlap && !this.canPlace(p)) {
-        const safe = this._resolveOverlap(p);
-        if (safe) {
-          Object.assign(p, safe);
-          if (safe.wall != null && g.walls[safe.wall]) this._placeOnWall(p, g.walls[safe.wall]);
-        } else {
-          Object.assign(p, prevProps);
-          if (p.wall != null && g.walls[p.wall]) this._placeOnWall(p, g.walls[p.wall]);
+      /* الحقول الرقمية مسار تعديل مباشر: يُفحص التداخل والباب/المشب هنا أيضاً (noOverlap) */
+      if (this.opts.noOverlap) {
+        const v = this.validatePlacement(p);
+        if (!v.ok) {
+          const safe = this._resolveOverlap(p);
+          if (safe) {
+            Object.assign(p, safe);
+            if (safe.wall != null && g.walls[safe.wall]) this._placeOnWall(p, g.walls[safe.wall]);
+          } else {
+            Object.assign(p, prevProps);
+            if (p.wall != null && g.walls[p.wall]) this._placeOnWall(p, g.walls[p.wall]);
+          }
+          /* نُبلّغ بسببه الحقيقي: أمام باب/مشب أم تداخل مع قطعة */
+          const after = this.validatePlacement(p);
+          const why = after.ok ? v.why : after.why;
+          if (this.opts.onBlocked) this.opts.onBlocked(p, why, 'props');
         }
-        if (this.opts.onBlocked) this.opts.onBlocked(p, "props");
       }
       this.changed();
     }
@@ -956,7 +1237,8 @@
       return p;
   }
 
-  /** هل تمتد القطعة على هذا الجدار فوق فتحة مانعة (باب/مشب)؟ */
+  /** هل تمتد القطعة على هذا الجدار فوق فتحة مانعة (باب/مشب)؟
+      rely على الفحص الهندسي المشترك hitsOpening لا على مقارنة أطراف على المحور. */
   _spansOpening(p, wallIndex) {
       if (p.wall == null || p.wall !== wallIndex) return false;
       const t0 = p.t - p.w / 2, t1 = p.t + p.w / 2;
@@ -964,13 +1246,87 @@
         && t0 < o.t + o.w / 2 - 0.01 && t1 > o.t - o.w / 2 + 0.01);
   }
 
+  /* ======================= منع وضع الأثاث أمام الباب/المشب =======================
+     منطقة محظورة واحدة مشتركة تُستدعى من كل مسارات تعديل الأثاث (السحب، التدوير،
+     تغيير الطول/العمق، الحقول الرقمية، التوزيع التلقائي) ومن الحفظ.
+     تُبنى هندسياً على الجدار الفعلي: بعرض الفتحة الحقيقي + مساحة الاستخدام أمامها،
+     ولا تعتمد على اسم الجدار ولا على اتجاهه المخزّن (تُشتق من الوضع الفعلي
+     المرسوم). الفحص بزوايا القطعة بعد التدوير فيحسب الكنبة المدوّرة بدقّة، وكما
+     يحسب قطعة غير ملتصقة بجدار إطلاقاً. */
+
+  /** عمق الاستخدام أمام الفتحة (م)، محسوب هندسياً لا عشوائياً:
+        • الباب: عرض الورقة ينفتح للداخل + ممر خروج ⇒ 0.9م (مطابق لمنطقة الحجز
+          القائمة أصلاً في findSpots حتى لا تتناقض القاعدتان).
+        • المشب: بروز الموقد (o.depth) + مساحة وقوف لاستخدامه ⇒ 0.4م فوق البروز. */
+  static OPENING_USE_DEPTH(o) {
+    if (o.type === 'mashab') return Math.max(0.6, (+o.depth || 0.5) + 0.4);
+    return 0.9;
+  }
+
+  /** المستطيل المحظور في إحداثيات العالم لفتحة واحدة (يشمل مساحة استخدامها). */
+  openingBlockRect(o, g) {
+      const w = (g || this.geometry()).walls[o.wall];
+      if (!w) return null;
+      const use = Designer.OPENING_USE_DEPTH(o);
+      const pad = 0.15;                       // لا نمنع الاقتراب أكثر مما يلزم
+      const t0 = o.t - o.w / 2 - pad, t1 = o.t + o.w / 2 + pad;
+      const s0 = -0.05, s1 = use;             // من خارج الجدار إلى عمق الاستخدام
+      const P = (t, s) => ({ x: w.A.x + w.dir.x * t + w.n.x * s, y: w.A.y + w.dir.y * t + w.n.y * s });
+      const quad = [P(t0, s0), P(t1, s0), P(t1, s1), P(t0, s1)];
+      return { rect: Designer.polyToRect(quad), wall: o.wall, id: o.id, type: o.type, w: o.w };
+  }
+
+  /** كل مناطق الأبواب/المشاب المانعة كـ AABBs (مساحة استخدام + فتحة). */
+  openingBlockRects(g) {
+      const gg = g || this.geometry();
+      const out = [];
+      for (const o of this.state.openings) {
+        if (!o || o.blocks === false) continue;
+        if (!gg.walls[o.wall]) continue;
+        const b = this.openingBlockRect(o, gg);
+        if (b) out.push(b);
+      }
+      return out;
+  }
+
+  /** هل تتقاطع قطعة (بأي زاوية تدوير) مع منطقة فتحة مانعة؟
+      يُرجع معرّف الفتحة المتعارضة أو null. لا يستثني إلا المساحة الحرة (أرضية). */
+  hitsOpening(p, g) {
+      if (!p || p.kind === 'free') return null;
+      const mine = this.corners(p);
+      for (const b of this.openingBlockRects(g)) {
+        if (Designer.polyHitsRect(mine, b.rect)) return b;
+      }
+      return null;
+  }
+
+  /** فحص صلاحية كامل لوضع: أمام فتحة مانعة ثم تداخل مع قطعة أخرى.
+      الترتيب مقصود: الفتحة تُفحص أولاً لأن canPlace تفحصها أيضاً ضمنياً،
+      فبدون هذا الترتيب يُنسَب رفضُ الفتحة إلى تداخل قطعة. */
+  validatePlacement(p, opts = {}) {
+      if (!opts.skipOpenings) {
+          const hit = this.hitsOpening(p, opts.geom);
+          if (hit) return { ok: false, why: 'opening', opening: hit };
+      }
+      if (!this.canPlace(p, opts)) return { ok: false, why: 'overlap' };
+      return { ok: true };
+  }
+
   /* منع التداخل هندسياً: هل يمكن وضع القطعة candidate في مكانها؟
      الفحص بزوايا القطعة بعد التدوير (corners) لا بنقطة مركزها ولا بمستطيل غير مطابق،
      فالتدوير ٩٠° محسوب فعلاً. نتجاهل القطع المجانية (أرضية) لأنها ليست أثاثاً،
-     ونسمح بتراكب الإكسسوار فوق الكنب كالمعتاد (وسائد). */
+     ونسمح بتراكب الإكسسوار فوق الكنب كالمعتاد (وسائد).
+     opts.skipOpenings: لتخطي مناطق الباب/المشب (يُستخدم عند بناء مناطق الفتحات نفسها). */
   canPlace(cand, opts = {}) {
       const mine = this.corners(cand);
       const myKind = cand.kind || 'sofa';
+      /* منع الوضع أمام الباب/المشب: نفس الفحص الهندسي المشترك في كل المسارات.
+         نتخطى الفحص إن كانت القطعة نفسها جزءاً من منطقة الفتحة (لا يحدث حالياً)
+         أو طُلب التخطي صراحة. */
+      if (!opts.skipOpenings) {
+          const blocked = this.hitsOpening(cand, opts.geom);
+          if (blocked) return false;
+      }
       for (const q of this.state.pieces) {
         if (q.id === cand.id) continue;
         // المساحة الحرة إطار أرضي: ما يوضع فوقها ليس تداخلاً
@@ -989,12 +1345,28 @@
   }
 
   /** يمنع التداخل: يرفض الموضع أو يبحث عن أقرب موضع صالح ضمن نصف قطر
-      متدرّج. يعيد { x, y, rot, wall, t } صالحاً أو null إن لم يوجد. */
+      متدرّج. يعيد { x, y, rot, wall, t } صالحاً أو null إن لم يوجد.
+      المحاولة تشمل الالتصاق بالجدار (المسار الذي يسلكه المستخدم عادةً: يسحب
+      الكنبة حتى تلامس جداراً)، لأن البحث الحر في وسط الغرفة قد يفشل على
+      كنبة عريضة في غرفة ضيقة بينما الموضع الجداري صالح تماماً. */
   _resolveOverlap(cand, opts = {}) {
-      if (this.canPlace(cand)) return cand;
-      const g = this.geometry();
+      if (this.canPlace(cand, opts)) return cand;
+      const g = opts.geom || this.geometry();
       const base = Object.assign({}, cand);
-      const steps = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.5];
+      // 1) الالتصاق بالجدار أولاً: نفس اتجاه دوران القطعة على كل جدار
+      for (const w of g.walls) {
+          if (angDiff(base.rot || 0, w.rot) > 10) continue;
+          const half = base.w / 2;
+          for (let k = 0; k <= 8; k++) {
+              const tt = Math.min(Math.max(half + 0.02 + k * (w.len - half * 2 - 0.04) / 8, half), w.len - half);
+              const t = Object.assign({}, base, { wall: w.i, t: round(tt, 3) });
+              this._placeOnWall(t, w);
+              if (this.canPlace(t, opts)) {
+                  return Object.assign({}, base, { x: t.x, y: t.y, wall: w.i, t: t.t, rot: w.rot });
+              }
+          }
+      }
+      const steps = [0.05, 0.1, 0.2, 0.35, 0.5, 0.75, 1, 1.5, 2, 3];
       for (const rad of steps) {
         for (let k = 0; k < 16; k++) {
           const a = (k / 16) * Math.PI * 2;
@@ -1035,20 +1407,10 @@
       }
       const cx = (bb.minX + bb.maxX) / 2, cy = (bb.minY + bb.maxY) / 2;
       cands.sort((a, b) => (Math.hypot(a.x - cx, a.y - cy) - Math.hypot(b.x - cx, b.y - cy)));
-      // مناطق الفتحات المانعة (باب/مشب: منطقة حركة) تُحسب كمستطيلات محظورة
-      const blockRects = [];
-      for (const o of this.state.openings) {
-        if (!o || o.blocks === false) continue;
-        const w = g.walls[o.wall];
-        if (!w) continue;
-        const cx = w.A.x + w.dir.x * o.t + w.n.x * 0.45;
-        const cy = w.A.y + w.dir.y * o.t + w.n.y * 0.45;
-        blockRects.push({ x: cx, y: cy, w: (o.w || 0.9) + 0.3, h: 0.9 });
-      }
-      const blockHit = (corners) => blockRects.some((b) => {
-        const bhw = b.w / 2, bhh = b.h / 2;
-        return corners.some((pt) => Math.abs(pt.x - b.x) <= bhw && Math.abs(pt.y - b.y) <= bhh);
-      });
+      /* مناطق الفتحات المانعة (باب/مشب): نفس دالة التحقق المشتركة المستعملة في السحب
+         والحقول والتوزيع — لا حساب منفصل يخالف القاعدة. */
+      const blocks = this.openingBlockRects(g);
+      const blockHit = (corners) => blocks.some((b) => Designer.polyHitsRect(corners, b.rect));
       const out = [];
       const taken = [];
       const m = 0.06; // تسامح ملامسة الجدار: المركز داخل المضلع والزوايا ضمن الحدود +6سم
@@ -1156,6 +1518,29 @@
       this.drag = { mode: 'tap', sx, sy, touch, last: { x: sx, y: sy } };
     }
 
+    /* تطبيق قاعدة منع الوضع بعد أي تعديل: تداخل قطعة أو سدّ باب/مشب.
+       near = true ⇒ نبحث عن أقرب موضع صالح (سحب)، غير ذلك ⇒ نرجع للأصل فقط. */
+    _enforcePlacement(p, prev, opts = {}) {
+      const g = opts.g || this.geometry();
+      const v = this.validatePlacement(p, { geom: g });
+      if (v.ok) return true;
+      const why = v.why;
+      let resolved = false;
+      if (opts.near) {
+        const safe = this._resolveOverlap(p);
+        if (safe) {
+          p.x = safe.x; p.y = safe.y;
+          if (safe.wall == null) { delete p.wall; delete p.t; }
+          else if (g.walls[safe.wall]) this._placeOnWall(p, g.walls[safe.wall]);
+          resolved = true;
+        }
+      }
+      if (!resolved) Object.assign(p, prev);
+      // سبب الرفض النهائي بعد محاولة النقل: قد يبقى عند الموضع الجديد
+      const now = this.validatePlacement(p, { geom: g });
+      if (this.opts.onBlocked) this.opts.onBlocked(p, now.ok ? why : now.why, opts.mode || 'move');
+      return false;
+    }
     _move(e) {
       const { sx, sy } = this._pos(e);
       if (this.pointers.has(e.pointerId)) this.pointers.set(e.pointerId, { x: sx, y: sy });
@@ -1219,15 +1604,9 @@
         this._trySnapToWall(p, g);
         // بعد الانجذاب قد تتجاوز زوايا القطعة المدارة الحدّ: نصحّحها
         if (this.opts.boundAware && p.wall == null) this._clampPieceToRoom(p, g);
-        // منع التداخل هندسياً (noOverlap): نُبقي أقرب موضع صالح أو نُرجع للأصل
-        if (this.opts.noOverlap) {
-          if (!this.canPlace(p)) {
-            const safe = this._resolveOverlap(p);
-            if (safe) { p.x = safe.x; p.y = safe.y; if (safe.wall == null) { delete p.wall; delete p.t; } }
-            else { Object.assign(p, d.prev || {}); }
-            if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked");
-          }
-        }
+        /* منع التداخل وأمام الباب/المشب هندسياً: أقرب موضع صالح أو رجوع للأصل.
+           نُبلّغ بسببه الحقيقي (تداخل قطعة أم أمام فتحة) عبر onBlocked. */
+        if (this.opts.noOverlap) this._enforcePlacement(p, d.prev || {}, { near: true, g, mode: 'move' });
       } else if (d.mode === 'resizeW') {
         const l = this.toLocal(o, pt);
         let nw = Math.max(MIN_SIZE, round(snap(l.x + o.w / 2), 2));
@@ -1241,13 +1620,13 @@
           const dd = (nw - o.w) / 2;
           p.w = nw; p.x = round(o.x + c * dd, 3); p.y = round(o.y + s * dd, 3);
         }
-        if (this.opts.noOverlap && !this.canPlace(p)) { Object.assign(p, d.prev || {}); if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked"); }
+        if (this.opts.noOverlap) this._enforcePlacement(p, d.prev || {}, { g, mode: 'resizeW' });
       } else if (d.mode === 'resizeH') {
         const l = this.toLocal(o, pt);
         const nh = Math.max(MIN_SIZE, round(snap(l.y + o.h / 2), 2));
         if (p.wall != null && g.walls[p.wall]) { p.h = nh; this._placeOnWall(p, g.walls[p.wall]); }
         else { const dd = (nh - o.h) / 2; p.h = nh; p.x = round(o.x - s * dd, 3); p.y = round(o.y + c * dd, 3); }
-        if (this.opts.noOverlap && !this.canPlace(p)) { Object.assign(p, d.prev || {}); if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked"); }
+        if (this.opts.noOverlap) this._enforcePlacement(p, d.prev || {}, { g, mode: 'resizeH' });
       } else if (d.mode === 'rotate') {
         const cs = this.toScreen(o.x, o.y);
         let ang = (Math.atan2(sy - cs.y, sx - cs.x) * 180) / Math.PI + 90;
@@ -1257,7 +1636,7 @@
           p.rot = norm360(ang);
           p.x = o.x; p.y = o.y;
           this._trySnapToWall(p, g, 0.12);
-          if (this.opts.noOverlap && !this.canPlace(p)) { Object.assign(p, d.prev || {}); if (this.opts.onBlocked) this.opts.onBlocked(p, "blocked"); }
+          if (this.opts.noOverlap) this._enforcePlacement(p, d.prev || {}, { g });
         }
       }
       d.moved = true;
@@ -1690,7 +2069,7 @@
         ctx.restore();
       }
 
-      // تسميات الجدران (خارج الجدار)
+      // تسميات الجدران (خارج الجدار) — الطول الحقيقي لكل جدار + علامة «مستقل»
       g.walls.forEach((w) => {
         const off = WALL_T + WALL_LABEL_OFF;
         const lp = P(w.mid.x - w.n.x * off, w.mid.y - w.n.y * off);
@@ -1698,16 +2077,17 @@
         ctx.font = `700 ${fs}px ${FONT}`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
         const txt = `${round(w.len, 2)} م`;
-        const num = `جدار ${w.i + 1}`;
+        const fixed = this.state.walls[w.i] && this.state.walls[w.i].fixed;
+        const num = `جدار ${w.i + 1}` + (fixed ? ' • مستقل' : '');
         const tw = ctx.measureText(txt).width, nw = ctx.measureText(num).width;
         const bw = Math.max(tw, nw) + 14 * k, bh = fs * 2.3;
         ctx.fillStyle = w.i === selWall ? SEL : 'rgba(255,255,255,0.94)';
         roundRect(ctx, lp.x - bw / 2, lp.y - bh / 2, bw, bh, 2 * k); ctx.fill();
-        if (w.i !== selWall) { ctx.strokeStyle = '#E2DBD0'; ctx.lineWidth = k; ctx.stroke(); }
+        if (w.i !== selWall) { ctx.strokeStyle = fixed ? '#A5642C' : '#E2DBD0'; ctx.lineWidth = k; ctx.stroke(); }
         ctx.fillStyle = w.i === selWall ? '#fff' : '#2A2622';
         ctx.font = `700 ${fs}px ${FONT}`;
         ctx.fillText(txt, lp.x, lp.y - fs * 0.5);
-        ctx.fillStyle = w.i === selWall ? 'rgba(255,255,255,0.85)' : '#7A6F63';
+        ctx.fillStyle = w.i === selWall ? 'rgba(255,255,255,0.85)' : (fixed ? '#A5642C' : '#7A6F63');
         ctx.font = `${fs * 0.78}px ${FONT}`;
         ctx.fillText(num, lp.x, lp.y + fs * 0.6);
       });

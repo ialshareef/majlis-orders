@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>acc live click test</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:11px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<div class="px-panel"><div class="px-accgrid" id="g"></div></div>
+<script>
+/* اختبار حي: نبني البطاقات كما تفعل portal-expanded.js تماماً،
+   ثم نضغط على الأيقونة والاسم فعلياً ونتحقق من فتح اللوحة. */
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
+const $=s=>document.querySelector(s),$$=s=>Array.from(document.querySelectorAll(s));
+const MAX_QTY=20;
+const CAT={ 'acc-1':{name:'طاولة',color:'#7A5230'}, 'acc-2':{name:'مركى',color:'#5E6B4A'}, 'acc-3':{name:'سجادة',color:'#8B5E34'}, 'acc-4':{name:'وسادة',color:'#6A4A63'} };
+const counts={}; // محاكاة الحالة
+let toasts=[];
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
+function numOf(v){const n=parseFloat(v);return Number.isFinite(n)?n:0;}
+
+// نفس بنية portal-expanded.js
+function renderPanel(){
+  const box=$('#g');
+  const accs=Object.keys(CAT).map(id=>Object.assign({id},CAT[id]));
+  box.innerHTML = accs.map(function(a){
+    const n=counts[a.id]||0;
+    return '<div class="px-acc'+(n?' has':'')+'" data-accwrap="'+esc(a.id)+'" role="button" tabindex="0"'
+      +' aria-label="'+esc(a.name)+(n?' — '+n+' مضاف':'')+'">'
+      +'<span class="px-acc-art" style="background:'+esc(a.color)+'"></span>'
+      +'<span class="px-acc-name">'+esc(a.name)+'</span>'
+      +(n?'<b class="px-acc-badge num">'+n+'</b>':'')
+      +'<span class="px-qtybar" data-qtypanel="'+esc(a.id)+'" hidden>'
+      +'<button type="button" class="qbtn" data-qtyminus="'+esc(a.id)+'" aria-label="إنقاص">-</button>'
+      +'<input class="px-qtyval num" data-qtyin="'+esc(a.id)+'" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0" max="'+MAX_QTY+'" value="'+n+'" aria-label="عدد">'
+      +'<button type="button" class="qbtn" data-qtyplus="'+esc(a.id)+'" aria-label="زيادة">+</button>'
+      +'<button type="button" class="px-qdone" data-qtyok="'+esc(a.id)+'">تم</button>'
+      +'<button type="button" class="px-qdel" data-qtydel="'+esc(a.id)+'" aria-label="حذف"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2"/></svg></button>'
+      +'</span>'
+      +'<button type="button" class="px-spread" data-spread="'+esc(a.id)+'">توزيع متساوٍ</button>'
+      +'</div>';
+  }).join('');
+  wire();
+}
+
+// نفس منطق الربط المنقول من portal-expanded.js (بعد الإصلاح)
+function syncTile(id){
+  var n=counts[id]||0;
+  var wrap=document.querySelector(`[data-accwrap="${id}"]`);
+  if(!wrap)return;
+  var inp=wrap.querySelector('input[data-qtyin]');
+  if(inp && document.activeElement!==inp) inp.value=String(n);
+  var badge=wrap.querySelector('.px-acc-badge');
+  if(n>0){ if(!badge){ badge=document.createElement('b'); badge.className='px-acc-badge num'; wrap.appendChild(badge); wrap.classList.add('has'); } badge.textContent=String(n); }
+  else { if(badge) badge.remove(); wrap.classList.remove('has'); }
+}
+function wire(){
+  const box=$('#g');
+  $$('button[data-qtyminus]',box).forEach(function(b){
+    b.addEventListener('click',function(e){e.stopPropagation();counts[b.dataset.qtyminus]=Math.max(0,(counts[b.dataset.qtyminus]||0)-1);renderPanel();});
+  });
+  $$('button[data-qtyplus]',box).forEach(function(b){
+    b.addEventListener('click',function(e){e.stopPropagation();counts[b.dataset.qtyplus]=Math.min(MAX_QTY,(counts[b.dataset.qtyplus]||0)+1);renderPanel();});
+  });
+  $$('input[data-qtyin]',box).forEach(function(inp){
+    inp.addEventListener('blur',function(e){
+  var panel=inp.closest('.px-qtybar');
+  if(e.relatedTarget && panel && panel.contains(e.relatedTarget)) return;
+  const id=inp.dataset.qtyin;const raw=inp.value.trim();
+  const v=/^\d+$/.test(raw)?parseInt(raw,10):null;
+  if(v==null){inp.value=String(counts[id]||0);return;} counts[id]=Math.min(MAX_QTY,v);syncTile(id);});
+  });
+  $$('button[data-spread]',box).forEach(function(b){b.addEventListener('click',function(e){e.stopPropagation();});});
+
+  function openQtyPanel(card){
+    const panel=card&&card.querySelector('.px-qtybar');
+    if(!panel)return;
+    $$('.px-qtybar',box).forEach(function(x){if(x!==panel){x.hidden=true;x.parentNode&&x.parentNode.classList.remove('open');}});
+    card.classList.add('open');
+    panel.hidden=false;
+    const inp=panel.querySelector('input[data-qtyin]');
+    if(inp){inp.focus();inp.select();}
+  }
+  $$('[data-accwrap]',box).forEach(function(card){
+    card.addEventListener('click',function(e){ if(e.target.closest('button, input'))return; openQtyPanel(card); });
+    card.addEventListener('keydown',function(e){ if(e.key==='Enter'||e.key===' '){e.preventDefault();openQtyPanel(card);} });
+  });
+  $$('button[data-qtyok]',box).forEach(function(b){
+    b.addEventListener('click',function(e){e.stopPropagation();
+      const id=b.dataset.qtyok; const inp=box.querySelector('input[data-qtyin="'+id+'"]');
+      const raw=inp?inp.value.trim():''; const v=/^\d+$/.test(raw)?parseInt(raw,10):null;
+      if(v==null){if(inp)inp.value=String(counts[id]||0);toasts.push('invalid');return;}
+      counts[id]=Math.min(MAX_QTY,v); toasts.push('ok:'+id+'='+counts[id]); renderPanel();});
+  });
+  $$('button[data-qtydel]',box).forEach(function(b){
+    b.addEventListener('click',function(e){e.stopPropagation();counts[b.dataset.qtydel]=0;renderPanel();});
+  });
+}
+
+(async function(){
+try{
+  const cards = () => $$('[data-accwrap]');
+  const card = (k) => cards()[k];
+  renderPanel();
+  t('بطاقات مبنية', cards().length === 4, cards().length + '');
+
+  /* 1) عمودان بالضبط وبطاقتان في الصف */
+  const g = $('#g');
+  const cs = getComputedStyle(g);
+  const cols = (cs.gridTemplateColumns.match(/[\d.]+px/g) || []).length;
+  t('عمودان بالضبط', cols === 2, cs.gridTemplateColumns);
+  const rects = cards().map((c) => c.getBoundingClientRect());
+  const byTop = {};
+  rects.forEach((r) => { const k = Math.round(r.top); byTop[k] = (byTop[k] || 0) + 1; });
+  t('بطاقتان في كل صف', Object.values(byTop).every((v) => v === 2), JSON.stringify(byTop));
+  const ws = rects.map((r) => Math.round(r.width));
+  t('عروض البطاقات متساوية', Math.max(...ws) - Math.min(...ws) <= 1, ws.join('/'));
+  const hs = rects.map((r) => Math.round(r.height));
+  t('ارتفاعات البطاقات متساوية', Math.max(...hs) - Math.min(...hs) <= 1, hs.join('/'));
+  const gw = g.getBoundingClientRect().width;
+  t('البطاقة لا تأخذ عرض الصف كله', ws[0] < gw - 12, Math.round(ws[0]) + ' / ' + Math.round(gw));
+  t('الأيقونة والاسم ظاهران', cards().every((c) => {
+    const a = c.querySelector('.px-acc-art').getBoundingClientRect();
+    const n = c.querySelector('.px-acc-name').getBoundingClientRect();
+    return a.width >= 30 && n.width > 0 && n.top >= a.bottom - 2;
+  }));
+
+  /* 2) الضغط على الأيقونة يفتح اللوحة */
+  t('اللوحة مخفية ابتداءً', card(0).querySelector('.px-qtybar').hidden === true);
+  card(0).querySelector('.px-acc-art').click();
+  t('الضغط على الأيقونة يفتح اللوحة', card(0).querySelector('.px-qtybar').hidden === false);
+  t('  البطاقة تأخذ حالة open', card(0).classList.contains('open'));
+  t('  الكمية صفر ونافذة مهيّأة', card(0).querySelector('[data-qtyin]').value === '0');
+
+  /* 3) الضغط على الاسم يفتح لوحة ذلك الصنف ويُغلق السابقة */
+  card(1).querySelector('.px-acc-name').click();
+  t('الضغط على الاسم يفتح لوحته', card(1).querySelector('.px-qtybar').hidden === false);
+  t('  ويُغلق السابقة', card(0).querySelector('.px-qtybar').hidden === true);
+
+  /* 4) زيادة ثم نقصان */
+  card(1).querySelector('[data-qtyplus]').click();
+  t('زر + يزيد', (counts['acc-2'] || 0) === 1, 'n=' + (counts['acc-2'] || 0));
+  card(1).querySelector('[data-qtyplus]').click();
+  t('زر + ثانية = 2', (counts['acc-2'] || 0) === 2, 'n=' + (counts['acc-2'] || 0));
+  card(1).querySelector('[data-qtyminus]').click();
+  t('زر − ينقص', (counts['acc-2'] || 0) === 1, 'n=' + (counts['acc-2'] || 0));
+
+  /* 5) كتابة الكمية ثم «تم» */
+  card(2).querySelector('.px-acc-name').click();
+  let inp = card(2).querySelector('[data-qtyin]');
+  inp.value = '7';
+  inp.dispatchEvent(new Event('input', { bubbles: true }));
+  card(2).querySelector('[data-qtyok]').click();
+  t('«تم» يحفظ الكمية المكتوبة', (counts['acc-3'] || 0) === 7, 'n=' + (counts['acc-3'] || 0));
+  const badge = card(2).querySelector('.px-acc-badge');
+  t('  شارة العدد تحدّثت فوراً', !!badge && badge.textContent.trim() === '7', badge ? badge.textContent.trim() : 'none');
+  t('  اللوحة تُغلق بعد «تم»', card(2).querySelector('.px-qtybar').hidden === true);
+
+  /* 6) تعديل كمية موجودة بلا تكرار */
+  card(2).querySelector('.px-acc-art').click();
+  inp = card(2).querySelector('[data-qtyin]');
+  t('اللوحة تعرض الكمية الحالية', inp.value === '7', 'v=' + inp.value);
+  inp.value = '3';
+  card(2).querySelector('[data-qtyok]').click();
+  t('التعديل يخفض إلى 3', (counts['acc-3'] || 0) === 3, 'n=' + (counts['acc-3'] || 0));
+
+  /* 7) الحذف لا يمسّ غيره */
+  const othersBefore = Object.keys(counts).filter((k) => k !== 'acc-3').map((k) => counts[k]).join(',');
+  card(2).querySelector('.px-acc-art').click();
+  card(2).querySelector('[data-qtydel]').click();
+  t('الحذف يصفّر العنصر فقط', (counts['acc-3'] || 0) === 0, 'n=' + (counts['acc-3'] || 0));
+  const othersAfter = Object.keys(counts).filter((k) => k !== 'acc-3').map((k) => counts[k]).join(',');
+  t('  الإكسسوارات الأخرى سليمة', othersBefore === othersAfter, othersAfter);
+  t('  لا شارة للعنصر المحذوف', !card(2).querySelector('.px-acc-badge'));
+
+  /* 8) إدخال غير صالح يُرفض */
+  card(0).querySelector('.px-acc-name').click();
+  inp = card(0).querySelector('[data-qtyin]');
+  inp.value = '-5';
+  card(0).querySelector('[data-qtyok]').click();
+  t('السالب مرفوض', (counts['acc-1'] || 0) === 0, 'n=' + (counts['acc-1'] || 0));
+
+  /* 9) اللوحة داخل حدود البطاقة */
+  card(3).querySelector('.px-acc-art').click();
+  const cR = card(3).getBoundingClientRect();
+  const bR = card(3).querySelector('.px-qtybar').getBoundingClientRect();
+  t('اللوحة داخل حدود البطاقة', bR.right <= cR.right + 1 && bR.left >= cR.left - 1,
+    'bar ' + Math.round(bR.left) + '..' + Math.round(bR.right) + ' card ' + Math.round(cR.left) + '..' + Math.round(cR.right));
+  t('لا تمرير أفقي', document.documentElement.scrollWidth <= document.documentElement.clientWidth + 2,
+    document.documentElement.scrollWidth + '/' + document.documentElement.clientWidth);
+}catch(e){t('suite completed',false,e.message+' | '+(e.stack||'').split('\n')[1]);}
+flush();
+})();
+function win_cs(el){return getComputedStyle(el);}
+</script></body></html>

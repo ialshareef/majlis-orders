@@ -20,6 +20,7 @@ try{
   const dsrc=await (await fetch("/js/designer.js")).text();
   const css=await (await fetch("/css/portal-expanded.css")).text();
   const pj=await (await fetch("/js/portal.js")).text();
+const aj=await (await fetch("/js/app.js")).text();
 
   const dz=new Designer($("#pxCanvas"),{getItem:()=>null,onChange(){},onSelect(){},
     smartSnap:true,boundAware:true,dimsOnTop:true,pieceArt:true,pieceTint:true,
@@ -30,11 +31,18 @@ try{
   const pairs=(kind)=>{const ps=dz.state.pieces.filter(p=>kind?p.kind===kind:p.kind==="sofa");let n=0;
     for(let i=0;i<ps.length;i++)for(let j=i+1;j<ps.length;j++)if(ov(ps[i],ps[j]))n++;return n;};
 
-  /* ===== 1) الأعلام: التجريبي فقط ===== */
+  /* ===== 1) الأعلام: التجريبي + البوابة الأصلية + صفحة الموظف (متطابقة) ===== */
   ["noDepthDrag","noOverlap","pieceLabelsOnTop","smartSnap","boundAware","dimsOnTop","pieceArt","pieceTint"].forEach(function(f){
     t("التجريبي فعّل "+f, new RegExp(f+":\\s*true").test(src));
   });
-  t("البوابة الأصلية بلا أي أعلام جديدة", !/noDepthDrag|noOverlap|pieceLabelsOnTop|smartSnap|boundAware|pieceArt|pieceTint|dimsOnTop/.test(pj));
+  /* البوابة الأصلية (العميل) فعّلت قواعد التصميم نفسها */
+  ["noDepthDrag","noOverlap","pieceLabelsOnTop","smartSnap","boundAware","dimsOnTop"].forEach(function(f){
+    t("بوابة العميل فعّلت "+f, new RegExp(f+":\\s*true").test(pj));
+  });
+  /* صفحة الموظف (app.js) فعّلت القواعد نفسها */
+  ["noDepthDrag","noOverlap","pieceLabelsOnTop","smartSnap","boundAware","dimsOnTop"].forEach(function(f){
+    t("صفحة الموظف فعّلت "+f, new RegExp(f+":\\s*true").test(aj));
+  });
 
   /* ===== 2) لا تغيير عمق بالسحب، مع بقاء التحريك والتدوير ===== */
   mk(6,4); dz.fillAllWalls(SPEC);
@@ -105,8 +113,10 @@ try{
   t("لا زر + منفصل لزيادة العنصر", !/px-add-acc/.test(src));
   t("CSS: شارة العدد", /\.px-acc-badge\s*\{/.test(css));
   t("CSS: حالة البطاقة المفتوحة", /\.px-acc\.open\s*\{/.test(css));
-  // الإخفاء بصري مع حجز المساحة (visibility) حتى تتساوى البطاقات — لا display:none
-  t("CSS: اللوحة مخفية بصرياً وتحجز مكانها", /\.px-qtybar\[hidden\][^{]*\{[^}]*visibility:\s*hidden/.test(css) && /\.px-qtybar\[hidden\][^{]*\{[^}]*height:\s*var\(--px-qty-h\)/.test(css));
+// الإخفاء كامل (display:none) حتى لا يبقى فراغ في البطاقة المغلقة،
+  // وتساوى ارتفاع البطاقات يضمنه هامش lagoon الذاتي داخل البطاقة (margin: auto)
+  t("CSS: اللوحة المخفية لا تحجز مساحة (display:none)", /\.px-qtybar\[hidden\][^{]*\{[^}]*display:\s*none\s*!important/.test(css));
+  t("CSS: تساوي ارتفاع البطاقات", /\.px-accgrid\s*\{[^}]*align-items:\s*stretch/.test(css));
   t("CSS: بطاقة الإكسسوار الحر داخل الشبكة", /\.px-acc-free/.test(css));
 
   /* ===== 9) أرقام المقاسات فوق الإكسسوارات ===== */

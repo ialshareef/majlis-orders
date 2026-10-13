@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.52';
+  const APP_VERSION = '1.0.53';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -690,6 +690,17 @@ function canEditOrder(o) {
     getItem,
     pieceSpecLabel,
     pieceStyle,
+    /* قواعد التصميم — مطابقة حرفياً لبوابة العميل (portal.js):
+       القواعد نفسها في صفحتي العميل والموظف بلا اختلاف. */
+    smartSnap: true,
+    boundAware: true,
+    noDepthDrag: true,
+    noOverlap: true,
+    dimsOnTop: true,
+    pieceLabelsOnTop: true,
+    onBlocked(p, why) {
+      toast(Designer.blockingMessage(why), true);
+    },
     onChange() {
       cur.design = designer.getState();
       setDirty(true);
@@ -697,6 +708,7 @@ function canEditOrder(o) {
       renderWalls();
       syncCornerMode();
       updateOverlapWarn();
+      markRoomHealth();
       updateUndoButtons();
       renderSelBar(designer.selectionInfo());
     },
@@ -719,6 +731,44 @@ function canEditOrder(o) {
   });
 
   function updateOverlapWarn() { $('#overlapWarn').hidden = designer.overlaps().size === 0; }
+
+  /** سبب منع الحفظ (فارغ = تصميم صالح). نفس الدالة المستعملة في بوابة العميل. */
+  function designBlockReason() {
+    const v = designer.validateDesign();
+    if (v.ok) return '';
+    const msgs = [];
+    const seen = {};
+    v.issues.forEach((i) => {
+      if (i.type === 'opening') {
+        const nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+        if (!seen['o' + nm]) { msgs.push(`كنبة تسدّ ${nm} — انقلها بعيداً عنه`); seen['o' + nm] = 1; }
+      } else if (i.type === 'overlap') {
+        if (!seen.ov) { msgs.push('تداخل بين قطعتين — أعد توزيعهما'); seen.ov = 1; }
+      }
+    });
+    return msgs.join(' · ');
+  }
+
+  /** تنبيه هندسي بعد تغيير أطوال الجدران: فجوة، فتحة خرجت، أو تعارض أثاث.
+      يمنع الحفظ ويشرح ما حدث — لا ينقل عنصراً ولا يحذفه بصمت. */
+  function markRoomHealth() {
+    const el = $('#roomWarn');
+    if (!el) return;
+    const h = designer.checkRoomHealth();
+    if (!h.messages.length) { el.innerHTML = ''; return; }
+    const gap = !h.gap.closed;
+    el.innerHTML = `<div class="warnbox${gap ? ' warn-gap' : ''}"><p>${
+      h.messages.slice(0, 4).map((m) => '• ' + esc(m)).join('<br>')}</p>${
+      gap ? '<button type="button" class="btn small" data-close-room>إغلاق الغرفة (ضبط زاوية الجدار الأخير فقط)</button>' : ''}</div>`;
+    const cb = $('[data-close-room]', el);
+    if (cb) cb.addEventListener('click', () => {
+      designer.closeRoom();
+      toast('ضُبطت زاوية الجدار الأخير فقط ليغلق الشكل — لم يتغير أي طول.');
+      renderWalls();
+      markRoomHealth();
+      setDirty(true);
+    });
+  }
 
   /* --- تبويبات اللوحة الجانبية --- */
   function selectPanelTab(b) {
@@ -750,16 +800,26 @@ function canEditOrder(o) {
     const selWall = designer.selectedWallIndex();
     const tb = $('#wallsBody');
     tb.innerHTML = walls.map((w, i) => `
-      <tr class="${i === selWall ? 'sel' : ''}">
-        <td>${i + 1}</td>
+      <tr class="${i === selWall ? 'sel' : ''}${w.fixed ? ' wall-fixed' : ''}">
+        <td>${i + 1}${w.fixed ? ' <span class="wall-fixed-tag" title="طول مستقل — لا يتغير بتغيير مقاس الغرفة">مستقل</span>' : ''}</td>
         <td><input type="number" step="0.05" min="0.3" data-i="${i}" data-k="len" value="${Designer.util.round(w.len, 3)}"></td>
         <td><input type="number" step="5" data-i="${i}" data-k="angle" value="${w.angle}"></td>
-        <td><button class="icon-btn" data-del="${i}" title="حذف الجدار" ${walls.length <= 3 ? 'disabled' : ''}>${icon('x')}</button></td>
+        <td class="walls-actions">
+          <button class="icon-btn" data-reset="${i}" title="إرجاع الطول للافتراضي (${Designer.util.round(designer.wallDefaultLen(i), 2)} م)" ${w.fixed ? '' : 'disabled'}><svg><use href="#i-ruler"/></svg></button>
+          <button class="icon-btn" data-del="${i}" title="حذف الجدار" ${walls.length <= 3 ? 'disabled' : ''}>${icon('x')}</button>
+        </td>
       </tr>`).join('');
     $$('input', tb).forEach((inp) => inp.addEventListener('change', () => {
       const i = +inp.dataset.i;
-      if (inp.dataset.k === 'len') designer.setWallLength(i, num(inp.value));
+      if (inp.dataset.k === 'len') { designer.setWallLength(i, num(inp.value)); markRoomHealth(); }
       else designer.setWallAngle(i, num(inp.value));
+    }));
+    $$('button[data-reset]', tb).forEach((b) => b.addEventListener('click', () => {
+      const i = +b.dataset.reset;
+      designer.resetWallLength(i);
+      toast(`أُرجع الجدار ${i + 1} إلى طوله الافتراضي ${Designer.util.round(designer.wallDefaultLen(i), 2)} م.`);
+      renderWalls();
+      markRoomHealth();
     }));
     $$('button[data-del]', tb).forEach((b) => b.addEventListener('click', () => designer.removeWall(+b.dataset.del)));
     const g = designer.geometry();
@@ -827,7 +887,10 @@ function canEditOrder(o) {
   }
   wallInlineInp.addEventListener('change', () => {
     const i = +wallInlineInp.dataset.i;
-    if (Number.isFinite(i) && designer.state.walls[i]) designer.setWallLength(i, num(wallInlineInp.value));
+    if (Number.isFinite(i) && designer.state.walls[i]) {
+      designer.setWallLength(i, num(wallInlineInp.value));
+      markRoomHealth();
+    }
   });
   wallInlineInp.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') { e.preventDefault(); wallInlineInp.blur(); }
@@ -851,17 +914,21 @@ function canEditOrder(o) {
     const cur = designer.state.walls;
     const rect = cur.length === 4 && cur[0].angle === 0 && cur[1].angle === 90 && cur[2].angle === 180 && cur[3].angle === 270;
     if (rect) {
-      // غرفة مستطيلة بالفعل: نعدّل طولَي الجدارين المتقابلين فيحافظ الرسم على شكله
-      designer.setWallLength(0, w);
-      designer.setWallLength(2, w);
-      designer.setWallLength(1, h);
-      designer.setWallLength(3, h);
+      /* المقاس الأساسي يحدّث الجدران غير المعدّلة يدوياً فقط، ويحافظ على المستقلة
+         (setRoomDims لا يمسّ wall.fixed ولا يفرض تساوي الأضلاع المتقابلة). */
+      designer.setRoomDims(w, h);
     } else {
-      designer.setRect(w, h);   // غرفة مخصّصة (بزوايا): تُصفَّر إلى مستطيل
+      /* غرفة مخصّصة (بزوايا): نحافظ على شكلها ونحدّث المقاس الأساسي فقط،
+         ولا نُصفّرها إلى مستطيل صامتاً. */
+      designer.setRoomDims(w, h);
+      if (designer.geometry().closed && !designer.state.walls[designer.state.walls.length - 1].fixed) {
+        designer.closeRoom();   // ضبط زاوية الجدار الأخير ليغلق الشكل — بلا تغيير أي طول
+      }
     }
     designer.autoFit = true;
     designer.fitView();
     renderWalls();
+    markRoomHealth();
     if (!live) { syncCornerMode(); updateOverlapWarn(); }
   }
   ['#roomW', '#roomH'].forEach((sel) => {
@@ -1308,7 +1375,7 @@ function canEditOrder(o) {
     }
     selBar.innerHTML = `<span class="selbar-name">${esc(selBarName(info))}</span>${mid}`
       + (info.type === 'piece' ? `<button type="button" class="btn small" data-sbrot title="تدوير 90°">${icon('rotate')} 90°</button><button type="button" class="btn small" data-sbdup>${icon('copy')} نسخ</button>` : '')
-      + `<button type="button" class="btn small danger" data-sbdel>${icon('trash')} حذف</button>`
+      + `<button type="button" class="btn small danger del-danger" data-sbdel>${icon('trash')} حذف</button>`
       + `<button type="button" class="btn small" data-sbprops>${icon('pen')} الخصائص</button>`;
     selBar.hidden = false;
     const q = (s) => selBar.querySelector(s);
@@ -1408,7 +1475,7 @@ function canEditOrder(o) {
         <label>البُعد من بداية الجدار (م) <input id="inspOT" type="number" step="0.05" min="0" value="${Designer.util.round(o.t - o.w / 2, 2)}"></label>
         <label ${o.type === 'mashab' ? '' : 'hidden'}>العمق داخل الغرفة (م) <input id="inspDepth" type="number" step="0.05" min="0.15" max="1" value="${Designer.util.round(o.depth || 0.5, 2)}"></label>
         <label class="check"><input id="inspBlocks" type="checkbox" ${o.blocks ? 'checked' : ''}> لا يوضع كنب أمامه</label>
-        <div class="insp-actions"><button class="btn small danger" data-act="del">${icon('trash')} حذف</button></div>
+        <div class="insp-actions"><button class="btn small danger del-danger" data-act="del" aria-label="حذف ${o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب'}">${icon('trash')} حذف</button></div>
         ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     } else {
       const p = info.piece;
@@ -2680,6 +2747,13 @@ function canEditOrder(o) {
   async function saveOrder(silent = false) {
     if (readOnly) { if (!silent) toast('هذا الطلب لموظف آخر: لا يمكن حفظ التعديلات', true); return false; }
     cur.design = designer.getState();
+    /* رفض حفظ تصميم فيه تعارض هندسي غير مسموح — نفس القواعد المستعملة أثناء
+       التعديل في هذه الصفحة وفي بوابة العميل (تعارض قطعتين أو كنبة سدّت باباً/مشباً). */
+    const designErr = designBlockReason();
+    if (designErr) {
+      if (!silent) { toast(designErr, true); markRoomHealth(); showStage('design'); }
+      return false;
+    }
     normalizePayments(cur);
     cur.discount = money(cur.discount || 0);
     const { lines, total, subtotal, vatAmount, vatRate } = computeLines(cur);

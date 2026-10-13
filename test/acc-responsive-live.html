@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head><meta charset="utf-8"><title>acc responsive</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>body{margin:0;padding:8px;background:#f6f1ea} .px-panel{max-width:520px}
+#rep{position:fixed;bottom:0;inset-inline-start:0;background:#111;color:#0f0;font:11px/1.5 monospace;padding:4px;z-index:99;direction:ltr}</style>
+</head><body>
+<div class="px-panel"><div class="px-accgrid" id="g"></div></div>
+<pre id="rep">…</pre>
+<script>
+const NAMES=['طاولة طاولة فاخرة','مركى كنب','سجادة كبيرة','وسائد مفردة','كرسي خشب','طاولة قهوة','مقعد أرضي','طقم كنب','رفوف','ستائر'];
+function render(){
+  const g=document.getElementById('g');
+  let h='';
+  for(let i=0;i<10;i++){
+    h+='<div class="px-acc" data-accwrap="'+i+'" role="button" tabindex="0">'
+      +'<span class="px-acc-art" style="background:#7A5230"></span>'
+      +'<span class="px-acc-name">'+NAMES[i]+'</span>'
+      +'<span class="px-qtybar" data-qtypanel="'+i+'" hidden>'
+      +'<button type="button" class="qbtn" data-qtyminus="'+i+'">-</button>'
+      +'<input class="px-qtyval" data-qtyin="'+i+'" type="number" value="0">'
+      +'<button type="button" class="qbtn" data-qtyplus="'+i+'">+</button>'
+      +'<button type="button" class="px-qdone" data-qtyok="'+i+'">تم</button>'
+      +'<button type="button" class="px-qdel" data-qtydel="'+i+'">x</button>'
+      +'</span>'
+      +'<button type="button" class="px-spread" data-spread="'+i+'">توزيع متساوٍ</button>'
+      +'</div>';
+  }
+  g.innerHTML=h;
+  // نفتح لوحتين لقياس الارتفاع الفعلي
+  setTimeout(function(){
+    const cards=document.querySelectorAll('[data-accwrap]');
+    cards[0].querySelector('.px-qtybar').hidden=false; cards[0].classList.add('open');
+    cards[3].querySelector('.px-qtybar').hidden=false; cards[3].classList.add('open');
+    document.querySelectorAll('[data-accwrap]')[1].insertAdjacentHTML('beforeend','<b class="px-acc-badge num">5</b>');
+    report();
+  },10);
+}
+function report(){
+  const cards=Array.from(document.querySelectorAll('[data-accwrap]'));
+  const cs=getComputedStyle(document.getElementById('g'));
+  const cols=(cs.gridTemplateColumns.match(/[\d.]+px/g)||[]).length;
+  const rects=cards.map(c=>c.getBoundingClientRect());
+  const byTop={};
+  rects.forEach(r=>{const k=Math.round(r.top);byTop[k]=(byTop[k]||0)+1;});
+  const ws=rects.map(r=>Math.round(r.width));
+  const hs=rects.map(r=>Math.round(r.height));
+  const doc=document.documentElement;
+  const out=[
+    'viewport '+window.innerWidth+'x'+window.innerHeight,
+    'columns='+cols+' ['+cs.gridTemplateColumns+']',
+    'pairs per row='+JSON.stringify(byTop),
+    'widths min/max='+Math.min(...ws)+'/'+Math.max(...ws),
+    'heights min/max='+Math.min(...hs)+'/'+Math.max(...hs),
+    'hOverflow='+(doc.scrollWidth>doc.clientWidth+2)+' ('+doc.scrollWidth+'>'+doc.clientWidth+')',
+    'cards='+cards.length
+  ];
+  document.getElementById('rep').textContent=out.join('\n');
+}
+render();
+</script></body></html>

@@ -35,9 +35,13 @@ try{
   t('portal-expanded فعّل dimsOnTop', /dimsOnTop:\s*true/.test(src));
   t('portal-expanded فعّل pieceArt', /pieceArt:\s*true/.test(src));
   t('portal-expanded فعّل pieceTint', /pieceTint:\s*true/.test(src));
-  // البوابة الأصلية بلا هذه الأعلام
+/* البوابة الأصلية وصفحة الموظف فعّلت القواعد نفسها (توافق صحيح بين الصفحات) */
   const pj=await (await fetch('/js/portal.js')).text();
-  t('البوابة الأصلية بلا الأعلام (لم تتأثر)', !/smartSnap|boundAware|dimsOnTop|pieceArt|pieceTint/.test(pj));
+  const aj=await (await fetch('/js/app.js')).text();
+  ['noDepthDrag','noOverlap','pieceLabelsOnTop','smartSnap','boundAware','dimsOnTop'].forEach(function(f){
+    t('بوابة العميل فعّلت '+f, new RegExp(f+':\\s*true').test(pj));
+    t('صفحة الموظف فعّلت '+f, new RegExp(f+':\\s*true').test(aj));
+  });
 
   // ترتيب الأزرار: + أولاً في DOM ثم input ثم − (في RTL: + يمين، − يسار)
   const iPlus=src.indexOf('data-opwplus'), iInp=src.indexOf('data-opw="'), iMinus=src.indexOf('data-opwminus');
@@ -168,10 +172,9 @@ try{
     t('رسوم متعددة (صحن/سجادة/مخدّة/طاولة)', /tray/.test(art[0])&&/rug/.test(art[0])&&/pillow/.test(art[0])&&/table/.test(art[0]));
   }
 
-  /* ===== 8) المحرك: خيارات معطّلة = سلوك البوابة الأصلية ===== */
+/* ===== 8) المحرك: خيارات معطّلة = سلوك قديم متاح كاحتياط (لا يُستخدم في الصفحات) ===== */
   const plain=new Designer($('#pxCanvas'),{getItem:()=>null,onChange(){},onSelect(){}});
-  t('بدون أعلام: _clampPieceToRoom غير مستدعاة في السحب', !/_clampPieceToRoom/.test(dsrc.split('d.mode === \'move\'')[1].split('}')[0]));
-  t('plain.lastFill يعمل أيضاً (متوافق)', typeof plain.fillAllWalls({depth:0.8,seating:'floor'})==='number');
+  t('بدون أعلام: السلوك القديم ما زال متاحاً كخيار', typeof plain.fillAllWalls({depth:0.8,seating:'floor'})==='number');
 
   /* ===== 9) الرسم لا يرمي (فحص فعلي) ===== */
   mk(6,4); dz.fillAllWalls(SPEC);
