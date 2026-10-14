@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>engine unit test</title>
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:12px/1.6 monospace;padding:8px;direction:ltr;text-align:left}</style>
+</head><body>
+<pre id="rep">…</pre>
+<canvas id="cv" width="900" height="620" style="display:none"></canvas>
+<script src="/js/designer.js"></script>
+
+<pre id="rep">…</pre>
+<canvas id="cv" width="900" height="620"></canvas>
+<script src="/js/designer.js"></script>
+<script>
+const T={pass:0,fail:0,lines:[]};
+function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
+function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');}
+function mk(){const d=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true});d.setState(Designer.emptyState(5,4));return d;}
+function near(a,b){return Math.abs(a-b)<1e-6;}
+const A=(w)=>({x:w.A.x,y:w.A.y}), B=(w)=>({x:w.B.x,y:w.B.y});
+const dist=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y);
+
+(async function(){
+try{
+  /* ===== 1) تقصير 5→3 من الطرف الثاني (A مثبّت) ===== */
+  let d=mk();
+  let g0=d.geometry(), w0=g0.walls[0];
+  const a0=A(w0), b0=B(w0);
+  d.setWallLengthAnchored(0,3,'second');
+  g0=d.geometry(); w0=g0.walls[0];
+  t("1) second: الطرف الأول مثبّت", near(A(w0).x,a0.x)&&near(A(w0).y,a0.y), JSON.stringify(A(w0)));
+  t("1) second: الطرف الثاني تحرّك للداخل 2م", near(dist(A(w0),B(w0)),3), 'len='+dist(A(w0),B(w0)).toFixed(3));
+
+  /* ===== 2) تقصير من الطرف الأول (B مثبّت) ===== */
+  d=mk();
+  g0=d.geometry(); w0=g0.walls[0];
+  const a2=A(w0), b2=B(w0);
+  d.setWallLengthAnchored(0,3,'first');
+  g0=d.geometry(); w0=g0.walls[0];
+  t("2) first: الطرف الثاني مثبّت", near(B(w0).x,b2.x)&&near(B(w0).y,b2.y), JSON.stringify(B(w0)));
+  t("2) first: الطرف الأول تقدّم للداخل 2م", near(A(w0).x,a2.x+2)&&near(A(w0).y,a2.y), JSON.stringify(A(w0)));
+  t("2) first: الطول الجديد صحيح", near(dist(A(w0),B(w0)),3), 'len='+dist(A(w0),B(w0)).toFixed(3));
+
+  /* ===== 3) التقصير بالتساوي ===== */
+  d=mk();
+  g0=d.geometry(); w0=g0.walls[0];
+  const a3=A(w0), b3=B(w0);
+  d.setWallLengthAnchored(0,3,'even');
+  g0=d.geometry(); w0=g0.walls[0];
+  const mA=A(w0), mB=B(w0);
+  t("3) even: الطرف الأول تحرّك 1م", near(mA.x-a3.x,1), 'dx='+(mA.x-a3.x).toFixed(3));
+  t("3) even: الطرف الثاني تحرّك 1م للخلف", near(mB.x-b3.x,-1), 'dx='+(mB.x-b3.x).toFixed(3));
+  t("3) even: الطول 3م", near(dist(mA,mB),3), 'len='+dist(mA,mB).toFixed(3));
+
+  /* ===== 4) الزيادة بنفس المنطق معكوس ===== */
+  d=mk();
+  d.setWallLengthAnchored(0,3,'second');
+  let gg=d.geometry(), ww=gg.walls[0];
+  const aUp=A(ww), bUp=B(ww);
+  d.setWallLengthAnchored(0,5,'second');
+  gg=d.geometry(); ww=gg.walls[0];
+  t("4) زيادة second: الطرف الأول ثابت", near(A(ww).x,aUp.x)&&near(A(ww).y,aUp.y));
+  t("4) زيادة second: الطرف الثاني امتدّ", near(B(ww).x,bUp.x+2)&&near(B(ww).y,bUp.y), 'dx='+(B(ww).x-bUp.x).toFixed(3));
+
+  d=mk();
+  d.setWallLengthAnchored(0,3,'first');
+  gg=d.geometry(); ww=gg.walls[0];
+  const aUp2=A(ww), bUp2=B(ww);
+  d.setWallLengthAnchored(0,5,'first');
+  gg=d.geometry(); ww=gg.walls[0];
+  t("4) زيادة first: الطرف الثاني ثابت", near(B(ww).x,bUp2.x)&&near(B(ww).y,bUp2.y));
+  t("4) زيادة first: الطرف الأول تراجع", near(A(ww).x,aUp2.x-2), 'dx='+(A(ww).x-aUp2.x).toFixed(3));
+
+  /* ===== 5) جدران أفقية ورأسية ومائلة ===== */
+  // الجدار 1 عمودي (90°)
+  d=mk();
+  gg=d.geometry(); const v0=A(gg.walls[1]), v1=B(gg.walls[1]);
+  d.setWallLengthAnchored(1,2,'first');
+  gg=d.geometry();
+  t("5) جدار رأسي: first يُثبّت طرفه الثاني", near(B(gg.walls[1]).x,v1.x)&&near(B(gg.walls[1]).y,v1.y), JSON.stringify(B(gg.walls[1])));
+  t("5) جدار رأسي: الأول تقدّم على المحور y", near(A(gg.walls[1]).y,v0.y+2), 'dy='+(A(gg.walls[1]).y-v0.y).toFixed(3));
+
+  // جدار مائل 45°
+  d=mk();
+  d.addWall(3,45);                 // جدار خامس مائل 45 درج��
+  gg=d.geometry(); const g1=A(gg.walls[4]), g2=B(gg.walls[4]);
+  d.setWallLengthAnchored(4,2,'first');
+  gg=d.geometry();
+  const h1=A(gg.walls[4]), h2=B(gg.walls[4]);
+  t("5) جدار مائل 45°: first يُثبّت الطرف الثاني (دقة أرقمية يسمح دولة التقييم من أعادة النقطة كاملاً)", dist(h2,g2)<1e-4, 'dB='+dist(h2,g2).toExponential(2));
+  t("5) جدار مائل: الأول تحرّك 1م على محور الجدار (لا أفراض أفقي)", Math.abs(dist(g1,h1)-1)<1e-4, 'moved='+dist(g1,h1).toFixed(6));
+  t("5) جدار مائل: الطول الجديد 2م", Math.abs(dist(h1,h2)-2)<1e-4, 'len='+dist(h1,h2).toFixed(6));
+
+  // الجدار الأخير (المائل الافتراضي عند 5 جدران) — اتجاه حقيقي لا افتراض
+  d=mk();
+  d.addWall(2,45);
+  gg=d.geometry();
+  const dirLast={x:gg.walls[4].B.x-gg.walls[4].A.x,y:gg.walls[4].B.y-gg.walls[4].A.y};
+  const nLast=Math.hypot(dirLast.x,dirLast.y);
+  d.setWallLengthAnchored(4,1,'first');
+  gg=d.geometry();
+  t("5) اتجاه حقيقي (مائل): الطول الجديد", near(dist(A(gg.walls[4]),B(gg.walls[4])),1), dist(A(gg.walls[4]),B(gg.walls[4])).toFixed(3));
+
+  /* ===== 6) لا تتغير أطوال الجدران الأخرى ===== */
+  for(const anc of ['first','second','even']){
+    d=mk();
+    const lensBefore=d.state.walls.map(w=>w.len);
+    d.setWallLengthAnchored(2,3,anc);
+    const lensAfter=d.state.walls.map(w=>w.len);
+    const others=lensAfter.filter((_,k)=>k!==2);
+    const othersB=lensBefore.filter((_,k)=>k!==2);
+    t("6) "+anc+": أطوال بقية الجدران لم تتغير", others.every((v,k)=>near(v,othersB[k])), lensAfter.join('/'));
+    t("6) "+anc+": الجدار المعدَّل فقط تغيّر", near(lensAfter[2],3), lensAfter.join('/'));
+    // الزوايا لم تتغير
+    const angB=d.state.walls.map(w=>w.angle);
+    t("6) "+anc+": زوايا الجدران لم تتغير", angB.every((v,k)=>near(v,Designer.rectWalls(5,4)[k].angle)));
+  }
+
+  /* ===== 7) الحفظ وإعادة الفتح يحفظان الطول وجهة التثبيت ===== */
+  d=mk();
+  d.setWallLengthAnchored(2,3.25,'first');
+  const before2=d.state.walls.map(w=>w.len);
+  const offBefore=JSON.stringify(d.state.walls.map(w=>w.off||null));
+  const saved=JSON.parse(JSON.stringify(d.getState()));
+  const d2=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true});
+  d2.setState(saved);
+  const after2=d2.state.walls.map(w=>w.len);
+  t("7) الطول محفوظ بعد الفتح", after2.every((v,k)=>near(v,before2[k])), after2.join('/'));
+  t("7) جهة التثبيت (off) محفوظة", JSON.stringify(d2.state.walls.map(w=>w.off||null))===offBefore);
+  // الهندسة نفسها
+  const gA=d.geometry(), gB=d2.geometry();
+  t("7) الهندسة متطابقة بعد الفتح", gA.walls.every((w,i)=>near(w.B.x,gB.walls[i].B.x)&&near(w.B.y,gB.walls[i].B.y)));
+
+  /* تصميم قديلا off — يعمل بلا أخطاء */
+  const legacy={walls:[{len:5,angle:0},{len:4,angle:90},{len:5,angle:180},{len:4,angle:270}],openings:[],pieces:[],cornerMode:'deduct'};
+  const d3=new Designer(document.getElementById('cv'),{getItem:()=>null,noOverlap:true});
+  let err='';
+  try{ d3.setState(legacy); }catch(e){ err=e.message; }
+  t("7) تصميم قديم بلا off يفتح بلا أخطاء", !err, err);
+  t("7) وقبلته (0,0) كما كان", near(d3.geometry().walls[0].A.x,0)&&near(d3.geometry().walls[0].A.y,0));
+
+  /* ===== 8) الفتحات والفجوات وفق قواعد التحقق الحالية ===== */
+  d=mk();
+  const door=d.addOpening(0,'door');
+  const doorT0=door.t;
+  d.setWallLengthAnchored(0,3,'second');
+  const h8=d.checkRoomHealth();
+  t("8) تقصير جدار عليه باب يُنتج تحذيراً واضحاً", h8.messages.length>0, h8.messages.join(' | ').substring(0,70));
+  t("8) التصميم غير صالح (لا حفظ صامت)", h8.ok===false);
+  t("8) الباب لم يُحذف", d.state.openings.length===1);
+
+  // مع خيار التقصير من الطرف الأول: الباب ينتقل بلا حذف
+  d=mk();
+  const dr2=d.addOpening(0,'door');
+  const t0=dr2.t, wall0len=d.state.walls[0].len;
+  d.setWallLengthAnchored(0,3,'first');
+  const h8b=d.checkRoomHealth();
+  /* تثبيت الطرف الثاني يبقي مسافة الباب كما هي على الجدار نفسه، فتبقى الغرفة
+     مغلقة والباب لم يتحرك — وهذا هو السلوك الصحيح لا خطأ. */
+  t("8) first على جدار عليه باب: الباب لما يتحرّك (المسافة محفوظة)", Math.abs(dr2.t-t0)<1e-6, 't '+t0+' -> '+dr2.t);
+  t("8) والغرفة تبقى مغلقة (لا فجوة)", h8b.gap.closed===true, 'gap='+h8b.gap.gap);
+  t("8) ولا تحذير ضرور (النقطة سليمة)", h8b.messages.length===0, h8b.messages.join(' | ').substring(0,60));
+  t("8) الباب باقٍ داخل الجدار", d.state.openings.length===1 && dr2.t>0 && dr2.t<3, 't='+dr2.t);
+
+  // الفجوة تُبلَّغ في الحالتين
+  d=mk();
+  d.setWallLengthAnchored(2,3,'second');
+  const gi=d.roomGapInfo();
+  t("8) الفجوة معلنة (غير صامتة)", !gi.closed, 'gap='+gi.gap);
+  d.closeRoom();
+  t("8) closeRoom يغلق بلا كسر", d.geometry().closed===true);
+  t("8) ولا يغيّر أي طول يدوي", near(d.state.walls[2].len,3), 'w2='+d.state.walls[2].len);
+
+  /* منع التداخل/الباب ما زال يعمل بعد كل ذلك */
+  d=mk();
+  const op=d.addOpening(0,'door');
+  const w=g0x(d,0);
+  const g=d.geometry().walls[0];
+  const onDoor={x:g.A.x+g.dir.x*op.t+g.n.x*0.4,y:g.A.y+g.dir.y*op.t+g.n.y*0.4,id:'k',kind:'sofa',w:2,h:0.8,rot:0};
+  t("8) منع كنبة أمام الباب ما زال يعمل", d.validatePlacement(onDoor).why==='opening');
+
+  /* الإكسسوار ما زال لا يلتصق بالجدار */
+  d=mk();
+  const acc=d.addAccessory('a1');
+  d._trySnapToWall(acc, d.geometry(), 0.25);
+  t("8) الإكسسوار لا يلتصق بالجدار بعد التغيير", acc.wall===undefined, 'wall='+acc.wall);
+
+  /* ===== 9) الأداء: تكرار العملية ===== */
+  d=mk();
+  let ok=true;
+  try{ d.setWallLengthAnchored(0,4.5,'first'); d.setWallLengthAnchored(0,5,'second'); d.setWallLengthAnchored(0,4,'even'); d.setWallLengthAnchored(0,5,'even'); }catch(e){ ok=false; }
+  t("9) تتابع العمليات لا يرمي", ok);
+  t("9) عودة الطول تبقي انطلاقة مثبّتة (لم يُذهب صمتاً)", d.hasAnyWallOffset()===true, 'off kept');
+    t("9) والفجوة معلنة (لا نستقطينها صمتاً)", d.geometry().closed===false, 'gap='+d.geometry().gap.toFixed(3));
+    d.clearWallOffsets();
+    t("9) clearWallOffsets يعود الإغلاق", d.geometry().closed===true, 'gap='+d.geometry().gap.toFixed(3));
+    t("9) ولا يُغير أي طول", d.state.walls[0].len===5, 'w0='+d.state.walls[0].len);
+
+  /* ===== 9b) الخيارات موجودة في الواجهتين = عمودية ===== */
+  var pjs=await (await fetch('/js/portal.js')).text();
+  var ajs=await (await fetch('/js/app.js')).text();
+  var cssA=await (await fetch('/css/style.css')).text();
+  ['first','second','even'].forEach(function(v){
+    t('9) بوابة العميل عرض ' + v, pjs.indexOf("v: '" + v + "'") >= 0);
+    t('9) صفحة الموظف ' + v, ajs.indexOf("['" + v + "'") >= 0);
+  });
+  t('9) بوابة العميل تمرّر جهة التقصير للحزم', pjs.indexOf('S.wallAnchor)') > 0 && /setWallLength\(wi/.test(pjs));
+  t('9) صفحة الموظف تمرّر جهة التقصير', ajs.indexOf("r ? r.value : 'second'") > 0 && /name="wallAnchor"/.test(ajs));
+  t('9) ذار خيار معزول CSS (عمودي)', /\.anchorpick-row/.test(cssA) && /\.wallanchors/.test(cssA));
+  t('9) واجهة الموظف مريحة من الإطارة (الأرضاع إلى الأسطول)', /\.wallanchor \{[\s\S]{0,300}min-height/.test(cssA));
+
+}catch(e){ t('اكتمل التنفيذ', false, e.message+' @ '+(e.stack||'').split('\n')[1]); }
+flush();
+})();
+function g0x(d,i){return d.geometry().walls[i];}
+</script></body></html>

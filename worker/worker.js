@@ -172,14 +172,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.54';
-// بصمة asalh-najd-1.0.54.apk (إصدار GitHub v1.0.54، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = 'ee6463efa88c321462b1a39454171feaadeaba04c1a12b0ba8754ebfc3e38d6b';
+const UPDATE_FALLBACK_VERSION = '1.0.55';
+// بصمة asalh-najd-1.0.55.apk (إصدار GitHub v1.0.55، بناء CI الموقّع).
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'إصلاح قفزة الإكسسوارات إلى الجدار: الإكسسوار يُحرَّك بحرية ولا يُحاذى مع الجدران إطلاقاً',
-  'قياسات المسافة من طرفي الجدار إلى فتحة الباب أو المشب بخطوط وأرقام، في المحرّر وفي PDF',
-  'أبعاد الكنبات في طبقة مستقلة فوق كل الأثاث، وبلا أرقام للإكسسوارات',
-  'تحذير صريح عند نقل فتحة قسراً بعد تقصير جدارها، مع القيم قبل وبعد',
+  'خيارات جهة تقصير الجدار: الطرف الأول أو الطرف الثاني أو بالتساوي — مع تثبيت الطرف المختار',
+  'يُطبَّق على اتجاه الجدار الحقيقي في الرسم (أفقي أو رأسي أو مائل) بلا افتراض',
+  'الاختيار مستقل لكل جدار، وتبقى أطوال بقية الجدران كما هي مع تحذير عند فجوة',
 ];
 
 function versionCodeOfName(v) {

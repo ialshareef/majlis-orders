@@ -65,6 +65,12 @@
       st.walls = st.walls.map((w) => {
         const o = { len: Math.max(0.3, +w.len || 0.3), angle: norm360(+w.angle || 0) };
         if (w.fixed) o.fixed = true;
+        /* off = انطلاقة مثبّتة (نتيجة تثبيت طرف عند تقصير جدار سابق).
+           تُحفظ مع التصميم كي تبقى جهة التثبيت بعد إعادة الفتح. غائبة في
+           التصاميم القديمة ⇒ لا أثر، والغرفة تبدأ من (0,0) كسابقاً. */
+        if (w.off && Number.isFinite(+w.off.x) && Number.isFinite(+w.off.y)) {
+          o.off = { x: round(+w.off.x, 4), y: round(+w.off.y, 4) };
+        }
         return o;
       });
       /* roomDims = آخر مقاس أساسي للغرفة. غائبة في التصاميم القديمة ⇒ نستنتجها من
@@ -145,12 +151,18 @@
 
     /* ======================= الهندسة ======================= */
     /** حساب هندسة الغرفة من مصفوفة جدران خام — مستخدم في geometry() وفي المعاينة
-        (explainWallChange) بلا تعديل الحالة الفعلية. */
+        (explainWallChange) بلا تعديل الحالة الفعلية.
+
+        الجدران سلسلة متراكمة تبدأ من (0,0): طرف كل جدار هو طرف سابقه.
+        لذلك لتثبيت طرف جدار معيّن نحتاج أحياناً إزاحة «سلسلة ما قبله» دون تغيير
+        أطوالها — لذلك نتيح لكل جدار نقطة انطلاق مطلقة اختيارية (w.off).
+        الغياب يعني السلوك القديم تماماً، فكل التصاميم المحفوظة تعمل بلا تغيير. */
     static geometryOf(state) {
       const pts = [{ x: 0, y: 0 }];
       const walls = [];
       let p = { x: 0, y: 0 };
       (state.walls || []).forEach((w, i) => {
+        if (w.off) p = { x: +w.off.x, y: +w.off.y };       // انطلاقة مثبّتة (تثبيت طرف)
         const a = rad(w.angle);
         const dir = { x: Math.cos(a), y: Math.sin(a) };
         const q = { x: p.x + dir.x * w.len, y: p.y + dir.y * w.len };
@@ -379,27 +391,126 @@
 
     wallIsFixed(i) { return !!(this.state.walls[i] && this.state.walls[i].fixed); }
 
-    /** تعديل طول جدار واحد فقط (مستقل). لا يمسّ الجدار المقابل مطلقاً.
-        keepClosed = false افتراضاً هنا: المطلوب أطوالاً مستقلة بلا تغيير صامت. */
-    setWallLength(i, len, keepClosed = false, markFixed = true) {
-      const ws = this.state.walls;
-      if (!ws[i]) return;
-      len = Math.max(0.3, round(+len || 0.3, 3));
-      const delta = len - ws[i].len;
-      if (Math.abs(delta) < 1e-9) return;
-      const wasClosed = this.geometry().closed;
-      ws[i].len = len;
-      if (markFixed) ws[i].fixed = true;
-      if (keepClosed && wasClosed) {
-        const target = norm360(ws[i].angle + 180);
-        const cands = ws.map((w, j) => ({ w, j }))
-          .filter(({ w, j }) => j !== i && angDiff(w.angle, target) < 0.5 && w.len + delta >= 0.3)
-          .sort((a, b) => b.w.len - a.w.len);
-        if (cands.length) cands[0].w.len = round(cands[0].w.len + delta, 3);
+/* ============ تثبيت طرف عند تعديل طول جدار ============
+        الجدران سلسلة متراكمة (طرف كل جدار = طرف سابقه)، فلتغيير طول جدار مع تثبيت
+        طرفه الأول نحتاج إزاحة «سلسلة ما قبله» بنفس المتجه — دون تغيير أي طول أو
+        زاوية. نسجّل انطلاقة كل جدار مُزاح في walls[j].off (إحداثيات مطلقة)،
+        فيقرأها geometryOf. الغياب = السلوك القديم تماماً.
+
+        anchor:
+          'second' ⇒ الطرف الثاني (t=len) هو المتحرك ⇒ الطرف الأول مثبّت.
+                     هذا هو السلوك التاريخي (تغيير len فقط) فاحتفظ به افتراضياً.
+          'first'  ⇒ الطرف الأول (t=0) هو المتحرك ⇒ الطرف الثاني مثبّت.
+          'even'   ⇒ الطرفان يتحرّكان بالتساوي. */
+    static WALL_ANCHORS = ['second', 'first', 'even'];
+
+    static normAnchor(a) { return Designer.WALL_ANCHORS.includes(a) ? a : 'second'; }
+
+    /** إزاحة انطلاقة الجدران في النطاق [from..to] بمتجه (dx,dy) — بلا تغيير
+        أطوالها ولا زواياها. الانطلاقات تُحسب من `base` إن وُجد، وإلا من الحالة
+        الحالية. نمرّر الحالة الأصلية في وضع «even» حتى لا تتداخل الإزاحتان. */
+    _shiftWallStarts(from, to, dx, dy, base) {
+      if (to < from || (dx === 0 && dy === 0)) return;
+      const g = base || this.geometry();
+      const n = this.state.walls.length;
+      for (let j = Math.max(0, from); j <= Math.min(to, n - 1); j++) {
+        const a = g.walls[j];
+        if (!a) continue;
+        this.state.walls[j].off = { x: round(a.A.x + dx, 4), y: round(a.A.y + dy, 4) };
       }
+    }
+
+    /** هل هذا الجدار يحمل انطلاقة مثبّتة (نتيجة تثبيت طرف)؟ */
+    wallHasOffset(i) { return !!(this.state.walls[i] && this.state.walls[i].off); }
+
+    /** إلغاء التثبيت: يعيد السلسلة إلى الانطلاق من (0,0)其自然تها، بلا تغيير الأطوال. */
+    clearWallOffsets() {
+      for (const w of this.state.walls) delete w.off;
+      this.syncAttached();
+      this.changed();
+    }
+
+    /** هل الغرفة ما زالت تحمل انطلاقة مثبّتة من تثبيت طرف سابق؟ */
+    hasAnyWallOffset() { return this.state.walls.some((w) => !!w.off); }
+
+    /**
+     * تعديل طول جدار مع تحديد جهة التحريك.
+     * @param i       فهرس الجدار
+     * @param len     الطول الجديد (م)
+     * @param anchor  'first' | 'second' | 'even'
+* ملاحظة: «الطرف الأول» = t=0 أي نقطة انطلاق الجدار، و«الطرف الثاني» = t=len.
+     */
+    setWallLengthAnchored(i, len, anchor = 'second') {
+      const ws = this.state.walls;
+      if (!ws[i]) return null;
+      anchor = Designer.normAnchor(anchor);
+      len = Math.max(0.3, round(+len || 0.3, 3));
+      const before = this.geometry();
+      const base = before;           // مرجع الانطلاقات الأصلي لكل الإزاحات
+      const w0 = before.walls[i];
+      if (!w0) return null;
+      const oldLen = w0.len;
+      const diff = round(len - oldLen, 6);
+      if (Math.abs(diff) < 1e-9) return null;
+
+      /* اتجاه الجدار الحقيقي في الرسم (لا افتراض أعلى/أسفل):
+         dir من الطرف الأول (A) إلى الثاني (B). */
+      const d = w0.dir;
+
+      if (anchor === 'first') {
+        /* الطرف الأول يتحرك والطرف الثاني مثبّت.
+           من B' = B نحسب انطلاقة الجدار: A' = B - dir*len_new.
+           الجدران قبله (وأصله) تُزاح بنفس متجه A حتى لا تنشأ فجوة. */
+        const A2 = { x: w0.B.x - d.x * len, y: w0.B.y - d.y * len };
+        this._shiftWallStarts(0, i - 1, A2.x - w0.A.x, A2.y - w0.A.y, base);
+        this.state.walls[i].off = { x: round(A2.x, 4), y: round(A2.y, 4) };
+      } else if (anchor === 'even') {
+        /* الطرفان يتحرّكان: كل طرف ينزاح نصف الفرق باتجاه الداخل،
+           A بـ +diff/2 و B بـ -diff/2 على محور الجدار.
+           ما قبل الجدار (وداخل الجدار نفسه) يُزاح مع A، وما بعده يُزاح مع B.
+           القياس يُؤخذ من الحالة الأصلية للطرفين معاً (base) لا من حالة جزئية.
+           ملاحظة: الجدار i نفسه ينزاح مع A فقط — نمدّ النطاق الأول إلى i-1 حتى
+           لا يُزاح مرتين، ثم يمتصّ إزاحة A عبر طول الجدار الجديد. */
+        const h = diff / 2;
+        /* مبناها من المعادلة نفسها:
+           • A يتحرّك داخلاً بمقدار |diff|/2 ⇒ A' = A - dir*(diff/2)
+             (diff سالب عند التقصير ⇒ A يتحرّك نحو B، صحيح).
+           • B يتحرّك داخلاً ⇒ B' = B + dir*(diff/2)
+             ⇒ ما بعد الجدار ينزاح بـ +dir*(diff/2).
+           نُثبّت انطلاقة الجدار نفسه على A' (الجدران قبله تُزاح معها)، ثم نُزيح
+           ما بعده على B' — فالطرفان يتحرّكان halves صحيحة دون تراكب. */
+        const A2 = { x: w0.A.x - d.x * h, y: w0.A.y - d.y * h };
+        const B2 = { x: w0.B.x + d.x * h, y: w0.B.y + d.y * h };
+        this._shiftWallStarts(0, i - 1, A2.x - w0.A.x, A2.y - w0.A.y, base);
+        this.state.walls[i].off = { x: round(A2.x, 4), y: round(A2.y, 4) };
+        this._shiftWallStarts(i + 1, ws.length - 1, B2.x - w0.B.x, B2.y - w0.B.y, base);
+      }
+      /* anchor==='second': الطرف الأول مثبّت أصلاً ⇒ تغيير len وحده يحرّك B. */
+
+      ws[i].len = len;
+      ws[i].fixed = true;
+
       this._warnOpeningOutOfWall = this._openingsOutOfWall();
       this.syncAttached();
       this.changed();
+
+      const after = this.geometry().walls[i];
+      return {
+        anchor,
+        oldLen,
+        newLen: len,
+        from: { A: { x: w0.A.x, y: w0.A.y }, B: { x: w0.B.x, y: w0.B.y } },
+        to: after ? { A: { x: after.A.x, y: after.A.y }, B: { x: after.B.x, y: after.B.y } } : null,
+      };
+    }
+
+    /** تعديل طول جدار واحد فقط (مستقل). لا يمسّ الجدار المقابل مطلقاً.
+        anchor يمرَّر إلى setWallLengthAnchored، فالقيمة الافتراضية 'second'
+        هي السلوك التاريخي تماماً (تغيير len وحده). */
+setWallLength(i, len, anchor = 'second', markFixed = true) {
+      const r = this.setWallLengthAnchored(i, len, anchor);
+      if (r && markFixed === false) delete this.state.walls[i].fixed;
+      return r;
     }
 
     /** إرجاع جدار واحد إلى طوله الافتراضي ويزيل علامة الاستقلال. */

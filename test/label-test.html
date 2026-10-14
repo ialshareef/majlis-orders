@@ -54,7 +54,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('seed-cats', schema.indexOf('"category":"sofa"') >= 0 && schema.indexOf('"category":"acc"') >= 0, 'seed categories');
       t('store-defaults', store.indexOf("category: 'sofa'") >= 0 && store.indexOf("'كنب عربي - قطيفة'") >= 0, 'store defaults');
       var verM = app.match(/APP_VERSION = '([^']+)'/);
-  t('version-matches-package', !!verM && verM[1] === '1.0.53', verM ? verM[1] : 'none');
+  t('version-matches-package', !!verM && verM[1] === '1.0.55', verM ? verM[1] : 'none');
 
       // اسم التطبيق الظاهر بالعربية — والمعرفات التقنية ثابتة
       t('appname-arabic', cap.appName === 'أصالة نجد', cap.appName);

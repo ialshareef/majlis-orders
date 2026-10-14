@@ -50,7 +50,8 @@
   function digits(v) { return String(v || '').replace(/[^\d]/g, ''); }
 
   /* ---------------- الحالة ---------------- */
-  var S = {
+  var S = { wallAnchor: 'second',   // جهة التقصير المختارة (مستقلة لكل تعديل)
+
     settings: null, catalog: [], catMap: {},
     design: null, meta: null, designer: null,
     step: 'room', dirty: false, saveTimer: 0, saving: false,
@@ -692,6 +693,12 @@ function portalAddAcc(itemId) {
       } else if (old) { old.hidden = true; }
     }
     if (!dz) { box.innerHTML = ''; return; }
+    /* خيارات جهة التقصير الثلاثة — همملة المحرك ويُعدّل في العارض ويظهر معًا بالمحرك المحديد */
+    var anchorOpts = [
+      { v: 'first', t: 'الطرف الأول', d: 'يقثّ الطرف الثاني ويتحرّك الأول' },
+      { v: 'second', t: 'الطرف الثاني', d: 'يقثّ الطرف الأول ويتحرّك الثاني' },
+      { v: 'even', t: 'بالتساوي', d: 'يتحرّك الطرفان نصف الفرق لكل منهما' },
+    ];
     if (S.step === 'room') {
       var ws = (dz.state && dz.state.walls) || [];
       /* المرحلة ١: المقاس الأساسي للغرفة، وتحته تحكّم مستقل في طول كل جدار على حدة.
@@ -710,6 +717,14 @@ function portalAddAcc(itemId) {
               + 'جدار ' + (i + 1) + '<small>' + w.len + ' م' + (fixed ? ' • مستقل' : '') + '</small></button>';
           }).join('')
         + '</div>'
+        + '<fieldset class="anchorpick"><legend>جهة التقصير — أي طرف يتحرّك؟</legend>'
+        + '<div class="anchorpick-row" role="radiogroup">'
+        + anchorOpts.map(function (o) {
+          return '<label class="anchoropt"><input type="radio" name="pfAnchor" value="' + o.v + '"'
+            + (S.wallAnchor === o.v ? ' checked' : '') + '>'
+            + '<span>' + o.t + '</span><small>' + o.d + '</small></label>';
+        }).join('')
+        + '</div></fieldset>'
         + '<div class="row2 wallpick-edit">'
         + '<label>طول الجدار المحدد (متر)<input id="pfWallLen" type="number" step="0.05" min="0.3" max="40" inputmode="decimal" value="' + (ws[targetWall()] ? ws[targetWall()].len : 3) + '"></label>'
         + '<label>&nbsp;<button type="button" class="btn ghost" id="pfWallReset">إرجاع للافتراضي</button></label>'
@@ -741,7 +756,7 @@ function portalAddAcc(itemId) {
       $('#pfWallLen').addEventListener('input', function () {
         var v = parseFloat(this.value);
         if (!Number.isFinite(v) || v < 0.3 || v > 40) return;
-        dz.setWallLength(wi, Math.round(v * 100) / 100);
+        dz.setWallLength(wi, Math.round(v * 100) / 100, S.wallAnchor);
         markRoomHealth();
         updateWallPickNote();
       });
@@ -750,6 +765,14 @@ function portalAddAcc(itemId) {
         $('#pfWallLen').value = dz.state.walls[wi].len;
         toast('أُرجع الجدار ' + (wi + 1) + ' إلى طوله الافتراضي.');
         renderPanel();
+      });
+      /* جهة التقصير: الاختيار مستقل لكل عملية تعديل ويُحفظ بين التصييرات */
+      $$('input[name="pfAnchor"]', box).forEach(function (r) {
+        r.addEventListener('change', function () {
+          if (!r.checked) return;
+          S.wallAnchor = r.value;
+          updateWallPickNote();
+        });
       });
       /* اختيار الجدار بالنقر على زر */
       $$('#pfWallPick [data-wallpick]').forEach(function (b) {

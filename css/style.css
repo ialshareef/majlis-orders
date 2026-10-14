@@ -2800,3 +2800,49 @@ body.portal { background: var(--bg); }
   .portal #pDesign .p-steps button span { display: none; }
   .portal #pDesign .p-steps button i { width: 26px; height: 26px; font-size: .82rem; }
 }
+
+/* ============ جهة تقصير الجدار (عميل + موظف) ============
+   ثلاثة خيارات واضحة: الطرف الأول / الطرف الثاني / بالتساوي.
+   صف مفرد على الجوال، وثلاثة أعمدة متساوية على الشاشات الأوسع. */
+.anchorpick {
+  border: 0; margin: 6px 0 2px; padding: 0; display: grid; gap: 6px; min-width: 0;
+}
+.anchorpick legend {
+  font-size: .78rem; font-weight: 700; color: var(--ink-2); padding: 0 0 4px;
+}
+.anchorpick-row {
+  display: grid; grid-template-columns: 1fr; gap: 6px;
+}
+@media (min-width: 420px) { .anchorpick-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.anchoropt {
+  display: grid; gap: 1px; align-content: center;
+  min-height: 46px; padding: 6px 9px; cursor: pointer;
+  border: 1px solid var(--line); border-radius: var(--r); background: var(--surface);
+}
+.anchoropt > input {
+  position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none;
+}
+.anchoropt span { font-size: .8rem; font-weight: 700; color: var(--ink); }
+.anchoropt small { font-size: .7rem; color: var(--ink-3); line-height: 1.35; }
+.anchoropt:hover { border-color: var(--accent-line); background: var(--row-hover); }
+.anchoropt:has(> input:checked) {
+  border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent-line);
+}
+.anchoropt:has(> input:checked) small { color: var(--ink-2); }
+.anchoropt:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* ===== جهة تقصير الجدار داخل جدول الجدران (صفحة الموظف) ===== */
+.wallanchors { display: inline-flex; gap: 2px; margin-inline-end: 4px; }
+.wallanchor {
+  display: grid; place-items: center; cursor: pointer;
+  min-width: 30px; min-height: 30px; padding: 2px 4px;
+  border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface);
+  font-size: .66rem; font-weight: 700; color: var(--ink-3); line-height: 1.1; text-align: center;
+}
+.wallanchor input { position: absolute; width: 1px; height: 1px; opacity: 0; }
+.wallanchor:hover { border-color: var(--accent-line); background: var(--row-hover); color: var(--ink); }
+.wallanchor:has(> input:checked) {
+  border-color: var(--accent); background: var(--accent-soft); color: var(--ink);
+  box-shadow: 0 0 0 1px var(--accent-line);
+}
+.wallanchor:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>معاينة واجهة جهة التقصير</title>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/portal-expanded.css">
+<style>body{background:#f6f1ea;padding:10px}
+#rep{position:fixed;bottom:0;inset-inline:0;background:#111;color:#0f0;font:11px/1.5 monospace;padding:4px;z-index:99;direction:ltr;text-align:left}
+.wrap{max-width:430px;margin:0 auto}</style>
+</head><body>
+<div class="wrap"><div class="p-panel" id="host"></div></div>
+<pre id="rep">…</pre>
+<script>
+/* معاينة حيّة لبنية مرحلة الغرفة كما تبنيها portal.js حرفياً */
+const S = { wallAnchor: 'first' };
+const ws = [5,4,5,4].map((l,i)=>({len:l,angle:i*90, fixed:i===2}));
+const targetWall = () => 2;
+const anchorOpts = [
+  { v: 'first',  t: 'الطرف الأول', d: 'يُثبَّت الطرف الثاني ويتحرّك الأول' },
+  { v: 'second', t: 'الطرف الثاني', d: 'يُثبَّت الطرف الأول ويتحرّك الثاني' },
+  { v: 'even',   t: 'بالتساوي',    d: 'يتحرّك الطرفان نصف الفرق لكل منهما' },
+];
+const box = document.getElementById('host');
+box.className = 'p-panel';
+box.innerHTML = ''
+  + '<div class="row2"><label>عرض الغرفة (متر)<input value="5"></label><label>طول الغرفة (متر)<input value="4"></label></div>'
+  + '<p class="hint">اضغط على الرقم فيتحدّد كاملًا — اكتب المقاس الجديد مباشرة.</p>'
+  + '<div class="wallpick" id="pfWallPick">'
+  + '<p class="hint"><b>أطوال الجدران بشكل مستقل:</b> اختر جداراً لتغيير طوله وحده.</p>'
+  + '<div class="wallpick-row" role="group">'
+  + ws.map((w,i)=>'<button type="button" class="wallpick-btn'+(i===targetWall()?' sel':'')+(w.fixed?' fixed':'')+'" data-wallpick="'+i+'">جدار '+(i+1)+'<small>'+w.len+' م'+(w.fixed?' • مستقل':'')+'</small></button>').join('')
+  + '</div>'
+  + '<fieldset class="anchorpick"><legend>جهة التقصير — أي طرف يتحرّك؟</legend>'
+  + '<div class="anchorpick-row" role="radiogroup">'
+  + anchorOpts.map(o=>'<label class="anchoropt"><input type="radio" name="pfAnchor" value="'+o.v+'"'+(S.wallAnchor===o.v?' checked':'')+'><span>'+o.t+'</span><small>'+o.d+'</small></label>').join('')
+  + '</div></fieldset>'
+  + '<div class="row2 wallpick-edit">'
+  + '<label>طول الجدار المحدد (متر)<input id="pfWallLen" type="number" value="5"></label>'
+  + '<label>&nbsp;<button type="button" class="btn ghost">إرجاع للافتراضي</button></label>'
+  + '</div>'
+  + '<p class="hint" id="pfWallNote">طوله الآن 5 م · الافتراضي 5 م · معدّل يدوياً</p>'
+  + '<div class="warnbox warn-gap"><p>• الغرفة غير مغلقة — يوجد فجوة 2.00 م. اضغط «إغلاق الغرفة» أو عدّل الجدار الأخير.</p></div>'
+  + '</div>';
+box.querySelectorAll('input[name="pfAnchor"]').forEach(r=>r.addEventListener('change',()=>{ S.wallAnchor=r.value; rep(); }));
+box.querySelectorAll('[data-wallpick]').forEach(b=>b.addEventListener('click',()=>{ targetWall(); rep(); }));
+function rep(){
+  const g=document.getElementById('rep');
+  const row=box.querySelector('.anchorpick-row');
+  const opts=Array.from(box.querySelectorAll('.anchoropt'));
+  const chk=box.querySelector('.anchoropt:has(> input:checked)');
+  const cs=chk?getComputedStyle(chk):null;
+  const first=opts[0].getBoundingClientRect(), third=opts[2].getBoundingClientRect();
+  const doc=document.documentElement;
+  g.textContent=[
+    'viewport '+window.innerWidth+'x'+window.innerHeight,
+    'anchorpick cols='+getComputedStyle(row).gridTemplateColumns,
+    'opts='+opts.length+' checked='+(chk?chk.querySelector('span').textContent:'-'),
+    'checked bg='+(cs?cs.backgroundColor:'-')+' border='+(cs?cs.borderColor:'-'),
+    'opt min-height='+Math.round(first.height)+' / '+Math.round(third.height),
+    'same row (1&3)? '+Math.abs(first.top-third.top)<2,
+    'hOverflow='+(doc.scrollWidth>doc.clientWidth+2),
+    'fieldset min-height='+Math.round(box.querySelector('.anchorpick').getBoundingClientRect().height)
+  ].join('\n');
+}
+rep();
+window.addEventListener('resize',rep);
+</script></body></html>

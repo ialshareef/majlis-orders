@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.54';
+  const APP_VERSION = '1.0.55';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -795,6 +795,8 @@ function canEditOrder(o) {
   });
 
   /* --- الغرفة والجدران --- */
+  /* جهة التقصير المختارة لكل جدار — تبقى بين إعادة الرسم */
+  const wallAnchor = {};
   function renderWalls() {
     const walls = designer.state.walls;
     const selWall = designer.selectedWallIndex();
@@ -805,14 +807,22 @@ function canEditOrder(o) {
         <td><input type="number" step="0.05" min="0.3" data-i="${i}" data-k="len" value="${Designer.util.round(w.len, 3)}"></td>
         <td><input type="number" step="5" data-i="${i}" data-k="angle" value="${w.angle}"></td>
         <td class="walls-actions">
+          <span class="wallanchors" role="radiogroup" aria-label="جهة تقصير الجدار ${i + 1}">
+            ${[['first', 'الطرف 1', 'يثبّت الطرف الثاني ويتحرّك الأول'], ['second', 'الطرف 2', 'يثبّت الطرف الأول ويتحرّك الثاني'], ['even', 'تساوي', 'يتحرّك الطرفان بالنصف']]
+              .map((a2) => `<label class="wallanchor" title="${a2[2]}"><input type="radio" name="wallAnchor" data-w="${i}" value="${a2[0]}" ${(wallAnchor[i] || 'second') === a2[0] ? 'checked' : ''}><span>${a2[1]}</span></label>`).join('')}
+          </span>
           <button class="icon-btn" data-reset="${i}" title="إرجاع الطول للافتراضي (${Designer.util.round(designer.wallDefaultLen(i), 2)} م)" ${w.fixed ? '' : 'disabled'}><svg><use href="#i-ruler"/></svg></button>
           <button class="icon-btn" data-del="${i}" title="حذف الجدار" ${walls.length <= 3 ? 'disabled' : ''}>${icon('x')}</button>
         </td>
       </tr>`).join('');
     $$('input', tb).forEach((inp) => inp.addEventListener('change', () => {
       const i = +inp.dataset.i;
-      if (inp.dataset.k === 'len') { designer.setWallLength(i, num(inp.value)); markRoomHealth(); }
-      else designer.setWallAngle(i, num(inp.value));
+      if (inp.dataset.k === 'len') {
+        // جهة التقصير المختارة لهذا الجدار (مستقلة لكل جدار)
+        const r = tb.querySelector('input[name="wallAnchor"][data-w="' + i + '"]:checked');
+        designer.setWallLength(i, num(inp.value), r ? r.value : 'second');
+markRoomHealth();
+      } else designer.setWallAngle(i, num(inp.value));
     }));
     $$('button[data-reset]', tb).forEach((b) => b.addEventListener('click', () => {
       const i = +b.dataset.reset;
@@ -820,6 +830,9 @@ function canEditOrder(o) {
       toast(`أُرجع الجدار ${i + 1} إلى طوله الافتراضي ${Designer.util.round(designer.wallDefaultLen(i), 2)} م.`);
       renderWalls();
       markRoomHealth();
+    }));
+    $$('input[name="wallAnchor"]', tb).forEach((r) => r.addEventListener('change', () => {
+      wallAnchor[+r.dataset.w] = r.value;
     }));
     $$('button[data-del]', tb).forEach((b) => b.addEventListener('click', () => designer.removeWall(+b.dataset.del)));
     const g = designer.geometry();
