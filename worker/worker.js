@@ -181,12 +181,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.56';
-// بصمة asalh-najd-1.0.56.apk (إصدار GitHub v1.0.56، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = 'e004658ba351311480f483891ac5576577f7fdca25cb0adf28153907df5e7e8b';
+const UPDATE_FALLBACK_VERSION = '1.0.57';
+// بصمة asalh-najd-1.0.57.apk تُثبَّت بعد بناء CI (commit لاحق). قبلها فارغة
+// فيرفض التطبيق تنزيل ملف غير مُتحقَّق منه بدل تثبيته.
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
+  'إصلاح إنهاء التصميم عند العميل: لم يعد يفشل في حفظ الرقم العام',
   'لوحة تحليلات المالك: زيارات وزوار ورقم التحويل من أول زيارة حتى الطلب المؤكد',
-  'تفضيلات المجالس وأسئلة التصميم وأرقام الأثاث مقروءة من تصاميم العملاء نفسها',
   'كل الأرقام مجمّعة: لا اسم ولا جوال ولا بصمة جهاز ولا تتبّع أفراد',
   'الخريطة: للمدير فقط — الخادم يرفض الموظف والمندوب قبل أي عرض',
 ];
@@ -420,8 +421,8 @@ async function portalFinish(env, request) {
   }
 const t = now();
   const status = row.status === 'draft' ? 'new' : row.status;
-  await env.DB.prepare('UPDATE customer_designs SET public_no = ?, status = ?, updated_at = ? WHERE id = ?'
-    .bind(no, status, t, row.id)).run();
+  await env.DB.prepare('UPDATE customer_designs SET public_no = ?, status = ?, updated_at = ? WHERE id = ?')
+    .bind(no, status, t, row.id).run();
   // إكمال التصميم: عدّاد مجمّع فقط (لا اسم ولا جوال ولا معرّف جلسة)
   await recordAnalytics(env, request, 'design_finish');
   return { ok: true, number: 'MJ-' + no, status };
@@ -1122,6 +1123,9 @@ async function recordAnalytics(env, request, name, dim) {
     if (!env.DB || !ANALYTICS_NAMES.has(name)) return;
     const ua = (request.headers.get('user-agent') || '');
     if (!ua || BOT_RE.test(ua)) return;      // نتجاهل الروبوتات كما في الزيارات
+    // الجدول قد لا يكون موجوداً بعد: أول زائر بعد النشر يكتب قبل أن يفتح المالك
+    // اللوحة، فبدون هذا السطر يفشل الإدراج ويُبتلَع بصمت تضيع كل الأحداث الأولى.
+    await ensureAnalytics(env);
     const day = visitDayKey(env);
     const d = analyticsDim(dim);
     const cur = await env.DB.prepare('SELECT n FROM analytics_events WHERE day = ? AND name = ? AND dim = ?').bind(day, name, d).first();
