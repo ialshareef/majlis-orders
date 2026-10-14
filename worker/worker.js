@@ -174,7 +174,7 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.55';
 // بصمة asalh-najd-1.0.55.apk (إصدار GitHub v1.0.55، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = '';
+const UPDATE_FALLBACK_SHA256 = '0e69d0b9e955c3e6cfc009ecea2c2a051b7b66f8551857792c89439d70043ede';
 const UPDATE_FALLBACK_NOTES = [
   'خيارات جهة تقصير الجدار: الطرف الأول أو الطرف الثاني أو بالتساوي — مع تثبيت الطرف المختار',
   'يُطبَّق على اتجاه الجدار الحقيقي في الرسم (أفقي أو رأسي أو مائل) بلا افتراض',
