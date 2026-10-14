@@ -243,6 +243,7 @@
       try { localStorage.setItem(TOKEN_KEY, r.token); } catch (_) { /* noop */ }
       S.meta = { number: null, status: 'draft' };
       await loadCatalog();
+      trackEvent('design_start');
       enterDesign(null);
     } catch (e) {
       toast(e.message || 'تعذّر بدء التصميم. تحقق من الاتصال.', true);
@@ -514,8 +515,28 @@
       b.addEventListener('click', function () { gotoStep(b.dataset.step); });
     });
   }
+/* ===== تحليلات مجمّعة (بلا إزعاج) =====
+   نفس وحدة بوابة العميل تماماً: حدث واحد لكل انتقال مرحلة، بلا اسم ولا جوال
+   ولا بصمة جهاز. الفشل يُتجاهل تماماً حتى لا يتأثر التصميم. */
+  var ANALYTICS_ON = true;
+  function trackEvent(name, dim) {
+    if (!ANALYTICS_ON) return;
+    try {
+      var body = JSON.stringify({ name: name, dim: dim == null ? '' : String(dim) });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', new Blob([body], { type: 'application/json' }));
+      } else {
+        fetch('/api/analytics/event', { method: 'POST', body: body, headers: { 'Content-Type': 'application/json' }, keepalive: true }).catch(function () {});
+      }
+    } catch (_) { /* إحصاء لا يعطّل التصميم */ }
+  }
+
   function gotoStep(id) {
     if (!STEP_INDEX.hasOwnProperty(id)) return;
+    var fromIdx = STEP_INDEX[S.step];
+    var toIdx = STEP_INDEX[id];
+    if (toIdx !== fromIdx && S.step) trackEvent('design_step_exit', String(fromIdx + 1));
+    trackEvent('design_step', String(toIdx + 1));
     // نحفظ الاختيارات قبل مغادرة المرحلة (الاسم/الجوال)
     keepCust();
     S.step = id;
@@ -1378,6 +1399,7 @@ async function buildExpandedDoc(number) {
       var file = new File([blob], 'expanded-design-' + (no || 'draft') + '.pdf', { type: 'application/pdf' });
       if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'تصميم المجلس', text: text });
+        trackEvent('design_sent');
         return;
       }
       throw new Error('no-share');
@@ -1386,7 +1408,8 @@ async function buildExpandedDoc(number) {
       try { var b2 = await makePdfBlob(no); downloadBlob(b2, 'expanded-design-' + (no || 'draft') + '.pdf'); } catch (_) { /* noop */ }
       var s = S.settings || {};
       var wa = saudiIntl(s.whatsapp) || saudiIntl(s.phone);
-      if (wa) global.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(text), '_blank', 'noopener');
+      if (wa) trackEvent('whatsapp_click');
+      if (wa) { trackEvent('design_sent'); global.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(text), '_blank', 'noopener'); }
       else toast('نُزّل ملف PDF — أرفقه في محادثة المحل.', false);
     }
   }

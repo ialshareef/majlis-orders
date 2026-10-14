@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.55';
+  const APP_VERSION = '1.0.56';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -6098,8 +6098,186 @@ markRoomHealth();
   }
 
   /* --- الصفحة --- */
+/* ======================= لوحة تحليلات المالك =======================
+   بيانات مجمّعة فقط. الخادم يحمي كل نقطة بـ requireAdmin، فلا يقرأ الموظف
+   ولا المندوب ولا أي استدعاء API مباشر. الواجهة هنا للتعرض فقط؛ الحماية ليست
+   في إخفاء الزر بل في الخادم. لا أرقام تجريبية: كل قيمة من الخادم أو «—». */
+  let ownerRange = 'd30';
+
+  function ownerQuery() {
+    const p = new URLSearchParams();
+    p.set('range', ownerRange);
+    const f = ($('#ownerFrom') || {}).value, t = ($('#ownerTo') || {}).value;
+    if (ownerRange === 'custom' && f && t) { p.set('range', 'custom'); p.set('from', f); p.set('to', t); }
+    return p.toString();
+  }
+
+/** رقم موحّد: قيمة أو شرطة عند الغياب — لا نخترع أصفاراً مضلّلة */
+  const ownerNum = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('ar-SA'));
+
+  function renderOwnerPanel() {
+    wireOwnerPanel();
+    const host = $('#ownerPanel');
+    if (!host) return;
+    // الحماية في الخادم؛ هنا نخفي فقط عندما لا يكون المستخدم مديراً
+    host.hidden = !isAdmin();
+    if (!isAdmin()) return;
+    const kpis = $('#ownerKpis'), funnel = $('#ownerFunnel'), trend = $('#ownerTrend');
+    const steps = $('#ownerSteps'), prefs = $('#ownerPrefs'), orders = $('#ownerOrders'), sources = $('#ownerSources');
+    kpis.innerHTML = '<div class="stat"><span>جارٍ التحميل</span><b>…</b><small>لوحة تحليلات المالك</small></div>';
+    funnel.innerHTML = '<p class="owner-empty">جارٍ تحميل…</p>';
+    trend.innerHTML = '<p class="owner-empty">جارٍ تحميل…</p>';
+    steps.innerHTML = '<p class="owner-empty">جارٍ تحميل…</p>';
+    prefs.innerHTML = '<p class="owner-empty">جارٍ تحميل…</p>';
+    orders.innerHTML = '<p class="owner-empty">جارٍ تحميل…</p>';
+    sources.innerHTML = '<p class="owner-empty">جارٍ تحميل…</p>';
+
+    Store.api('GET', '/api/owner-analytics?' + ownerQuery()).then((r) => {
+      if (!r || !r.ok) throw new Error('تعذّر تحميل البيانات');
+      const F = r.funnel || { steps: [], note: '' };
+      const byKey = {};
+      (F.steps || []).forEach((s) => { byKey[s.key] = s; });
+      const start = byKey.start ? byKey.start.n : 0;
+
+      /* مؤشرات أعلى اللوحة: كل رقم ماكيان قابل للقياس من الخادم، وما لا يُقاس
+         يُعرض «—» بصيغة صريحة. الزائر والزيارة رقمان مختلفان ولا يُدمجان:
+         الزائر = بصمة اليوم، والزيارة = كل فتح للصفحة. */
+      const stat = (label, value, note) => '<div class="stat"><span>' + esc(label) + '</span><b>'
+        + (value == null || value === '' ? '—' : esc(String(value))) + '</b>'
+        + (note ? '<small>' + esc(note) + '</small>' : '') + '</div>';
+      const dur = (r.avgDesignMin == null) ? '—' : (r.avgDesignMin + ' دقيقة');
+      kpis.innerHTML = [
+        stat('زيارات الروابط', r.visits, (r.from || '') + ' ← ' + (r.to || '')),
+        stat('زوار فريدون', r.uniqueVisitors, 'بصمة اليوم — بلا تتبّع أفراد'),
+        stat('فتح صفحة التصميم', (byKey.visit || {}).n, 'مستقلة عن زيارات الروابط'),
+        stat('بدء تصميم', (byKey.start || {}).n, 'سلّم التحويل'),
+        stat('إكمال تصميم', (byKey.finish || {}).n, 'سلّم التحويل'),
+        stat('طلبات مؤكَّدة', (byKey.order || {}).n, 'ربط فعلي بطلب في النظام'),
+        stat('متوسط مدة التصميم', dur, dur === '—' ? 'لا توجد بيانات كافية' : 'من وقت الإنشاء إلى آخر تحديث'),
+      ].join('');
+
+      // قمع التحويل: كل عمود بنسبة مامه الصحيح
+      const maxN = Math.max(1, ...(F.steps || []).map((s) => s.n || 0));
+      funnel.innerHTML = '<div class="funnel">' + (F.steps || []).map((s) => {
+        const pctW = Math.round(((s.n || 0) / maxN) * 100);
+        const rate = s.rate == null ? '' : ' <span class="funnel-rate">' + s.rate + '%</span>';
+        return '<div class="funnel-row">'
+          + '<span class="funnel-label">' + esc(s.label) + '</span>'
+          + '<span class="funnel-n">' + ownerNum(s.n) + rate + '</span>'
+          + '<span class="funnel-bar"><i style="width:' + Math.max(1, pctW) + '%"></i></span>'
+          + '</div>';
+      }).join('') + '</div><p class="funnel-note">' + esc(F.note || '') + '</p>';
+
+      // رسم يومي (بدء/إكمال) بـ CSS بلا مكتبة
+      const days = r.daily || [];
+      if (days.length) {
+        const byDay = {};
+        days.forEach((d) => { (byDay[d.day] = byDay[d.day] || { start: 0, finish: 0 })[d.name] = d.n; });
+        const keys = Object.keys(byDay).sort();
+        const maxV = Math.max(1, ...keys.map((k) => Math.max(byDay[k].start, byDay[k].finish)));
+        trend.innerHTML = '<div class="trend">' + keys.map((k) =>
+          '<span class="trend-col" title="' + esc(k) + '">'
+          + '<i class="trend-bar start" style="height:' + Math.round((byDay[k].start / maxV) * 100) + '%"></i>'
+          + '<i class="trend-bar finish" style="height:' + Math.round((byDay[k].finish / maxV) * 100) + '%"></i>'
+          + '</span>').join('') + '</div>'
+          + '<div class="trend-legend"><span><i style="background:var(--accent)"></i>بدء تصميم</span><span><i style="background:var(--accent-line)"></i>أكمال</span></div>';
+      } else {
+        trend.innerHTML = '<p class="owner-empty">لا أرقام يومية في هذه الفترة.</p>';
+      }
+
+      // مراحل التصميم: الوصول مقابل المغادرة — يفهرس 1..5
+      const STEP_LABELS = ['الغرفة', 'العناصر المعمارية', 'المجلس', 'الأثاث والإكسسوارات', 'المراجعة'];
+      const rc = {}; (r.stepReached || []).forEach((x) => { rc[x.dim] = x.n; });
+      const ex = {}; (r.stepExit || []).forEach((x) => { ex[x.dim] = x.n; });
+      const maxS = Math.max(1, ...Object.values(rc), ...Object.values(ex));
+      const stepRows = [];
+      for (let i = 1; i <= 5; i++) {
+        const reached = rc[String(i)] || 0, exited = ex[String(i)] || 0;
+        const lab = STEP_LABELS[i - 1] || ('مرحلة ' + i);
+        const drop = reached > 0 ? Math.round((exited / reached) * 100) : null;
+        stepRows.push('<div class="funnel-row">'
+          + '<span class="funnel-label">' + esc(lab) + '</span>'
+          + '<span class="funnel-n">' + ownerNum(reached) + (drop == null ? '' : ' <span class="funnel-rate">غادر ' + drop + '%</span>') + '</span>'
+          + '<span class="funnel-bar"><i style="width:' + Math.round(((reached || 0) / maxS) * 100) + '%"></i></span>'
+          + '</div>');
+      }
+      steps.innerHTML = '<div class="funnel">' + stepRows.join('') + '</div>'
+        + '<p class="funnel-note">الوصول — المرحلة — المغادرة (نسبة من الوصول).</p>';
+
+      // تفضيلات التصميم من بيانات التصاميم المخزّنة أصلاً
+      const pr = r.prefs || {};
+      const listOf = (arr, lab) => {
+        if (!arr || !arr.length) return '<p class="owner-empty">' + lab + ': لا بيانات في هذه الفترة.</p>';
+        return '<ul class="dim-list">' + arr.map((x) => '<li><b>' + esc(x.dim || '—') + '</b><span>' + ownerNum(x.n) + '</span></li>').join('') + '</ul>';
+      };
+      const SEAT = { floor: 'أرضي', raised: 'رفيع', arabic: 'عربي', sofa: 'كنب' };
+      prefs.innerHTML =
+        '<p class="owner-empty">عدد التصاميم في الفترة: <b>' + ownerNum(pr.designs) + '</b></p>'
+        + '<b>أبعاد الغرف الأكثر · متردف الكنب</b>'
+        + (pr.avgSofaPieces == null ? '<p class="owner-empty">لا معطيار.</p>'
+          : '<p class="funnel-n">' + pr.avgSofaPieces + ' كنبة متوسطية في التصميم (عن العيّنات: ' + ownerNum(pr.avgSofaPiecesSample) + ')</p>')
+        + '<b>أكثر أبعاد الغرفة</b>' + listOf(pr.rooms, 'أبعاد الغرفة')
+        + '<b>عدد الجدران</b>' + listOf(pr.walls, 'عدد الجدران')
+        + '<b>نوع الكنب</b>' + listOf((pr.sofaKinds || []).map((x) => Object.assign({}, x, { dim: (SEAT[x.dim] || x.dim) })), 'نوع الكنب')
+        + '<b>أكثر الإكسسوارات المستخدمة</b>' + listOf(pr.accKinds, 'الإكسسوارات')
+        + '<b>أعماد عموق الكنب (م)</b>' + listOf(pr.sofaDepth, 'أعماد العموق');
+
+      // متابعة الطلبات: مراحل من جدول orders + أسباب الخسارة المسجّلة داخلياً
+      const od = r.orders || { total: 0, byStatus: [], lossReasons: [] };
+      orders.innerHTML = '<p class="owner-empty">عدد الطلبات: <b>' + ownerNum(od.total) + '</b></p>'
+        + (od.byStatus && od.byStatus.length
+          ? '<ul class="dim-list">' + od.byStatus.map((x) => '<li><b>' + esc(x.dim) + '</b><span>' + ownerNum(x.n) + '</span></li>').join('') + '</ul>'
+          : '<p class="owner-empty">لا طلبات في هذه الفترة.</p>')
+        + (od.lossReasons && od.lossReasons.length
+          ? '<b>أسباب الخسارة (مسجّلة داخلياً)</b>'
+            + '<ul class="dim-list">' + od.lossReasons.map((x) => '<li><b>' + esc(x.dim) + '</b><span>' + ownerNum(x.n) + '</span></li>').join('') + '</ul>'
+          : '<p class="owner-empty">لا أسباب خسارة مسجلة داخلياً — لا نطلب أستبار من العميل.</p>');
+
+      // مصادر البيانات وما هو غير متوفر — بلا إخفاء
+      const un = r.unavailable || {};
+      sources.innerHTML = '<p class="owner-src"><b>مصادر الزيارة:</b> مين متوفّر — '
+        + esc(un.referrer || '') + '</p>'
+        + '<p class="owner-src"><b>واتساب:</b> نسجل ضغط الزر فقط— لا يعني أن رسالة أصولت أو بييع بيينطاً. ' + esc(un.whatsappSent || '') + '</p>'
+        + '<p class="owner-src"><b>متوسط التصميم:</b> ' + (r.avgDesignMin == null ? '— لا يود متوسط محسوب.' : r.avgDesignMin + ' دقيقة') + '</p>'
+        + '<p class="owner-src"><b>الخصوصية:</b> لا بصمة جهاز ولا تتبع تعيّن أفراد. ' + esc(un.deviceFingerprint || '') + '</p>';
+    }).catch((e) => {
+      const msg = (e && e.message) || 'تعذّر التحميل';
+      [funnel, trend, steps, prefs, orders, sources].forEach((el) => { el.innerHTML = '<p class="owner-empty">' + esc(msg) + '</p>'; });
+    });
+  }
+
+
+  /** ربط مرشّحات لوحة المالك — مرة واحدة عند التهيئة */
+  function wireOwnerPanel() {
+    const chips = $$('#ownerRangeChips .chip');
+    if (!chips.length) return;
+    if (chips[0].dataset.wired === '1') return;
+    chips.forEach((c) => {
+      c.dataset.wired = '1';
+      c.addEventListener('click', () => {
+        ownerRange = c.dataset.og || 'd30';
+        chips.forEach((x) => {
+          const on = x === c;
+          x.classList.toggle('on', on);
+          x.setAttribute('aria-pressed', String(on));
+        });
+        renderOwnerPanel();
+      });
+    });
+    const ap = $('#ownerApply');
+    if (ap && !ap.dataset.wired) {
+      ap.dataset.wired = '1';
+      ap.addEventListener('click', () => {
+        ownerRange = 'custom';
+        chips.forEach((x) => x.classList.remove('on'));
+        renderOwnerPanel();
+      });
+    }
+  }
+
   function renderBI() {
     if (!isAdmin()) return;
+    renderOwnerPanel();
     biMobileAt = isMobile();
 
     // خيارات الموظفين: من المستخدمين الحاليين ومن الطلبات (موظف محذوف له طلبات)

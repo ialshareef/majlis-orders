@@ -172,6 +172,7 @@
       try { localStorage.setItem(TOKEN_KEY, r.token); } catch (_) { /* noop */ }
       S.meta = { number: null, status: 'draft' };
       await loadCatalog();
+      trackEvent('design_start');
       enterDesign(null);
     } catch (e) {
       toast(e.message || 'تعذّر بدء التصميم. تحقق من الاتصال.', true);
@@ -495,8 +496,30 @@ function portalAddAcc(itemId) {
 
   /* الانتقال بين المراحل: يحدّث المؤشر واللوحة والرسم وأزرار التالي/السابق.
      fitView بعد كل انتقال حتى يظهر الرسم كاملًا داخل الشاشة بلا نزول. */
+  /* ===== تحليلات مجمّعة (بلا إزعاج العميل) =====
+     نرسل الحدث فقط: اسم المرحلة أو الحدث + بُعد قصير. لا اسم ولا جوال ولا أي
+     بيانات تعريف. الطلب في الخلفية ويُتجاهل فشلُه تماماً حتى لا يتأثر التصميم.
+     الغرض: Understanding أين يترك الزوار — لت improving التصميم، لا لتتبّع الأفراد. */
+  var ANALYTICS_ON = true;
+  function trackEvent(name, dim) {
+    if (!ANALYTICS_ON) return;
+    try {
+      var body = JSON.stringify({ name: name, dim: dim == null ? '' : String(dim) });
+      if (navigator.sendBeacon) {
+        navigator.sendBeacon('/api/analytics/event', new Blob([body], { type: 'application/json' }));
+      } else {
+        fetch('/api/analytics/event', { method: 'POST', body: body, headers: { 'Content-Type': 'application/json' }, keepalive: true }).catch(function () {});
+      }
+    } catch (_) { /* إحصاء لا يعطّل التصميم */ }
+  }
+
   function gotoStep(id) {
     if (!STEP_INDEX.hasOwnProperty(id)) return;
+    var fromIdx = STEP_INDEX[S.step];
+    var toIdx = STEP_INDEX[id];
+    // حدث واحد لكل انتقال مرحلة — بلا تتبع مستمر ولا أرقام تجريبية
+    if (toIdx !== fromIdx && S.step) trackEvent('design_step_exit', String(fromIdx + 1));
+    trackEvent('design_step', String(toIdx + 1));
     S.step = id;
     if (id !== 'openings' && id !== 'room') setChosenWall(null);
     buildSteps();
@@ -1127,8 +1150,9 @@ function portalAddAcc(itemId) {
     try {
       var blob = await makeDesignPdfBlob(no);
       var file = new File([blob], 'design-' + (no || 'draft') + '.pdf', { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'تصميم المجلس', text: text });
+        trackEvent('design_sent');
         return;
       }
       throw new Error('no-share');
@@ -1139,7 +1163,8 @@ function portalAddAcc(itemId) {
         downloadBlob(blob2, 'design-' + (no || 'draft') + '.pdf');
       } catch (_) { /* noop */ }
       var wa = waNumber();
-      if (wa) window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(text), '_blank', 'noopener');
+      if (wa) trackEvent('whatsapp_click');
+      if (wa) { trackEvent('design_sent'); window.open('https://wa.me/' + wa + '?text=' + encodeURIComponent(text), '_blank', 'noopener'); }
       else toast('نُزّل ملف PDF — أرفقه في محادثة المحل.', false);
     }
   }
@@ -1404,8 +1429,9 @@ function portalAddAcc(itemId) {
     try {
       var blob = await makeDesignPdfBlob(S.meta.number);
       var file = new File([blob], 'design-' + S.meta.number + '.pdf', { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [file] })) {
+if (navigator.canShare && navigator.canShare({ files: [file] })) {
         await navigator.share({ files: [file], title: 'تصميم ' + S.meta.number, text: text });
+        trackEvent('design_sent');
         return;
       }
       throw new Error('no-share');
@@ -1416,8 +1442,9 @@ function portalAddAcc(itemId) {
         downloadBlob(blob2, 'design-' + S.meta.number + '.pdf');
       } catch (_) { /* noop */ }
       var wa = waNumber();
+      if (wa) trackEvent('whatsapp_click');
       var url = wa ? 'https://wa.me/' + wa + '?text=' + encodeURIComponent(text) : null;
-      if (url) window.open(url, '_blank', 'noopener');
+      if (url) { trackEvent('design_sent'); window.open(url, '_blank', 'noopener'); }
       else toast('نُزّل ملف PDF — أرفقه في محادثة المحل.', false);
     } finally {
       btn.disabled = false;

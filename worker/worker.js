@@ -56,6 +56,7 @@ export default {
     // بوابة العميل: مسار مستقل يقدّم portal.html (جاهز لنطاق فرعي لاحقاً دون إعادة بناء)
     if (url.pathname === '/customer-design' || url.pathname.startsWith('/customer-design/')) {
       await recordVisit(env, request, 'customer');
+      await recordAnalytics(env, request, 'design_visit');
       if (ASSETS) return serveAsset('/portal.html');
       return json({ ok: true, service: 'majlis-portal' }, 200, cors);
     }
@@ -119,6 +120,12 @@ async function route(request, env, url) {
     throw new HttpError(404, 'المسار غير موجود');
   }
 
+  /* تسجيل حدث تحليلات مجمّع — عام عمداً لأن بوابة العميل تعمل بلا جلسة مستخدم،
+     لكنه محصور جداً: قائمة أسماء بيضاء معرَّفة في السجل + بُعد نصّي مقصوص،
+     ولا يُخزَّن معه أي مُعرّف (لا اسم ولا جوال ولا عنوان IP ولا بصمة جهاز).
+     كل ما عدا ذلك يُرفض بصمت حتى لا يتحوّل النقطة إلى مخزن عشوائي. */
+  if (path === '/api/analytics/event' && method === 'POST') return analyticsEvent(env, request, body);
+
   const token = tokenOf(request);
   const user = await currentUser(env, token);
   if (path === '/api/me' && method === 'GET') return { user: user ? publicUser(user) : null };
@@ -144,6 +151,8 @@ async function route(request, env, url) {
   if (path === '/api/users' && method === 'POST') { requireAdmin(user); return saveUser(env, user, body, token); }
   // إحصاءات زيارات روابط «عن التطبيق»: للمدير فقط (بيانات حركة زيارات لا يراها الموظفون)
   if (path === '/api/link-visits' && method === 'GET') { requireAdmin(user); return linkVisits(env); }
+  // لوحة تحليلات المالك: للمدير فقط على مستوى الخادم — الموظف والمندوب يُرفضان (403)
+  if (path === '/api/owner-analytics' && method === 'GET') { requireAdmin(user); return ownerAnalytics(env, new URL(request.url).searchParams); }
   const mUser = path.match(/^\/api\/users\/([^/]+)$/);
   if (mUser && method === 'DELETE') { requireAdmin(user); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
 
@@ -172,13 +181,15 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.55';
-// بصمة asalh-najd-1.0.55.apk (إصدار GitHub v1.0.55، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = '0e69d0b9e955c3e6cfc009ecea2c2a051b7b66f8551857792c89439d70043ede';
+const UPDATE_FALLBACK_VERSION = '1.0.56';
+// بصمة asalh-najd-1.0.56.apk تُثبَّت بعد بناء CI (COMMIT لاحق). قبلها فارغة
+// فيرفض التطبيق تنزيل ملف غير مُتحقَّق منه بدل تثبيته.
+const UPDATE_FALLBACK_SHA256 = '';
 const UPDATE_FALLBACK_NOTES = [
-  'خيارات جهة تقصير الجدار: الطرف الأول أو الطرف الثاني أو بالتساوي — مع تثبيت الطرف المختار',
-  'يُطبَّق على اتجاه الجدار الحقيقي في الرسم (أفقي أو رأسي أو مائل) بلا افتراض',
-  'الاختيار مستقل لكل جدار، وتبقى أطوال بقية الجدران كما هي مع تحذير عند فجوة',
+  'لوحة تحليلات المالك: زيارات وزوار ورقم التحويل من أول زيارة حتى الطلب المؤكد',
+  'تفضيلات المجالس وأسئلة التصميم وأرقام الأثاث مقروءة من تصاميم العملاء نفسها',
+  'كل الأرقام مجمّعة: لا اسم ولا جوال ولا بصمة جهاز ولا تتبّع أفراد',
+  'الخريطة: للمدير فقط — الخادم يرفض الموظف والمندوب قبل أي عرض',
 ];
 
 function versionCodeOfName(v) {
@@ -408,10 +419,12 @@ async function portalFinish(env, request) {
     if (!r) throw new HttpError(500, 'عدّاد أرقام التصاميم غير موجود');
     no = Number(r.value);
   }
-  const t = now();
+const t = now();
   const status = row.status === 'draft' ? 'new' : row.status;
-  await env.DB.prepare('UPDATE customer_designs SET public_no = ?, status = ?, updated_at = ? WHERE id = ?')
-    .bind(no, status, t, row.id).run();
+  await env.DB.prepare('UPDATE customer_designs SET public_no = ?, status = ?, updated_at = ? WHERE id = ?'
+    .bind(no, status, t, row.id)).run();
+  // إكمال التصميم: عدّاد مجمّع فقط (لا اسم ولا جوال ولا معرّف جلسة)
+  await recordAnalytics(env, request, 'design_finish');
   return { ok: true, number: 'MJ-' + no, status };
 }
 
@@ -421,9 +434,11 @@ async function portalContact(env, request, body) {
   const phone = cleanPhone(body.phone);
   if (!name || !phone) throw new HttpError(400, 'الاسم ورقم الجوال مطلوبان لطلب التواصل');
   const t = now();
-  const status = row.status === 'draft' ? 'new' : row.status;
+const status = row.status === 'draft' ? 'new' : row.status;
   await env.DB.prepare('UPDATE customer_designs SET customer_name = ?, customer_phone = ?, contact_requested = 1, status = ?, updated_at = ? WHERE id = ?')
     .bind(name, phone, status, t, row.id).run();
+  // طلب تواصل: عدّاد مجمّع فقط — لا نخزّن أي تفصيل في جدول التحليلات
+  await recordAnalytics(env, request, 'contact_request');
   return { ok: true };
 }
 
@@ -449,7 +464,7 @@ async function portalView(env, number, request) {
    - لا يختلط ببيانات العملاء الحقيقيين ولا يستهلك أرقام MJ
    - لا يظهر في صفحة «تصاميم العملاء» (تقرأ customer_designs فقط)
    - التوكن يبدأ بـ x فيرفضه جدول البوابة العادية والعكس
-   لاContain prices ولا أي بيانات داخلية — نفس مستوى الحماية. */
+ لا تعرض أسعار من الخارج الداخلي — نفس مستوى حماية الحماية. */
 const EXP_TOKEN_PREFIX = 'x';
 
 function expTokenOf(request) {
@@ -1066,6 +1081,298 @@ async function recordVisit(env, request, link) {
 }
 
 /** قراءة الإحصاءات للمدير: إجمالي لكل رابط + تفصيل آخر ٣٠ يوماً */
+/* ======================= تحليلات لوحة المالك =======================
+   مبدأ الخصوصية قبل كل شيء: ما يُخزَّن هو «عداد مجمّع» فقط:
+     day + اسم الحدث + بُعد اختياري + رقم.
+   لا اسم عميل، ولا رقم جوال، ولا عنوان IP، ولا بصمة جهاز، ولا مُعرّف جلسة،
+   ولا محتوى محادثة. لا يوجد في الجدول ما يصلح لربط أي حدث بهوية أحد.
+   الأثر قد يكون فقط عددياً-يومياً، ولا يُستخدم للتسويق ولا لتتبّع الأفراد.
+
+الأحداث المسجَّلة قليلة ومقصودة — وكلها أحداث يختارها المضيف حتى نعرف أين يتوقف:
+     design_visit     فتح صفحة التصميم
+     design_start     بدأ تصميماً جديداً
+     design_step      وصل إلى مرحلة (البُعد = رقم المرحلة)
+     design_step_exit غادر مرحلة (البُعد = رقم المرحلة)
+     design_finish    أكمل التصميم
+     whatsapp_click   ضغط زر واتساب
+     design_sent      أرسل التصميم
+     contact_request  طلب التواصل
+   لا نسجّل حركة عنصر صغيرة ولا كل نقرة أداة. */
+
+const ANALYTICS_KEEP_DAYS = 400;   // احتفاظ محدود: صف واحد لكل يوم/حدث/بُعد
+/* بُعد نصي قصير ومُطبَّع حتى لا يملأ الجدول من مُدخلات عشوائية */
+function analyticsDim(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_.:-]/g, '');
+  return s.slice(0, 40);
+}
+
+async function ensureAnalytics(env) {
+  if (!env.DB) return false;
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS analytics_events (day TEXT NOT NULL, name TEXT NOT NULL, dim TEXT NOT NULL DEFAULT \'\', n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, name, dim))').run().catch(ignoreExistsObject);
+  return true;
+}
+
+/** زيادة عدّاد مجمّع. اسمح فقط بأسماء معرّفة مسبقاً (قائمة بيضاء) وأبعاد قصيرة. */
+const ANALYTICS_NAMES = new Set([
+  'design_visit', 'design_start', 'design_step', 'design_step_exit', 'design_finish',
+  'whatsapp_click', 'design_sent', 'contact_request',
+]);
+
+async function recordAnalytics(env, request, name, dim) {
+  try {
+    if (!env.DB || !ANALYTICS_NAMES.has(name)) return;
+    const ua = (request.headers.get('user-agent') || '');
+    if (!ua || BOT_RE.test(ua)) return;      // نتجاهل الروبوتات كما في الزيارات
+    const day = visitDayKey(env);
+    const d = analyticsDim(dim);
+    const cur = await env.DB.prepare('SELECT n FROM analytics_events WHERE day = ? AND name = ? AND dim = ?').bind(day, name, d).first();
+    const next = (Number(cur && cur.n) || 0) + 1;
+    await env.DB.prepare('INSERT OR REPLACE INTO analytics_events (day, name, dim, n) VALUES (?, ?, ?, ?)').bind(day, name, d, next).run();
+    // تنظيف دوري: العدّاد اليومي يكفي للفترات المطلوبة فلا ينمو الجدول بلا سقف
+    await env.DB.prepare('DELETE FROM analytics_events WHERE day < ?').bind(visitDayOffset(env, ANALYTICS_KEEP_DAYS)).run();
+  } catch (e) { /* إحصاء لا يعطّل الخدمة */ }
+}
+
+/** استقبال حدث تحليلات من الواجهة العامة.
+    يتجاهل أي حقل لا يحتاجه: لا اسم ولا جوال ولا مُعرّف. يقبل الاسم والبُعد فقط
+    ضمن قائمة بيضاء، فلا يمكن استغلاله لتخزين بيانات شخصية. */
+async function analyticsEvent(env, request, body) {
+  const name = String((body && body.name) || '');
+  const dim = String((body && body.dim) || '');
+  await recordAnalytics(env, request, name, dim);
+  return { ok: true };
+}
+
+/** قراءة مجمّعة ضمن نطاق. لا تُرجع شيئاً يربط بهوية أحد. */
+async function analyticsSum(env, from, to, name) {
+  await ensureAnalytics(env);
+  let sql = 'SELECT COALESCE(SUM(n),0) AS n FROM analytics_events WHERE name = ?';
+  const binds = [name];
+  if (from) { sql += ' AND day >= ?'; binds.push(from); }
+  if (to) { sql += ' AND day <= ?'; binds.push(to); }
+  const r = await env.DB.prepare(sql).bind(...binds).first();
+  return Number(r && r.n) || 0;
+}
+
+/** تجميع الأبعاد: مصفوفة { dim, n } مرتّبة تنازلياً. */
+async function analyticsByDim(env, from, to, name, limit = 20) {
+  await ensureAnalytics(env);
+  let sql = 'SELECT dim, COALESCE(SUM(n),0) AS n FROM analytics_events WHERE name = ?';
+  const binds = [name];
+  if (from) { sql += ' AND day >= ?'; binds.push(from); }
+  if (to) { sql += ' AND day <= ?'; binds.push(to); }
+  sql += ' GROUP BY dim ORDER BY n DESC, dim ASC LIMIT ?';
+  binds.push(Number(limit) || 20);
+  const r = await env.DB.prepare(sql).bind(...binds).all();
+  return (r.results || []).map((x) => ({ dim: x.dim, n: Number(x.n) || 0 }));
+}
+
+/** سلسلة يومية لحث حدث (للرسوم البيانية). */
+async function analyticsDaily(env, from, to, names) {
+  await ensureAnalytics(env);
+  const list = names && names.length ? names : ['design_start', 'design_finish'];
+  const ph = list.map(() => '?').join(',');
+  let sql = 'SELECT day, name, COALESCE(SUM(n),0) AS n FROM analytics_events WHERE name IN (' + ph + ')';
+  const binds = list.slice();
+  if (from) { sql += ' AND day >= ?'; binds.push(from); }
+  if (to) { sql += ' AND day <= ?'; binds.push(to); }
+  sql += ' GROUP BY day, name';
+  const r = await env.DB.prepare(sql).bind(...binds).all();
+  return (r.results || []).map((x) => ({ day: x.day, name: x.name, n: Number(x.n) || 0 }));
+}
+
+/** متوسط مدة التصميم بالدقائق، من created_at إلى updated_at للتصاميم المكتملة. */
+async function analyticsAvgDurationMin(env, from, to) {
+  let sql = "SELECT AVG((julianday(updated_at) - julianday(created_at)) * 24 * 60) AS m FROM customer_designs WHERE updated_at IS NOT NULL AND status != 'draft'";
+  const binds = [];
+  if (from) { sql += ' AND date(created_at) >= ?'; binds.push(from); }
+  if (to) { sql += ' AND date(created_at) <= ?'; binds.push(to); }
+  const r = await env.DB.prepare(sql).bind(...binds).first();
+  /* Number(null) = 0 — لوحوّلنا النقص إلى صفر لعرضنا مدةً مُختلقة. غياب البيانات
+     يجب أن يُقرأ «غير متاح» (null) لا «صفر دقيقة». */
+  if (!r || r.m === null || r.m === undefined) return null;
+  const m = Number(r.m);
+  return Number.isFinite(m) && m >= 0 ? Math.round(m) : null;
+}
+
+/** مسار التحويل: زيارة ← بدء ← إكمال ← واتساب ← طلب مؤكد.
+    كل مقام صحيح ومكتوب صراحة. «واتساب» = ضغط الزر فقط، ليس رسالة مُرسلة ولا طلباً. */
+async function analyticsFunnel(env, from, to) {
+  const visits = await analyticsSum(env, from, to, 'design_visit');
+  const started = await analyticsSum(env, from, to, 'design_start');
+  const finished = await analyticsSum(env, from, to, 'design_finish');
+  const wa = await analyticsSum(env, from, to, 'whatsapp_click');
+  const sent = await analyticsSum(env, from, to, 'design_sent');
+  /* الطلب المؤكد من جدول customer_designs عبر order_id (ربط فعلي موجود). */
+  let ordersSql = 'SELECT COUNT(DISTINCT id) AS n FROM customer_designs WHERE order_id IS NOT NULL';
+  const ob = [];
+  if (from) { ordersSql += ' AND date(created_at) >= ?'; ob.push(from); }
+  if (to) { ordersSql += ' AND date(created_at) <= ?'; ob.push(to); }
+  const orow = await env.DB.prepare(ordersSql).bind(...ob).first();
+  const orders = Number(orow && orow.n) || 0;
+  const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
+  return {
+    steps: [
+      { key: 'visit', label: 'زيارة', n: visits, rate: null },
+      { key: 'start', label: 'بدء تصميم', n: started, rate: pct(started, visits) },
+      { key: 'finish', label: 'إكمال التصميم', n: finished, rate: pct(finished, started) },
+      /* واتساب والإرسال مقامُهما من بدأ التصميم لا من أكمله: من يضغط زر واتساب قد
+         لا يمرّ خطوة الإكمال، فقياسه على «من أكمل» يعطي نسبة فوق 100% وهمية. */
+      { key: 'whatsapp', label: 'ضغط واتساب', n: wa, rate: pct(wa, started) },
+      { key: 'sent', label: 'إرسال التصميم', n: sent, rate: pct(sent, started) },
+      { key: 'order', label: 'طلب مؤكد', n: orders, rate: pct(orders, started) },
+    ],
+    note: 'كل النسب من «بدء التصميم» إلا بداية السلّم. «ضغط واتساب» ضغطة زر فقط، لا يعني إرسال رسالة ولا إتمام بيع.',
+  };
+}
+
+/** تفضيلات التصميم المجمّعة من حقول design المخزّنة أصلاً. */
+async function analyticsDesignPrefs(env, from, to, limit = 12) {
+  let sql = "SELECT design FROM customer_designs WHERE design IS NOT NULL AND design != ''";
+  const binds = [];
+  if (from) { sql += ' AND date(created_at) >= ?'; binds.push(from); }
+  if (to) { sql += ' AND date(created_at) <= ?'; binds.push(to); }
+  const rows = await env.DB.prepare(sql).bind(...binds).all();
+  const agg = {
+    designs: 0, rooms: {}, walls: {}, sofaKinds: {}, accKinds: {},
+    pieceCountSum: 0, pieceCountN: 0, sofaDepth: {}, accent: {},
+  };
+  for (const r of (rows.results || [])) {
+    let d = null;
+    try { d = JSON.parse(r.design); } catch (_) { continue; }
+    if (!d || typeof d !== 'object') continue;
+    agg.designs++;
+    const walls = Array.isArray(d.walls) ? d.walls : [];
+    agg.walls[String(walls.length || 0)] = (agg.walls[String(walls.length || 0)] || 0) + 1;
+    const rd = d.roomDims || null;
+    if (rd && Number.isFinite(+rd.w) && Number.isFinite(+rd.h)) {
+      const k = round1(+rd.w) + '×' + round1(+rd.h);
+      agg.rooms[k] = (agg.rooms[k] || 0) + 1;
+    }
+    const pieces = Array.isArray(d.pieces) ? d.pieces : [];
+    let nSofa = 0;
+    for (const p of pieces) {
+      if (!p || typeof p !== 'object') continue;
+      if (p.kind === 'sofa') {
+        nSofa++;
+        const sk = String(p.seating || 'floor');
+        agg.sofaKinds[sk] = (agg.sofaKinds[sk] || 0) + 1;
+        if (Number.isFinite(+p.h)) {
+          const dp = String(round1(+p.h));
+          agg.sofaDepth[dp] = (agg.sofaDepth[dp] || 0) + 1;
+        }
+      } else if (p.kind === 'acc' && p.itemId) {
+        agg.accKinds[String(p.itemId)] = (agg.accKinds[String(p.itemId)] || 0) + 1;
+      }
+    }
+    if (nSofa > 0) { agg.pieceCountSum += nSofa; agg.pieceCountN++; }
+  }
+  const top = (obj) => Object.keys(obj).map((dim) => ({ dim, n: obj[dim] })).sort((a, b) => b.n - a.n).slice(0, limit);
+  return {
+    designs: agg.designs,
+    rooms: top(agg.rooms),
+    walls: top(agg.walls),
+    sofaKinds: top(agg.sofaKinds),
+    accKinds: top(agg.accKinds),
+    sofaDepth: top(agg.sofaDepth),
+    avgSofaPieces: agg.pieceCountN ? Math.round((agg.pieceCountSum / agg.pieceCountN) * 10) / 10 : null,
+    avgSofaPiecesSample: agg.pieceCountN,
+  };
+}
+
+function round1(n) { return Math.round(Number(n) * 10) / 10; }
+
+/** متابعة الطلبات: مراحل الطلب من جدول orders + أسباب الخسارة المسجّلة داخلياً فقط. */
+async function analyticsOrders(env, from, to) {
+  let sql = 'SELECT data, status, created_at FROM orders';
+  const binds = [];
+  const where = [];
+  if (from) { where.push('date(created_at) >= ?'); binds.push(from); }
+  if (to) { where.push('date(created_at) <= ?'); binds.push(to); }
+  if (where.length) sql += ' WHERE ' + where.join(' AND ');
+  const rows = await env.DB.prepare(sql).bind(...binds).all();
+  const byStatus = {};
+  const lossReasons = {};
+  let total = 0;
+  for (const r of (rows.results || [])) {
+    total++;
+    const st = String(r.status || 'unknown');
+    byStatus[st] = (byStatus[st] || 0) + 1;
+    let d = null;
+    try { d = JSON.parse(r.data); } catch (_) { /* قد لا يكون JSON */ }
+    /* أسباب الخسارة إن سجّلها الموظف داخل الطلب — لا نطلبها من العميل */
+    const reason = d && (d.lossReason || d.lostReason || (d.lost && d.lost.reason));
+    if (reason) {
+      const k = String(reason).slice(0, 60);
+      lossReasons[k] = (lossReasons[k] || 0) + 1;
+    }
+  }
+  const top = (obj) => Object.keys(obj).map((dim) => ({ dim, n: obj[dim] })).sort((a, b) => b.n - a.n);
+  return { total, byStatus: top(byStatus), lossReasons: top(lossReasons), lossReasonsAvailable: top(lossReasons).length > 0 };
+}
+
+/**
+ * لوحة التحليلات للمدير فقط. تتضمّن كل المؤشرات وتوضّح ما هو غير متوفر.
+ * تعتمد على مصادر موجودة فعلياً في النظام ولا تخترع أي رقم.
+ */
+async function ownerAnalytics(env, query) {
+  const today = visitDayKey(env);
+  const range = String(query.get('range') || 'd30');
+  let from = visitDayOffset(env, 29), to = today;
+  if (range === 'd7') from = visitDayOffset(env, 6);
+  else if (range === 'd') from = today;
+  else if (range === 'm') { const d = new Date(); from = visitDayKeyOf(env, new Date(d.getFullYear(), d.getMonth(), 1)); }
+  else if (range === 'custom') {
+    const f = String(query.get('from') || ''), t = String(query.get('to') || '');
+    if (/^\d{4}-\d{2}-\d{2}$/.test(f)) from = f;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(t)) to = t;
+  }
+
+  // الزوار والزيارات من جدول الزوار القائم (مصدر موثوق قائم)
+  const visRow = await env.DB.prepare(
+    'SELECT COALESCE(SUM(CASE WHEN day >= ? AND day <= ? THEN n ELSE 0 END),0) AS visits FROM link_visits'
+  ).bind(from, to).first();
+  const uvRow = await env.DB.prepare(
+    'SELECT COUNT(*) AS u FROM link_visitors WHERE day >= ? AND day <= ?'
+  ).bind(from, to).first();
+
+  const daily = await analyticsDaily(env, from, to, ['design_start', 'design_finish']);
+  const funnel = await analyticsFunnel(env, from, to);
+  const stepReached = await analyticsByDim(env, from, to, 'design_step', 10);
+  const stepExit = await analyticsByDim(env, from, to, 'design_step_exit', 10);
+  const prefs = await analyticsDesignPrefs(env, from, to, 12);
+  const orders = await analyticsOrders(env, from, to);
+  const avgDur = await analyticsAvgDurationMin(env, from, to);
+
+  return {
+    ok: true,
+    range, from, to, tzOffsetMin: visitTzOffset(env),
+    /* مؤشرات متاحة فعلاً */
+    visits: Number(visRow && visRow.visits) || 0,
+    uniqueVisitors: Number(uvRow && uvRow.u) || 0,
+    avgDesignMin: avgDur,
+    funnel,
+    daily,
+    stepReached,
+    stepExit,
+    prefs,
+    orders,
+    /* توثيق الفجوات: أرقام غير متاحة، لا نعرض لها قيماً */
+    unavailable: {
+      referrer: 'مصدر الزيارة غير متوفر — لا نخزّن عنوان المُحيل ولا مُعرّف Cloak.',
+      whatsappSent: 'لا نعرف إن كانت رسالة واتساب أُرسلت فعلاً — نسجّل ضغطة الزر فقط.',
+      revenue: 'قيمة المبيعات تُقرأ من الطلبات الموثّقة فقط.',
+      deviceFingerprint: 'لا بصمة جهاز ولا تتبّع أفراد في التحليلات.',
+    },
+  };
+}
+function visitDayKeyOf(env, d) {
+  const off = visitTzOffset(env);
+  const t = new Date(d.getTime() + off * 60000);
+  return t.toISOString().slice(0, 10);
+}
+
+
 /** إحصاءات الروابط للمدير — ثلاثة نطاقات زمنية واضحة، كلها بتوقيت المحل:
     اليوم / آخر ٧ أيام / آخر ٣٠ يوماً. لكل نطاق رقمان مستقلان:
     «زيارات» (كل فتح للصفحة) و«زوار» (بصمة جهاز واحدة لا تُحتسب مرتين في اليوم).
@@ -1210,6 +1517,12 @@ async function ensureSeed(env) {
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visits (day TEXT NOT NULL, link TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, link))').run().catch(ignoreExistsObject);
   // جداول وأعمدة جديدة بعد النشر الأول: تُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS login_fail (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first_at TEXT NOT NULL, until TEXT)').run();
+  /* ===== تحليلات لوحة المالك =====
+     privacy-by-design: جدول «عداد» مجمّع فقط — لا اسم ولا جوال ولا عنوان IP ولا
+     بصمة جهاز. المفتاح مركّب من (يوم، نوع الحدث، البُعد اختياري) والعداد رقم فقط.
+     بهذا الشكل لا يمكن ربط أي حدث بهوية عميل من الجدول نفسه إطلاقاً، ولا يمكن
+     استخدام البيانات للتسويق، ولا يتجاوز السجل عدداً ثابتاً من الصفوف. */
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS analytics_events (day TEXT NOT NULL, name TEXT NOT NULL, dim TEXT NOT NULL DEFAULT \'\', n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, name, dim))').run().catch(ignoreExistsObject);
   // أعمدة المندوب (هيكل متعدد المستويات ونسب العمولة)
   await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_id TEXT').run().catch(ignoreExistsColumn);
   await env.DB.prepare('ALTER TABLE users ADD COLUMN rate REAL').run().catch(ignoreExistsColumn);

@@ -114,3 +114,17 @@ INSERT OR IGNORE INTO items (id, data, updated_at) VALUES
   ('acc-marka',    '{"id":"acc-marka","name":"مركى","category":"acc","unit":"pc","price":80,"w":0.6,"h":0.35,"shape":"rect","color":"#c0392b","active":true}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   ('acc-mkhada',   '{"id":"acc-mkhada","name":"مخدة","category":"acc","unit":"pc","price":45,"w":0.45,"h":0.45,"shape":"rect","color":"#d35400","active":true}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now')),
   ('acc-side',     '{"id":"acc-side","name":"طاولة جانبية","category":"acc","unit":"pc","price":120,"w":0.5,"h":0.5,"shape":"circle","color":"#7f8c8d","active":true}', strftime('%Y-%m-%dT%H:%M:%fZ', 'now'));
+
+-- ═══════════════════ تحليلات لوحة المالك ═══════════════════
+-- جدول عدّادات مجمّعة فقط: يوم + اسم حدث + بُعد اختياري + رقم.
+-- لا اسم عميل ولا رقم جوال ولا عنوان IP ولا بصمة جهاز ولا مُعرّف جلسة:
+-- ما يُخزَّن هنا لا يصلح لربط أي حدث بهوية أحد. تُنشأ تلقائياً من الخادم
+-- (ensureAnalytics) وهذا السطر لتوثيق المخطط فقط.
+CREATE TABLE IF NOT EXISTS analytics_events (
+  day  TEXT    NOT NULL,
+  name TEXT    NOT NULL,
+  dim  TEXT    NOT NULL DEFAULT '',
+  n    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (day, name, dim)
+);
+CREATE INDEX IF NOT EXISTS analytics_events_name_day_idx ON analytics_events(name, day);

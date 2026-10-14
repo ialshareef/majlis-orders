@@ -2846,3 +2846,49 @@ body.portal { background: var(--bg); }
   box-shadow: 0 0 0 1px var(--accent-line);
 }
 .wallanchor:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+/* ===== لوحة تحليلات المالك ===== */
+.owner-panel { display: grid; gap: 12px; margin: 12px 0 4px; }
+.owner-panel[hidden] { display: none; }
+.owner-panel .card-head {
+  display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
+}
+.owner-panel .card-head b { font-size: .95rem; }
+.owner-custom { justify-content: flex-start; }
+.owner-grid {
+  display: grid; gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+}
+.owner-grid .card { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.owner-grid .card > b { font-size: .88rem; color: var(--ink-2); }
+
+/* قمع التحويل */
+.funnel { display: grid; gap: 7px; }
+.funnel-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; }
+.funnel-label { font-size: .82rem; color: var(--ink-2); }
+.funnel-bar { grid-column: 1 / -1; height: 8px; border-radius: 999px; background: var(--sand); overflow: hidden; }
+.funnel-bar > i { display: block; height: 100%; background: var(--accent); border-radius: 999px; }
+.funnel-n { font-size: .84rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+.funnel-rate { font-size: .74rem; color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.funnel-note { font-size: .76rem; color: var(--ink-3); line-height: 1.6; margin: 4px 0 0; }
+
+/* رسم أعمدة بسيط بـ CSS بلا مكتبة */
+.trend { display: flex; align-items: flex-end; gap: 2px; height: 120px; padding-top: 6px; }
+.trend-col { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; justify-content: flex-end; gap: 2px; height: 100%; }
+.trend-bar { border-radius: 3px 3px 0 0; min-height: 2px; }
+.trend-bar.start { background: var(--accent); }
+.trend-bar.finish { background: var(--accent-line); }
+.trend-legend { display: flex; gap: 12px; font-size: .74rem; color: var(--ink-3); margin-top: 6px; }
+.trend-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-inline-end: 4px; }
+
+/* قوائم مرتّبة */
+.dim-list { display: grid; gap: 5px; margin: 0; padding: 0; list-style: none; }
+.dim-list li {
+  display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px;
+  font-size: .82rem; padding: 3px 0;
+}
+.dim-list b { font-weight: 600; color: var(--ink-2); }
+.dim-list span { font-variant-numeric: tabular-nums; color: var(--ink-3); }
+.owner-empty { font-size: .82rem; color: var(--ink-3); line-height: 1.6; margin: 0; }
+.owner-src { font-size: .76rem; color: var(--ink-3); line-height: 1.7; margin: 0; }
+.owner-src b { color: var(--ink-2); }
