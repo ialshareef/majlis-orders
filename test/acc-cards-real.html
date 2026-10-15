@@ -29,7 +29,7 @@ function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FA
   t('لا $ المفرد مع forEach/map/length', single.length === 0, single.slice(0, 3).join(' | '));
 
   t('input اليدوي يستعمل $$',     src.indexOf("$$('input[data-qtyin]'") >= 0);
-  t('أزرار +/- تستعمل $$',        src.indexOf("$$('button[data-qtyplus]'") >= 0 && src.indexOf("$$('button[data-qtyminus]'") >= 0);
+  t('بلا أزرار +/- للكمية (الحقل المباشر بديل كامل)', src.indexOf("button[data-qtyplus]") < 0 && src.indexOf("button[data-qtyminus]") < 0 && src.indexOf('data-qtyminus') < 0 && src.indexOf('data-qtyplus') < 0);
   t('زر الحذف يستعمل $$',         src.indexOf("$$('button[data-qtydel]'") >= 0);
   t('زر «تم» يستعمل $$',          src.indexOf("$$('button[data-qtyok]'") >= 0);
   t('بطاقات فتح اللوحة تستعمل $$', src.indexOf("$$('[data-accwrap]'") >= 0);

@@ -89,7 +89,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-col-lock', app.indexOf("'#tbAddColumn'") >= 0 && app.indexOf('#tbAddWall') >= 0, 'lockable');
     t('A-revert', app.indexOf('onRevert') >= 0 && app.indexOf('فوق العامود') >= 0, 'revert toast');
     t('A-zoom', html.indexOf('id="tbZoomPct"') >= 0 && app.indexOf('zoomPct') >= 0, 'zoom pct');
-    t('A-qty-step', app.indexOf('data-selminus') >= 0 && app.indexOf('data-selplus') >= 0, 'qty steppers');
+    t('A-qty-input', app.indexOf('id="selQty"') >= 0 && app.indexOf('data-sbqty') >= 0 && app.indexOf('data-selminus') < 0 && app.indexOf('data-selplus') < 0 && app.indexOf('data-sbminus') < 0 && app.indexOf('data-sbplus') < 0, 'direct qty inputs, no steppers');
     t('A-smart', dz.indexOf('findSpots(w, h, diff') >= 0 || dz.indexOf('findSpots(w, h, n') >= 0, 'smart placement');
     t('A-dup-clamp', dz.indexOf('this._clampToRoom(q, this.geometry())') >= 0, 'dup clamp');
     t('A-warn', app.indexOf('تم وضع ${placed}') >= 0, 'partial warn');
@@ -320,16 +320,25 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     qinp.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(function () { return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === 5; }, 120000);
     t('B-qty5', true);
-    document.querySelector('#inspector [data-selplus]').click();
+    var qinp2 = document.querySelector('#inspector #selQty');
+    qinp2.value = '6';
+    qinp2.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(function () {
       return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === 6;
     }, 120000);
-    t('B-qty-plus', true);
-    document.querySelector('#inspector [data-selminus]').click();
+    t('B-qty-input-up', true);
+    qinp2.value = '5';
+    qinp2.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(function () {
       return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === 5;
     }, 120000);
-    t('B-qty-minus', true);
+    t('B-qty-input-down', true);
+    qinp2.value = 'abc';
+    qinp2.dispatchEvent(new Event('change', { bubbles: true }));
+    await waitFor(function () {
+      return document.querySelector('#inspector #selQty').value === '5';
+    }, 120000);
+    t('B-qty-invalid-reverts', true);
     // B: زوم بالنسبة
     document.querySelector('#tbZoomIn').click();
     await waitFor(function () { return document.querySelector('#tbZoomPct').textContent !== '100%'; }, 60000);
@@ -350,11 +359,13 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     dz.select({ type: 'piece', id: eAcc.id });
     await waitFor(function () { return !sBar.hidden && sBar.querySelector('[data-sbdel]'); }, 60000);
     t('E-selbar-shows', sBar.textContent.indexOf('حذف') >= 0 && !!sBar.querySelector('[data-sbprops]') &&
-      !!sBar.querySelector('[data-sbplus]') && insp.hidden, 'actions, inspector closed');
+      !!sBar.querySelector('[data-sbqty]') && insp.hidden, 'actions + qty input, inspector closed');
     var eCount = dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length;
-    sBar.querySelector('[data-sbplus]').click();
+    var sbq = sBar.querySelector('[data-sbqty]');
+    sbq.value = String(eCount + 1);
+    sbq.dispatchEvent(new Event('change', { bubbles: true }));
     await waitFor(function () { return dz.state.pieces.filter(function (x) { return x.kind === 'acc' && x.itemId === 'acc-marka'; }).length === eCount + 1 && !sBar.hidden; }, 60000);
-    t('E-selbar-qty', insp.hidden, 'qty+1 w/o inspector');
+    t('E-selbar-qty', insp.hidden, 'qty+1 via input w/o inspector');
     var eR0 = (dz.selectedPiece() || {}).rot || 0;
     sBar.querySelector('[data-sbrot]').click();
     await waitFor(function () {

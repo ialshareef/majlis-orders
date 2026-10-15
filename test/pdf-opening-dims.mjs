@@ -217,11 +217,12 @@ console.log('== 6) المصمم والتصدير متساويان ==');
 
 console.log('== 7) كنبة أعمق من مسافة القياس: الخط يخرج خارج الغرفة ==');
 {
-  // جدار 6م، باب في منتصفه، وكنبة على نفس الجدار بعمق 1.2م — أي أعمق من
-  // خط القياس 0.34م — فلا بد أن يخرج الخط ولا يغطي الكنبة.
+  // جدار 6م، باب في منتصفه، وكنبة بجانب الباب بعمق 1.2م — أي أعمق من
+  // خط القياس 0.34م — فلا بد أن يخرج الخط ولا يغطي الكنبة، بينما تبقى
+  // فتحة الباب نفسها خالية فتستقبل شارة العرض.
   const wallLen = 6, sofaDepth = 1.2;
   const d = mkDesign(wallLen, 4, [{ id: 'd1', wall: 0, t: 3, w: 0.9, h: 2.1, type: 'door' }]);
-  d.pieces = [{ id: 'sofa1', kind: 'sofa', seating: 'floor', w: 2.6, h: sofaDepth, wall: 0, t: 3, x: 0, y: 0, rot: 0 }];
+  d.pieces = [{ id: 'sofa1', kind: 'sofa', seating: 'floor', w: 2.4, h: sofaDepth, wall: 0, t: 1.0, x: 0, y: 0, rot: 0 }];
   lastCtx = null;
   const dz = new Designer(makeCanvas(makeCtx()), { getItem: () => null, pieceSpecLabel: () => '', onChange() {}, onSelect() {} });
   dz.setState(JSON.parse(JSON.stringify(d)));
@@ -247,7 +248,7 @@ console.log('== 7) كنبة أعمق من مسافة القياس: الخط يخ
   const at = (label) => texts.filter((x) => x.text === label).map((x) => dz.wallCoords(w0, { x: (x.x - v2.ox) / v2.scale, y: (x.y - v2.oy) / v2.scale }));
   const s255 = at('255 سم'), sW = at('90 سم');
   t('شارتا المسافة يساراً ويميناً خارج الغرفة', s255.length === 2 && s255.every((q) => q.s < -0.05), JSON.stringify(s255));
-  t('شارة عرض الفتحة تبقى داخل الغرفة عند الفتحة', sW.length > 0 && sW.every((q) => q.s > 0.5 && Math.abs(q.t - 3) < 0.3), JSON.stringify(sW));
+  t('شارة عرض الباب في فتحة الجدار لا طافية في العمق', sW.length > 0 && sW.every((q) => q.s > -0.3 && q.s < 0.15 && Math.abs(q.t - 3) < 0.3), JSON.stringify(sW));
   // القيم لا تتغير: نفس openingGaps
   const shown = numTexts(texts.map((x) => x.text));
   t('القيم نفسها معروضة: 255/255/90/600', shown.includes(255) && shown.includes(90) && shown.includes(600), shown.join(','));
@@ -318,6 +319,28 @@ console.log('== 10) الشارة داخل الغرفة لا تقع على حزا
   }
   t('كل الشرائح خارج حزام الجدار في الاتجاهات الأربعة', allClear, detail.join(', '));
   t('والشرائح كلها داخل ممر الغرفة (0.34م)', allInside, detail.join(', '));
+}
+
+console.log('== 11) المشب: عرضه خلف منطقة الاستخدام لا في الفتحة ==');
+{
+  // المشب جسم يشغل الجدار (موقد بارز)، فشارة عرضه تبقى خلف منطقة
+  // استخدامه كما كانت — القاعدة الجديدة للباب وحده.
+  const d = mkDesign(6, 4, [{ id: 'm1', wall: 0, t: 3, w: 0.6, h: 1.2, type: 'mashab', depth: 0.5 }]);
+  const dz = new Designer(makeCanvas(makeCtx()), { getItem: () => null, pieceSpecLabel: () => '', onChange() {}, onSelect() {} });
+  dz.setState(JSON.parse(JSON.stringify(d)));
+  const g = dz.geometry();
+  const w0 = g.walls[0];
+  const W = 1400, H = Math.max(650, Math.round(W / dz.aspect()));
+  lastCtx = null;
+  dz.toImage(W, H);
+  const v = dz._fitView(W, H);
+  const texts = lastCtx ? lastCtx.texts : [];
+  const at = (label) => texts.filter((x) => x.text === label).map((x) => dz.wallCoords(w0, { x: (x.x - v.ox) / v.scale, y: (x.y - v.oy) / v.scale }));
+  const s60 = at('60 سم');
+  const use = Designer.OPENING_USE_DEPTH({ type: 'mashab', depth: 0.5 });
+  t('شارة عرض المشب خلف منطقة الاستخدام', s60.length > 0 && s60.every((q) => q.s > use && Math.abs(q.t - 3) < 0.3), JSON.stringify(s60) + ' use=' + use);
+  const shown = numTexts(texts.map((x) => x.text));
+  t('قيم المشب معروضة: 270/270/60', shown.includes(270) && shown.includes(60), shown.join(','));
 }
 
 const report = lines.join('\n') + '\n\n=== PASS=' + pass + '  FAIL=' + fail + ' ===';

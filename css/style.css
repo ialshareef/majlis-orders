@@ -2399,6 +2399,7 @@ body.modal-open { overflow: hidden; }
 .inv-bottom:has(> .inv-contact:only-child) { display: block; }
 .inv-chans { display: flex; gap: 2mm; }
 .inv-chan { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: .8mm; text-align: center; }
+.inv-chan[href] { text-decoration: none; color: inherit; }
 .inv-chan-ic { width: 7mm; height: 7mm; border-radius: 50%; display: flex; align-items: center; justify-content: center; color: #fff; }
 .inv-chan-ic svg { width: 4.4mm; height: 4.4mm; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
 .inv-chan-ic svg circle[r], .inv-chan-ic svg circle:not([r]) { fill: none; }
@@ -2407,6 +2408,7 @@ body.modal-open { overflow: hidden; }
 .inv-chan-ic.tt { background: #111; }
 .inv-chan-ic.map { background: #2E7D32; }
 .inv-chan-ic.tel { background: #1F6FB2; }
+.inv-chan-ic.sn { background: #F7F400; color: #1F1B18; }
 .inv-chan-lb { font-weight: 700; color: #1F1B18; font-size: 8pt; }
 .inv-chan-qr { width: 15mm; height: 15mm; image-rendering: pixelated; }
 .inv-chan-url { font-size: 6.4pt; color: #6A5F54; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
@@ -2674,6 +2676,9 @@ body.portal { background: var(--bg); }
 .portal .accq-step { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .portal .accq-step .btn { width: 56px; min-height: 56px; font-size: 1.6rem; border-radius: 50%; }
 .portal .accq-step b { min-width: 76px; text-align: center; font-size: 2rem; font-weight: 800; color: var(--accent); }
+/* حقل العدد المباشر في نافذة الكمية: كبير وواضح للكتابة المباشرة */
+.portal .accq-step label { display: flex; align-items: center; gap: 10px; font-weight: 700; }
+.portal .accq-step input { width: 110px; min-height: 56px; text-align: center; font-size: 1.8rem; font-weight: 800; }
 .portal .accq-rows, .portal #accqRows { display: grid; gap: 8px; max-height: 34vh; overflow-y: auto; }
 .portal .accq-row {
   display: flex; align-items: center; gap: 10px;

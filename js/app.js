@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.58';
+  const APP_VERSION = '1.0.59';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -1355,19 +1355,24 @@ markRoomHealth();
     if (p.kind === 'free') return 'مساحة أرضية';
     return (getItem(p.itemId) || {}).name || 'إكسسوار';
   }
-  function selBarQty(delta) {
+  function selBarQtySet(raw) {
     const p = designer.selectedPiece();
     if (!p) return;
     const it = getItem(p.itemId);
     if (!it) return;
-    const have = designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id).length;
-    const want = Math.max(1, Math.min(ACC_MAX, have + delta));
-    const placed = designer.setAccessoryCount(it, want);
-    if (placed < want) toast(`المساحة المتاحة لا تكفي لـ ${want} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
+    // الفارغ وغير الرقمي يُرفض ويُعاد العرض الحالي — لا يُفسَّر صفراً ولا واحداً
+    const v = /^\d+$/.test(String(raw == null ? '' : raw).trim()) ? parseInt(String(raw).trim(), 10) : NaN;
+    if (!Number.isFinite(v) || v < 1 || v > ACC_MAX) {
+      if (String(raw == null ? '' : raw).trim() !== '') toast(`أدخل عددًا صحيحًا من 1 إلى ${ACC_MAX}.`, true);
+      renderSelBar(designer.selectionInfo());
+      return;
+    }
+    const placed = designer.setAccessoryCount(it, v);
+    if (placed < v) toast(`المساحة المتاحة لا تكفي لـ ${v} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
     // setAccessoryCount يلغي التحديد: نُبقي الشريط حياً بإعادة تحديد قطعة من الصنف
     const rest = designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id)[0];
     if (rest) designer.select({ type: 'piece', id: rest.id });
-    else renderSelBar(designer.selectionInfo());
+    renderSelBar(designer.selectionInfo());
   }
   function selBarWidth(delta) {
     const o = designer.selectedOpening();
@@ -1382,7 +1387,7 @@ markRoomHealth();
     if (info.type === 'piece' && info.piece.kind === 'acc') {
       const it = getItem(info.piece.itemId);
       const n = it ? designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id).length : 0;
-      mid = `<span class="p-qty"><button type="button" class="btn" data-sbminus aria-label="إنقاص">−</button><input type="number" min="1" value="${n}" inputmode="numeric" aria-label="الكمية" readonly tabindex="-1"><button type="button" class="btn" data-sbplus aria-label="زيادة">+</button></span>`;
+      mid = `<span class="p-qty"><input type="number" min="1" max="${ACC_MAX}" step="1" value="${n}" inputmode="numeric" aria-label="الكمية — اكتب العدد مباشرة" data-sbqty></span>`;
     } else if (info.type === 'opening') {
       mid = `<span class="p-qty"><button type="button" class="btn" data-sbwminus aria-label="تضييق">−</button><button type="button" class="btn" data-sbwplus aria-label="توسيع">+</button></span>`;
     }
@@ -1396,8 +1401,8 @@ markRoomHealth();
     if (q('[data-sbrot]')) q('[data-sbrot]').onclick = () => { designer.rotateSelected(90); renderSelBar(designer.selectionInfo()); };
     if (q('[data-sbdup]')) q('[data-sbdup]').onclick = () => { designer.duplicateSelected(); };
     if (q('[data-sbprops]')) q('[data-sbprops]').onclick = () => openInspector();
-    if (q('[data-sbminus]')) q('[data-sbminus]').onclick = () => selBarQty(-1);
-    if (q('[data-sbplus]')) q('[data-sbplus]').onclick = () => selBarQty(1);
+    const sbq = q('[data-sbqty]');
+    if (sbq) sbq.addEventListener('change', () => selBarQtySet(sbq.value));
     if (q('[data-sbwminus]')) q('[data-sbwminus]').onclick = () => selBarWidth(-0.1);
     if (q('[data-sbwplus]')) q('[data-sbwplus]').onclick = () => selBarWidth(0.1);
   }
@@ -1508,7 +1513,7 @@ markRoomHealth();
       html += `
         <div class="insp-head"><b>${icon(isSofa ? 'sofa' : isFree ? 'align' : 'pillow')} ${esc(curItem.name)} <small id="inspWallLbl">${p.wall != null ? 'على جدار ' + (p.wall + 1) : 'قطعة حرة'}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="insp-main">
-          ${canSize ? '' : `<div class="row2"><label>الصنف <select id="selItem">${opts.join('')}</select></label><label>الكمية <span class="p-qty"><button type="button" class="btn" data-selminus aria-label="إنقاص">−</button><input id="selQty" type="number" min="1" step="1" value="${accCount}" inputmode="numeric"><button type="button" class="btn" data-selplus aria-label="زيادة">+</button></span></label></div>`}
+          ${canSize ? '' : `<div class="row2"><label>الصنف <select id="selItem">${opts.join('')}</select></label><label>الكمية <span class="p-qty"><input id="selQty" type="number" min="1" max="${ACC_MAX}" step="1" value="${accCount}" inputmode="numeric" aria-label="الكمية — اكتب العدد مباشرة"></span></label></div>`}
           ${isSofa && legacy ? `<p class="hint">هذه القطعة من طلب قديم مرتبط بصنف «${esc(legacy.name)}». اختر الخشب والقماش والإسفنج لتحويلها.</p>` : ''}
           ${isSofa ? SPECS.map((s) => `<label>${s.label} ${specSelect('sel_' + s.key, s, p[s.field] || '', '')}</label>`).join('') : ''}
         </div>
@@ -1626,16 +1631,21 @@ markRoomHealth();
           const code = (itemEl && itemEl.value) || (p && p.itemId);
           const it = code ? getItem(code) : null;
           if (!it) return;
-          const want = Math.max(1, Math.min(ACC_MAX, Math.round(num(raw !== undefined ? raw : qtyEl.value)) || 1));
+          // الفارغ وغير الرقمي والسالب والصفر مرفوضة: يُعاد العدد الحالي ولا يتغيّر شيء
+          const txt = String(raw !== undefined ? raw : qtyEl.value).trim();
+          const cur = designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id).length;
+          if (!/^\d+$/.test(txt)) {
+            qtyEl.value = cur;
+            if (txt !== '') toast(`أدخل عددًا صحيحًا من 1 إلى ${ACC_MAX}.`, true);
+            return;
+          }
+          const want = Math.max(1, Math.min(ACC_MAX, parseInt(txt, 10)));
           const placed = designer.setAccessoryCount(it, want);
           qtyEl.value = placed;
           if (placed < want) toast(`المساحة المتاحة لا تكفي لـ ${want} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
         };
         qtyEl.addEventListener('change', () => applyQty());
         onEnter(qtyEl, () => applyQty());
-        const qm = $('[data-selminus]', insp), qp = $('[data-selplus]', insp);
-        if (qm) qm.onclick = () => applyQty(num(qtyEl.value) - 1);
-        if (qp) qp.onclick = () => applyQty(num(qtyEl.value) + 1);
       }
       $$('[data-act]', insp).forEach((b) => b.addEventListener('click', () => {
         const a = b.dataset.act;
@@ -2984,6 +2994,65 @@ markRoomHealth();
     return qr.createDataURL(6, 2);
   }
 
+  /* ---------- قنوات التواصل في مستند العميل ----------
+     نفس مصدر صفحة العميل تماماً (settings: instagram/tiktok/snapchat) — لا
+     بيانات مكررة ولا روابط مختلفة. تُبنى البطاقات بنفس شكل PDF العميل
+     (أيقونة + QR + رابط) وبنفس أصناف CSS الجاهزة (.inv-contact/.inv-chans).
+     ملاحظة صريحة: PDF الموظف صورة مُدمجة واحدة (html2canvas + addImage)
+     فالروابط داخله غير قابلة للنقر — لذلك رمز QR هو طريق المسح بكاميرا
+     الجوال، والرابط نصٌّ للقراءة، والوسم <a> يبقى ليعمل في مسار الطباعة. */
+  const SOCIAL_CHANS = [
+    { key: 'instagram', label: 'إنستقرام', cls: 'in', icon: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2"/></svg>' },
+    { key: 'tiktok', label: 'تيك توك', cls: 'tt', icon: '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg>' },
+    { key: 'snapchat', label: 'سناب شات', cls: 'sn', icon: '<svg viewBox="0 0 24 24"><path d="M12 2.5c-3.6 0-5.5 2.3-5.5 5.4v1.9c-1.2.5-2 1.6-2 2.7l1.7.5c-.4 1-.4 1.9.3 2.6l-1.5.9c-.3.2-.3.7.1.8l2.1.5c.5 1.2 1.4 2.2 2.4 2.6.6.3 1.2.4 1.9.5v.6h1v-.6c.7-.1 1.3-.2 1.9-.5 1-.4 1.9-1.4 2.4-2.6l2.1-.5c.4-.1.4-.6.1-.8l-1.5-.9c.7-.7.7-1.6.3-2.6l1.7-.5c0-1.1-.8-2.2-2-2.7V7.9c0-3.1-1.9-5.4-5.5-5.4z"/></svg>' },
+  ];
+  /* رابط اجتماعي صالح للعرض والترميز: https فقط بلا فراغات، ونرفض القيم
+     التجريبية (example/localhost/test) حتى لا يظهر رمز لا يعمل. */
+  function validSocialUrl(v) {
+    const u = String(v || '').trim();
+    if (!/^https:\/\//i.test(u) || /[\s<>"]/.test(u)) return '';
+    if (/example\.com|localhost|127\.0\.0\.1|\/test(\/|$)/i.test(u)) return '';
+    return u;
+  }
+  function shopSocialList(s) {
+    const out = [];
+    for (const a of SOCIAL_CHANS) {
+      const url = validSocialUrl(s && s[a.key]);
+      if (url && !out.some((o) => o.url === url)) out.push({ key: a.key, label: a.label, cls: a.cls, icon: a.icon, url });
+    }
+    return out;
+  }
+  function shopSocialHtml(list) {
+    if (!list || !list.length) return '';
+    return `<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b>`
+      + `<div class="inv-chans-hint">امسح رمز QR لفتح الحساب مباشرة</div>`
+      + `<div class="inv-chans">${list.map((a) => `
+        <a class="inv-chan" href="${esc(a.url)}" target="_blank" rel="noopener">`
+        + `<span class="inv-chan-ic ${a.cls}">${a.icon}</span>`
+        + `<span class="inv-chan-lb">${esc(a.label)}</span>`
+        + (a.img ? `<img class="inv-chan-qr" src="${a.img}" alt="رمز ${esc(a.label)}">` : '')
+        + `<span class="inv-chan-url">${esc(a.url.replace(/^https?:\/\//i, ''))}</span></a>`).join('')}</div></div></div>`;
+  }
+  /* رموز QR للحسابات المضبوطة فقط — بنفس مكتبة رمز الفاتورة الضريبية
+     (qrcode-generator) وبحدّ أبيض هادئ حول الرمز ليسهل مسحه. */
+  async function socialQrList() {
+    const list = shopSocialList(settings());
+    if (!list.length) return '';
+    try { await loadScript(QR_URL); } catch (_) { /* بلا مكتبة: نص وروابط فقط */ }
+    for (const a of list) {
+      a.img = '';
+      if (window.qrcode) {
+        try {
+          const qr = window.qrcode(0, 'M');
+          qr.addData(a.url);
+          qr.make();
+          a.img = qr.createDataURL(4, 2);
+        } catch (_) { a.img = ''; }
+      }
+    }
+    return shopSocialHtml(list);
+  }
+
 /** عنوان المستند حسب حالة الطلب والضريبة.
     «فاتورة ضريبية مبسطة» مستند ضريبي نظامي برمز QR الضريبي — لا نغيّر مسمّاه.
     أما مستند الطلب نفسه فاسمه «أمر شراء». */
@@ -3014,7 +3083,7 @@ function docTitle(order) {
   const orderEmployee = (order) => order.createdByName || (Store.getUser(order.createdBy) || {}).name || (currentUser && currentUser.name) || '';
 
   /** أمر شراء العميل (أو عرض السعر) */
-  function buildPrintDoc(order, qrSrc = '') {
+  function buildPrintDoc(order, qrSrc = '', socialHtml = '') {
     const img = designImage(order);
     const { lines, total, subtotal, vatEnabled, vatRate, vatAmount, discount } = computeLines(order);
     const paid = paidOf(order);
@@ -3064,6 +3133,7 @@ function docTitle(order) {
           <div class="rem"><span>المتبقي</span><span class="num">${fmt(remainingOf(total, paid))} ${cur$}</span></div>`}
         </div>
       </div>
+      ${socialHtml}
       <div class="inv-foot">
         <div class="inv-sign"><i></i><span>توقيع العميل</span></div>
         <div>${quote ? 'هذا عرض سعر وليس أمر شراء' : `الحالة: ${esc(STATUS[order.status] || order.status)}`} • طريقة القياس: ${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</div>
@@ -3233,7 +3303,7 @@ function docTitle(order) {
 
   /** المستندات الممكنة لطلب: أمر شراء العميل وأمر التصنيع */
   const ORDER_DOCS = {
-    invoice: { label: (o) => (o.status === 'quote' ? 'عرض السعر' : 'أمر شراء'), file: (o) => `${o.status === 'quote' ? 'عرض-سعر' : 'طلب'}-${o.number}.pdf`, build: async (o) => buildPrintDoc(o, await zatcaQr(o)), share: true },
+    invoice: { label: (o) => (o.status === 'quote' ? 'عرض السعر' : 'أمر شراء'), file: (o) => `${o.status === 'quote' ? 'عرض-سعر' : 'طلب'}-${o.number}.pdf`, build: async (o) => buildPrintDoc(o, await zatcaQr(o), await socialQrList()), share: true },
     workshop: { label: () => 'أمر التصنيع (بلا أسعار)', file: (o) => `أمر-تصنيع-${o.number}.pdf`, build: async (o) => buildWorkshopDoc(o), share: false },
   };
 

@@ -34,9 +34,7 @@ function renderPanel(){
       +'<span class="px-acc-name">'+esc(a.name)+'</span>'
       +(n?'<b class="px-acc-badge num">'+n+'</b>':'')
       +'<span class="px-qtybar" data-qtypanel="'+esc(a.id)+'" hidden>'
-      +'<button type="button" class="qbtn" data-qtyminus="'+esc(a.id)+'" aria-label="إنقاص">-</button>'
       +'<input class="px-qtyval num" data-qtyin="'+esc(a.id)+'" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0" max="'+MAX_QTY+'" value="'+n+'" aria-label="عدد">'
-      +'<button type="button" class="qbtn" data-qtyplus="'+esc(a.id)+'" aria-label="زيادة">+</button>'
       +'<button type="button" class="px-qdone" data-qtyok="'+esc(a.id)+'">تم</button>'
       +'<button type="button" class="px-qdel" data-qtydel="'+esc(a.id)+'" aria-label="حذف"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2"/></svg></button>'
       +'</span>'
@@ -59,19 +57,20 @@ function syncTile(id){
 }
 function wire(){
   const box=$('#g');
-  $$('button[data-qtyminus]',box).forEach(function(b){
-    b.addEventListener('click',function(e){e.stopPropagation();counts[b.dataset.qtyminus]=Math.max(0,(counts[b.dataset.qtyminus]||0)-1);renderPanel();});
-  });
-  $$('button[data-qtyplus]',box).forEach(function(b){
-    b.addEventListener('click',function(e){e.stopPropagation();counts[b.dataset.qtyplus]=Math.min(MAX_QTY,(counts[b.dataset.qtyplus]||0)+1);renderPanel();});
-  });
   $$('input[data-qtyin]',box).forEach(function(inp){
     inp.addEventListener('blur',function(e){
-  var panel=inp.closest('.px-qtybar');
-  if(e.relatedTarget && panel && panel.contains(e.relatedTarget)) return;
-  const id=inp.dataset.qtyin;const raw=inp.value.trim();
-  const v=/^\d+$/.test(raw)?parseInt(raw,10):null;
-  if(v==null){inp.value=String(counts[id]||0);return;} counts[id]=Math.min(MAX_QTY,v);syncTile(id);});
+      var panel=inp.closest('.px-qtybar');
+      if(e.relatedTarget && panel && panel.contains(e.relatedTarget)) return;
+      // تجاهل blur التدمير (نفس إصلاح portal-expanded.js): يُؤجَّل مع إعادة فحص الاتصال
+      var el=inp;
+      setTimeout(function(){
+        if(!el.isConnected) return;
+        var id=el.dataset.qtyin, raw=el.value.trim();
+        var v=/^\d+$/.test(raw)?parseInt(raw,10):null;
+        if(v==null){el.value=String(counts[id]||0);return;}
+        counts[id]=Math.min(MAX_QTY,v);syncTile(id);
+      },0);
+    });
   });
   $$('button[data-spread]',box).forEach(function(b){b.addEventListener('click',function(e){e.stopPropagation();});});
 
@@ -140,13 +139,23 @@ try{
   t('الضغط على الاسم يفتح لوحته', card(1).querySelector('.px-qtybar').hidden === false);
   t('  ويُغلق السابقة', card(0).querySelector('.px-qtybar').hidden === true);
 
-  /* 4) زيادة ثم نقصان */
-  card(1).querySelector('[data-qtyplus]').click();
-  t('زر + يزيد', (counts['acc-2'] || 0) === 1, 'n=' + (counts['acc-2'] || 0));
-  card(1).querySelector('[data-qtyplus]').click();
-  t('زر + ثانية = 2', (counts['acc-2'] || 0) === 2, 'n=' + (counts['acc-2'] || 0));
-  card(1).querySelector('[data-qtyminus]').click();
-  t('زر − ينقص', (counts['acc-2'] || 0) === 1, 'n=' + (counts['acc-2'] || 0));
+  /* 4) كتابة الكمية مباشرة في الحقل ثم «تم» */
+  card(1).querySelector('.px-acc-name').click();
+  let ina = card(1).querySelector('[data-qtyin]');
+  ina.value = '1';
+  card(1).querySelector('[data-qtyok]').click();
+  t('الكتابة + تم تضبط 1', (counts['acc-2'] || 0) === 1, 'n=' + (counts['acc-2'] || 0));
+  card(1).querySelector('.px-acc-name').click();
+  ina = card(1).querySelector('[data-qtyin]');
+  t('اللوحة تعرض الكمية الحالية', ina.value === '1', 'v=' + ina.value);
+  ina.value = '2';
+  card(1).querySelector('[data-qtyok]').click();
+  t('الكتابة + تم تضبط 2', (counts['acc-2'] || 0) === 2, 'n=' + (counts['acc-2'] || 0));
+  card(1).querySelector('.px-acc-name').click();
+  ina = card(1).querySelector('[data-qtyin]');
+  ina.value = '1';
+  card(1).querySelector('[data-qtyok]').click();
+  t('التعديل يخفض إلى 1', (counts['acc-2'] || 0) === 1, 'n=' + (counts['acc-2'] || 0));
 
   /* 5) كتابة الكمية ثم «تم» */
   card(2).querySelector('.px-acc-name').click();

@@ -864,15 +864,23 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       return { depth: Math.max(0.2, +s.depth || 0.8), rest };
     }
 
-addSofaOnWall(wallIndex, spec) {
+  addSofaOnWall(wallIndex, spec) {
       const g = this.geometry();
       const w = g.walls[wallIndex];
       if (!w || !spec) return null;
       const { depth, rest } = this._sofaSpec(spec);
       /* نبحث في كل الفترات الحرة (لا الأكبر فقط) ونختار أول فترة تُعطي كنبة
-         صالحة هندسياً: الفترات المحسوبة على المحور قد تكون متجاور ة لمنطقة
-         استخدام باب/مشب، فيمنعها الفحص الهندسي المشترك. */
+         صالحة هندسياً: الفترات المحسوبة على المحور قد تكون متجاورة لمنطقة
+         استخدام باب/مشب، فيمنعها الفحص الهندسي المشترك.
+         مهم: المحجوز يشمل منطقة استخدام الفتحة (العرض + هامش 0.15م) لا عرض
+         الفتحة وحده — وإلا خرجت فترة ملاصقة لحافة الباب تُرفض حتماً في
+         canPlace فيُتخطَّى الجدار كله رغم وجود مساحة صالحة بجانب الباب. */
       const occ = this._occupied(wallIndex, depth, this.state.cornerMode === 'deduct');
+      for (const o of this.state.openings) {
+        if (!o || o.wall !== wallIndex || o.blocks === false) continue;
+        const pad = 0.15 + 0.03;   // هامش الاستخدام + تسامح الفحص الهندسي
+        occ.push([o.t - o.w / 2 - pad, o.t + o.w / 2 + pad]);
+      }
       const free = this._freeIntervals(w.len, occ, 0.3).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
       if (!free.length) return null;
       for (const [t0, t1] of free) {
@@ -2098,11 +2106,33 @@ addSofaOnWall(wallIndex, spec) {
                   s -= bhW + 0.06;
               }
               wallOutside[o.wall] = true;
-              plan.openings[o.id] = { s, outside, off1: 0, off2: 0 };
+          }
+          /* شارة عرض الفتحة: للباب في فتحة الجدار نفسها (فراغ مقطوع أبيض) —
+             فلا تطفو في عمق الغرفة فتُقرأ «عمق باب» ولا تُخفي شيئاً. وللمشب
+             خلف منطقة استخدامه لأن جسمه يشغل الجدار. تُختبر ضد الأثاث وضد
+             ما رُسم قبلاً؛ والبديل عند التعارض خلف منطقة الاستخدام. */
+          const sUse = 0.34 + Designer.OPENING_USE_DEPTH(o) + 0.06;
+          const wCands = o.type === 'door' ? [-0.05, sUse] : [sUse];
+          const halfWw = (ctx.measureText(cm(o.w)).width + 10 * k) / 2 / S;
+          let wS = wCands[wCands.length - 1];
+          for (const cand of wCands) {
+              const c = pt(o.t, cand);
+              const r = { minX: c.x - halfWw, maxX: c.x + halfWw,
+                          minY: c.y - bhW / 2, maxY: c.y + bhW / 2 };
+              if (!hitsSolid(r) && !placed.some((q) => hitsRect(r, q))) { wS = cand; break; }
+              wS = cand;
+          }
+          if (outside) {
+              plan.openings[o.id] = { s, outside, off1: 0, off2: 0, wS };
           } else {
-              plan.openings[o.id] = { s, outside, off1, off2 };
+              plan.openings[o.id] = { s, outside, off1, off2, wS };
           }
           placed.push.apply(placed, inkAt(s, outside ? 0 : off1, outside ? 0 : off2));
+          if (o.w > 0.001) {
+              const cw = pt(o.t, wS);
+              placed.push({ minX: cw.x - halfWw, maxX: cw.x + halfWw,
+                            minY: cw.y - bhW / 2, maxY: cw.y + bhW / 2 });
+          }
       }
       if (opt && opt.export) {
           Object.keys(wallOutside).forEach((i) => { if (plan.walls[+i]) plan.walls[+i].sLen = sLenOut; });
@@ -2188,7 +2218,7 @@ addSofaOnWall(wallIndex, spec) {
         const gaps = this.openingGaps(o.id);
         if (!gaps) continue;
         const t0 = o.t - o.w / 2, t1 = o.t + o.w / 2;
-        const pp = plan.openings[o.id] || { s: 0.34, outside: false, off1: 0, off2: 0 };
+        const pp = plan.openings[o.id] || { s: 0.34, outside: false, off1: 0, off2: 0, wS: null };
         const sIn = pp.s;                       // إزاحة خط القياس من الجدار (م)
         const pt = (t, s) => P(w.A.x + w.dir.x * t + w.n.x * s, w.A.y + w.dir.y * t + w.n.y * s);
         const aStart = pt(0, sIn), aOpen0 = pt(t0, sIn);
@@ -2206,14 +2236,11 @@ addSofaOnWall(wallIndex, spec) {
         const mEnd = pp.outside ? pt(midT2, sIn) : pt(midT2, sIn + pp.off2);
         if (gaps.left > 0.001) badge(mStart, cm(gaps.left), fill);
         if (gaps.right > 0.001) badge(mEnd, cm(gaps.right), fill);
-        /* عرض الفتحة: خلف منطقة استخدامها مباشرةً وبعمق ثابت 0.34م — لا
-           يعتمد على إزاحة المسافات لأن معناه مقيس عند الفتحة نفسها. الباب
-           فراغٌ مقطوع فلا بأس، لكن المشب يُرسَم ممتداً للداخل (منطقة الوقوف/
-           البروز) فيقع الرقم فوقه إن تركناه على خط القياس. نضعه خلف أبعد
-           نقطة من منطقة الاستخدام — فتبقى القراءة ظاهرة ولا نغطّي جزءاً
-           من الفتحة. */
+        /* عرض الفتحة: من المخطط — للباب في فتحة الجدار نفسها (لا يطفو في
+           العمق فيُقرأ عمقاً)، وللمشب خلف منطقة استخدامه لأن جسمه يشغل
+           الجدار. القيمة نفسها من openingGaps عبر cm(o.w) — لا حساب موازٍ. */
         if (o.w > 0.001) {
-          const sW = 0.34 + Designer.OPENING_USE_DEPTH(o) + 0.06;
+          const sW = pp.wS != null ? pp.wS : 0.34 + Designer.OPENING_USE_DEPTH(o) + 0.06;
           const c0 = pt(t0, sW), c1 = pt(t1, sW);
           badge({ x: (c0.x + c1.x) / 2, y: (c0.y + c1.y) / 2 }, cm(o.w), fill);
         }

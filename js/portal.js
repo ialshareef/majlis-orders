@@ -359,19 +359,32 @@ function portalAddAcc(itemId) {
     openPModal(it.name, ''
       + '<div class="accq" id="accqBox">'
       + '<div class="accq-head">كم عدد «' + esc(it.name) + '» الذي تريده؟</div>'
-      + '<div class="accq-step"><button type="button" class="btn" data-accq-minus aria-label="إنقاص">−</button>'
-      + '<b id="accqN">' + N + '</b>'
-      + '<button type="button" class="btn" data-accq-plus aria-label="زيادة">+</button></div>'
+      + '<div class="accq-step"><label>العدد<input id="accqInput" type="number" step="1" min="1" max="99" inputmode="numeric" value="' + N + '" aria-label="عدد القطع"></label></div>'
       + '<div id="accqRows">' + paint() + '</div>'
       + '<div class="btn-row"><button class="btn" id="accqCancel">إلغاء</button>'
       + '<button class="btn primary" id="accqOk">تطبيق الكمية</button></div>'
       + '</div>',
       function (b) {
-        var nEl = $('#accqN', b), rowsEl = $('#accqRows', b);
+        var nEl = $('#accqInput', b), rowsEl = $('#accqRows', b);
         function redraw() {
-          nEl.textContent = String(N);
+          if (document.activeElement !== nEl) nEl.value = String(N);
           rowsEl.innerHTML = paint();
         }
+        // إدخال مباشر 1–99: الفارغ وغير الرقمي يُرفض ويُعاد العدد الحالي
+        function commitInput() {
+          var raw = String(nEl.value == null ? '' : nEl.value).trim();
+          var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
+          if (!Number.isFinite(v) || v < 1 || v > 99) {
+            nEl.value = String(N);
+            if (raw !== '') toast('أدخل عددًا صحيحًا من 1 إلى 99.', true);
+            return;
+          }
+          N = v;
+          redraw();
+        }
+        nEl.addEventListener('change', commitInput);
+        nEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); nEl.blur(); } });
+        nEl.addEventListener('focus', function () { try { nEl.select(); } catch (_) { /* noop */ } });
         function apply() {
           // اضبط العدد: زد أو أنقص قطع هذا الإكسسوار حتى يصبح N
           var have = accCount(itemId);
@@ -388,8 +401,6 @@ function portalAddAcc(itemId) {
           renderSheet(null);
           renderPanel();
         }
-        b.querySelector('[data-accq-minus]').onclick = function () { N = Math.max(1, N - 1); redraw(); };
-        b.querySelector('[data-accq-plus]').onclick = function () { N = Math.min(99, N + 1); redraw(); };
         $('#accqCancel', b).onclick = closePModal;
         b.querySelector('#accqOk').onclick = function () { apply(); closePModal(); toast('تم ضبط الكمية: ' + N); };
         // حذف صف معيّن من القائمة (حذف من التصميم عند التطبيق)
@@ -958,10 +969,8 @@ function portalAddAcc(itemId) {
           + '</select></label>';
       }
       if (p.kind === 'acc') {
-        html += '<label>الكمية<span class="p-qty"><button type="button" class="btn" data-qminus aria-label="إنقاص">−</button>'
-          + '<input id="psQty" type="number" step="1" min="1" max="99" inputmode="numeric" value="' + accQtyOf(p) + '">'
-          + '<button type="button" class="btn" data-qplus aria-label="زيادة">+</button></span></label>'
-          + '<p class="hint">الكمية = عدد القطع الفعلية في الرسم (1–99).</p>';
+        html += '<label>الكمية<span class="p-qty"><input id="psQty" type="number" step="1" min="1" max="99" inputmode="numeric" value="' + accQtyOf(p) + '" aria-label="الكمية"></span></label>'
+          + '<p class="hint">الكمية = عدد القطع الفعلية في الرسم (1–99). اكتب الرقم مباشرة.</p>';
       }
       if (p.kind !== 'acc') {
         html += '<div class="row2"><label>الطول (م)<input id="psW" type="number" step="0.05" min="0.2" inputmode="decimal" value="' + p.w + '"></label>'
@@ -1029,10 +1038,6 @@ function portalAddAcc(itemId) {
         if (q2) q2.value = accQtyOf(info.piece);
       }
     };
-    var qm = $('[data-qminus]', sh);
-    if (qm) qm.onclick = function () { var q = $('#psQty', sh); qtyApply((Number(q.value) || 1) - 1); };
-    var qp = $('[data-qplus]', sh);
-    if (qp) qp.onclick = function () { var q = $('#psQty', sh); qtyApply((Number(q.value) || 1) + 1); };
     var qi = $('#psQty', sh);
     if (qi) qi.addEventListener('change', function () { qtyApply(qi.value); });
     var act = function (sel, fn) { var el = $(sel, sh); if (el) el.onclick = function () { fn(); renderSheet(dz.selectionInfo()); }; };

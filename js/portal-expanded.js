@@ -794,9 +794,7 @@
               + (n ? '<b class="px-acc-badge num">' + n + '</b>' : '')
               /* لوحة الكمية: تظهر عند الضغط على البطاقة فقط، لا دائماً */
               + '<span class="px-qtybar" data-qtypanel="' + esc(a.id) + '" hidden>'
-              + '<button type="button" class="qbtn" data-qtyminus="' + esc(a.id) + '" aria-label="إنقاص ' + esc(a.name) + '"><svg><use href="#x-minus"/></svg></button>'
               + '<input class="px-qtyval num" data-qtyin="' + esc(a.id) + '" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0" max="' + MAX_QTY + '" value="' + n + '" aria-label="عدد ' + esc(a.name) + '">'
-              + '<button type="button" class="qbtn" data-qtyplus="' + esc(a.id) + '" aria-label="زيادة ' + esc(a.name) + '"><svg><use href="#x-plus"/></svg></button>'
               + '<button type="button" class="px-qdone" data-qtyok="' + esc(a.id) + '">تم</button>'
               + '<button type="button" class="px-qdel" data-qtydel="' + esc(a.id) + '" aria-label="حذف ' + esc(a.name) + '"><svg><use href="#x-trash"/></svg></button>'
               + '</span>'
@@ -811,24 +809,6 @@
         + '<p class="hint">اضغط على العنصر لتكتب عدده. اكتب 0 لحذفه. الحد الأقصى ' + MAX_QTY + ' قطعة.</p>';
         + '<p class="hint">اكتب 0 في مربع العدد لحذف العنصر من التصميم. الحد الأقصى ' + MAX_QTY + ' قطعة.</p>';
 
-      $$('button[data-qtyminus]', box).forEach(function (b) {
-        b.addEventListener('click', function (e) {
-          e.stopPropagation();
-          var id = b.dataset.qtyminus;
-          setAccQty(id, Math.max(0, accCount(id) - 1));
-          renderPanel();
-        });
-      });
-      $$('button[data-qtyplus]', box).forEach(function (b) {
-        b.addEventListener('click', function (e) {
-          e.stopPropagation();
-          var id = b.dataset.qtyplus;
-          var n = Math.min(MAX_QTY, accCount(id) + 1);
-          if (accCount(id) === 0) n = 1;
-          setAccQty(id, n);
-          renderPanel();
-        });
-      });
       /* الإدخال اليدوي: يُطبَّق عند blur أو Enter (لا استجابة لكل ضغطة مفتاح) */
       $$('input[data-qtyin]', box).forEach(function (inp) {
         var panel = inp.closest('.px-qtybar');
@@ -848,10 +828,15 @@
         };
         /* blur بسبب نقرة على زر داخل البطاقة لا يُعتبر تعديلًا:
            نترك القيمة كما كتبها المستخدم وبجانبها زر «تم».
-           نكتفي بتحديث الرقم والشارة في مكانهما بلا إعادة بناء */
+           نكتفي بتحديث الرقم والشارة في مكانهما بلا إعادة بناء.
+           تجاهل blur التدمير: عند إعادة بناء اللوحة يُدمَّر الحقل المركّز
+           فيُطلق blur بقيمته القديمة *أثناء* الاستبدال وهو ما زال متصلًا،
+           فيعيد كتابتها فوق حذف/تطبيق تمّ للتو. لذلك يُؤجَّل الالتزام لمهمة
+           لاحقة مع إعادة فحص الاتصال — حينها يكون التدمير قد اكتمل. */
         inp.addEventListener('blur', function (e) {
           if (e.relatedTarget && panel.contains(e.relatedTarget)) return;
-          commit();
+          var el = inp;
+          setTimeout(function () { if (!el.isConnected) return; commit(); }, 0);
         });
         inp.addEventListener('change', commit);
         inp.addEventListener('keydown', function (e) {
@@ -998,9 +983,7 @@
     if (p.kind === 'acc') {
       count = accCount(p.itemId);
       html += '<div class="px-qtybar">'
-        + '<button type="button" class="qbtn" data-qminus aria-label="إنقاص"><svg><use href="#x-minus"/></svg></button>'
         + '<input class="px-qtyval num" id="pxQty" type="number" inputmode="numeric" pattern="[0-9]*" step="1" min="0" max="' + MAX_QTY + '" value="' + count + '" aria-label="كمية ' + esc(nm) + '">'
-        + '<button type="button" class="qbtn" data-qplus aria-label="زيادة"><svg><use href="#x-plus"/></svg></button>'
         + '<span class="px-sheet-title">قطعة</span></div>';
     }
     if (p.kind !== 'acc') {
@@ -1034,12 +1017,8 @@
         renderPanel();
         renderSheet(S.designer.selectionInfo());
       };
-      var qm = $('[data-qminus]', sh);
-      if (qm) qm.onclick = function () { setAccQty(p.itemId, Math.max(0, accCount(p.itemId) - 1)); renderPanel(); renderSheet(dz.selectionInfo()); };
-      var qp = $('[data-qplus]', sh);
-      if (qp) qp.onclick = function () { setAccQty(p.itemId, Math.min(MAX_QTY, Math.max(1, accCount(p.itemId) + 1))); renderPanel(); renderSheet(dz.selectionInfo()); };
       var qi = $('#pxQty', sh);
-      if (qi) { qi.addEventListener('click', function () { qi.select(); }); qi.addEventListener('blur', qtyCommit); qi.addEventListener('change', qtyCommit);
+      if (qi) { qi.addEventListener('click', function () { qi.select(); }); qi.addEventListener('blur', function () { if (qi.isConnected) qtyCommit(); }); qi.addEventListener('change', qtyCommit);
         qi.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); qi.blur(); } }); }
     }
   }
