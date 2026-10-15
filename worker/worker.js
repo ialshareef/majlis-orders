@@ -181,7 +181,7 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.57';
+const UPDATE_FALLBACK_VERSION = '1.0.58';
 // بصمة asalh-najd-1.0.57.apk (إصدار GitHub v1.0.57، بناء CI الموقّع).
 const UPDATE_FALLBACK_SHA256 = '71388f043ec87157a15e185d4b5bc9a4faca37fab8d2fb501fd568c005ea90e6';
 const UPDATE_FALLBACK_NOTES = [

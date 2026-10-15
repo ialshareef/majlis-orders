@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.57';
+  const APP_VERSION = '1.0.58';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -184,7 +184,7 @@
   function closeModal() {
     $('#modal').hidden = true; $('#modal').className = 'modal'; $('#modalBody').innerHTML = '';
     // مستند التصدير لا يبقى في منطقة الطباعة بعد إغلاق نافذته: وإلا طبع Ctrl+P
-    // لاحقاً فاتورة طلب قديم. زر «طباعة» وحده يُبقيه حتى تنتهي الطباعة.
+    // لاحقاً أمر شراء قديم. زر «طباعة» وحده يُبقيه حتى تنتهي الطباعة.
     if (!keepPrintArea) $('#printArea').innerHTML = '';
     document.body.classList.remove('modal-open');
     if (modalReturnFocus && modalReturnFocus.isConnected) modalReturnFocus.focus({preventScroll:true});
@@ -458,7 +458,7 @@
     showStage(a.dataset.stage, { focus: true });
   }));
 
-  /* ---------------- المرفقات (صورتان تظهران في الفاتورة) ----------------
+  /* ---------------- المرفقات (صورتان تظهران في أمر الشراء) ----------------
      الصورة تُخزَّن داخل سجل الطلب نفسه (data URL) لأن النظام بلا مخزن ملفات،
      فتُصغَّر قبل التخزين وإلا ضخّمت السجل وأبطأت المزامنة.
      موضع التعريف هنا مقصود: newOrder() يُستدعى بعدها مباشرة عند الإقلاع. */
@@ -479,7 +479,7 @@
     return out;
   }
 
-  /** المرفقات التي تحمل صورة فعلاً — وهي وحدها ما يدخل الفاتورة */
+  /** المرفقات التي تحمل صورة فعلاً — وهي وحدها ما يدخل أمر الشراء */
   const filledAttachments = (o) => normalizeAttachments(o && o.attachments).filter((a) => a.src);
 
   /* ---------------- حالة الطلب الحالي ---------------- */
@@ -622,7 +622,7 @@ function canEditOrder(o) {
   function specSurcharge(p) {
     return SPECS.reduce((s, sp) => { const r = specRecord(p, sp.key); return s + (r ? money(r.price) : 0); }, 0);
   }
-  /** وصف المواصفات لسطر الفاتورة */
+  /** وصف المواصفات لسطر أمر الشراء */
   function specSummary(p) {
     // سعر المتر مجموع الثلاثة، فغياب أحدها يعني نقصاً في السعر لا تفصيلاً ناقصاً:
     // يُكتب صراحةً حتى لا يمرّ سطر بصفر دون تفسير.
@@ -1516,7 +1516,7 @@ markRoomHealth();
           <label>الطول (م) <input id="selW" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.w, 2)}" ${canSize ? '' : 'readonly tabindex="-1"'}></label>
           <label>${isSofa ? 'العمق' : 'العرض'} (م) <input id="selH" type="number" step="0.05" min="0.2" value="${Designer.util.round(p.h, 2)}" ${canSize ? '' : 'readonly tabindex="-1"'}></label>
         </div>
-        ${isFree ? '<p class="hint">مساحة أرضية تُعلّم فراغاً في المجلس. بلا سعر: لا تدخل جدول التسعير ولا الفاتورة، وتُكتب في أمر التصنيع بمقاسها.</p>' : ''}
+        ${isFree ? '<p class="hint">مساحة أرضية تُعلّم فراغاً في المجلس. بلا سعر: لا تدخل جدول التسعير ولا أمر الشراء، وتُكتب في أمر التصنيع بمقاسها.</p>' : ''}
         ${canSize ? '' : '<p class="hint">مقاس الإكسسوار ثابت من بطاقة الصنف في صفحة «الأصناف». لتغييره، عدّل الصنف هناك أو اختر صنفاً آخر من القائمة أعلاه.</p>'}
         <div class="row2">
           <label>الزاوية° <input id="selRot" type="number" step="5" value="${Math.round(p.rot)}"></label>
@@ -2942,7 +2942,7 @@ markRoomHealth();
     el.dataset.stale = mins >= 5 ? '1' : '';
   }
 
-  /* ---------------- التصدير PDF (فاتورة صفحة واحدة) ---------------- */
+  /* ---------------- التصدير PDF (أمر شراء صفحة واحدة) ---------------- */
   const printDesigner = new Designer(document.createElement("canvas"), { getItem, pieceSpecLabel, pieceStyle });
 
   function roomSummary(design) {
@@ -2984,12 +2984,14 @@ markRoomHealth();
     return qr.createDataURL(6, 2);
   }
 
-  /** عنوان المستند حسب حالة الطلب والضريبة */
-  function docTitle(order) {
-    if (order.status === 'quote') return 'عرض سعر';
-    const s = settings();
-    return computeLines(order).vatEnabled && String(s.vatNumber || '').trim() ? 'فاتورة ضريبية مبسطة' : 'فاتورة طلب';
-  }
+/** عنوان المستند حسب حالة الطلب والضريبة.
+    «فاتورة ضريبية مبسطة» مستند ضريبي نظامي برمز QR الضريبي — لا نغيّر مسمّاه.
+    أما مستند الطلب نفسه فاسمه «أمر شراء». */
+function docTitle(order) {
+  if (order.status === 'quote') return 'عرض سعر';
+  const s = settings();
+  return computeLines(order).vatEnabled && String(s.vatNumber || '').trim() ? 'فاتورة ضريبية مبسطة' : 'أمر شراء';
+}
 
   const INV_MARK = '<div class="mark"><svg viewBox="0 0 24 24"><path d="M6 11V7a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v4"/><path d="M3 13a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v5H3z"/><path d="M5 18v2M19 18v2M3 15h18"/></svg></div>';
   function invHead(title, no) {
@@ -3011,7 +3013,7 @@ markRoomHealth();
   }
   const orderEmployee = (order) => order.createdByName || (Store.getUser(order.createdBy) || {}).name || (currentUser && currentUser.name) || '';
 
-  /** فاتورة العميل (أو عرض السعر) */
+  /** أمر شراء العميل (أو عرض السعر) */
   function buildPrintDoc(order, qrSrc = '') {
     const img = designImage(order);
     const { lines, total, subtotal, vatEnabled, vatRate, vatAmount, discount } = computeLines(order);
@@ -3064,7 +3066,7 @@ markRoomHealth();
       </div>
       <div class="inv-foot">
         <div class="inv-sign"><i></i><span>توقيع العميل</span></div>
-        <div>${quote ? 'هذا عرض سعر وليس فاتورة' : `الحالة: ${esc(STATUS[order.status] || order.status)}`} • طريقة القياس: ${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</div>
+        <div>${quote ? 'هذا عرض سعر وليس أمر شراء' : `الحالة: ${esc(STATUS[order.status] || order.status)}`} • طريقة القياس: ${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</div>
         <div class="inv-sign"><i></i><span>الموظف: ${esc(emp)}</span></div>
       </div>
     </div>`;
@@ -3211,15 +3213,15 @@ markRoomHealth();
     return fitOnePage(area);
   }
 
-  /* لا تُصدَّر فاتورة من طلب غير محفوظ: الورقة التي تصل العميل يجب أن تطابق
-     ما في النظام — مسودة بلا رقم أو تعديلات لم تصل الخادم تعني فاتورة لا أثر لها. */
+  /* لا تُصدَّر أمر شراء من طلب غير محفوظ: الورقة التي تصل العميل يجب أن تطابق
+     ما في النظام — مسودة بلا رقم أو تعديلات لم تصل الخادم تعني أمر شراء لا أثر لها. */
   function requireSavedOrder(order) {
     if (!order || !order.id) {
-      toast('لا يمكن إصدار الفاتورة قبل حفظ الطلب — اضغط «حفظ الطلب» أولاً', true);
+      toast('لا يمكن إصدار أمر الشراء قبل حفظ الطلب — اضغط «حفظ الطلب» أولاً', true);
       return false;
     }
     if (cur.id === order.id && dirty) {
-      toast('توجد تعديلات غير محفوظة — احفظ الطلب أولاً ثم أصدر الفاتورة', true);
+      toast('توجد تعديلات غير محفوظة — احفظ الطلب أولاً ثم أصدر أمر الشراء', true);
       return false;
     }
     if (!order.number) {
@@ -3229,9 +3231,9 @@ markRoomHealth();
     return true;
   }
 
-  /** المستندات الممكنة لطلب: فاتورة العميل وأمر التصنيع */
+  /** المستندات الممكنة لطلب: أمر شراء العميل وأمر التصنيع */
   const ORDER_DOCS = {
-    invoice: { label: (o) => (o.status === 'quote' ? 'عرض السعر' : 'فاتورة العميل'), file: (o) => `${o.status === 'quote' ? 'عرض-سعر' : 'طلب'}-${o.number}.pdf`, build: async (o) => buildPrintDoc(o, await zatcaQr(o)), share: true },
+    invoice: { label: (o) => (o.status === 'quote' ? 'عرض السعر' : 'أمر شراء'), file: (o) => `${o.status === 'quote' ? 'عرض-سعر' : 'طلب'}-${o.number}.pdf`, build: async (o) => buildPrintDoc(o, await zatcaQr(o)), share: true },
     workshop: { label: () => 'أمر التصنيع (بلا أسعار)', file: (o) => `أمر-تصنيع-${o.number}.pdf`, build: async (o) => buildWorkshopDoc(o), share: false },
   };
 
@@ -3280,7 +3282,7 @@ markRoomHealth();
       const img = canvas.toDataURL('image/jpeg', 0.94);
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      // الصورة تُوضع بنسبة أبعاد المستند نفسه (السند أقصر من الفاتورة)
+      // الصورة تُوضع بنسبة أبعاد المستند نفسه (السند أقصر من أمر الشراء)
       const h = Math.min(276, 190 * (canvas.height / canvas.width));
       pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
       return pdf.output('blob');
@@ -3331,7 +3333,7 @@ markRoomHealth();
       L.push(`المبلغ: ${fmt(Math.abs(money(p.amount)))} ${cu} • المتبقي: ${fmt(total - paid)} ${cu}`);
       return L.join('\n');
     }
-    L.push(order.status === 'quote' ? `عرض سعر رقم *#${order.number}*` : `فاتورة الطلب رقم *#${order.number}*`);
+    L.push(order.status === 'quote' ? `عرض سعر رقم *#${order.number}*` : `أمر الشراء رقم *#${order.number}*`);
     L.push(order.status === 'quote' ? `الإجمالي: ${fmt(total)} ${cu}` : `الإجمالي: ${fmt(total)} ${cu} • المتبقي: ${fmt(total - paid)} ${cu}`);
     if (order.status === 'quote' && order.validUntil) L.push(`العرض صالح حتى: ${fmtDate(order.validUntil)}`);
     else if (order.deliveryDate) L.push(`موعد التوصيل المتوقع: ${fmtDate(order.deliveryDate)}`);
@@ -3388,7 +3390,7 @@ markRoomHealth();
     } catch (_) { return false; }
   }
 
-  /** نافذة التصدير والمشاركة لأي مستند: فاتورة، أمر تصنيع، سند */
+  /** نافذة التصدير والمشاركة لأي مستند: أمر شراء، أمر تصنيع، سند */
   // keepPrintArea معرّف أعلى الملف (يقرؤه closeModal)
   function docModal(order, kind, payment = null) {
     const rawPhone = (order.customer && order.customer.phone) || '';
@@ -5197,7 +5199,7 @@ markRoomHealth();
     const b = $('#settingsBody');
     b.innerHTML = `
       <section class="set-section">
-        <div class="set-head"><h3>بيانات المحل</h3><p>تظهر في رأس الفاتورة وأمر التصنيع والسندات.</p></div>
+        <div class="set-head"><h3>بيانات المحل</h3><p>تظهر في رأس أمر الشراء وأمر التصنيع والسندات.</p></div>
         <div class="set-body">
           <label>اسم المحل <input id="sName" value="${esc(s.shopName || '')}"></label>
           <div class="row2">
@@ -5225,9 +5227,9 @@ markRoomHealth();
         </div>
       </section>
       <section class="set-section">
-        <div class="set-head"><h3>الفاتورة والضريبة</h3><p>حين تُفعَّل الضريبة ويُسجَّل الرقم الضريبي تصير الفاتورة «فاتورة ضريبية مبسطة» برمز QR.</p></div>
+        <div class="set-head"><h3>الضريبة وشروط أمر الشراء</h3><p>حين تُفعَّل الضريبة ويُسجَّل الرقم الضريبي تصير الفاتورة «فاتورة ضريبية مبسطة» برمز QR.</p></div>
         <div class="set-body">
-          <label>شروط تظهر في الفاتورة (اختياري) <input id="sInvNote" value="${esc(s.invoiceNote || '')}" placeholder="مثال: العربون غير مسترد، مدة التنفيذ 10 أيام"></label>
+          <label>شروط تظهر في أمر الشراء (اختياري) <input id="sInvNote" value="${esc(s.invoiceNote || '')}" placeholder="مثال: العربون غير مسترد، مدة التنفيذ 10 أيام"></label>
           <div class="row2">
             <label>الرقم الضريبي <input id="sVatNo" value="${esc(s.vatNumber || '')}" class="ltr"></label>
             <label>نسبة ضريبة القيمة المضافة % <input id="sVatRate" type="number" min="0" max="100" step="0.5" value="${num(s.vatRate ?? VAT_POLICY.fallbackRate)}"></label>
@@ -5276,7 +5278,7 @@ markRoomHealth();
         </div>
       </section>
       <section class="set-section">
-        <div class="set-head"><h3>المظهر</h3><p>يُحفظ لهذا الجهاز فقط. الفاتورة وملف PDF يبقيان بخلفية بيضاء دائماً.</p></div>
+        <div class="set-head"><h3>المظهر</h3><p>يُحفظ لهذا الجهاز فقط. أمر الشراء وملف PDF يبقيان بخلفية بيضاء دائماً.</p></div>
         <div class="set-body">
           <div class="segmented" id="sTheme" role="group" aria-label="مظهر الواجهة">
             <button type="button" data-theme-v="auto">حسب الجهاز</button>
@@ -6695,7 +6697,7 @@ markRoomHealth();
     }
     if (!quote && total > 0 && paid <= 0.004) return { text: 'سجّل العربون أو الدفعة الأولى من العميل.', go: 'pay', btn: 'تسجيل دفعة' };
     if (quote) return { text: 'صدّر عرض السعر وأرسله للعميل.', go: 'export', btn: 'التصدير' };
-    if (total - paid > 0.004) return { text: `صدّر الفاتورة وشاركها مع العميل — المتبقي ${fmt(total - paid)} ${currency()}.`, go: 'export', btn: 'التصدير' };
+    if (total - paid > 0.004) return { text: `صدّر أمر الشراء وشاركه مع العميل — المتبقي ${fmt(total - paid)} ${currency()}.`, go: 'export', btn: 'التصدير' };
     return { tone: 'done', text: 'الطلب مكتمل البيانات ومدفوع بالكامل. حدّث حالته مع تقدّم التنفيذ حتى التسليم.' };
   }
 
@@ -6751,9 +6753,9 @@ markRoomHealth();
       es.innerHTML = `${icon('check')}<span>${cur.status === 'quote' ? 'عرض السعر' : 'الطلب'} <b class="num">#${esc(cur.number)}</b> محفوظ وجاهز للتصدير والمشاركة.</span>`;
     } else {
       es.dataset.state = 'pending';
-      es.innerHTML = `${icon('alert')}<span>${!cur.id ? 'احفظ الطلب أولاً: لا تُصدر فاتورة من طلب غير محفوظ.' : dirty ? 'توجد تعديلات غير محفوظة — احفظ الطلب ثم أصدر المستند.' : 'الطلب محفوظ على هذا الجهاز بانتظار رقم من الخادم. تحقق من الاتصال.'}</span>`;
+      es.innerHTML = `${icon('alert')}<span>${!cur.id ? 'احفظ الطلب أولاً: لا تُصدر أمر شراء من طلب غير محفوظ.' : dirty ? 'توجد تعديلات غير محفوظة — احفظ الطلب ثم أصدر المستند.' : 'الطلب محفوظ على هذا الجهاز بانتظار رقم من الخادم. تحقق من الاتصال.'}</span>`;
     }
-    $('#docInvoiceTitle').textContent = cur.status === 'quote' ? 'عرض السعر' : 'فاتورة العميل';
+    $('#docInvoiceTitle').textContent = cur.status === 'quote' ? 'عرض السعر' : 'أمر شراء';
   }
 
   $('#nextActionBtn').addEventListener('click', () => {

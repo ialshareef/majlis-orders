@@ -21,7 +21,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     else { bad++; log('FAIL L' + n + ' ' + name + (why ? ' :: ' + why : '')); }
   };
   var get = function (p) { return fetch(p, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + p); return r.text(); }); };
-  Promise.all([get('../index.html'), get('../js/app.js'), get('../js/store.js'), get('../worker/schema.sql'), get('../js/update.js'), get('../capacitor.config.json'), get('../manifest.json'), get('../portal.html')])
+  Promise.all([get('../index.html'), get('../js/app.js'), get('../js/store.js'), get('../worker/schema.sql'), get('../js/update.js'), get('../capacitor.config.json'), get('../manifest.json'), get('../portal.html'), get('../package.json')])
     .then(function (parts) {
       var html = parts[0], app = parts[1], store = parts[2], schema = parts[3];
       var cap = JSON.parse(parts[5]), manifest = JSON.parse(parts[6]), portal = parts[7];
@@ -53,8 +53,13 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('seed-ids', schema.indexOf('sofa-qatifa') >= 0 && schema.indexOf('acc-mkhada') >= 0, 'seed ids');
       t('seed-cats', schema.indexOf('"category":"sofa"') >= 0 && schema.indexOf('"category":"acc"') >= 0, 'seed categories');
       t('store-defaults', store.indexOf("category: 'sofa'") >= 0 && store.indexOf("'كنب عربي - قطيفة'") >= 0, 'store defaults');
-      var verM = app.match(/APP_VERSION = '([^']+)'/);
-  t('version-matches-package', !!verM && verM[1] === '1.0.55', verM ? verM[1] : 'none');
+      // إصدار التطبيق: المصدر المعتمد هو package.json. لا رقم مثبّت هنا —
+    // الرقم كان يتقادم مع كل إصدار فينهار الاختبار وهو لا يدلّ على خلل.
+var verM = app.match(/APP_VERSION = '([^']+)'/);
+var pkgVer = '';
+try { pkgVer = JSON.parse(parts[8]).version || ''; } catch (e) { pkgVer = ''; }
+t('version-matches-package', !!verM && !!pkgVer && verM[1] === pkgVer, 'app=' + (verM ? verM[1] : 'none') + ' package=' + (pkgVer || 'none'));
+t('version-is-a-real-semver', /^\d+\.\d+\.\d+$/.test(pkgVer || ''), pkgVer || 'none');
 
       // اسم التطبيق الظاهر بالعربية — والمعرفات التقنية ثابتة
       t('appname-arabic', cap.appName === 'أصالة نجد', cap.appName);

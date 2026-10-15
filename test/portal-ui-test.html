@@ -141,7 +141,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('pdf-no-extra-qr', pjs0.indexOf('امسح لعرض التصميم') < 0 && pjs0.indexOf('customer-design/view/') < 0,
         'design qr removed');
       // ملاحظة واضحة وسط فوق الأيقونات: «اضغط على الباركود»
-      // العبارة الجديدة بلا خلفية ملوّنة، وتباعد الحروف صفر (قاعدة الفاتورة).
+      // العبارة الجديدة بلا خلفية ملوّنة، وتباعد الحروف صفر (قاعدة أمر الشراء).
       t('pdf-qr-hint', pjs0.indexOf('inv-chans-hint') >= 0
         && pjs0.indexOf('اضغط على الأيقونة أو امسح رمز QR') >= 0
         && /\.inv-chans-hint \{[^}]*text-align: center/.test(css), 'hint above icons');

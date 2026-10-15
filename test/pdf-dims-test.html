@@ -50,8 +50,9 @@ try{
   }
   t('PDF) الصورة المُصدَّرة غير فارغة', dark+whiteOnDark>5000, 'dark='+dark+' white='+whiteOnDark);
 
-  // الشرط الحاسم: المقارنة بين تصدير مع تحديد الفتحة وآخر بلا تحديد.
-  // في وضع التصدير نرسم قياسات الفتحة المحددة فقط، فالفرق يكشف أنها رُسمت فعلاً.
+  // نية الاختبار: القياسات تُرسم في ورقة التصدير فعلاً.
+  // بعد التحديث: التصدير يرسم قياسات كل الفتحات لا المحدَّدة فقط (ورقة PDF
+  // لا يوجد فيها تحديد)، فالمقارنة صارت بين تصديرين لا يختلفان بالتحديد.
   d.select(null);
   d.render();
   const url2=d.toImage(1400,900);
@@ -63,7 +64,21 @@ try{
   const b=c2.getContext('2d').getImageData(0,0,c2.width,c2.height).data;
   let diff=0;
   for(let i=0;i<a.length;i+=4){ if(Math.abs(a[i]-b[i])>12||Math.abs(a[i+1]-b[i+1])>12||Math.abs(a[i+2]-b[i+2])>12) diff++; }
-  t('PDF) قياسات الفتحة المحدد تظهر في التصدير', diff>400, 'pixels changed vs no-selection = '+diff);
+  t('PDF) القياسات تُرسم بلا تحديد (تصدير مستقل عن التحديد)', diff>400, 'pixels = '+diff);
+
+  // export لا يعتمد على dimsOnTop: نسخة PDF ترسمها دائماً
+  const eNoOpt=document.createElement('canvas');
+  const dNoOpt=new Designer(eNoOpt,{getItem:()=>null,onChange(){},onSelect(){}});
+  dNoOpt.setState(d.getState());
+  const urlNo=dNoOpt.toImage(1400,900);
+  const imgNo=new Image();
+  await new Promise(r=>{imgNo.onload=r; imgNo.src=urlNo;});
+  const cNo=document.createElement('canvas'); cNo.width=imgNo.width; cNo.height=imgNo.height;
+  cNo.getContext('2d').drawImage(imgNo,0,0);
+  const q=cNo.getContext('2d').getImageData(0,0,cNo.width,cNo.height).data;
+  let pale=0;
+  for(let i=0;i<q.length;i+=4){ if(q[i]>200&&q[i+1]>200&&q[i+2]>200) pale++; }
+  t('PDF) تظهر أرقام القياس حتى بلا dimsOnTop', pale>400, 'light pixels = '+pale);
 
   // تكبير النافذة ونقرها: القياسات تبقى بعد إنهاء السحب (وضع عدم السحب)
   d.select({type:'opening',id:door.id});

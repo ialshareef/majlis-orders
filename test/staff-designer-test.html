@@ -76,7 +76,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
   var get = function (p) { return realFetch(p, { cache: 'no-store' }).then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status + ' ' + p); return r.text(); }); };
 
   async function partA() {
-    var parts = await Promise.all([get('../index.html'), get('../css/style.css'), get('../js/app.js'), get('../js/designer.js')]);
+    var parts = await Promise.all([get('../index.html'), get('../css/style.css'), get('../js/app.js'), get('../js/designer.js'), get('../package.json')]);
     var html = parts[0], css = parts[1], app = parts[2], dz = parts[3];
     // لا تبديل تلقائي بين العرض والطول (كان ينقل الرقم المُدخل إلى الحقل المجاور)
     t('A-no-swap', app.indexOf('if (h > w) { const t = w; w = h; h = t; }') < 0, 'no auto swap');
@@ -96,8 +96,12 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-terms', app.indexOf("label: 'الخشب'") >= 0 || app.indexOf('الخشب') >= 0, 'staff terms kept');
     t('A-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0, '44px');
     t('A-pdf', app.indexOf('buildPrintDoc') >= 0 && app.indexOf('exportCurrent') >= 0, 'pdf path intact');
-    var aVer = app.match(/APP_VERSION = '([^']+)'/);
-  t('A-ver', !!aVer && aVer[1] === '1.0.55', aVer ? aVer[1] : 'none');
+var aVer = app.match(/APP_VERSION = '([^']+)'/);
+    // إصدار التطبيق: المصدر المعتمد package.json — لا رقم مثبّت يتقادم مع كل إصدار.
+    var aPkg = '';
+    try { aPkg = JSON.parse(parts[4]).version || ''; } catch (e) { aPkg = ''; }
+    t('A-ver', !!aVer && !!aPkg && aVer[1] === aPkg, 'app=' + (aVer ? aVer[1] : 'none') + ' package=' + (aPkg || 'none'));
+    t('A-ver-semver', /^\d+\.\d+\.\d+$/.test(aPkg || ''), aPkg || 'none');
     // 1) لا زر «تطبيق كغرفة مستطيلة»: المقاسات تُطبَّق مباشرة أثناء الكتابة
     t('A-live-dims', app.indexOf('btnApplyRect') < 0 && app.indexOf('applyRoomDims') >= 0
       && app.indexOf("el.addEventListener('input', () => applyRoomDims(true))") >= 0, 'live room dims');

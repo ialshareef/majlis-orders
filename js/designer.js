@@ -952,7 +952,7 @@ addSofaOnWall(wallIndex, spec) {
     }
 
     /** مساحة حرة: مستطيل يُعلّم فراغاً في المجلس (ممر، طاولة، مدخل).
-        لا صنف له ولا سعر — لا يدخل جدول التسعير ولا الفاتورة، ويُكتب في أمر
+        لا صنف له ولا سعر — لا يدخل جدول التسعير ولا أمر الشراء، ويُكتب في أمر
         التصنيع بمقاسه. مقاسه يُعدَّل من المفتّش بخلاف الإكسسوار المثبَّت من بطاقته. */
     addFreeSpace(w = 1.5, h = 1) {
       const ww = Math.max(0.2, +w || 1.5), hh = Math.max(0.2, +h || 1);
@@ -1136,7 +1136,7 @@ addSofaOnWall(wallIndex, spec) {
       const q = Object.assign({}, p, { id: uid() });
       delete q.wall; delete q.t;
       // النسخة قطعة مستقلة: لو ورثت group لعُدّت ذراعاً ثالثاً لكنب الزاوية الأصلي
-      // (تُحسب معه قطعة واحدة في الفاتورة، ويُتجاهل تداخلها معه)
+      // (تُحسب معه قطعة واحدة في أمر الشراء، ويُتجاهل تداخلها معه)
       delete q.group; delete q.corner;
       q.x = p.x + 0.3; q.y = p.y + 0.3;
       this._clampToRoom(q, this.geometry());
@@ -1935,8 +1935,11 @@ addSofaOnWall(wallIndex, spec) {
 
   /* ---------- طبقة القياسات العلوية ----------
      تُرسم فوق كل القطع (opts.dimsOnTop) بتسمية ذات خلفية بيضاء،
-     فلا يحجبها أثاث يُسحب فوقها، وتبقى المقاسات الحقيقية كما هي. */
+     فلا يحجبها أثاث يُسحب فوقها، وتبقى المقاسات الحقيقية كما هي.
+     في التصدير لا تعمل: طول الجدار يرسمه خط القياس المستقل في
+     _drawOpeningDimsTop (بالسنتيمترات)، فطبقتان تجعلان الطول مرتين. */
   _drawDimsTop(ctx, v, W, opt) {
+      if (opt.export) return;
       const g = this.geometry();
       const S = v.scale;
       const P = (x, y) => this.toScreen(x, y, v);
@@ -2004,66 +2007,215 @@ addSofaOnWall(wallIndex, spec) {
       ctx.restore();
   }
 
-  /* ---------- طبقة قياسات الفتحات (باب/مشب) ----------
-     المسافة من بداية الجدار إلى بداية الفتحة، ومن نهاية الفتحة إلى نهاية الجدار.
-     تُرسم في طبقة مستقلة فوق الكنبات والإكسسوارات والقياسات الأخرى فلا يخفيها
-     أي عنصر، وتظهر عند التحديد وبعد انتهاء السحب معاً، وتُحدَّث لحظياً مع
-     تحريك الفتحة أو تغيير عرضها أو تغيير طول الجدار. تعمل في التصدير أيضاً. */
+  /* ---------- مخطط مواضع خطوط قياسات الفتحات ----------
+      قياسات المسافة داخل الغرفة على ارتفاع 0.34م من الجدار متى كان الممر
+      خالياً من الأثاث، وإلا انتقلت إلى خارج الجدار مباشرةً — فلا تغطي
+      كنبة ولا إكسسوار أبداً (عمق الكنبة أكبر من 0.34م في أغلب التصميمات).
+      الشارة تُزاح على عمود الجدار لا على الشاشة: فلو أُزاحت رأسياً لوقعت
+      على حزام الجدار في بعض الاتجاهات أو ابتعدت معه في غيرها.
+      وعند خروج قياسات جدار ما في التصدير يُزيح خط طوله موضعين للخارج حتى
+      لا تتداخل الشارات. المواضع المخزّنة هنا هي مواضع الرسم نفسها في
+      _drawOpeningDimsTop — لا اختبار يختلف عن الواقع. */
+  _dimOffsetPlan(ctx, g, v, W, opt) {
+      const S = v.scale || 1;
+      const k = opt && opt.export ? Math.max(1.8, W / 720) : 1;
+      const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
+      const bhW = (fs * 1.7) / S;                 // ارتفاع الشارة بالمتر
+      const sIn = 0.34;                           // الممر الاعتيادي داخل الغرفة
+      /* المسار الخارجي: الشارة كاملةً خارج حزام الجدار، فلا تحجب حافته
+         ولا فتحة الباب الملحقة به — ومع ذلك يبقى ملاصقاً للجدار فيبقى
+         ارتباط القياس به واضحاً. والحدّ الأعلى يمنع خروجها عن الورقة. */
+      const padOut = Math.min(WALL_T + WALL_LABEL_OFF + 0.3 - bhW / 2 - 0.05, 1.3);
+      const sGapOut = -Math.min(WALL_T + bhW / 2 + 0.03, padOut);
+      const sLenOut = -Math.min(padOut, -sGapOut + bhW + 0.06);  // مسار طول الجدار عند الخروج
+      const eps = 0.02;
+      const vOx = v.ox || 0, vOy = v.oy || 0;
+      const P = (x, y) => this.toScreen(x, y, v);
+      const toWorld = (sx, sy) => ({ x: (sx - vOx) / S, y: (sy - vOy) / S });
+      const solids = (this.state.pieces || [])
+          .filter((p) => p && p.kind !== 'free')   // المساحة الحرة قيد على الأرض لا تُ回避
+          .map((p) => this.corners(p));
+      const hitsSolid = (r) => solids.some((poly) => Designer.polyHitsRect(poly, r, eps));
+      const hitsRect = (a, b) => !(a.maxX < b.minX - eps || b.maxX < a.minX - eps ||
+                                   a.maxY < b.minY - eps || b.maxY < a.minY - eps);
+      const plan = { openings: {}, walls: {} };
+      g.walls.forEach((w) => { plan.walls[w.i] = { sLen: -(WALL_T + 0.18) }; });
+      const placed = [];                          // ما رُسم قبلاً من قياسات فتحات
+      const wallOutside = {};
+      const cm = (x) => Math.round(x * 100) + ' سم';
+
+      for (const o of this.state.openings) {
+          if (!o || (o.type !== 'door' && o.type !== 'mashab')) continue;
+          const w = g.walls[o.wall];
+          if (!w) continue;
+          const gaps = this.openingGaps(o.id);
+          if (!gaps) continue;
+          const t0 = o.t - o.w / 2, t1 = o.t + o.w / 2;
+          const segs = [[0, t0, gaps.left], [t1, w.len, gaps.right]]
+              .filter((sg) => sg[1] - sg[0] > 0.001 && sg[2] > 0.001);
+          if (!segs.length) continue;
+          const pt = (t, s) => ({ x: w.A.x + w.dir.x * t + w.n.x * s,
+                                  y: w.A.y + w.dir.y * t + w.n.y * s });
+          /* إزاحتا الشارتَين عن الخط على عمود الجدار (متر للداخل): صفر في
+             الوضع الاعتيادي، ومقدارُ شارةٍ كاملة إن تبادلت الشارتان (باب في
+             وسط جدار قصير). تُحسب هنا فيبقى اختبار التداخل وموضع الرسم
+             شيئاً واحداً لا شيئين. */
+          let off1 = 0, off2 = 0;
+          if (segs.length === 2) {
+              const need = (ctx.measureText(cm(Math.max(segs[0][2], segs[1][2]))).width + 10 * k) / S + 0.05;
+              const gapAlong = Math.abs((segs[1][0] + segs[1][1]) / 2 - (segs[0][0] + segs[0][1]) / 2);
+              if (gapAlong < need) off1 = bhW + 0.06;
+          }
+          /* كل ما يرسمه خط القياس وشارته عند إزاحة s — مستطيلات بالمتر */
+          const inkAt = (s, oL, oR) => {
+              const out = [];
+              segs.forEach((sg, i) => {
+                  const a = pt(sg[0], s), b = pt(sg[1], s);
+                  const pad = Math.max(0.02, (1.2 * k) / S / 2);
+                  out.push({ minX: Math.min(a.x, b.x) - pad, maxX: Math.max(a.x, b.x) + pad,
+                             minY: Math.min(a.y, b.y) - pad, maxY: Math.max(a.y, b.y) + pad });
+                  const c = pt((sg[0] + sg[1]) / 2, s + (i === 0 ? oL : oR));
+                  const halfW = (ctx.measureText(cm(sg[2])).width + 10 * k) / 2 / S;
+                  const halfH = bhW / 2;
+                  out.push({ minX: c.x - halfW, maxX: c.x + halfW,
+                             minY: c.y - halfH, maxY: c.y + halfH });
+              });
+              return out;
+          };
+          const clearOf = (ink) => !ink.some((r) => hitsSolid(r) || placed.some((q) => hitsRect(r, q)));
+          let s = sIn, outside = false;
+          if (!clearOf(inkAt(sIn, off1, off2))) {
+              /* الممر محجوز بالأثاث: نخرج إلى خارج الجدار مباشرةً — فالقياس
+                 يبقى ملاصقاً لجداره ولا يغطي كنبة ولا يطفو وسط الغرفة. */
+              outside = true; s = sGapOut;
+          }
+          if (outside) {
+              /* خارج الغرفة: الشارة على الخط نفسه؛ فإن حاذت قياسات جدار آخر
+                 على الطَّرف زحزحنا مرة واحدة للخارج. */
+              for (let tries = 0; tries < 2; tries++) {
+                  const ink = inkAt(s, 0, 0);
+                  if (clearOf(ink)) break;
+                  s -= bhW + 0.06;
+              }
+              wallOutside[o.wall] = true;
+              plan.openings[o.id] = { s, outside, off1: 0, off2: 0 };
+          } else {
+              plan.openings[o.id] = { s, outside, off1, off2 };
+          }
+          placed.push.apply(placed, inkAt(s, outside ? 0 : off1, outside ? 0 : off2));
+      }
+      if (opt && opt.export) {
+          Object.keys(wallOutside).forEach((i) => { if (plan.walls[+i]) plan.walls[+i].sLen = sLenOut; });
+      }
+      plan.metrics = { bhW: bhW, sGapOut: sGapOut, sIn: sIn };
+      return plan;
+  }
+
+  /* ---------- طبقة قياسات التنفيذ (طول الجدار + الفتحات) ----------
+      لكل جدار: الطول الإجمالي مرة واحدة فقط، على خط قياس مستقل خارج
+      الجدار. ولكل باب/مشب: المسافة من بداية الجدار إلى الفتحة، وعرض الفتحة
+      على امتداد الجدار، والمسافة من بعدها إلى نهاية الجدار — على خط واحد
+      بمحاذاة الجدار، داخل الغرفة متى كان الممر خالياً من الأثاث (0.34م)،
+      وإلا خارج الجدار (انظر _dimOffsetPlan). والشارات ملاصقة للخط على عمود
+      الجدار — لا فوقه رأسياً — فلا تقع على حزام الجدار ولا على فتحة الباب.
+      لا غير: لا عمق الباب داخل المجلس، ولا قياس زائد، ولا تكرار للطول
+      (صندوق اسم الجدار يُخفي طوله في التصدير لأن هذا الخط المستقل يمثّله).
+      المصدر واحد: openingGaps() — نفس الدالة التي يقرأ منها المصمم، فلا
+      يختلف رقم في PDF عن رقم في الشاشة. تتحدث لحظياً مع تحريك الفتحة أو
+      تغيير عرضها أو تغيير طول الجدار. */
   _drawOpeningDimsTop(ctx, v, W, opt) {
       const g = this.geometry();
       const S = v.scale;
+      const H = opt.H || 0;
       const P = (x, y) => this.toScreen(x, y, v);
       const k = opt.export ? Math.max(1.8, W / 720) : 1;
       const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
       const sel = this.sel && this.sel.type === 'opening' ? this.sel.id : null;
-      const dragging = this.drag && this.drag.mode === 'opening' ? this.drag.id : null;
+      const cm = (x) => Math.round(x * 100) + ' سم';
+      const plan = opt.dimPlan || this._dimOffsetPlan(ctx, g, v, W, opt);
       ctx.save();
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+
+      /* شارة رقم: خلفية داكنة ونص أبيض، مع حصر داخل حدود اللوحة حتى لا
+         تُقصّ القراءة على جدار قريب من حافة الورقة. */
+      const badge = (m, txt, color) => {
+        ctx.font = `700 ${fs}px ${FONT}`;
+        const tw = ctx.measureText(txt).width;
+        const bw = tw + 10 * k, bh = fs * 1.7;
+        let x = Math.min(Math.max(m.x, bw / 2 + 2), Math.max(bw / 2 + 2, W - bw / 2 - 2));
+        let y = m.y;
+        if (H) y = Math.min(Math.max(y, bh / 2 + 2), Math.max(bh / 2 + 2, H - bh / 2 - 2));
+        ctx.fillStyle = color;
+        roundRect(ctx, x - bw / 2, y - bh / 2, bw, bh, 3);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        ctx.fillText(txt, x, y);
+        return { x, y };
+      };
+
+      /* خط قياس بطرفَين وواسطَين — يُستخدم لطول الجدار خارج الجدار */
+      const dimLine = (a, b, color) => {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = Math.max(1, 1.2 * k);
+        ctx.setLineDash([4 * k, 3 * k]);
+        ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+        ctx.setLineDash([]);
+        for (const e of [a, b]) {
+          ctx.beginPath(); ctx.moveTo(e.x, e.y - fs * 0.5); ctx.lineTo(e.x, e.y + fs * 0.5); ctx.stroke();
+        }
+      };
+
+      /* 1) الطول الإجمالي: مرة واحدة لكل جدار، على خط مستقل خارجه.
+          موضعه ثابت (لا حلقة إزاحة) فهو لا يصطدم بقراءة الفتحة ولا يقع
+          فوق الشريط الداكن ولا فوق الفتحة — إلا حين تخرج قياسات الفتحة
+          إلى الخارج فيزيحها المخطط موضعين للخارج فلا تتداخل الشارات. */
+      if (opt.export) {
+        for (const w of g.walls) {
+          const sOut = (plan.walls[w.i] && plan.walls[w.i].sLen) || -(WALL_T + 0.18);
+          const a = P(w.A.x + w.n.x * sOut, w.A.y + w.n.y * sOut);
+          const b = P(w.B.x + w.n.x * sOut, w.B.y + w.n.y * sOut);
+          dimLine(a, b, '#8A7A66');
+          badge({ x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, cm(w.len), 'rgba(42,38,34,.88)');
+        }
+      }
+
+      /* 2) قياسات الفتحة: خط واحد بمحاذاة الجدار — داخل الغرفة متى كان
+          الممر خالياً من الأثاث، وإلا خارج الجدار (مواضع المخطط). */
       for (const o of this.state.openings) {
         if (o.type !== 'door' && o.type !== 'mashab') continue;
-        if (opt.export && o.id !== sel && o.id !== dragging) continue;   // في PDF: المحدد فقط
         const w = g.walls[o.wall];
         if (!w) continue;
         const gaps = this.openingGaps(o.id);
         if (!gaps) continue;
         const t0 = o.t - o.w / 2, t1 = o.t + o.w / 2;
-        const sIn = 0.34;                     // خط القياس داخل الغرفة أمتار
+        const pp = plan.openings[o.id] || { s: 0.34, outside: false, off1: 0, off2: 0 };
+        const sIn = pp.s;                       // إزاحة خط القياس من الجدار (م)
         const pt = (t, s) => P(w.A.x + w.dir.x * t + w.n.x * s, w.A.y + w.dir.y * t + w.n.y * s);
         const aStart = pt(0, sIn), aOpen0 = pt(t0, sIn);
         const bOpen1 = pt(t1, sIn), bEnd = pt(w.len, sIn);
-        ctx.strokeStyle = o.id === sel ? SEL : '#8A7A66';
-        ctx.lineWidth = Math.max(1, 1.2 * k);
-        ctx.setLineDash([4 * k, 3 * k]);
-        for (const seg of [[aStart, aOpen0], [bOpen1, bEnd]]) {
-          ctx.beginPath();
-          ctx.moveTo(seg[0].x, seg[0].y);
-          ctx.lineTo(seg[1].x, seg[1].y);
-          ctx.stroke();
-        }
-        ctx.setLineDash([]);
-        /* أطراف القيم (الواسط): خط صغير عمودي يجعل المسافة مقروءة كقياس لا كنقطة */
-        for (const e of [aStart, aOpen0, bOpen1, bEnd]) {
-          ctx.beginPath();
-          ctx.moveTo(e.x, e.y - fs * 0.5);
-          ctx.lineTo(e.x, e.y + fs * 0.5);
-          ctx.stroke();
-        }
-        const cm = (v) => Math.round(v * 100) + ' سم';
-        const mStart = { x: (aStart.x + aOpen0.x) / 2, y: (aStart.y + aOpen0.y) / 2 - fs * 1.5 };
-        const mEnd = { x: (bOpen1.x + bEnd.x) / 2, y: (bOpen1.y + bEnd.y) / 2 - fs * 1.5 };
-        // الأرقام فوق الطبقة بلا تراكب: إن تبادلت نزيح أحدها لأسفل
-        const near = Math.hypot(mStart.x - mEnd.x, mStart.y - mEnd.y) < fs * 5;
-        if (near) mStart.y -= fs * 1.6;
-        for (const [m, v] of [[mStart, gaps.left], [mEnd, gaps.right]]) {
-          if (v <= 0.001) continue;              // لا نرسم قياساً صفرياً بلا معنى
-          const txt = cm(v);
-          ctx.font = `700 ${fs}px ${FONT}`;
-          const tw = ctx.measureText(txt).width;
-          ctx.fillStyle = o.id === sel ? 'rgba(165,100,44,.95)' : 'rgba(42,38,34,.88)';
-          roundRect(ctx, m.x - tw / 2 - 5, m.y - fs * 0.85, tw + 10, fs * 1.7, 3);
-          ctx.fill();
-          ctx.fillStyle = '#fff';
-          ctx.fillText(txt, m.x, m.y);
+        const color = o.id === sel ? SEL : '#8A7A66';
+        dimLine(aStart, aOpen0, color);
+        dimLine(bOpen1, bEnd, color);
+        const fill = o.id === sel ? 'rgba(165,100,44,.95)' : 'rgba(42,38,34,.88)';
+        /* المسافتان المتبقيتان: الشارة ملاصقة للخط على عمود الجدار (داخل
+           الغرفة) أو على الخط نفسه (خارجها) بإزاحتي المخطط — فلا تقع على
+           حزام الجدار ولا تحجب فتحة الباب. ولا تكرار للطول: طول الجدار على
+           خطه الخاص في الخارج. */
+        const midT1 = (0 + t0) / 2, midT2 = (t1 + w.len) / 2;
+        const mStart = pp.outside ? pt(midT1, sIn) : pt(midT1, sIn + pp.off1);
+        const mEnd = pp.outside ? pt(midT2, sIn) : pt(midT2, sIn + pp.off2);
+        if (gaps.left > 0.001) badge(mStart, cm(gaps.left), fill);
+        if (gaps.right > 0.001) badge(mEnd, cm(gaps.right), fill);
+        /* عرض الفتحة: خلف منطقة استخدامها مباشرةً وبعمق ثابت 0.34م — لا
+           يعتمد على إزاحة المسافات لأن معناه مقيس عند الفتحة نفسها. الباب
+           فراغٌ مقطوع فلا بأس، لكن المشب يُرسَم ممتداً للداخل (منطقة الوقوف/
+           البروز) فيقع الرقم فوقه إن تركناه على خط القياس. نضعه خلف أبعد
+           نقطة من منطقة الاستخدام — فتبقى القراءة ظاهرة ولا نغطّي جزءاً
+           من الفتحة. */
+        if (o.w > 0.001) {
+          const sW = 0.34 + Designer.OPENING_USE_DEPTH(o) + 0.06;
+          const c0 = pt(t0, sW), c1 = pt(t1, sW);
+          badge({ x: (c0.x + c1.x) / 2, y: (c0.y + c1.y) / 2 }, cm(o.w), fill);
         }
       }
       ctx.restore();
@@ -2077,6 +2229,8 @@ addSofaOnWall(wallIndex, spec) {
       const P = (x, y) => this.toScreen(x, y, v);
       // معامل تكبير النصوص في صورة التصدير (الصورة عالية الدقة تُطبع بحجم صغير)
       const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      // مخطط مواضع قياسات الفتحات: يُحسب مرة واحدة فيتّجه الرسم والاختبار معاً
+      const dimPlan = this._dimOffsetPlan(ctx, g, v, W, opt);
 
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#ffffff';
@@ -2247,27 +2401,32 @@ addSofaOnWall(wallIndex, spec) {
         ctx.restore();
       }
 
-      // تسميات الجدران (خارج الجدار) — الطول الحقيقي لكل جدار + علامة «مستقل»
+      // تسميات الجدران (خارج الجدار) — اسم الجدار + علامة «مستقل».
+      // في التصدير لا نكتب الطول هنا: طول كل جدار يرسمه خط القياس المستقل
+      // في _drawOpeningDimsTop، فكتابة الطول هنا كانت تُظهره مرتين لنفس
+      // الجدار (مرة بالأمتار هنا ومرة بالسنتيمترات هناك).
       g.walls.forEach((w) => {
         const off = WALL_T + WALL_LABEL_OFF;
         const lp = P(w.mid.x - w.n.x * off, w.mid.y - w.n.y * off);
         const fs = Math.max(11 * k, Math.min(15 * k, S * 0.22));
         ctx.font = `700 ${fs}px ${FONT}`;
         ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        const txt = `${round(w.len, 2)} م`;
         const fixed = this.state.walls[w.i] && this.state.walls[w.i].fixed;
         const num = `جدار ${w.i + 1}` + (fixed ? ' • مستقل' : '');
-        const tw = ctx.measureText(txt).width, nw = ctx.measureText(num).width;
-        const bw = Math.max(tw, nw) + 14 * k, bh = fs * 2.3;
+        let txt = round(w.len, 2) + ' م';
+        let tw = ctx.measureText(txt).width;
+        if (opt.export) { txt = ''; tw = 0; }        // الطول على خطه الخاص
+        const nw = ctx.measureText(num).width;
+        const bw = Math.max(tw, nw) + 14 * k, bh = fs * (opt.export ? 1.6 : 2.3);
         ctx.fillStyle = w.i === selWall ? SEL : 'rgba(255,255,255,0.94)';
         roundRect(ctx, lp.x - bw / 2, lp.y - bh / 2, bw, bh, 2 * k); ctx.fill();
         if (w.i !== selWall) { ctx.strokeStyle = fixed ? '#A5642C' : '#E2DBD0'; ctx.lineWidth = k; ctx.stroke(); }
         ctx.fillStyle = w.i === selWall ? '#fff' : '#2A2622';
         ctx.font = `700 ${fs}px ${FONT}`;
-        ctx.fillText(txt, lp.x, lp.y - fs * 0.5);
+        if (!opt.export) ctx.fillText(txt, lp.x, lp.y - fs * 0.5);
         ctx.fillStyle = w.i === selWall ? 'rgba(255,255,255,0.85)' : (fixed ? '#A5642C' : '#7A6F63');
         ctx.font = `${fs * 0.78}px ${FONT}`;
-        ctx.fillText(num, lp.x, lp.y + fs * 0.6);
+        ctx.fillText(num, lp.x, lp.y + (opt.export ? 0 : fs * 0.6));
       });
 
       // القطع (الكنب أولاً ثم الإكسسوارات فوقه)
@@ -2430,9 +2589,12 @@ addSofaOnWall(wallIndex, spec) {
       if (this.opts.dimsOnTop) this._drawDimsTop(ctx, v, W, opt);
       // طبقة أرقام مقاسات القطع فوق كل الرسومات (مركى/طاولة فوق كنبة لا تحجبها)
       if (this.opts.pieceLabelsOnTop) this._drawPieceLabelsTop(ctx, v, W, opt);
-      // طبقة قياسات الباب/المشب: خط قياس وأرقام من طرفي الجدار إلى الفتحة.
-      // في طبقة مستقلة فوق كل شيء — لا يخفيها كنبة ولا إكسسوار ولا قياس آخر.
-      if (this.opts.dimsOnTop) this._drawOpeningDimsTop(ctx, v, W, opt);
+// طبقة قياسات الباب/المشب: خط قياس وأرقام من طرفي الجدار إلى الفتحة.
+// في طبقة مستقلة فوق كل شيء — لا يخفيها كنبة ولا إكسسوار ولا قياس آخر.
+// في التصدير تُرسم دائماً (opt.export) ولو لم يفعّلها الخيار: نسخة PDF تُطبع
+// وتُقرأ بالمسطرة، وقياسُ الباب فيها معلومة تنفيذ لا زينة. نسخة toImage()
+// لا ترسم تحديداً ولا اسحباً، فشرط «المحدَّد فقط» كان يُسقط القياسات كلها.
+      if (this.opts.dimsOnTop || opt.export) this._drawOpeningDimsTop(ctx, v, W, Object.assign({}, opt, { H, dimPlan }));
 
       if (!g.closed && !opt.export) {
         ctx.fillStyle = '#A23B2C';

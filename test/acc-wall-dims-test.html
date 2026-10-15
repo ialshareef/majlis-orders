@@ -127,7 +127,8 @@ try{
   t('3) طبقة أبعاد القطع مرتبطة بالكنب فقط', /if \(p\.kind !== 'sofa'\) continue;/.test(djs));
   t('3) طبقة قياسات الفتحات مستقلة', /_drawOpeningDimsTop/.test(djs));
   const idxSofaLabels=djs.indexOf("if (p.kind !== 'sofa') continue;");
-  const idxOpenDims=djs.indexOf('this._drawOpeningDimsTop(ctx, v, W, opt);');
+  const callOpenDims=djs.match(/this\._drawOpeningDimsTop\(ctx, v, W, [^;]+\);/);
+  const idxOpenDims=callOpenDims?callOpenDims.index:-1;
   const idxPiecesDraw=djs.indexOf('this._drawOrder().forEach((p) => {');
   t('3) قياسات الفتحات بعد رسم القطع', idxOpenDims>idxPiecesDraw, idxPiecesDraw+' < '+idxOpenDims);
 
