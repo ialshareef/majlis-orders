@@ -182,8 +182,8 @@ async function route(request, env, url) {
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 const UPDATE_FALLBACK_VERSION = '1.0.61';
-// بصمة asalh-najd-1.0.60.apk (إصدار GitHub v1.0.60، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = '68830f53d6acb977db60487bc65196be47fccc17c7b8f2602573280c1fd39ef6';
+// بصمة asalh-najd-1.0.61.apk (إصدار GitHub v1.0.61، بناء CI الموقّع).
+const UPDATE_FALLBACK_SHA256 = '23201f864882360f37abdca829b7e95110d5d307997253eeb6b5d909e101febf';
 const UPDATE_FALLBACK_NOTES = [
   'شارة عرض الباب في فتحة الجدار بدل الطفو في العمق',
   'كتلة «تواصل معنا» برموز QR حقيقية في أمر الشراء بنفس حسابات صفحة العميل',
