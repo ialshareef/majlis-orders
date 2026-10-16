@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.60';
+  const APP_VERSION = '1.0.61';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -507,7 +507,7 @@ function canEditOrder(o) {
     '#m-price input', '#m-price select', '#m-price button',
     '#attList input', '#attList button',
     '.designer-panel input', '.designer-panel select', '.designer-panel button',
-    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddWall', '#tbAddColumn', '#tbFillAll', '#btnAddManual', '#btnPickMap',
+    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddColumn', '#tbFillAll', '#btnAddManual', '#btnPickMap',
   ].join(', ');
 
   function applyOrderLock() {
@@ -982,8 +982,8 @@ markRoomHealth();
       });
   }
 
-  $('#btnAddWall').addEventListener('click', addWallWithSize);
-  $('#tbAddWall').addEventListener('click', addWallWithSize);
+  // زرّا إضافة الجدار أُزيلا من الواجهة — تبقى addWallWithSize والدالة الهندسية
+  // designer.addWall للتوافق الداخلي (حذف الجدار delwall ما زال يعمل).
   $('#wallSel').addEventListener('change', () => { wallSelNoJump = true; designer.select({ type: 'wall', index: +$('#wallSel').value }); });
   // شريط الأدوات: تغيير الجدار هنا يحدّد موضع كل عنصر يُضاف بعده (بلا لمس المخطط)
   { const tbSel = $('#wallSelTb');

@@ -86,7 +86,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // 3) اسم الجدار خارج الغرفة
     t('A-label-off', dz.indexOf('WALL_LABEL_OFF = 0.95') >= 0 && dz.indexOf('WALL_T + WALL_LABEL_OFF') >= 0, 'label outside');
     t('A-col-btn', html.indexOf('id="tbAddColumn"') >= 0, 'toolbar button');
-    t('A-col-lock', app.indexOf("'#tbAddColumn'") >= 0 && app.indexOf('#tbAddWall') >= 0, 'lockable');
+    t('A-col-lock', app.indexOf("'#tbAddColumn'") >= 0 && app.indexOf('#tbAddWall') < 0, 'lockable w/o add-wall');
     t('A-revert', app.indexOf('onRevert') >= 0 && app.indexOf('فوق العامود') >= 0, 'revert toast');
     t('A-zoom', html.indexOf('id="tbZoomPct"') >= 0 && app.indexOf('zoomPct') >= 0, 'zoom pct');
     t('A-qty-input', app.indexOf('id="selQty"') >= 0 && app.indexOf('data-sbqty') >= 0 && app.indexOf('data-selminus') < 0 && app.indexOf('data-selplus') < 0 && app.indexOf('data-sbminus') < 0 && app.indexOf('data-sbplus') < 0, 'direct qty inputs, no steppers');
