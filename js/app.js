@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.59';
+  const APP_VERSION = '1.0.60';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -264,6 +264,7 @@
           window.MajlisHelp.init({
             key: isMandoubRole() ? 'mandoub' : 'staff',
             manualBtn: '#btnHelp',
+            designer: (typeof designer !== 'undefined' ? designer : null),
           });
         }
       } catch (_) { /* الشرح لا يعطّل الدخول */ }
@@ -732,10 +733,11 @@ function canEditOrder(o) {
 
   function updateOverlapWarn() { $('#overlapWarn').hidden = designer.overlaps().size === 0; }
 
-  /** سبب منع الحفظ (فارغ = تصميم صالح). نفس الدالة المستعملة في بوابة العميل. */
+  /** سبب منع الحفظ (فارغ = تصميم صالح). نفس الدالة المستعملة في بوابة العميل.
+      تُرجع {err, warn}: err للتعارض الجوهري (يمنع)، وwarn للملامسة على الحد
+      (تحذير واضح مع السماح بالحفظ). يُعاد الحساب من الحالة الحالية دائماً. */
   function designBlockReason() {
     const v = designer.validateDesign();
-    if (v.ok) return '';
     const msgs = [];
     const seen = {};
     v.issues.forEach((i) => {
@@ -746,7 +748,12 @@ function canEditOrder(o) {
         if (!seen.ov) { msgs.push('تداخل بين قطعتين — أعد توزيعهما'); seen.ov = 1; }
       }
     });
-    return msgs.join(' · ');
+    const warns = [];
+    designer.designWarnings().forEach((w) => {
+      const nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : 'الباب';
+      if (!seen['w' + nm]) { warns.push(`كنبة ملاصقة لمنطقة ${nm} — الموضع مقبول لكن الأفضل إبعادها قليلاً`); seen['w' + nm] = 1; }
+    });
+    return { err: msgs.join(' · '), warn: warns.join(' · ') };
   }
 
   /** تنبيه هندسي بعد تغيير أطوال الجدران: فجوة، فتحة خرجت، أو تعارض أثاث.
@@ -1369,9 +1376,12 @@ markRoomHealth();
     }
     const placed = designer.setAccessoryCount(it, v);
     if (placed < v) toast(`المساحة المتاحة لا تكفي لـ ${v} ${it.name}، تم وضع ${placed}. يمكنك تعديل التوزيع يدويًا.`, true);
-    // setAccessoryCount يلغي التحديد: نُبقي الشريط حياً بإعادة تحديد قطعة من الصنف
+    // setAccessoryCount يلغي التحديد: نُبقي الشريط حياً بإعادة تحديد قطعة من الصنف.
+    // إعادة التحديد تفتح الورقة تلقائياً على الحاسوب (سلوك مقصود) فيختفي الشريط —
+    // نغلقها فوراً لأن المستخدم كان يتعامل مع الشريط أصلاً.
     const rest = designer.state.pieces.filter((x) => x.kind === 'acc' && x.itemId === it.id)[0];
     if (rest) designer.select({ type: 'piece', id: rest.id });
+    if (!insp.hidden) closeInspector();
     renderSelBar(designer.selectionInfo());
   }
   function selBarWidth(delta) {
@@ -2771,12 +2781,14 @@ markRoomHealth();
     if (readOnly) { if (!silent) toast('هذا الطلب لموظف آخر: لا يمكن حفظ التعديلات', true); return false; }
     cur.design = designer.getState();
     /* رفض حفظ تصميم فيه تعارض هندسي غير مسموح — نفس القواعد المستعملة أثناء
-       التعديل في هذه الصفحة وفي بوابة العميل (تعارض قطعتين أو كنبة سدّت باباً/مشباً). */
-    const designErr = designBlockReason();
-    if (designErr) {
-      if (!silent) { toast(designErr, true); markRoomHealth(); showStage('design'); }
+       التعديل في هذه الصفحة وفي بوابة العميل (تعارض قطعتين أو كنبة سدّت باباً/مشباً).
+       الملامسة على الحد تحذير واضح مع السماح بالحفظ — لا تمنع وحدها. */
+    const designCheck = designBlockReason();
+    if (designCheck.err) {
+      if (!silent) { toast(designCheck.err, true); markRoomHealth(); showStage('design'); }
       return false;
     }
+    if (designCheck.warn && !silent) toast('تنبيه: ' + designCheck.warn, 'info');
     normalizePayments(cur);
     cur.discount = money(cur.discount || 0);
     const { lines, total, subtotal, vatAmount, vatRate } = computeLines(cur);
@@ -2995,17 +3007,21 @@ markRoomHealth();
   }
 
   /* ---------- قنوات التواصل في مستند العميل ----------
-     نفس مصدر صفحة العميل تماماً (settings: instagram/tiktok/snapchat) — لا
-     بيانات مكررة ولا روابط مختلفة. تُبنى البطاقات بنفس شكل PDF العميل
+     نفس مصادر صفحة العميل وPDF العميل تماماً (settings) — لا بيانات
+     مكررة ولا روابط مختلفة: واتساب والجوال وإنستقرام وتيك توك وسناب شات
+     والموقع، كل ما هو مضبوط منها يظهر. تُبنى البطاقات بنفس شكل PDF العميل
      (أيقونة + QR + رابط) وبنفس أصناف CSS الجاهزة (.inv-contact/.inv-chans).
      ملاحظة صريحة: PDF الموظف صورة مُدمجة واحدة (html2canvas + addImage)
-     فالروابط داخله غير قابلة للنقر — لذلك رمز QR هو طريق المسح بكاميرا
-     الجوال، والرابط نصٌّ للقراءة، والوسم <a> يبقى ليعمل في مسار الطباعة. */
+     فتُضاف الروابط الحقيقية فوق الصورة عبر addPdfLinksToDoc — أما الوسم <a>
+     فيبقى ليعمل في مسار الطباعة. */
   const SOCIAL_CHANS = [
     { key: 'instagram', label: 'إنستقرام', cls: 'in', icon: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2"/></svg>' },
     { key: 'tiktok', label: 'تيك توك', cls: 'tt', icon: '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg>' },
     { key: 'snapchat', label: 'سناب شات', cls: 'sn', icon: '<svg viewBox="0 0 24 24"><path d="M12 2.5c-3.6 0-5.5 2.3-5.5 5.4v1.9c-1.2.5-2 1.6-2 2.7l1.7.5c-.4 1-.4 1.9.3 2.6l-1.5.9c-.3.2-.3.7.1.8l2.1.5c.5 1.2 1.4 2.2 2.4 2.6.6.3 1.2.4 1.9.5v.6h1v-.6c.7-.1 1.3-.2 1.9-.5 1-.4 1.9-1.4 2.4-2.6l2.1-.5c.4-.1.4-.6.1-.8l-1.5-.9c.7-.7.7-1.6.3-2.6l1.7-.5c0-1.1-.8-2.2-2-2.7V7.9c0-3.1-1.9-5.4-5.5-5.4z"/></svg>' },
+    { key: 'mapsUrl', label: 'الموقع', cls: 'map', icon: '<svg viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>' },
   ];
+  const WA_ICON = '<svg viewBox="0 0 24 24"><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20.6l1.6-4.9A8.4 8.4 0 1 1 20.5 11.7z"/></svg>';
+  const TEL_ICON = '<svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>';
   /* رابط اجتماعي صالح للعرض والترميز: https فقط بلا فراغات، ونرفض القيم
      التجريبية (example/localhost/test) حتى لا يظهر رمز لا يعمل. */
   function validSocialUrl(v) {
@@ -3014,24 +3030,39 @@ markRoomHealth();
     if (/example\.com|localhost|127\.0\.0\.1|\/test(\/|$)/i.test(u)) return '';
     return u;
   }
+  /* عرض الرقم بالصيغة الدولية نفسها في PDF العميل: +966 53 372 4290 للسعودي،
+     وإلا +الأرقام كما هي (بعد إسقاط 00 والأصفار المحلية الزائدة عبر waPhone). */
+  function fmtIntl(d) {
+    const m = /^(966)(5\d)(\d{3})(\d{4})$/.exec(d || '');
+    return m ? '+' + m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4] : (d ? '+' + d : '');
+  }
   function shopSocialList(s) {
+    s = s || {};
     const out = [];
+    const push = (e) => { if (e.url && !out.some((o) => o.url === e.url)) out.push(e); };
+    // اتصال مباشر أولاً (واتساب مطبّع عند الحفظ، ثم الجوال)، ثم الحسابات، ثم الموقع
+    const waUrl = validSocialUrl(s.whatsapp);
+    if (waUrl) push({ key: 'wa', label: 'واتساب', cls: 'wa', icon: WA_ICON, url: waUrl, text: waUrl.replace(/^https:\/\/wa\.me\//i, '+') });
+    // الجوال يُطبَّع بنفس منطق العميل الموثوق (waPhone): لا رمز مكرر ولا صفر محلي
+    // داخل tel:. القصير جداً (<7 أرقام) يُرفض كما كان.
+    const telNorm = waPhone(s.phone || '');
+    if (telNorm && telNorm.length >= 7) push({ key: 'tel', label: 'اتصال', cls: 'tel', icon: TEL_ICON, url: 'tel:+' + telNorm, text: fmtIntl(telNorm) });
     for (const a of SOCIAL_CHANS) {
-      const url = validSocialUrl(s && s[a.key]);
-      if (url && !out.some((o) => o.url === url)) out.push({ key: a.key, label: a.label, cls: a.cls, icon: a.icon, url });
+      const url = validSocialUrl(s[a.key]);
+      if (url) push({ key: a.key, label: a.label, cls: a.cls, icon: a.icon, url });
     }
     return out;
   }
   function shopSocialHtml(list) {
     if (!list || !list.length) return '';
     return `<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b>`
-      + `<div class="inv-chans-hint">امسح رمز QR لفتح الحساب مباشرة</div>`
+      + `<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</div>`
       + `<div class="inv-chans">${list.map((a) => `
-        <a class="inv-chan" href="${esc(a.url)}" target="_blank" rel="noopener">`
+        <a class="inv-chan" href="${esc(a.url)}" data-url="${esc(a.url)}" target="_blank" rel="noopener">`
         + `<span class="inv-chan-ic ${a.cls}">${a.icon}</span>`
         + `<span class="inv-chan-lb">${esc(a.label)}</span>`
         + (a.img ? `<img class="inv-chan-qr" src="${a.img}" alt="رمز ${esc(a.label)}">` : '')
-        + `<span class="inv-chan-url">${esc(a.url.replace(/^https?:\/\//i, ''))}</span></a>`).join('')}</div></div></div>`;
+        + `<span class="inv-chan-url">${esc(a.text || a.url.replace(/^https?:\/\//i, ''))}</span></a>`).join('')}</div></div></div>`;
   }
   /* رموز QR للحسابات المضبوطة فقط — بنفس مكتبة رمز الفاتورة الضريبية
      (qrcode-generator) وبحدّ أبيض هادئ حول الرمز ليسهل مسحه. */
@@ -3338,6 +3369,31 @@ function docTitle(order) {
     });
   }
 
+  /** تحويل مواضع العناصر (data-url) إلى ملليمترات على صفحة PDF وإضافتها
+      كروابط قابلة للنقر — لأن الصفحة صورة مدمجة (html2canvas) تفقد الروابط
+      لولا ذلك. نفس آلية PDF العميل المجرّبة. */
+  function addPdfLinksToDoc(pdf, inv, x0, y0, wMm, hMm) {
+    let base = null;
+    try { base = inv.getBoundingClientRect(); } catch (_) { return 0; }
+    if (!base || !base.width || !base.height) return 0;
+    const kx = wMm / base.width, ky = hMm / base.height;
+    const nodes = inv.querySelectorAll('[data-url]');
+    let n = 0;
+    for (let i = 0; i < nodes.length; i++) {
+      const url = nodes[i].getAttribute('data-url');
+      if (!url) continue;
+      let r = null;
+      try { r = nodes[i].getBoundingClientRect(); } catch (_) { continue; }
+      if (!r || !r.width || !r.height) continue;
+      const x = x0 + (r.left - base.left) * kx;
+      const y = y0 + (r.top - base.top) * ky;
+      const w = r.width * kx, hh = r.height * ky;
+      if (x < x0 - 0.5 || x + w > x0 + wMm + 0.5 || y < y0 - 0.5 || y + hh > y0 + hMm + 0.5) continue;
+      try { pdf.link(x, y, w, hh, { url }); n++; } catch (_) { /* noop */ }
+    }
+    return n;
+  }
+
   /** تحويل مستند الصفحة الواحدة إلى ملف PDF حقيقي (صورة عالية الدقة تحفظ العربية كما تُعرض) */
   async function makePdfBlob() {
     await loadScript(H2C_URL);
@@ -3355,6 +3411,8 @@ function docTitle(order) {
       // الصورة تُوضع بنسبة أبعاد المستند نفسه (السند أقصر من أمر الشراء)
       const h = Math.min(276, 190 * (canvas.height / canvas.width));
       pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
+      // روابط حقيقية فوق الصورة (قنوات التواصل): النقر يفتح الوجهة الصحيحة
+      addPdfLinksToDoc(pdf, inv, 10, 10, 190, h);
       return pdf.output('blob');
     } finally {
       area.style.cssText = '';

@@ -7,8 +7,8 @@
 /* منع تمرير الخلفية أثناء فتح نافذة الشرح/الدليل */
 html.hj-lock, html.hj-lock body { overflow: hidden; }
 
-/* --------------------------------- النافذة --------------------------------- */
-.hj-tour, .hj-manual {
+/* --------------------------------- الطبقة --------------------------------- */
+.hj-manual {
   position: fixed; inset: 0; z-index: 200;
   background: var(--scrim);
   display: flex; align-items: center; justify-content: center;
@@ -16,7 +16,24 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
   opacity: 0; visibility: hidden;
   transition: opacity .2s var(--ease, ease), visibility .2s;
 }
+/* الجولة التفاعلية: طبقة تعتيم بفتحة حقيقية فوق العنصر (أربع شرائط)،
+   فاللمس يمرّ من الفتحة ويبقى العنصر قابلاً للتفاعل أثناء الشرح */
+.hj-tour {
+  position: fixed; inset: 0; z-index: 200;
+  opacity: 0; visibility: hidden;
+  transition: opacity .2s var(--ease, ease), visibility .2s;
+}
 .hj-tour.show, .hj-manual.show { opacity: 1; visibility: visible; }
+.hj-dim {
+  position: absolute; background: rgba(16, 11, 8, .58);
+}
+.hj-ring {
+  position: absolute; pointer-events: none;
+  border: 2px solid var(--accent-fill, #C97B2D);
+  border-radius: 12px;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, .55), 0 0 22px rgba(201, 123, 45, .75);
+  transition: left .25s var(--ease, ease), top .25s var(--ease, ease), width .25s var(--ease, ease), height .25s var(--ease, ease);
+}
 
 .hj-tour-card, .hj-manual-card {
   background: var(--surface);
@@ -34,6 +51,29 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
   transition: transform .22s var(--ease, ease);
 }
 .hj-tour.show .hj-tour-card, .hj-manual.show .hj-manual-card { transform: none; }
+/* بطاقة الجولة: عائمة بجانب الهدف لا في المنتصف — تُموضع من JS */
+.hj-tour .hj-tour-card {
+  position: absolute;
+  width: min(340px, calc(100vw - 20px));
+  max-height: min(70vh, 640px);
+  z-index: 2;
+}
+/* سهم البطاقة يشير إلى الهدف حسب جهة التموضع */
+.hj-tour .hj-tour-card::before {
+  content: ''; position: absolute; width: 14px; height: 14px;
+  background: var(--surface); border: 1px solid var(--line);
+  transform: rotate(45deg);
+}
+.hj-tour .hj-tour-card[data-side="top"]::before { top: -8px; left: calc(50% - 7px); border-right: 0; border-bottom: 0; }
+.hj-tour .hj-tour-card[data-side="bottom"]::before { bottom: -8px; left: calc(50% - 7px); border-left: 0; border-top: 0; }
+.hj-tour .hj-tour-card[data-side="left"]::before { left: -8px; top: 26px; border-right: 0; border-bottom: 0; }
+.hj-tour .hj-tour-card[data-side="right"]::before { right: -8px; top: 26px; border-left: 0; border-top: 0; }
+.hj-tour .hj-tour-card[data-side="center"]::before { display: none; }
+.hj-tour .hj-tour-card[data-side="sheet"]::before { display: none; }
+.hj-tour .hj-tour-card[data-side="sheet"] { max-height: 46vh; }
+/* عدّاد الخطوة + علامة إتمام التفاعل */
+.hj-count { font-size: .8rem; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.hj-done-tick { margin: 0; font-size: .85rem; font-weight: 700; color: #2E7D32; }
 .hj-manual-card { max-width: 560px; }
 
 /* --------------------------------- الرأس --------------------------------- */
@@ -174,7 +214,7 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
   .hj-tour-foot { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
   .hj-nav { justify-content: space-between; }
   .hj-nav .hj-btn { flex: 1; }
-  .hj-tour-foot .hj-btn.hj-ghost[data-hj="skip"] { text-align: center; }
+  .hj-tour .hj-tour-card { font-size: .95rem; }
   .hj-tabs { top: 44px; padding: 10px 16px 8px; }
   .hj-tabs button { font-size: .76rem; padding: 5px 10px; }
   .hj-tour-body, .hj-manual-body { padding: 14px 16px 4px; }
@@ -197,7 +237,7 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
 
 /* تقليل الحركة لمن يفضّل ذلك */
 @media (prefers-reduced-motion: reduce) {
-  .hj-tour, .hj-manual, .hj-tour-card, .hj-manual-card, .hj-dots i, .hj-btn { transition: none; }
+  .hj-tour, .hj-manual, .hj-tour-card, .hj-manual-card, .hj-dots i, .hj-btn, .hj-ring { transition: none; }
 }
 
 /* الطباعة: لا نطبع نوافذ الشرح */

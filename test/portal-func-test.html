@@ -163,6 +163,19 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         P.designer().removeSelected();
       });
       t('F-cleared', sofas().length === 0, 'room emptied');
+      // D-dblclick: النقر المزدوج على جدار يفرش مساحته (الغرفة فارغة بلا فتحات هنا
+      // فيُضمن موضع حر، ثم ننظف لاستعادة الحالة الفارغة لبقية التدفق)
+      var dzD = P.designer();
+      dzD.fitView();
+      var cvR = dzD.canvas.getBoundingClientRect();
+      var wWall = dzD.geometry().walls[0];
+      var wMid = dzD.toScreen((wWall.A.x + wWall.B.x) / 2, (wWall.A.y + wWall.B.y) / 2);
+      dzD.canvas.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, clientX: cvR.left + wMid.x, clientY: cvR.top + wMid.y }));
+      await waitFor(function () { return sofas().length === 1; }, 60000);
+      t('D-dblclick-fills-wall', sofas().length === 1 && sofas()[0].wall === 0, 'wall=' + (sofas()[0] && sofas()[0].wall));
+      P.designer().select({ type: 'piece', id: sofas()[0].id });
+      P.designer().removeSelected();
+      t('D-dblclick-cleaned', sofas().length === 0, 'emptied again');
       q('#pfSeat').value = 'arabic';
       q('#pfSeat').dispatchEvent(new Event('change', { bubbles: true }));
       var wallsBefore = P.state().walls.length;
@@ -682,12 +695,34 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
         JSON.stringify(P.contactChannels()));
 
       // H: إنهاء التصميم من خطوة المراجعة (الزر موجود دائمًا بلا «مراجعة وإنهاء»)
+      // W: تحذير ملامسة لا يمنع الإنهاء — تصميم حتمي: باب + كنبة ملاصقة لحده.
+      // (يستبدل التصميم المتراكم لضمان حتمية الموضع؛ الإنهاء يعمل على أي تصميم)
+      var wDz = P.designer();
+      wDz.setState({
+        roomDims: { w: 6, h: 4 },
+        walls: [{ len: 6, angle: 0 }, { len: 4, angle: 90 }, { len: 6, angle: 180 }, { len: 4, angle: 270 }],
+        openings: [{ id: 'w-door', wall: 0, t: 3, w: 0.9, h: 2.1, type: 'door', blocks: true }],
+        pieces: [], cornerMode: 'deduct',
+      });
+      var wW = wDz.geometry().walls[0];
+      var wSpot = { id: 'w-touch', kind: 'sofa', w: 0.9, h: 0.7, rot: 0, wall: 0, t: 1.95, x: 0, y: 0 };
+      wDz._placeOnWall(wSpot, wW);
+      wDz.state.pieces.push(wSpot);
+      t('W-touch-spot', wDz.validatePlacement(wSpot).ok === true && !!wDz.hitsOpeningNear(wSpot), 't=1.95 near-door');
+      t('W-engine-ok-warn', wDz.validateDesign().ok === true && wDz.designWarnings().length >= 1,
+        'issues=0 warns=' + wDz.designWarnings().length);
       var no = '';
       await waitFor(function () { return q('#pSubmitDesign'); }, 60000);
+      var wSaw = false;
       q('#pSubmitDesign').click();
-      await waitFor(function () { return !q('#pDone').hidden; }, 120000);
+      await waitFor(function () {
+        var wtx = (q('#pToast') || {}).textContent || '';
+        if (wtx.indexOf('تنبيه') >= 0) wSaw = true;
+        return !q('#pDone').hidden;
+      }, 120000);
       no = q('#pDesignNo').textContent;
       t('H-finish', /^MJ-\d+$/.test(no), no);
+      t('W-warn-shown', wSaw && !!wSpot, 'warning toast seen, finish allowed');
 
       window.fetch = realFetch;
     } catch (e) {

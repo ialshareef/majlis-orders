@@ -193,6 +193,54 @@ console.log('== 8) الغرفة المخصصة (5 جدران) لا تُهدم ب
   t('الفرش يعمل على المخصصة بلا تداخل', pairs(dz) === 0, 'sofas=' + sofas(dz).length);
 }
 
+console.log('== 9) باب قرب الزاوية: الجدار المجاور يُفرش باستبعاد منطقة الباب ==');
+{
+  // باب على الجدار 0 قرب الزاوية مع الجدار 3: منطقة استخدامه تمتد لمنطقة
+  // الجدار المجاور — يجب فرش الجزء الصالح منه لا تخطي الجدار كله
+  const dz = mkDesign(6, 4, [{ wall: 0, t: 0.7, w: 1.0, h: 2.1, type: 'door' }]);
+  const n = dz.fillAllWalls(SPEC);
+  const w3 = sofas(dz).filter((p) => p.wall === 3);
+  t('الجدار 3 مفروش رغم باب الجدار المجاور', w3.length === 1, 'n=' + n);
+  t('بلا تداخل ولا سدّ للباب', pairs(dz) === 0 && hitsAny(dz).length === 0);
+  t('التصميم صالح للحفظ', dz.validateDesign().ok === true);
+}
+
+console.log('== 10) الملامسة على الحد: مسموحة مع تحذير، والتداخل الحقيقي ممنوع ==');
+{
+  const dz = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, h: 2.1, type: 'door' }]);
+  // كنبة ملاصقة تماماً لحد منطقة الاستخدام (t=2.4): لمس بلا مساحة
+  const touch = { id: 't1', kind: 'sofa', w: 1.0, h: 0.8, rot: 0, wall: 0, t: 1.9, x: 0, y: 0 };
+  dz._placeOnWall(touch, dz.geometry().walls[0]);
+  t('الملامسة تُقبل موضعاً', dz.validatePlacement(touch).ok === true);
+  dz.state.pieces.push(touch);
+  const vd = dz.validateDesign();
+  t('لا خطأ مانع على الملامسة', vd.ok === true, JSON.stringify(vd.issues));
+  const warns = dz.designWarnings();
+  t('تحذير واحد مسجل للملامسة', warns.length === 1 && warns[0].type === 'opening-near', JSON.stringify(warns));
+}
+{
+  const dz = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, h: 2.1, type: 'door' }]);
+  // تداخل حقيقي ~30سم داخل المنطقة: ممنوع
+  const deep = { id: 't2', kind: 'sofa', w: 1.0, h: 0.8, rot: 0, wall: 0, t: 2.2, x: 0, y: 0 };
+  dz._placeOnWall(deep, dz.geometry().walls[0]);
+  t('التداخل الحقيقي مرفوض', dz.validatePlacement(deep).ok === false);
+  dz.state.pieces.push(deep);
+  t('التداخل الحقيقي يمنع الحفظ', dz.validateDesign().ok === false);
+}
+
+console.log('== 11) الحذف يعيد التحقق من الحالة الحالية ==');
+{
+  const dz = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, h: 2.1, type: 'door' }]);
+  const bad = { id: 'b1', kind: 'sofa', w: 2.0, h: 0.8, rot: 0, wall: 0, t: 3.0, x: 0, y: 0 };
+  dz._placeOnWall(bad, dz.geometry().walls[0]);
+  dz.state.pieces.push(bad);
+  t('قبل الحذف: مانع', dz.validateDesign().ok === false);
+  dz.select({ type: 'piece', id: 'b1' });
+  dz.removeSelected();
+  t('بعد الحذف: لا مانع', dz.validateDesign().ok === true);
+  t('بعد الحذف: لا تحذير عالق', dz.designWarnings().length === 0);
+}
+
 const report = lines.join('\n') + '\n\n=== PASS=' + pass + '  FAIL=' + fail + ' ===';
 const out = process.env.FF_OUT;
 if (out) fs.writeFileSync(out, report, 'utf8');

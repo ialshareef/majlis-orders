@@ -1,7 +1,9 @@
 <!DOCTYPE html>
 <html lang="ar" dir="rtl">
 <head><meta charset="utf-8"><title>help system test</title>
-<style>#rep{position:fixed;inset:0;background:#fff;z-index:9999;overflow:auto;font:12px/1.7 monospace;padding:10px;direction:ltr;text-align:left}</style>
+<link rel="stylesheet" href="/css/style.css">
+<link rel="stylesheet" href="/css/help.css">
+<style>#rep{position:fixed;inset:0;background:#fff;z-index:99999;overflow:auto;font:12px/1.7 monospace;padding:10px;direction:ltr;text-align:left}</style>
 </head>
 <body>
 <pre id="rep">…</pre>
@@ -25,8 +27,8 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     localStorage.clear();
     const H=window.MajlisHelp;
     t('module exposed (MajlisHelp)', !!H);
-    t('API shape', !!(H.init && H.manualOpen && H.CONTENT && H.Tour && H.Manual), Object.keys(H||{}).join(','));
-    t('version', H.version==='1.0', 'v'+H.version);
+    t('API shape', !!(H.init && H.manualOpen && H.context && H.CONTENT && H.Tour && H.Manual), Object.keys(H||{}).join(','));
+    t('version', H.version==='1.1', 'v'+H.version);
 
     /* ---------- المحتوى ---------- */
     const C=H.CONTENT;
@@ -37,11 +39,13 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
       const bad=c.steps.filter(s=>!(s&&s.h&&s.p));
       t('  '+k+': every step has h & p', bad.length===0, bad.length+' bad');
     }
-    // محتوى دليل العميل يغطي خطوات التصميم الفعلية
+    // محتوى دليل العميل يغطي سيناريو التصميم الفعلي
     const cust=C.customer.steps.map(s=>s.h).join(' | ');
-    for(const w of ['الغرفة','المعمارية','المجلس','الأثاث','المراجعة']) {
+    for(const w of ['التصميم','الباب','الجدران','الفتحة','الأثاث','المراجعة']) {
       t('  customer covers: '+w, cust.indexOf(w)>=0);
     }
+    t('  customer steps carry targets', C.customer.steps.filter(s=>s.targets&&s.targets.length).length>=5,
+      C.customer.steps.filter(s=>s.targets&&s.targets.length).length+' targeted');
     // أدوار مختلفة = محتوى مختلف
     t('staff !== mandoub content', JSON.stringify(C.staff.steps)!==JSON.stringify(C.mandoub.steps));
     t('customer !== staff content', JSON.stringify(C.customer.steps)!==JSON.stringify(C.staff.steps));
@@ -73,9 +77,9 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     const nf=document.querySelector('[data-hj="nofilter"]');
     t('no-again checkbox exists', !!nf && nf.type==='checkbox');
 
-    /* ---------- 4) التخطي يحفظ التفضيل ---------- */
-    document.querySelector('[data-hj="skip"]').click(); await wait(60);
-    t('tour hidden after skip', !document.querySelector('.hj-tour').classList.contains('show'));
+    /* ---------- 4) الإنهاء يحفظ التفضيل ---------- */
+    document.querySelector('[data-hj="done"]').click(); await wait(60);
+    t('tour hidden after done', !document.querySelector('.hj-tour').classList.contains('show'));
     t('  lock released', !document.documentElement.classList.contains('hj-lock'));
     t('  preference saved', seen('t1')==='1', 'val='+seen('t1'));
 
@@ -135,6 +139,94 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     t('only ONE manual node in DOM', document.querySelectorAll('.hj-manual').length===1, document.querySelectorAll('.hj-manual').length+' nodes');
     t('no duplicate cards inside', document.querySelectorAll('.hj-tour-card').length===1);
     t('auto:true opens for unseen key', document.querySelector('.hj-tour').classList.contains('show'));
+
+    /* ---------- 9b) الجولة التفاعلية: فتحة إضاءة حقيقية ---------- */
+    // عناصر وهمية بأبعاد ثابتة + مصمم مزيف بباب — لا تمس التطبيق
+    const fix=document.createElement('div');
+    fix.id='spotfix';
+    fix.innerHTML='<button id="fixBtn" type="button" style="position:fixed;left:500px;top:220px;width:180px;height:44px;">زر</button>'
+      + '<canvas id="fixCanvas" width="800" height="600" style="position:fixed;left:100px;top:400px;width:800px;height:600px;"></canvas>';
+    document.body.appendChild(fix);
+    const stubDz = (doorT) => ({
+      canvas: document.getElementById('fixCanvas'),
+      view: { scale: 100, ox: 50, oy: 40 },
+      state: { openings: doorT == null ? [] : [{ id: 'd1', type: 'door', wall: 0, t: doorT, w: 0.9 }] },
+      geometry: () => ({ walls: [{ A: { x: 0, y: 0 }, B: { x: 6, y: 0 }, dir: { x: 1, y: 0 }, n: { x: 0, y: 1 }, len: 6 }] }),
+    });
+    H.context({ designer: stubDz(3) });
+    const spotSteps = [
+      { h: 'زر', p: 'خطوة زر', targets: [{ sel: '#fixBtn' }] },
+      { h: 'باب', p: 'خطوة باب', targets: [{ rect: 'door' }], until: 'doorMoved', skipIf: 'door' },
+      { h: 'مفقود', p: 'تُتجاوز', targets: [{ sel: '#no-such-el-xyz' }], skipIf: 'door', tip: null },
+      { h: 'وسط', p: 'بطاقة ممركزة بلا هدف' },
+    ];
+    const st = new H.Tour({ key: 'spot1', steps: spotSteps, title: 'spot' });
+    const stateBefore = JSON.stringify(stubDz(3).state);
+    st.open(); await wait(120);
+    t('spot overlay: 4 dims + ring + card', document.querySelectorAll('.hj-tour .hj-dim').length === 4
+      && !!document.querySelector('.hj-tour .hj-ring') && !!document.querySelector('.hj-tour-card'));
+    // الفتحة تطابق الزر (بهامش 8)
+    const ring = document.querySelector('.hj-tour .hj-ring');
+    const cardDbg = document.querySelector('.hj-tour-card');
+    const rr = ring.getBoundingClientRect(), br = document.getElementById('fixBtn').getBoundingClientRect();
+    const internal = (function () { try { const a = H.Tour && H.Tour.active; return a && a._rect ? JSON.stringify(a._rect) : 'none'; } catch (e) { return 'err'; } })();
+    const dbgExtra = (function () {
+      try {
+        const b = document.getElementById('fixBtn');
+        const cs = window.getComputedStyle(b);
+        return 'btnpos=' + cs.position + ' scroll=' + document.documentElement.scrollLeft + ',' + document.documentElement.scrollTop
+          + ' vw=' + window.innerWidth + ' vh=' + window.innerHeight
+          + ' ringStyle=' + ring.style.cssText.substring(0, 90)
+          + ' cardStyle=' + cardDbg.style.cssText.substring(0, 90);
+      } catch (e) { return 'dbgerr'; }
+    })();
+    t('hole matches target (+pad)', !ring.hidden && Math.abs(rr.left - (br.left - 8)) < 3 && Math.abs(rr.top - (br.top - 8)) < 3
+      && Math.abs(rr.width - (br.width + 16)) < 3, 'ring=' + JSON.stringify({ x: Math.round(rr.left), y: Math.round(rr.top), w: Math.round(rr.width) })
+      + ' btn=' + JSON.stringify({ x: Math.round(br.left), y: Math.round(br.top), w: Math.round(br.width) }) + ' internal=' + internal + ' | ' + dbgExtra);
+    // البطاقة داخل الشاشة ولها سهم وعدّاد
+    const card = document.querySelector('.hj-tour-card');
+    const cr = card.getBoundingClientRect();
+    t('card inside viewport', cr.left >= 0 && cr.top >= 0 && cr.right <= window.innerWidth + 1 && cr.bottom <= window.innerHeight + 1,
+      Math.round(cr.left) + ',' + Math.round(cr.top));
+    t('card has arrow side + counter', !!card.dataset.side && /من/.test(document.querySelector('.hj-count').textContent), card.dataset.side);
+    // التالي ينقل الإضاءة لمنطقة الباب المحسوبة
+    document.querySelector('[data-hj="next"]').click(); await wait(120);
+    const rr2 = document.querySelector('.hj-tour .hj-ring').getBoundingClientRect();
+    // الباب: t=3,w=0.9 على جدار من (0,0) إلى (6,0): مركزه العالمي (3, ~0.45) → شاشة (50+300, 40+45)+إزاحة الكانفس
+    const cvr = document.getElementById('fixCanvas').getBoundingClientRect();
+    const doorCx = cvr.left + (50 + 3 * 100) * (cvr.width / 800);
+    t('door hole centered on door', Math.abs((rr2.left + rr2.right) / 2 - doorCx) < 30, 'cx=' + Math.round((rr2.left + rr2.right) / 2) + ' want~' + Math.round(doorCx) + ' i=' + st.i);
+    // التفاعل: تحريك الباب يظهر علامة الإتمام
+    H.context({ designer: stubDz(3.5) });
+    await wait(700);
+    t('doorMoved tick appears', !document.querySelector('.hj-done-tick').hidden);
+    // السابق يعيد الإضاءة للزر
+    document.querySelector('[data-hj="prev"]').click(); await wait(120);
+    const rr3 = document.querySelector('.hj-tour .hj-ring').getBoundingClientRect();
+    t('prev moves hole back', Math.abs(rr3.left - (br.left - 8)) < 3);
+    // لوحة المفاتيح: السهم الأيسر = التالي (RTL)، والهروب يغلق
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); await wait(80);
+    t('ArrowLeft = next', document.querySelector('.hj-count').textContent.indexOf('2 من') === 0, document.querySelector('.hj-count').textContent);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await wait(80);
+    t('Escape closes + seen', !document.querySelector('.hj-tour').classList.contains('show') && seen('spot1') === '1');
+    // الخطوة ذات الشرط المفقود تُتجاوَز: من الباب (2) التالي يقفز للوسط (4)
+    const st2 = new H.Tour({ key: 'spot2', steps: spotSteps, title: 'spot' });
+    H.context({ designer: stubDz(null) });
+    st2.open(); await wait(120);
+    t('starts at first resolvable', document.querySelector('.hj-count').textContent.indexOf('1 من') === 0);
+    document.querySelector('[data-hj="next"]').click(); await wait(120);
+    t('missing-door steps skipped', document.querySelector('.hj-tour-body').textContent.indexOf('وسط') >= 0
+      && document.querySelector('.hj-count').textContent.indexOf('4 من') === 0, document.querySelector('.hj-count').textContent);
+    t('centered card: ring hidden, full dim', document.querySelector('.hj-tour .hj-ring').hidden === true);
+    document.querySelector('.hj-tour [data-hj="close"]').click(); await wait(60);
+    // لا تغيير في البيانات من الجولة نفسها
+    t('tour never mutates design', JSON.stringify(stubDz(3).state) === stateBefore);
+    // خطوات فارغة لا تعلّق الصفحة
+    const stE = new H.Tour({ key: 'spotE', steps: [], title: 'empty' });
+    stE.open(); await wait(60);
+    t('empty steps finish silently', !document.querySelector('.hj-tour').classList.contains('show') && seen('spotE') === '1');
+    document.getElementById('spotfix').remove();
+    H.context({ designer: null });
 
     /* ---------- 10) لا أسرار في المصدر ---------- */
     const src=await (await fetch('/js/help.js')).text();

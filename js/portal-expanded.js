@@ -163,6 +163,7 @@
     if (wa) out.push({ key: 'wa', label: 'واتساب', url: 'https://wa.me/' + wa, text: formatSaudiIntl(wa) });
     if (s.instagram) out.push({ key: 'in', label: 'إنستقرام', url: safeHref(s.instagram) });
     if (s.tiktok) out.push({ key: 'tt', label: 'تيك توك', url: safeHref(s.tiktok) });
+    if (s.snapchat) out.push({ key: 'sn', label: 'سناب شات', url: safeHref(s.snapchat) });
     if (s.mapsUrl) out.push({ key: 'map', label: 'الموقع', url: safeHref(s.mapsUrl) });
     if (tel) out.push({ key: 'tel', label: 'اتصال', url: 'tel:+' + tel, text: formatSaudiIntl(tel) });
     return out.filter(function (c) { return !!c.url; });
@@ -171,6 +172,7 @@
     wa: '<svg viewBox="0 0 24 24"><path d="M20.5 11.7a8.4 8.4 0 0 1-12.4 7.4L3 20.6l1.6-4.9A8.4 8.4 0 1 1 20.5 11.7z"/></svg>',
     in: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/><circle cx="12" cy="12" r="4"/><circle cx="17.2" cy="6.8" r="1.2"/></svg>',
     tt: '<svg viewBox="0 0 24 24"><path d="M9 18V6l10-2v11"/><circle cx="6.5" cy="18" r="2.5"/><circle cx="16.5" cy="15" r="2.5"/></svg>',
+    sn: '<svg viewBox="0 0 24 24"><path d="M12 2.5c-3.6 0-5.5 2.3-5.5 5.4v1.9c-1.2.5-2 1.6-2 2.7l1.7.5c-.4 1-.4 1.9.3 2.6l-1.5.9c-.3.2-.3.7.1.8l2.1.5c.5 1.2 1.4 2.2 2.4 2.6.6.3 1.2.4 1.9.5v.6h1v-.6c.7-.1 1.3-.2 1.9-.5 1-.4 1.9-1.4 2.4-2.6l2.1-.5c.4-.1.4-.6.1-.8l-1.5-.9c.7-.7.7-1.6.3-2.6l1.7-.5c0-1.1-.8-2.2-2-2.7V7.9c0-3.1-1.9-5.4-5.5-5.4z"/></svg>',
     map: '<svg viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0z"/><circle cx="12" cy="10" r="3"/></svg>',
     tel: '<svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 19.8 19.8 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a1.8 1.8 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a1.8 1.8 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a1.8 1.8 0 0 1 1.7 2z"/></svg>'
   };
@@ -464,9 +466,13 @@
         return { name: pieceLabel(p), color: col, light: sc.light, art: pieceLabel(p) };
       },
       onChange: function () { markDirty(); },
-      onSelect: function (info) { renderSheet(info); }
+      onSelect: function (info) { renderSheet(info); },
+      // النقر المزدوج على الجدار يفرش مساحاته المتاحة (بما فيها بجانب باب/مشب)
+      onWallDblClick: function (wi) { fillWall(wi); },
     });
     S.designer = dz;
+    // سياق الجولة التعليمية: يعطي help.js المصمم الحي لخطوات المناطق المحسوبة
+    try { if (window.MajlisHelp) window.MajlisHelp.context({ designer: dz }); } catch (_) {}
     dz.canvas.addEventListener('pointermove', function (e) {
       if (!e || e.pointerType !== 'touch') return;
       var d = dz.drag;
@@ -640,6 +646,17 @@
     } else {
       toast('تم فرش ' + n + ' من ' + kind + ' — يمكنك تعديل أي قطعة بالسحب');
     }
+    renderSheet(null);
+  }
+
+  /* فرش جدار واحد (نقر مزدوج عليه): يستغل مساحاته المتاحة ولو بجانب باب/مشب.
+     لا يحذف القائم ولا يكرره — يضيف كنبة واحدة في أكبر فترة صالحة. */
+  function fillWall(wi) {
+    var dz = S.designer;
+    if (!dz || wi == null || !dz.state.walls[wi]) return;
+    var spec = currentSpec();
+    var p = dz.addSofaOnWall(wi, spec);
+    if (!p) { toast('لا توجد مساحة كافية على هذا الجدار', true); return; }
     renderSheet(null);
   }
 
@@ -1125,8 +1142,34 @@
 
   /* الإجراء الوحيد للإنهاء — تستخدمه كل أزرار «إنهاء» (بما فيها السفلي) */
   var finishing = false;
+  /* نفس قاعدة الحفظ في البوابة الأصلية والموظف: التعارض الجوهري (تداخل أو
+     كنبة تسد فتحة) يمنع، والملامسة على الحد تحذير واضح مع السماح بالمتابعة. */
+  function checkDesign() {
+    var dz = S.designer;
+    if (!dz) return { err: '', warn: '' };
+    var v = dz.validateDesign();
+    var msgs = [];
+    var seen = {};
+    v.issues.forEach(function (i) {
+      if (i.type === 'opening') {
+        var nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+        if (!seen['o' + nm]) { msgs.push('كنبة تسدّ ' + nm + ' — انقلها بعيداً عنه.'); seen['o' + nm] = 1; }
+      } else if (i.type === 'overlap') {
+        if (!seen.ov) { msgs.push('تداخل بين قطعتين في التصميم — أعد توزيعهما.'); seen.ov = 1; }
+      }
+    });
+    var warns = [];
+    dz.designWarnings().forEach(function (w) {
+      var nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : 'الباب';
+      if (!seen['w' + nm]) { warns.push('كنبة ملاصقة لمنطقة ' + nm + ' — مقبول لكن الأفضل إبعادها قليلاً.'); seen['w' + nm] = 1; }
+    });
+    return { err: msgs.join(' '), warn: warns.join(' ') };
+  }
   async function finishDesign() {
     if (finishing) return;
+    var dc = checkDesign();
+    if (dc.err) { toast(dc.err, true); return; }
+    if (dc.warn) toast('تنبيه: ' + dc.warn, 'info');
     if (!validateForFinish()) return;
     var box = $('#pxPanel');
     var btns = [$('#pxSubmitDesign', box), $('#pxNextStep')].filter(Boolean);
@@ -1297,7 +1340,7 @@ async function buildExpandedDoc(number) {
       + '<h2>شكرًا لثقتك</h2>'
       + '<p>هذا التصميم وثيقة مرجعية يمكن عرضها على المحل. راجعه مع <b>' + esc(s.shopName || 'أصالة نجد') + '</b>'
       + ' واطلب عرض سعر يناسب مقاساتك — التسعير يُحدَّد بعد المراجعة.</p>'
-      + (chans.length ? '<p class="xp-hint">اضغط على الأيقونة أو امسح رمز QR لفتح الرابط مباشرة</p>' : '')
+      + (chans.length ? '<p class="xp-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</p>' : '')
       + (chans.length ? '<div class="xp-chans">' + chanHtml + '</div>' : '')
       + (chans.length ? '' : '<p class="xp-empty">لم تُضف قنوات تواصل في إعدادات المحل بعد.</p>')
       + '<div class="xp-endfoot">' + esc(s.shopName || 'أصالة نجد')

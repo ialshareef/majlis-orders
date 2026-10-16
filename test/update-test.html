@@ -97,13 +97,19 @@ async function sha256hex(bytes) {
     else fail('T0b versionCode', 'formula mismatch');
 
     // T1: endpoint العامل حقيقي: عام، بلا DB، الشكل سليم
+    // الإصدار المتوقع يُقرأ من مصدر العامل نفسه (UPDATE_FALLBACK_VERSION) —
+    // لا رقم مثبّت يتقادم مع كل إصدار. يُتحقق أيضاً من تطابق versionCode مع معادلة التطبيق.
     try {
       var mod = await import('../worker/worker.js');
       var r = await mod.default.fetch(new Request('https://x.test/api/app-update'), {});
       var b = await r.json();
       var u = b && b.update;
-      var shapeOk = r.status === 200 && b.ok === true && u &&
-        u.versionName === '1.0.52' && u.versionCode === 10052 &&
+      var wsrc = await (await realFetch('../worker/worker.js')).text();
+      var wm = /UPDATE_FALLBACK_VERSION\s*=\s*'([^']+)'/.exec(wsrc);
+      var expName = wm ? wm[1] : null;
+      var expCode = (expName && U0.versionCodeOf) ? U0.versionCodeOf(expName) : null;
+      var shapeOk = r.status === 200 && b.ok === true && u && !!expName &&
+        u.versionName === expName && u.versionCode === expCode &&
         typeof u.apkUrl === 'string' && u.apkUrl.indexOf(ALLOW) === 0 &&
         (u.sha256 === null || /^[0-9a-f]{64}$/.test(u.sha256)) &&
         typeof u.mandatory === 'boolean';

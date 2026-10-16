@@ -294,6 +294,12 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     dz.select({ type: 'piece', id: acc0[0].id });
     var eb = document.querySelector('#tbEdit');
     eb.disabled = false;
+    // المنتج يفتح الورقة تلقائياً عند تحديد عنصر جديد (سلوك مقصود): وحّد الحالة
+    // أولاً — أغلقها إن كانت مفتوحة ثم افتحها بالزر، فالزر يبدّل الحالة.
+    if (!document.querySelector('#inspector').hidden) {
+      eb.click();
+      await waitFor(function () { return document.querySelector('#inspector').hidden; }, 60000);
+    }
     eb.click();
     await waitFor(function () { return !document.querySelector('#inspector').hidden; }, 120000);
     var rot0 = acc0[0].rot || 0;
@@ -357,6 +363,11 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     dz.select(null); // إغلاق أي ورقة مفتوحة من خطوات سابقة
     var eAcc = dz.state.pieces.filter(function (x) { return x.kind === 'acc'; })[0];
     dz.select({ type: 'piece', id: eAcc.id });
+    // المنتج يفتح الورقة تلقائياً عند التحديد الجديد على الحاسوب (سلوك مقصود)،
+    // وشريط الإجراءات السريع لا يظهر إلا والورقة مغلقة — أغلقها بزر «تم» كما
+    // يفعل المستخدم، ثم انتظر الشريط. لا يُحذف أي assert.
+    var cbBtn = document.querySelector('#inspector [data-close]');
+    if (cbBtn && !document.querySelector('#inspector').hidden) cbBtn.click();
     await waitFor(function () { return !sBar.hidden && sBar.querySelector('[data-sbdel]'); }, 60000);
     t('E-selbar-shows', sBar.textContent.indexOf('حذف') >= 0 && !!sBar.querySelector('[data-sbprops]') &&
       !!sBar.querySelector('[data-sbqty]') && insp.hidden, 'actions + qty input, inspector closed');
@@ -384,6 +395,8 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     t('E-gaps', !!(eDoor && eGaps && eGaps.left >= 0 && eGaps.right >= 0 &&
       Math.abs(eGaps.left + eDoor.w + eGaps.right - eW0) < 0.01), JSON.stringify(eGaps));
     dz.select({ type: 'opening', id: eDoor.id });
+    var cbBtn2 = document.querySelector('#inspector [data-close]');
+    if (cbBtn2 && !document.querySelector('#inspector').hidden) cbBtn2.click();
     await waitFor(function () { return !sBar.hidden && sBar.textContent.indexOf('باب') >= 0; }, 60000);
     t('E-selbar-opening', !!sBar.querySelector('[data-sbdel]'), 'opening actions');
     sBar.querySelector('[data-sbdel]').click();
@@ -409,6 +422,40 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     await waitFor(function () { return document.querySelector('#orderTitle').textContent === ordNo; }, 120000);
     var ro = window.MajlisApp.order;
     t('B-reload', ro.design.pieces.filter(function (x) { return x.kind === 'acc'; }).length === 5 && ro.design.pieces.some(function (x) { return x.kind === 'column'; }), 'acc+column kept');
+    // W: حفظ مع تحذير ملامسة (يُسمح) — كنبة ملاصقة لحد منطقة باب على الجدار 2
+    var wDoor = dz.addOpening(1, 'door');
+    t('W-door', !!wDoor, 'door placed');
+    var wUse = dz.openingBlockRects().filter(function (b) { return b.id === (wDoor && wDoor.id); })[0];
+    var wWall = dz.geometry().walls[1];
+    var wTs = [{ x: wUse.rect.minX, y: wUse.rect.minY }, { x: wUse.rect.maxX, y: wUse.rect.minY },
+      { x: wUse.rect.maxX, y: wUse.rect.maxY }, { x: wUse.rect.minX, y: wUse.rect.maxY }]
+      .map(function (p) { return dz.wallCoords(wWall, p).t; });
+    var wMin = Math.min.apply(null, wTs), wMax = Math.max.apply(null, wTs);
+    var wSpot = null;
+    for (var wt = wMin - 1.2; wt <= wMax + 1.2 && !wSpot; wt += 0.05) {
+      var cand = { id: 'w-touch', kind: 'sofa', w: 0.9, h: 0.7, rot: 0, wall: 1, t: Math.round(wt * 100) / 100, x: 0, y: 0 };
+      dz._placeOnWall(cand, wWall);
+      if (dz.validatePlacement(cand).ok && dz.hitsOpeningNear(cand)) wSpot = cand;
+    }
+    t('W-touch-spot', !!wSpot, wSpot ? ('t=' + wSpot.t) : 'no touch spot');
+    dz.state.pieces.push(wSpot);
+    t('W-engine-ok-warn', dz.validateDesign().ok === true && dz.designWarnings().length >= 1,
+      'issues=0 warns=' + dz.designWarnings().length);
+    var sawWarn = false, savedOk = false;
+    document.querySelector('#btnSaveOrder').click();
+    var wt0 = Date.now();
+    while (Date.now() - wt0 < 120000 && !savedOk) {
+      var wtx = (document.querySelector('#toast') || {}).textContent || '';
+      if (wtx.indexOf('تنبيه') >= 0) sawWarn = true;
+      if (/تم حفظ/.test(wtx)) savedOk = true;
+      else await new Promise(function (r) { setTimeout(r, 150); });
+    }
+    t('W-save-allowed', savedOk, 'saved with warning present');
+    t('W-warn-shown', sawWarn, 'warning toast seen');
+    // تنظيف لاستعادة الحالة لبقية التدفق
+    dz.state.pieces = dz.state.pieces.filter(function (x) { return x.id !== 'w-touch'; });
+    dz.removeOpening(wDoor.id);
+    t('W-cleaned', !dz.state.pieces.some(function (x) { return x.id === 'w-touch'; }) && !dz.opening(wDoor.id), 'restored');
     // H: صفحة تصاميم العملاء داخل التطبيق الحقيقي (دخول مدير فعلي عبر النموذج)
     sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
       "('gd-1', 26000199, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'new', '{\"walls\":[]}', 'زبون', '0550000000', 0, '2026-01-01', '2026-01-02')");

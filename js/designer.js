@@ -227,7 +227,7 @@
       return inside;
     }
 
-    static polysOverlap(a, b) {
+    static polysOverlap(a, b, tol = 0.01) {
       for (const poly of [a, b]) {
         for (let i = 0; i < poly.length; i++) {
           const p1 = poly[i], p2 = poly[(i + 1) % poly.length];
@@ -236,7 +236,7 @@
           let minA = Infinity, maxA = -Infinity, minB = Infinity, maxB = -Infinity;
           a.forEach((p) => { const d = p.x * nx + p.y * ny; minA = Math.min(minA, d); maxA = Math.max(maxA, d); });
           b.forEach((p) => { const d = p.x * nx + p.y * ny; minB = Math.min(minB, d); maxB = Math.max(maxB, d); });
-          if (maxA <= minB + 0.01 || maxB <= minA + 0.01) return false;
+          if (maxA <= minB + tol || maxB <= minA + tol) return false;
         }
       }
       return true;
@@ -259,6 +259,17 @@
       const corners = [{ x: r.minX, y: r.minY }, { x: r.maxX, y: r.minY }, { x: r.maxX, y: r.maxY }, { x: r.minX, y: r.maxY }];
       for (let i = 0; i < 4; i++) if (inside(poly[i])) return true;
       return Designer.polysOverlap(poly, corners);        // حافة تقطع حافة
+    }
+
+    /* تقاطع جوهري (بلا تسامح التلامس): زاوية داخل المستطيل حصراً (بتسامح
+       عددي فقط) أو تقاطع حواف بمساحة موجبة. الملامسة على الحد لا تُعد
+       تداخلاً — قطعة ملاصقة لمنطقة باب ليست فوقه. */
+    static polyHitsRectCore(poly, r) {
+      const e = 1e-9;
+      const inside = (p) => p.x > r.minX + e && p.x < r.maxX - e && p.y > r.minY + e && p.y < r.maxY - e;
+      if (poly.some(inside)) return true;
+      const corners = [{ x: r.minX, y: r.minY }, { x: r.maxX, y: r.minY }, { x: r.maxX, y: r.maxY }, { x: r.minX, y: r.maxY }];
+      return Designer.polysOverlap(poly, corners, 1e-9);
     }
 
     overlaps() {
@@ -614,12 +625,26 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
             issues.push({ type: 'overlap', a: a.id, b: b.id });
         }
       }
-      // 2) قطعة أمام فتحة مانعة (باب/مشب)
+      // 2) قطعة أمام فتحة مانعة (باب/مشب) — التداخل الجوهري فقط
       for (const p of ps) {
-        const hit = this.hitsOpening(p);
+        const hit = this.hitsOpeningCore(p);
         if (hit) issues.push({ type: 'opening', piece: p.id, openingType: hit.type, openingId: hit.id });
       }
       return { ok: issues.length === 0, issues };
+    }
+
+    /* تحذيرات لا تمنع الحفظ: قطع ملاصقة لمناطق الفتحات ضمن التسامح (على الحد
+       أو أقرب من سنتيمتر) — موضع غير مثالي لكنه ليس فوق الباب. تُعرض بوضوح
+       عند الحفظ/الإنهاء ويُسمح بالمتابعة. يُعاد حسابها من الحالة الحالية
+       دائماً فلا تعلق بعد حذف قطعة أو تعديلها. */
+    designWarnings() {
+      const out = [];
+      for (const p of this.state.pieces) {
+        if (this.hitsOpeningCore(p)) continue;
+        const near = this.hitsOpeningNear(p);
+        if (near) out.push({ type: 'opening-near', piece: p.id, openingType: near.type, openingId: near.id });
+      }
+      return out;
     }
 
     /** رسالة عربية موحّدة تصف التعارض بلا التباس. */
@@ -872,14 +897,26 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       /* نبحث في كل الفترات الحرة (لا الأكبر فقط) ونختار أول فترة تُعطي كنبة
          صالحة هندسياً: الفترات المحسوبة على المحور قد تكون متجاورة لمنطقة
          استخدام باب/مشب، فيمنعها الفحص الهندسي المشترك.
-         مهم: المحجوز يشمل منطقة استخدام الفتحة (العرض + هامش 0.15م) لا عرض
+         مهم: المحجوز يشمل منطقة استخدام كل فتحة (العرض + هامش 0.15م) لا عرض
          الفتحة وحده — وإلا خرجت فترة ملاصقة لحافة الباب تُرفض حتماً في
-         canPlace فيُتخطَّى الجدار كله رغم وجود مساحة صالحة بجانب الباب. */
+         canPlace فيُتخطَّى الجدار كله رغم وجود مساحة صالحة بجانب الباب.
+         وتُحسب مناطق كل الفتحات (ولو على جدار مجاور) مسقطةً على هذا الجدار:
+         فكنبة جدار ملاصقة لزاوية قد تدخل منطقة باب الجدار المجاور، والفترة
+         الحرة الحقيقية تستبعد ذلك الجزء بدل تخطي الجدار كله. */
       const occ = this._occupied(wallIndex, depth, this.state.cornerMode === 'deduct');
-      for (const o of this.state.openings) {
-        if (!o || o.wall !== wallIndex || o.blocks === false) continue;
-        const pad = 0.15 + 0.03;   // هامش الاستخدام + تسامح الفحص الهندسي
-        occ.push([o.t - o.w / 2 - pad, o.t + o.w / 2 + pad]);
+      for (const b of this.openingBlockRects(g)) {
+        // إسقاط زوايا منطقة الاستخدام على محور الجدار؛ تُحجز إن لامست شريط الكنبة
+        let tmin = Infinity, tmax = -Infinity, smin = Infinity, smax = -Infinity;
+        const cs = [
+          { x: b.rect.minX, y: b.rect.minY }, { x: b.rect.maxX, y: b.rect.minY },
+          { x: b.rect.maxX, y: b.rect.maxY }, { x: b.rect.minX, y: b.rect.maxY },
+        ];
+        for (const c of cs) {
+          const q = this.wallCoords(w, c);
+          if (q.t < tmin) tmin = q.t; if (q.t > tmax) tmax = q.t;
+          if (q.s < smin) smin = q.s; if (q.s > smax) smax = q.s;
+        }
+        if (smin < depth - 0.02 && smax > 0.02) occ.push([tmin - 0.03, tmax + 0.03]);
       }
       const free = this._freeIntervals(w.len, occ, 0.3).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
       if (!free.length) return null;
@@ -1426,22 +1463,45 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
   }
 
   /** هل تتقاطع قطعة (بأي زاوية تدوير) مع منطقة فتحة مانعة؟
-      يُرجع معرّف الفتحة المتعارضة أو null. لا يستثني إلا المساحة الحرة (أرضية). */
+     يُرجع معرّف الفتحة المتعارضة أو null. لا يستثني إلا المساحة الحرة (أرضية). */
   hitsOpening(p, g) {
+    if (!p || p.kind === 'free') return null;
+    const mine = this.corners(p);
+    for (const b of this.openingBlockRects(g)) {
+      if (Designer.polyHitsRect(mine, b.rect)) return b;
+    }
+    return null;
+  }
+
+    /* تقاطع جوهري مع منطقة فتحة (بلا تسامح التلامس): للمنع أثناء التعديل
+       والحفظ. الملامسة على الحد تُفحص عبر hitsOpeningNear كتحذير لا منع. */
+    hitsOpeningCore(p, g) {
       if (!p || p.kind === 'free') return null;
       const mine = this.corners(p);
       for (const b of this.openingBlockRects(g)) {
-        if (Designer.polyHitsRect(mine, b.rect)) return b;
+        if (Designer.polyHitsRectCore(mine, b.rect)) return b;
       }
       return null;
-  }
+    }
+
+    /* ملامسة منطقة فتحة ضمن التسامح (تحذير لا منع): تصطدم بالتوسيع
+       ولا تصطدم بالقلب — أي على الحد أو أقرب من سنتيمتر واحد. */
+    hitsOpeningNear(p, g) {
+      if (!p || p.kind === 'free') return null;
+      const mine = this.corners(p);
+      for (const b of this.openingBlockRects(g)) {
+        if (Designer.polyHitsRect(mine, b.rect) && !Designer.polyHitsRectCore(mine, b.rect)) return b;
+      }
+      return null;
+    }
 
   /** فحص صلاحية كامل لوضع: أمام فتحة مانعة ثم تداخل مع قطعة أخرى.
       الترتيب مقصود: الفتحة تُفحص أولاً لأن canPlace تفحصها أيضاً ضمنياً،
-      فبدون هذا الترتيب يُنسَب رفضُ الفتحة إلى تداخل قطعة. */
+      فبدون هذا الترتيب يُنسَب رفضُ الفتحة إلى تداخل قطعة.
+      المنع للتداخل الجوهري فقط؛ الملامسة على الحد مسموحة (تحذير عند الحفظ). */
   validatePlacement(p, opts = {}) {
       if (!opts.skipOpenings) {
-          const hit = this.hitsOpening(p, opts.geom);
+          const hit = this.hitsOpeningCore(p, opts.geom);
           if (hit) return { ok: false, why: 'opening', opening: hit };
       }
       if (!this.canPlace(p, opts)) return { ok: false, why: 'overlap' };
@@ -1458,9 +1518,9 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const myKind = cand.kind || 'sofa';
       /* منع الوضع أمام الباب/المشب: نفس الفحص الهندسي المشترك في كل المسارات.
          نتخطى الفحص إن كانت القطعة نفسها جزءاً من منطقة الفتحة (لا يحدث حالياً)
-         أو طُلب التخطي صراحة. */
+         أو طُلب التخطي صراحة. المنع للتداخل الجوهري فقط (الملامسة مسموحة). */
       if (!opts.skipOpenings) {
-          const blocked = this.hitsOpening(cand, opts.geom);
+          const blocked = this.hitsOpeningCore(cand, opts.geom);
           if (blocked) return false;
       }
       for (const q of this.state.pieces) {
