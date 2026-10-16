@@ -194,16 +194,17 @@ try{
     t("9) clearWallOffsets يعود الإغلاق", d.geometry().closed===true, 'gap='+d.geometry().gap.toFixed(3));
     t("9) ولا يُغير أي طول", d.state.walls[0].len===5, 'w0='+d.state.walls[0].len);
 
-  /* ===== 9b) الخيارات موجودة في الواجهتين = عمودية ===== */
+  /* ===== 9b) خيارات جهة التقصير أُزيلت من الواجهتين (قرار صريح) — المحرك وحده
+     يحتفظ بها داخلياً. التحقق هنا: لا أثر لها في واجهة العميل ولا الموظف. */
   var pjs=await (await fetch('/js/portal.js')).text();
   var ajs=await (await fetch('/js/app.js')).text();
   var cssA=await (await fetch('/css/style.css')).text();
   ['first','second','even'].forEach(function(v){
-    t('9) بوابة العميل عرض ' + v, pjs.indexOf("v: '" + v + "'") >= 0);
-    t('9) صفحة الموظف ' + v, ajs.indexOf("['" + v + "'") >= 0);
+    t('9) بوابة العميل بلا عرض ' + v, pjs.indexOf("v: '" + v + "'") < 0);
+    t('9) صفحة الموظف بلا ' + v, ajs.indexOf("['" + v + "'") < 0);
   });
-  t('9) بوابة العميل تمرّر جهة التقصير للحزم', pjs.indexOf('S.wallAnchor)') > 0 && /setWallLength\(wi/.test(pjs));
-  t('9) صفحة الموظف تمرّر جهة التقصير', ajs.indexOf("r ? r.value : 'second'") > 0 && /name="wallAnchor"/.test(ajs));
+  t('9) بوابة العميل بلا تمرير جهة تقصير', pjs.indexOf('S.wallAnchor') < 0 && pjs.indexOf('pfAnchor') < 0);
+  t('9) صفحة الموظف بلا جهة تقصير', ajs.indexOf("r ? r.value : 'second'") < 0 && ajs.indexOf('name="wallAnchor"') < 0);
   t('9) ذار خيار معزول CSS (عمودي)', /\.anchorpick-row/.test(cssA) && /\.wallanchors/.test(cssA));
   t('9) واجهة الموظف مريحة من الإطارة (الأرضاع إلى الأسطول)', /\.wallanchor \{[\s\S]{0,300}min-height/.test(cssA));
 

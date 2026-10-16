@@ -310,10 +310,10 @@
                       <span>الجدران</span>
                     </div>
                     <table class="walls-table">
-                      <thead><tr><th>#</th><th>الطول (م)</th><th>الاتجاه°</th><th></th></tr></thead>
+                      <thead><tr><th>#</th><th>الاتجاه°</th><th></th></tr></thead>
                       <tbody id="wallsBody"></tbody>
                     </table>
-                    <p class="hint">الاتجاه: 0 يمين، 90 أسفل، 180 يسار، 270 أعلى. تعديل طول جدار يعدّل الجدار المقابل تلقائياً لتبقى الغرفة مغلقة.</p>
+                    <p class="hint">الاتجاه: 0 يمين، 90 أسفل، 180 يسار، 270 أعلى. مقاسات الغرفة من حقلي العرض والطول أعلاه.</p>
                     <p id="wallsWarn" class="warn"></p>
                   </div>
                 </details>
@@ -403,10 +403,6 @@
                 <div id="overlapWarn" class="canvas-alert" hidden><svg><use href="#i-alert"/></svg> يوجد تداخل بين بعض القطع (مظللة بالأحمر)</div>
                 <div id="roomWarn" hidden></div>
                 <div id="canvasHint" class="canvas-hint">اضغط على جدار لتعديله</div>
-                <div id="wallInlineEdit" class="wall-inline" hidden>
-                  <input id="wallInlineLen" type="number" step="0.05" min="0.3" inputmode="decimal" aria-label="طول الجدار بالمتر">
-                  <span class="wall-inline-unit">م</span>
-                </div>
               </div>
               <div class="zoom-ctl" role="group" aria-label="التكبير والعرض">
                 <button class="tb-btn icon" id="tbZoomIn" title="تكبير"><svg><use href="#i-zoom-in"/></svg></button>

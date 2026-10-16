@@ -82,7 +82,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('A-no-swap', app.indexOf('if (h > w) { const t = w; w = h; h = t; }') < 0, 'no auto swap');
     t('A-no-clobber', app.indexOf("if (af !== $('#roomW'))") >= 0, 'do not overwrite focused field');
     // 2b) اختيار الجدار من القائمة لا يفتح لوحة الطول (لا سحب للأسفل)
-    t('A-nojump', app.indexOf('wallSelNoJump = true;   // لا قفز للأسفل') >= 0, 'wall select no jump');
+    t('A-nojump', app.indexOf('wallInline') < 0 && app.indexOf('wallSelNoJump') < 0, 'no wall length inline UI');
     // 3) اسم الجدار خارج الغرفة
     t('A-label-off', dz.indexOf('WALL_LABEL_OFF = 0.95') >= 0 && dz.indexOf('WALL_T + WALL_LABEL_OFF') >= 0, 'label outside');
     t('A-col-btn', html.indexOf('id="tbAddColumn"') >= 0, 'toolbar button');
@@ -238,11 +238,12 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
       t('B-wall-tb-door', false, 'skipped');
     }
     t('B-wall-opts', opts.length === nWalls && /جدار 1/.test(opts[0] || ''), opts.join('|'));
-    // 2b) اختيار الجدار من الشريط لا يفتح لوحة الطول ولا يركّز (لا سحب للأسفل)
+    // 2b) لا لوحة طول للجدار: اختيار الجدار ثم إضافة كنبة لا يُظهر أي محرر طول
+    // (حُذفت wallInlineEdit/wallInlineLen من الواجهة — المقاس من حقلي الغرفة فقط)
     q('#tbAddSofa').click();
     await new Promise(function (r) { setTimeout(r, 700); });
-    t('B-wall-nojump', document.activeElement !== q('#wallInlineLen') && q('#wallInlineEdit').hidden,
-      'active=' + (document.activeElement && document.activeElement.id) + ' hidden=' + q('#wallInlineEdit').hidden);
+    t('B-wall-nojump', !document.querySelector('#wallInlineEdit') && !document.querySelector('#wallInlineLen'),
+      'no wall length inline UI');
     // 3) اسم الجدار يُرسم خارج الغرفة (يبعد عن الباب/المشب)
     var g0 = dz.geometry();
     var lp = dz.wallLabelPos(0);

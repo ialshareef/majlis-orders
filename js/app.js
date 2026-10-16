@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.61';
+  const APP_VERSION = '1.0.62';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -655,10 +655,6 @@ function canEditOrder(o) {
   let inspOpen = false;   // اللوحة مفتوحة؟ في الجوال لا تُفتح إلا بطلب صريح من المستخدم
   let inspAuto = false;   // فُتحت تلقائياً بالتحديد (الحاسوب): لا يُنقل التركيز إلى حقولها
   let lastSelKey = null;  // آخر عنصر محدد: الفتح التلقائي يكون عند تحديد عنصر جديد فقط
-  // عناصر تعديل طول الجدار المباشر (تُعلَّن قبل المصمم لأن onRender يُستدعى أثناء إنشائه)
-  const wallInlineBox = $('#wallInlineEdit');
-  const wallInlineInp = $('#wallInlineLen');
-  let wallInlineFocusTimer = null;   // تأخير التركيز حتى لا تفتح لوحة المفاتيح قبل اللمسة الثانية (الكنب)
 
   /** طلب قديم: قطعة كنب مرتبطة بصنف من فئة "كنب" ملغاة */
   function legacySofaItem(p) {
@@ -724,7 +720,7 @@ function canEditOrder(o) {
       renderSelBar(info);
       syncWallSel();
     },
-    onRender() { positionInspector(); positionWallInline(); },
+    onRender() { positionInspector(); },
     onWallDblClick(i) { addSofaOnWall(i); },
     onRevert(why) {
       toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود — أُعيد إلى مكانه' : 'يبقى العنصر داخل حدود الغرفة', true);
@@ -802,48 +798,25 @@ function canEditOrder(o) {
   });
 
   /* --- الغرفة والجدران --- */
-  /* جهة التقصير المختارة لكل جدار — تبقى بين إعادة الرسم */
-  const wallAnchor = {};
   function renderWalls() {
     const walls = designer.state.walls;
     const selWall = designer.selectedWallIndex();
     const tb = $('#wallsBody');
     tb.innerHTML = walls.map((w, i) => `
-      <tr class="${i === selWall ? 'sel' : ''}${w.fixed ? ' wall-fixed' : ''}">
-        <td>${i + 1}${w.fixed ? ' <span class="wall-fixed-tag" title="طول مستقل — لا يتغير بتغيير مقاس الغرفة">مستقل</span>' : ''}</td>
-        <td><input type="number" step="0.05" min="0.3" data-i="${i}" data-k="len" value="${Designer.util.round(w.len, 3)}"></td>
+      <tr class="${i === selWall ? 'sel' : ''}">
+        <td>${i + 1} <small class="num">${Designer.util.round(w.len, 2)} م</small></td>
         <td><input type="number" step="5" data-i="${i}" data-k="angle" value="${w.angle}"></td>
         <td class="walls-actions">
-          <span class="wallanchors" role="radiogroup" aria-label="جهة تقصير الجدار ${i + 1}">
-            ${[['first', 'الطرف 1', 'يثبّت الطرف الثاني ويتحرّك الأول'], ['second', 'الطرف 2', 'يثبّت الطرف الأول ويتحرّك الثاني'], ['even', 'تساوي', 'يتحرّك الطرفان بالنصف']]
-              .map((a2) => `<label class="wallanchor" title="${a2[2]}"><input type="radio" name="wallAnchor" data-w="${i}" value="${a2[0]}" ${(wallAnchor[i] || 'second') === a2[0] ? 'checked' : ''}><span>${a2[1]}</span></label>`).join('')}
-          </span>
-          <button class="icon-btn" data-reset="${i}" title="إرجاع الطول للافتراضي (${Designer.util.round(designer.wallDefaultLen(i), 2)} م)" ${w.fixed ? '' : 'disabled'}><svg><use href="#i-ruler"/></svg></button>
           <button class="icon-btn" data-del="${i}" title="حذف الجدار" ${walls.length <= 3 ? 'disabled' : ''}>${icon('x')}</button>
         </td>
       </tr>`).join('');
     $$('input', tb).forEach((inp) => inp.addEventListener('change', () => {
       const i = +inp.dataset.i;
-      if (inp.dataset.k === 'len') {
-        // جهة التقصير المختارة لهذا الجدار (مستقلة لكل جدار)
-        const r = tb.querySelector('input[name="wallAnchor"][data-w="' + i + '"]:checked');
-        designer.setWallLength(i, num(inp.value), r ? r.value : 'second');
-markRoomHealth();
-      } else designer.setWallAngle(i, num(inp.value));
-    }));
-    $$('button[data-reset]', tb).forEach((b) => b.addEventListener('click', () => {
-      const i = +b.dataset.reset;
-      designer.resetWallLength(i);
-      toast(`أُرجع الجدار ${i + 1} إلى طوله الافتراضي ${Designer.util.round(designer.wallDefaultLen(i), 2)} م.`);
-      renderWalls();
-      markRoomHealth();
-    }));
-    $$('input[name="wallAnchor"]', tb).forEach((r) => r.addEventListener('change', () => {
-      wallAnchor[+r.dataset.w] = r.value;
+      designer.setWallAngle(i, num(inp.value));
     }));
     $$('button[data-del]', tb).forEach((b) => b.addEventListener('click', () => designer.removeWall(+b.dataset.del)));
     const g = designer.geometry();
-    $('#wallsWarn').textContent = g.closed ? '' : `الجدران لا تُغلق الغرفة (فجوة ${Designer.util.round(g.gap, 2)} م). عدّل الأطوال أو الاتجاهات.`;
+    $('#wallsWarn').textContent = g.closed ? '' : `الجدران لا تُغلق الغرفة (فجوة ${Designer.util.round(g.gap, 2)} م). عدّل الاتجاهات أو مقاس الغرفة أعلاه.`;
 
     const sel = $('#wallSel');
     const prev = sel.value;
@@ -871,59 +844,7 @@ markRoomHealth();
     $('#canvasHint').textContent = designer.sel ? 'اسحب للتحريك، والمقابض لتغيير المقاس والتدوير' : 'اضغط على جدار أو قطعة لتحديده';
     $('#canvasHint').hidden = false;
     syncEditBtn();
-    showWallInline(i);
   }
-
-  /* --- تعديل طول الجدار مباشرة فوق تسميته في المخطط (الجوال) --- */
-
-  function hideWallInline() {
-    if (wallInlineFocusTimer) { clearTimeout(wallInlineFocusTimer); wallInlineFocusTimer = null; }
-    if (!wallInlineBox.hidden) wallInlineBox.hidden = true;
-  }
-  function positionWallInline() {
-    if (wallInlineBox.hidden) return;
-    const pos = designer.wallLabelPos(+wallInlineInp.dataset.i || 0);
-    if (!pos) { hideWallInline(); return; }
-    wallInlineBox.style.left = pos.x + 'px';
-    wallInlineBox.style.top = pos.y + 'px';
-  }
-  // عند اختيار الجدار من القائمة (جانبي أو شريط الأدوات): لا تفتح لوحة الطول ولا
-  // تُحرّك الصفحة — الاختيار فقط، ثم يذهب الباب/المشب/الكنبة إلى ذلك الجدار
-  let wallSelNoJump = false;
-  function showWallInline(i) {
-    if (wallSelNoJump) { wallSelNoJump = false; hideWallInline(); return; }
-    if (i < 0 || readOnly || inspOpen) { hideWallInline(); return; }
-    const w = designer.state.walls[i];
-    if (!w) { hideWallInline(); return; }
-    wallInlineInp.dataset.i = String(i);
-    if (document.activeElement !== wallInlineInp) wallInlineInp.value = Designer.util.round(w.len, 3);
-    wallInlineBox.hidden = false;
-    positionWallInline();
-    // يُؤجَّل التركيز قليلاً: اللمسة الثانية (لوضع الكنب) تكتمل قبل أن تفتح لوحة المفاتيح
-    wallInlineFocusTimer = setTimeout(() => {
-      wallInlineFocusTimer = null;
-      if (!wallInlineBox.hidden) { wallInlineInp.focus(); wallInlineInp.select(); }
-    }, 400);
-  }
-  wallInlineInp.addEventListener('change', () => {
-    const i = +wallInlineInp.dataset.i;
-    if (Number.isFinite(i) && designer.state.walls[i]) {
-      designer.setWallLength(i, num(wallInlineInp.value));
-      markRoomHealth();
-    }
-  });
-  wallInlineInp.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter') { e.preventDefault(); wallInlineInp.blur(); }
-    else if (e.key === 'Escape') {
-      e.preventDefault();
-      const i = +wallInlineInp.dataset.i;
-      if (Number.isFinite(i) && designer.state.walls[i]) wallInlineInp.value = Designer.util.round(designer.state.walls[i].len, 3);
-      hideWallInline();
-    } else if (e.key === 'Tab') {
-      hideWallInline();
-    }
-  });
-  wallInlineInp.addEventListener('blur', () => { hideWallInline(); });
 
   /** تطبيق مباشر: تغيير العرض/الطول يعيد رسم الغرفة فور الكتابة (بلا زر).
       لا تبديل تلقائي بين الحقلين: العرض يبقى أفقيًا والطول رأسيًا كما كتبه المستخدم،
@@ -934,8 +855,7 @@ markRoomHealth();
     const cur = designer.state.walls;
     const rect = cur.length === 4 && cur[0].angle === 0 && cur[1].angle === 90 && cur[2].angle === 180 && cur[3].angle === 270;
     if (rect) {
-      /* المقاس الأساسي يحدّث الجدران غير المعدّلة يدوياً فقط، ويحافظ على المستقلة
-         (setRoomDims لا يمسّ wall.fixed ولا يفرض تساوي الأضلاع المتقابلة). */
+      /* المقاس الأساسي يحدّث الجدران الأربعة معاً (setRoomDims للغرفة المستطيلة). */
       designer.setRoomDims(w, h);
     } else {
       /* غرفة مخصّصة (بزوايا): نحافظ على شكلها ونحدّث المقاس الأساسي فقط،
@@ -984,13 +904,12 @@ markRoomHealth();
 
   // زرّا إضافة الجدار أُزيلا من الواجهة — تبقى addWallWithSize والدالة الهندسية
   // designer.addWall للتوافق الداخلي (حذف الجدار delwall ما زال يعمل).
-  $('#wallSel').addEventListener('change', () => { wallSelNoJump = true; designer.select({ type: 'wall', index: +$('#wallSel').value }); });
+  $('#wallSel').addEventListener('change', () => { designer.select({ type: 'wall', index: +$('#wallSel').value }); });
   // شريط الأدوات: تغيير الجدار هنا يحدّد موضع كل عنصر يُضاف بعده (بلا لمس المخطط)
   { const tbSel = $('#wallSelTb');
     if (tbSel) tbSel.addEventListener('change', () => {
       const i = +tbSel.value;
       $('#wallSel').value = String(i);
-      wallSelNoJump = true;   // لا قفز للأسفل ولا فتح لوحة المقاس
       designer.select({ type: 'wall', index: i });
     }); }
 
@@ -1423,7 +1342,6 @@ markRoomHealth();
     const info = designer.selectionInfo();
     if (!info) return;
     inspOpen = true;
-    hideWallInline();
     inspAuto = false;
     inspKey = null;   // فتح صريح: تُرسم اللوحة من جديد ويُنقل التركيز إلى أول حقل
     renderInspector(info);
@@ -1481,7 +1399,6 @@ markRoomHealth();
       html += `
         <div class="insp-head"><b>${icon('ruler')} جدار ${info.index + 1} <small>يُطبّق عند مغادرة الحقل</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="row2">
-          <label>الطول (م) <input id="inspLen" type="number" step="0.05" min="0.3" value="${Designer.util.round(info.wall.len, 3)}"></label>
           <label>الاتجاه° <input id="inspAng" type="number" step="5" value="${info.wall.angle}"></label>
         </div>
         <div class="insp-actions">
@@ -1555,13 +1472,13 @@ markRoomHealth();
     bindInspector(info);
     syncMobileSheet();
     positionInspector();
-    if (info.type === 'wall' && !isCoarse && !inspAuto) { const li = $('#inspLen', insp); li.focus(); li.select(); }
+    if (info.type === 'wall' && !isCoarse && !inspAuto) { const an = $('#inspAng', insp); if (an) { an.focus(); an.select(); } }
   }
 
   function refreshInspectorValues(info) {
     const active = document.activeElement;
     const setIf = (id, v) => { const el = $('#' + id, insp); if (el && el !== active) el.value = v; };
-    if (info.type === 'wall') { setIf('inspLen', Designer.util.round(info.wall.len, 3)); setIf('inspAng', info.wall.angle); }
+    if (info.type === 'wall') { setIf('inspAng', info.wall.angle); }
     else if (info.type === 'opening') { const o = info.opening; setIf('inspOW', Designer.util.round(o.w, 2)); setIf('inspOT', Designer.util.round(o.t - o.w / 2, 2)); setIf('inspDepth', o.depth != null ? Designer.util.round(o.depth, 2) : 0.5); }
     else {
       const p = info.piece;
@@ -1581,11 +1498,9 @@ markRoomHealth();
 
     if (info.type === 'wall') {
       const i = info.index;
-      const len = $('#inspLen', insp), ang = $('#inspAng', insp);
-      const applyLen = () => designer.setWallLength(i, num(len.value));
+      const ang = $('#inspAng', insp);
       const applyAng = () => designer.setWallAngle(i, num(ang.value));
-      len.addEventListener('change', applyLen); onEnter(len, applyLen);
-      ang.addEventListener('change', applyAng); onEnter(ang, applyAng);
+      if (ang) { ang.addEventListener('change', applyAng); onEnter(ang, applyAng); }
       $$('[data-act]', insp).forEach((b) => b.addEventListener('click', () => {
         const a = b.dataset.act;
         if (a === 'sofa') addSofaOnWall(i);

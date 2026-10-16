@@ -50,8 +50,7 @@
   function digits(v) { return String(v || '').replace(/[^\d]/g, ''); }
 
   /* ---------------- الحالة ---------------- */
-  var S = { wallAnchor: 'second',   // جهة التقصير المختارة (مستقلة لكل تعديل)
-
+  var S = {
     settings: null, catalog: [], catMap: {},
     design: null, meta: null, designer: null,
     step: 'room', dirty: false, saveTimer: 0, saving: false,
@@ -616,10 +615,7 @@ function portalAddAcc(itemId) {
     return 0;
   }
 
-  /* اختيار جدار بأطوال مستقلة داخل مرحلة الغرفة: يُحفظ بين التصييرات */
-  function wallPickSet(i) { setChosenWall(i); }
-
-  /* تنبيه واضح بعد أي تغيير في أطوال الجدران: فجوة، فتحة خرجت، تعارض أثاث.
+  /* تنبيه واضح بعد أي تغيير في مقاس الغرفة: فتحة خرجت، تعارض أثاث.
      لا نغيّر العنصر بصمت — نعرض ما حدث ونسأل المستخدم. */
   function markRoomHealth() {
     var dz = S.designer;
@@ -641,22 +637,6 @@ function portalAddAcc(itemId) {
       toast('ضُبط زاوية الجدار الأخير فقط ليغلق الشكل — لم يتغير أي طول.');
       renderPanel();
     });
-  }
-
-  /* شرح صريح للجدار المحدد: طوله الحالي، افتراضيه، وأثر التغيير على الغرفة. */
-  function updateWallPickNote() {
-    var dz = S.designer;
-    var el = $('#pfWallNote');
-    if (!dz || !el) return;
-    var i = targetWall();
-    var w = dz.state.walls[i];
-    if (!w) { el.textContent = ''; return; }
-    var def = dz.wallDefaultLen(i);
-    var ex = dz.explainWallChange(i, w.len);
-    var bits = ['طوله الآن ' + w.len + ' م', 'الافتراضي ' + def + ' م'];
-    if (w.fixed) bits.push('معدّل يدوياً (لن يتغير بتغيير مقاس الغرفة)');
-    if (ex && !ex.unchanged) bits.push('الجدار المقابل (رقم ' + (ex.oppositeWall + 1) + ') يبقى ' + ex.oppositeLen + ' م');
-    el.textContent = bits.join(' · ');
   }
 
   /* تركيبة الكنبة: نوع المجلس (افتراضي أرضية دائماً) + قماش + إسفنج + عمق.
@@ -742,46 +722,16 @@ function portalAddAcc(itemId) {
       } else if (old) { old.hidden = true; }
     }
     if (!dz) { box.innerHTML = ''; return; }
-    /* خيارات جهة التقصير الثلاثة — همملة المحرك ويُعدّل في العارض ويظهر معًا بالمحرك المحديد */
-    var anchorOpts = [
-      { v: 'first', t: 'الطرف الأول', d: 'يقثّ الطرف الثاني ويتحرّك الأول' },
-      { v: 'second', t: 'الطرف الثاني', d: 'يقثّ الطرف الأول ويتحرّك الثاني' },
-      { v: 'even', t: 'بالتساوي', d: 'يتحرّك الطرفان نصف الفرق لكل منهما' },
-    ];
     if (S.step === 'room') {
       var ws = (dz.state && dz.state.walls) || [];
-      /* المرحلة ١: المقاس الأساسي للغرفة، وتحته تحكّم مستقل في طول كل جدار على حدة.
-         القواعد نفسها لصفحة الموظف (renderer واحد في app.js). */
+      /* المرحلة ١: مقاس الغرفة الأساسي فقط (عرض × طول) — الغرفة مستطيلة دائماً.
+         لا تحكّم مستقل في طول كل جدار: الجدران الأربعة تتبع العرض والطول معاً. */
       box.innerHTML = ''
         + '<div class="row2"><label>عرض الغرفة (متر)<input id="pfW" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (dz.state.roomDims ? dz.state.roomDims.w : (ws[0] ? ws[0].len : 5)) + '"></label>'
         + '<label>طول الغرفة (متر)<input id="pfH" type="number" step="0.1" min="0.5" max="30" inputmode="decimal" value="' + (dz.state.roomDims ? dz.state.roomDims.h : (ws[1] ? ws[1].len : 4)) + '"></label></div>'
-        + '<p class="hint">اضغط على الرقم فيتحدّد كاملًا — اكتب المقاس الجديد مباشرة.</p>'
-        + '<div class="wallpick" id="pfWallPick">'
-        + '<p class="hint"><b>أطوال الجدران بشكل مستقل:</b> اختر جداراً لتغيير طوله وحده. الجدار المقابل لا يتغير تلقائياً.</p>'
-        + '<div class="wallpick-row" role="group" aria-label="اختر جداراً لتغيير طوله">'
-        + ws.map(function (w, i) {
-            const fixed = !!w.fixed;
-            const sel = i === targetWall();
-            return '<button type="button" class="wallpick-btn' + (sel ? ' sel' : '') + (fixed ? ' fixed' : '') + '" data-wallpick="' + i + '" aria-pressed="' + (sel ? 'true' : 'false') + '">'
-              + 'جدار ' + (i + 1) + '<small>' + w.len + ' م' + (fixed ? ' • مستقل' : '') + '</small></button>';
-          }).join('')
-        + '</div>'
-        + '<fieldset class="anchorpick"><legend>جهة التقصير — أي طرف يتحرّك؟</legend>'
-        + '<div class="anchorpick-row" role="radiogroup">'
-        + anchorOpts.map(function (o) {
-          return '<label class="anchoropt"><input type="radio" name="pfAnchor" value="' + o.v + '"'
-            + (S.wallAnchor === o.v ? ' checked' : '') + '>'
-            + '<span>' + o.t + '</span><small>' + o.d + '</small></label>';
-        }).join('')
-        + '</div></fieldset>'
-        + '<div class="row2 wallpick-edit">'
-        + '<label>طول الجدار المحدد (متر)<input id="pfWallLen" type="number" step="0.05" min="0.3" max="40" inputmode="decimal" value="' + (ws[targetWall()] ? ws[targetWall()].len : 3) + '"></label>'
-        + '<label>&nbsp;<button type="button" class="btn ghost" id="pfWallReset">إرجاع للافتراضي</button></label>'
-        + '</div>'
-        + '<p class="hint" id="pfWallNote"></p>'
-        + '<div id="pfWallWarn"></div>'
-        + '</div>';
-      /* المقاس الأساسي: يحدّث الجدران غير المعدّلة فقط ويحافظ على المستقلة. */
+        + '<p class="hint">اضغط على الرقم فيتحدّد كاملًا — اكتب المقاس الجديد مباشرة. الجدران الأربعة تتحدث معاً.</p>'
+        + '<div id="pfWallWarn"></div>';
+      /* المقاس الأساسي: يحدّث الجدران الأربعة معاً (غرفة مستطيلة دائماً). */
       var liveDim = function (key, input) {
         var v = parseFloat(input.value);
         if (!Number.isFinite(v) || v < 0.5 || v > 30) return;
@@ -790,7 +740,7 @@ function portalAddAcc(itemId) {
         markRoomHealth();
       };
       /* لمسة واحدة = تحديد الرقم كاملًا (يحل مشكلة «المؤشر بجانب الرقم») */
-      ['#pfW', '#pfH', '#pfWallLen'].forEach(function (sel) {
+      ['#pfW', '#pfH'].forEach(function (sel) {
         var el = $(sel);
         if (!el) return;
         el.addEventListener('focus', function () { try { el.select(); } catch (_) { /* noop */ } });
@@ -800,37 +750,7 @@ function portalAddAcc(itemId) {
       });
       $('#pfW').addEventListener('input', function () { liveDim('w', this); });
       $('#pfH').addEventListener('input', function () { liveDim('h', this); });
-      /* تغيير طول جدار واحد فقط — بلا تعديل صامت للجدار المقابل */
-      var wi = targetWall();
-      $('#pfWallLen').addEventListener('input', function () {
-        var v = parseFloat(this.value);
-        if (!Number.isFinite(v) || v < 0.3 || v > 40) return;
-        dz.setWallLength(wi, Math.round(v * 100) / 100, S.wallAnchor);
-        markRoomHealth();
-        updateWallPickNote();
-      });
-      $('#pfWallReset').addEventListener('click', function () {
-        dz.resetWallLength(wi);
-        $('#pfWallLen').value = dz.state.walls[wi].len;
-        toast('أُرجع الجدار ' + (wi + 1) + ' إلى طوله الافتراضي.');
-        renderPanel();
-      });
-      /* جهة التقصير: الاختيار مستقل لكل عملية تعديل ويُحفظ بين التصييرات */
-      $$('input[name="pfAnchor"]', box).forEach(function (r) {
-        r.addEventListener('change', function () {
-          if (!r.checked) return;
-          S.wallAnchor = r.value;
-          updateWallPickNote();
-        });
-      });
-      /* اختيار الجدار بالنقر على زر */
-      $$('#pfWallPick [data-wallpick]').forEach(function (b) {
-        b.addEventListener('click', function () {
-          wallPickSet(+b.dataset.wallpick);
-          renderPanel();
-        });
-      });
-      updateWallPickNote();
+      markRoomHealth();
     } else if (S.step === 'openings') {
       var walls = (dz.state && dz.state.walls) || [];
       var ops = (dz.state && dz.state.openings) || [];
