@@ -241,6 +241,64 @@ console.log('== 11) الحذف يعيد التحقق من الحالة الحا�
   t('بعد الحذف: لا تحذير عالق', dz.designWarnings().length === 0);
 }
 
+console.log('== 12) اتجاه فتح الباب: مفصلات يمين/يسار × داخل/خارج ==');
+{
+  /* البوابة الافتراضية (يمين + داخل) هي السلوك القديم. نقيس:
+     - ثبات موضع الباب وعرضه عبر الخيارات الأربعة
+     - عمقUsage: الدخول يحجز داخل الغرفة، الخروج لا يحجز شيئاً داخلها
+     - قواعد الرفض تتبع الاتجاه الجديد (كتبة أمام بابٍ خارجي allowed، أمام داخلي ممنوعة) */
+  const cases = [
+    { hinge: 'right', swing: 'in', use: 0.9 },
+    { hinge: 'right', swing: 'out', use: 0.05 },
+    { hinge: 'left', swing: 'in', use: 0.9 },
+    { hinge: 'left', swing: 'out', use: 0.05 },
+  ];
+  let basePos = null;
+  for (const c of cases) {
+    const tag = c.hinge + '+' + c.swing;
+    const dz = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, type: 'door', blocks: true, depth: 0 }]);
+    const o = dz.state.openings[0];
+    dz.updateOpening(o.id, { hinge: c.hinge, swing: c.swing });
+    t(tag + ' القيمتان محفوظتان', o.hinge === c.hinge && o.swing === c.swing, JSON.stringify({ h: o.hinge, s: o.swing }));
+    const p = { t: o.t, w: o.w, wall: o.wall };
+    if (!basePos) basePos = p;
+    t(tag + ' الموضع والعرض ثابتان', p.t === basePos.t && p.w === basePos.w && p.wall === basePos.wall);
+    t(tag + ' عمق الاستخدام يتبع الاتجاه',
+      Math.abs(Designer.OPENING_USE_DEPTH(o) - c.use) < 1e-9, 'use=' + Designer.OPENING_USE_DEPTH(o));
+    // المستطيل المحظور: للداخل يقع داخل الغرفة، وللخارج لا يقع داخلها إطلاقاً
+    const r = dz.openingBlockRect(o).rect;
+    const g = dz.geometry();
+    const nSign = g.walls[0].n.y;                       // اتجاه العمق (داخل الغرفة موجب)
+    if (c.swing === 'out') {
+      const inside = (nSign > 0 ? (r.maxY - r.minY) : (r.maxX - r.minX));
+      t(tag + ' لا يحجز مساحة داخل الغرفة', inside < 0.3, JSON.stringify(r));
+    }
+    // كتبة أمام الباب مباشرة
+    const sofa = { id: 'q', kind: 'sofa', w: 1.0, h: 0.8, rot: 0, wall: 0, t: 3.0, x: 0, y: 0 };
+    dz._placeOnWall(sofa, g.walls[0]);
+    const blocked = dz.validatePlacement(sofa).ok === false;
+    t(tag + ' كتبة أمام الباب ' + (c.swing === 'out' ? 'مسموحة' : 'ممنوعة'), blocked === (c.swing === 'in'));
+  }
+  // القيم الافتراضية لطلب قديم بلا الحقلين = السلوك القديم
+  const old = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, type: 'door', blocks: true, depth: 0 }]);
+  const oo = old.state.openings[0];
+  t('طلب قديم بلا الحقلين: يمين + داخل', old.openingHinge(oo) === 'right' && old.openingSwing(oo) === 'in');
+  t('طلب قديم: عمق الاستخدام 0.9 كما كان', Math.abs(Designer.OPENING_USE_DEPTH(oo) - 0.9) < 1e-9);
+  // قيمة غير صالحة تُرجع للافتراضي
+  const bad = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, type: 'door', blocks: true, depth: 0, hinge: 'top', swing: 'up' }]);
+  const ob = bad.state.openings[0];
+  bad.updateOpening(ob.id, { hinge: 'top', swing: 'up' });
+  t('قيمة غير صالحة ← افتراضي', ob.hinge === 'right' && ob.swing === 'in', JSON.stringify({ h: ob.hinge, s: ob.swing }));
+  // تغيير الاتجاه لا يحرّك الأثاث ولا أبعاد الغرفة
+  const dz = mkDesign(6, 4, [{ wall: 0, t: 3, w: 0.9, type: 'door', blocks: true, depth: 0 }]);
+  dz.fillAllWalls(SPEC);
+  const beforePieces = JSON.stringify(dz.state.pieces.map((p) => [p.wall, p.t, p.w]));
+  const beforeWalls = JSON.stringify(dz.state.walls.map((w) => w.len));
+  dz.updateOpening(dz.state.openings[0].id, { hinge: 'left', swing: 'out' });
+  t('الأثاث لم يتحرك', JSON.stringify(dz.state.pieces.map((p) => [p.wall, p.t, p.w])) === beforePieces);
+  t('أبعاد الغرفة لم تتغير', JSON.stringify(dz.state.walls.map((w) => w.len)) === beforeWalls);
+}
+
 const report = lines.join('\n') + '\n\n=== PASS=' + pass + '  FAIL=' + fail + ' ===';
 const out = process.env.FF_OUT;
 if (out) fs.writeFileSync(out, report, 'utf8');

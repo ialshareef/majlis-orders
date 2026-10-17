@@ -749,7 +749,10 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const occ = this.state.openings.filter((o) => o.wall === wallIndex).map((o) => [o.t - o.w / 2, o.t + o.w / 2]);
       const free = this._freeIntervals(w.len, occ, width).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
       const t = free.length ? (free[0][0] + free[0][1]) / 2 : w.len / 2;
+      /* الباب: جهة المفصلات (يمين/يسار) واتجاه الفتح (داخل/خارج) بحقلين مستقلين،
+         الافتراضي = السلوك القديم: مفصلات على حدّ الفتحة الأيسر وورقة للداخل. */
       const o = { id: uid(), wall: wallIndex, t: round(t, 3), w: width, type, blocks: type === 'door' || type === 'mashab', depth: type === 'mashab' ? 0.5 : 0 };
+      if (type === 'door') { o.hinge = 'right'; o.swing = 'in'; }
       this.state.openings.push(o);
       this.select({ type: 'opening', id: o.id });
       this.changed();
@@ -776,9 +779,18 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       if (!o) return;
       Object.assign(o, props);
       if (props.type) o.type = ['door', 'window', 'mashab'].includes(props.type) ? props.type : 'door';
+      /* تطبيع الخيارين: قيم ثابتة فقط، وقبل أي قيمة ← الافتراضي القديم
+         (مفصلات يمين، فتح للداخل) فيبقىسلوك الطلبات القديمة كما هو. */
+      if (o.hinge != null) o.hinge = o.hinge === 'left' ? 'left' : 'right';
+      if (o.swing != null) o.swing = o.swing === 'out' ? 'out' : 'in';
       this.syncAttached();
       this.changed();
     }
+
+    /* جهة المفصلات (يمين/يسار) واتجاه الفتح (داخل/خارج) بقيمة افتراضية
+       تطابق السلوك السابق — لطلبات قديمة بلا الحقلين أو بقيمة غير صالحة. */
+    openingHinge(o) { return o && o.hinge === 'left' ? 'left' : 'right'; }
+    openingSwing(o) { return o && o.swing === 'out' ? 'out' : 'in'; }
 
     removeOpening(id) {
       this.state.openings = this.state.openings.filter((o) => o.id !== id);
@@ -1428,22 +1440,27 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
      يحسب قطعة غير ملتصقة بجدار إطلاقاً. */
 
   /** عمق الاستخدام أمام الفتحة (م)، محسوب هندسياً لا عشوائياً:
-        • الباب: عرض الورقة ينفتح للداخل + ممر خروج ⇒ 0.9م (مطابق لمنطقة الحجز
-          القائمة أصلاً في findSpots حتى لا تتناقض القاعدتان).
+        • الباب: عمق ورقة الباب حسب جهة الفتح (داخل ⇒ نحو الغرفة) + ممر خروج
+          أمام الورقة في اتجاه دورانها ⇒ 0.9م داخلياً؛ أمّا الفتح للخارج فالحركة
+          كلها خارج الغرفة فلا تُحجز داخلها مساحة (يبقى حدّ الفتحة وحده).
         • المشب: بروز الموقد (o.depth) + مساحة وقوف لاستخدامه ⇒ 0.4م فوق البروز. */
   static OPENING_USE_DEPTH(o) {
     if (o.type === 'mashab') return Math.max(0.6, (+o.depth || 0.5) + 0.4);
+    if (o.type === 'door' && o.swing === 'out') return 0.05;   // الحركة خارج الغرفة فقط (لا حجز داخلها)
     return 0.9;
   }
 
-  /** المستطيل المحظور في إحداثيات العالم لفتحة واحدة (يشمل مساحة استخدامها). */
+  /** المستطيل المحظور في إحداثيات العالم لفتحة واحدة (يشمل مساحة استخدامها).
+      الفتح للخارج: الحركة خارج الجدار، فنمنع فقط أمام فتحة الباب (لا داخل الغرفة). */
   openingBlockRect(o, g) {
       const w = (g || this.geometry()).walls[o.wall];
       if (!w) return null;
+      const outside = o.type === 'door' && this.openingSwing(o) === 'out';
       const use = Designer.OPENING_USE_DEPTH(o);
       const pad = 0.15;                       // لا نمنع الاقتراب أكثر مما يلزم
       const t0 = o.t - o.w / 2 - pad, t1 = o.t + o.w / 2 + pad;
-      const s0 = -0.05, s1 = use;             // من خارج الجدار إلى عمق الاستخدام
+      const s0 = outside ? -use : -0.05;      // من خارج الجدار…
+      const s1 = outside ? -0.02 : use;       // …إلى عمق الاستخدام (أو حدّ الفتحة)
       const P = (t, s) => ({ x: w.A.x + w.dir.x * t + w.n.x * s, y: w.A.y + w.dir.y * t + w.n.y * s });
       const quad = [P(t0, s0), P(t1, s0), P(t1, s1), P(t0, s1)];
       return { rect: Designer.polyToRect(quad), wall: o.wall, id: o.id, type: o.type, w: o.w };
@@ -2394,9 +2411,15 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
         ctx.lineWidth = Math.max(1.2 * k, 0.03 * S);
         ctx.strokeStyle = isSel ? SEL : (o.type === 'door' ? '#8a5a2b' : '#5A7B8E');
         if (o.type === 'door') {
-          // ضلفة الباب تفتح للداخل + قوس الفتح
-          const hinge = pA;
-          const leafEnd = { x: hinge.x + w.n.x * o.w, y: hinge.y + w.n.y * o.w };
+          /* ضلفة الباب + قوس الفتح: جهة المفصلات (يمين/يسار على محور الجدار)
+             واتجاه الفتح (داخل/خارج الغرفة) خياران مستقلان — الاثنان يعكسان
+             موضع الضلفة واتجاه دورانها دون تغيير موضع الفتحة ولا عرضها. */
+          const leftHinge = this.openingHinge(o) === 'left';        // المفصل على حدّ الفتحة الأيسر
+          const inward = this.openingSwing(o) !== 'out';           // الضلفة داخل الغرفة
+          const hinge = leftHinge ? pA : pB;                       // حدّ الفتحة الذي يحمل المِفصلة
+          const swingDir = leftHinge ? w.dir : { x: -w.dir.x, y: -w.dir.y };  // اتجاه امتداد الورقة
+          const depth = inward ? w.n : { x: -w.n.x, y: -w.n.y };   // داخل الغرفة أم خارجها
+          const leafEnd = { x: hinge.x + swingDir.x * o.w + depth.x * o.w, y: hinge.y + swingDir.y * o.w + depth.y * o.w };
           const h = P(hinge.x, hinge.y), le = P(leafEnd.x, leafEnd.y);
           ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(le.x, le.y); ctx.stroke();
           const a0 = Math.atan2(le.y - h.y, le.x - h.x), pb = P(pB.x, pB.y), a1 = Math.atan2(pb.y - h.y, pb.x - h.x);

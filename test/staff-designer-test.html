@@ -457,6 +457,73 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     dz.state.pieces = dz.state.pieces.filter(function (x) { return x.id !== 'w-touch'; });
     dz.removeOpening(wDoor.id);
     t('W-cleaned', !dz.state.pieces.some(function (x) { return x.id === 'w-touch'; }) && !dz.opening(wDoor.id), 'restored');
+    // D: اتجاه فتح الباب — الحالات الأربع عبر واجهة تعديل الباب في صفحة الموظف
+    var dDoor = dz.addOpening(0, 'door');
+    var combos = [['right', 'in'], ['right', 'out'], ['left', 'in'], ['left', 'out']];
+    var combosOk = true, indepOk = true, posOk = true, uiOk = true, why = '';
+    var baseT = dDoor.t, baseW = dDoor.w;
+    for (var ci = 0; ci < combos.length; ci++) {
+      dz.select({ type: 'opening', id: dDoor.id });
+      var ebT = document.querySelector('#tbEdit');
+      ebT.disabled = false;
+      if (!document.querySelector('#inspector').hidden) { ebT.click(); await waitFor(function () { return document.querySelector('#inspector').hidden; }, 60000); }
+      ebT.click();
+      await waitFor(function () { return !document.querySelector('#inspector').hidden; }, 120000);
+      var hSel = document.querySelector('#inspector #inspHinge');
+      var sSel = document.querySelector('#inspector #inspSwing');
+      if (!hSel || !sSel) { uiOk = false; why += 'no-selectors(' + combos[ci].join('+') + ') '; continue; }
+      if (ci === 0 && (hSel.value !== 'right' || sSel.value !== 'in')) { indepOk = false; why += 'defaults=' + hSel.value + '/' + sSel.value + ' '; }
+      // الاستقلال: تغيير المفصلات لا يغيّر قيمة الاتجاه الحالية إطلاقاً
+      var swingBefore = sSel.value;
+      hSel.value = combos[ci][0]; hSel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(function (r) { setTimeout(r, 150); });
+      var sAfter = document.querySelector('#inspector #inspSwing');
+      if (!sAfter || sAfter.value !== swingBefore) { indepOk = false; why += 'swingChangedByHinge(' + combos[ci][0] + ':' + swingBefore + '->' + (sAfter && sAfter.value) + ') '; }
+      var s2 = document.querySelector('#inspector #inspSwing');
+      s2.value = combos[ci][1]; s2.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise(function (r) { setTimeout(r, 200); });
+      // الاستقلال بالعكس: تغيير الاتجاه لا يغيّر جهة المفصلات
+      var hAfter = document.querySelector('#inspector #inspHinge');
+      if (!hAfter || hAfter.value !== combos[ci][0]) { indepOk = false; why += 'hingeChangedBySwing(' + combos[ci][1] + ') '; }
+      var live = dz.opening(dDoor.id);
+      if (!live || live.hinge !== combos[ci][0] || live.swing !== combos[ci][1]) { combosOk = false; why += 'saved=' + (live && live.hinge + '/' + live.swing) + ' '; }
+      if (!live || live.t !== baseT || live.w !== baseW) { posOk = false; why += 'moved(' + combos[ci].join('+') + ') '; }
+    }
+    t('D-door-combos', combosOk, why);
+    t('D-door-independent', indepOk, why);
+    t('D-door-pos-fixed', posOk, why);
+    t('D-door-ui', uiOk, why);
+    // استعادة الطلب للتحقق من بقاء الخيارين (نقرأ نسخة Order المحفوظة محلياً بعد
+    // الحفظ: فتح الطلب من الجدول هنا كان يتداخل مع قسم تصاميم العملاء التالي)
+    var dSaved2 = false, dt1 = Date.now();
+    // ننتظر اختفاء تنبيه الحفظ القديم أولاً ثم نضغط
+    await new Promise(function (r) { setTimeout(r, 400); });
+    document.querySelector('#btnSaveOrder').click();
+    while (Date.now() - dt1 < 120000 && !dSaved2) {
+      if (/تم حفظ/.test(((document.querySelector('#toast') || {}).textContent) || '')) dSaved2 = true;
+      else await new Promise(function (r) { setTimeout(r, 150); });
+    }
+    await new Promise(function (r) { setTimeout(r, 1500); });
+    // نقرأ نسخة الطلب من مخزن التطبيق (نفس ما يفتحه عند إعادة تحميل الطلب)
+    var savedOrder = (window.Store.db.orders || []).filter(function (x) { return x.id === window.MajlisApp.order.id; })[0]
+      || (window.Store.db.orders || []).filter(function (x) { return x.number === window.MajlisApp.order.number; })[0];
+    // مطابقة بالخصائص لا بالمعرف: قد تُعاد المعرفات عند الإرسال
+    var savedDoors = (((savedOrder || {}).design || {}).openings || [])
+      .filter(function (x) { return x.type === 'door' && Math.abs(x.t - baseT) < 0.001 && Math.abs(x.w - baseW) < 0.001; });
+    var savedDoorInDb = savedDoors[0];
+    t('D-door-persist', !!savedDoorInDb && savedDoorInDb.hinge === 'left' && savedDoorInDb.swing === 'out',
+      savedDoorInDb ? (savedDoorInDb.hinge + '/' + savedDoorInDb.swing) : 'not-in-store');
+    t('D-door-pos-after-save', !!savedDoorInDb && savedDoorInDb.t === baseT && savedDoorInDb.w === baseW,
+      savedDoorInDb ? ('t=' + savedDoorInDb.t + ' w=' + savedDoorInDb.w) : 'n/a');
+    // إغلاق أي ورقة خصائص مفتوحة (نفتحها أعلاه) حتى لا تتداخل مع نافذة عارض التصميم
+    dz.select(null);
+    if (!document.querySelector('#inspector').hidden) document.querySelector('#tbEdit').click();
+    // D2: طلب بلا حقول المفصلات (سلوك قديم) يُقرأ كـيمين+داخل بلا تعديل
+    var oldDoor = dz.addOpening(2, 'door');
+    delete oldDoor.hinge; delete oldDoor.swing;
+    t('D-legacy-defaults', dz.openingHinge(oldDoor) === 'right' && dz.openingSwing(oldDoor) === 'in',
+      'legacy door reads right/in');
+    dz.removeOpening(oldDoor.id);
     // H: صفحة تصاميم العملاء داخل التطبيق الحقيقي (دخول مدير فعلي عبر النموذج)
     sqlite.run("INSERT INTO customer_designs (id, public_no, token, status, design, customer_name, customer_phone, contact_requested, created_at, updated_at) VALUES " +
       "('gd-1', 26000199, 'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb', 'new', '{\"walls\":[]}', 'زبون', '0550000000', 0, '2026-01-01', '2026-01-02')");

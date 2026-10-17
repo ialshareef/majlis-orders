@@ -2727,6 +2727,10 @@ body.portal { background: var(--bg); }
 .opsheet .op-qty { flex: 1; display: flex; gap: 6px; align-items: stretch; }
 .opsheet .op-qty .btn { flex: none; width: 44px; min-height: 44px; }
 .opsheet .op-qty input { flex: 1; min-width: 0; min-height: 44px; text-align: center; }
+/* اتجاه فتح الباب: خياران متساويان في سطر واحد — مستقلان ومقروءان */
+.p-sheet .op-hinge { gap: 8px; margin-top: 10px; }
+.p-sheet .op-hinge label { flex: 1; min-width: 0; }
+.p-sheet .op-hinge select { min-height: 44px; width: 100%; }
 .opsheet .btn.small { flex: none; min-height: 44px; }
 .danger-text { color: var(--danger); font-weight: 600; min-height: 44px; }
 .p-sheet .p-sheet-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }

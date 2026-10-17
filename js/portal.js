@@ -894,6 +894,15 @@ function portalAddAcc(itemId) {
         + '<button type="button" class="btn" data-owplus aria-label="توسيع">+</button></span>'
         + '<button type="button" class="btn small" data-close>تم</button>'
         + '<button type="button" class="link-btn danger-text del-danger" data-del>حذف</button></div>';
+      /* اتجاه فتح الباب: خياران مستقلان في نفس ورقة التعديل (لا في إجراء الحذف) */
+      if (o.type === 'door') {
+        html += '<div class="row2 op-hinge">'
+          + '<label>جهة المفصلات <select id="psHinge"><option value="right"' + (S.designer.openingHinge(o) === 'right' ? ' selected' : '') + '>يمين</option>'
+          + '<option value="left"' + (S.designer.openingHinge(o) === 'left' ? ' selected' : '') + '>يسار</option></select></label>'
+          + '<label>اتجاه فتح الباب <select id="psSwing"><option value="in"' + (S.designer.openingSwing(o) !== 'out' ? ' selected' : '') + '>للداخل</option>'
+          + '<option value="out"' + (S.designer.openingSwing(o) === 'out' ? ' selected' : '') + '>للخارج</option></select></label>'
+          + '</div>';
+      }
     } else {
       var p = info.piece;
       var nm = pieceLabel(p);
@@ -949,6 +958,19 @@ function portalAddAcc(itemId) {
     if (owm) owm.onclick = function () { owStep(-0.1); };
     var owp = $('[data-owplus]', sh);
     if (owp) owp.onclick = function () { owStep(0.1); };
+    /* الخياران مستقلان: تغيير أحدهما لا يمسّ الآخر ولا الموضع ولا العرض */
+    var bindHinge = function (sel, prop) {
+      var el = $(sel, sh);
+      if (!el) return;
+      el.onchange = function () {
+        var props = {};
+        props[prop] = el.value;
+        dz.updateOpening(info.opening.id, props);
+        markDirty();
+      };
+    };
+    bindHinge('#psHinge', 'hinge');
+    bindHinge('#psSwing', 'swing');
     bindNum('#psW', function (v) { dz.updateSelected({ w: Math.max(0.2, v || 0.2) }); });
     bindNum('#psH', function (v) { dz.updateSelected({ h: Math.max(0.2, v || 0.2) }); });
     var seatSel = $('#psSeat', sh);

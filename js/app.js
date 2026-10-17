@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.62';
+  const APP_VERSION = '1.0.63';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -1419,6 +1419,10 @@ function canEditOrder(o) {
         </div>
         <label>البُعد من بداية الجدار (م) <input id="inspOT" type="number" step="0.05" min="0" value="${Designer.util.round(o.t - o.w / 2, 2)}"></label>
         <label ${o.type === 'mashab' ? '' : 'hidden'}>العمق داخل الغرفة (م) <input id="inspDepth" type="number" step="0.05" min="0.15" max="1" value="${Designer.util.round(o.depth || 0.5, 2)}"></label>
+        ${o.type === 'door' ? `<div class="row2">
+          <label>جهة المفصلات <select id="inspHinge"><option value="right" ${designer.openingHinge(o) === 'right' ? 'selected' : ''}>يمين</option><option value="left" ${designer.openingHinge(o) === 'left' ? 'selected' : ''}>يسار</option></select></label>
+          <label>اتجاه فتح الباب <select id="inspSwing"><option value="in" ${designer.openingSwing(o) !== 'out' ? 'selected' : ''}>للداخل</option><option value="out" ${designer.openingSwing(o) === 'out' ? 'selected' : ''}>للخارج</option></select></label>
+        </div>` : ''}
         <label class="check"><input id="inspBlocks" type="checkbox" ${o.blocks ? 'checked' : ''}> لا يوضع كنب أمامه</label>
         <div class="insp-actions"><button class="btn small danger del-danger" data-act="del" aria-label="حذف ${o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب'}">${icon('trash')} حذف</button></div>
         ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
@@ -1518,10 +1522,13 @@ function canEditOrder(o) {
         const props = { type: $('#inspType', insp).value, w, t: start + w / 2, blocks: $('#inspBlocks', insp).checked };
         const depthEl = $('#inspDepth', insp);
         if (depthEl && props.type === 'mashab') props.depth = Math.min(1, Math.max(0.15, num(depthEl.value) || 0.5));
+        /* الخياران مستقلان تماماً: يمرَّران كما هما بلا تأثير أحدهما على الآخر */
+        const hingeEl = $('#inspHinge', insp), swingEl = $('#inspSwing', insp);
+        if (props.type === 'door' && hingeEl && swingEl) { props.hinge = hingeEl.value; props.swing = swingEl.value; }
         designer.updateOpening(id, props);
         renderInspector(designer.selectionInfo());
       };
-      ['inspOW', 'inspOT', 'inspBlocks', 'inspDepth'].forEach((k) => { const el = $('#' + k, insp); if (!el) return; el.addEventListener('change', apply); if (el.tagName === 'INPUT' && el.type !== 'checkbox') onEnter(el, apply); });
+      ['inspOW', 'inspOT', 'inspBlocks', 'inspDepth', 'inspHinge', 'inspSwing'].forEach((k) => { const el = $('#' + k, insp); if (!el) return; el.addEventListener('change', apply); if (el.tagName === 'INPUT' && el.type !== 'checkbox') onEnter(el, apply); });
       // تغيير النوع يعيد رسم اللوحة كاملة لإظهار/إخفاء حقل العمق
       $('#inspType', insp).addEventListener('change', () => { inspKey = null; apply(); });
       $('[data-act="del"]', insp).addEventListener('click', () => { designer.removeOpening(id); designer.select(null); });

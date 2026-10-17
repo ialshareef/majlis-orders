@@ -962,6 +962,12 @@
         + '<input class="px-qtyval num" id="pxOW" type="number" step="0.1" min="0.3" inputmode="decimal" value="' + o.w + '" aria-label="عرض بالمتر">'
         + '<button type="button" class="qbtn" data-owplus aria-label="توسيع"><svg><use href="#x-plus"/></svg></button>'
         + '<span class="px-sheet-title">متر</span></div>'
+        + (o.type === 'door' ? '<div class="px-opts">'
+          + '<label>جهة المفصلات <select id="pxHinge"><option value="right"' + (dz.openingHinge(o) === 'right' ? ' selected' : '') + '>يمين</option>'
+          + '<option value="left"' + (dz.openingHinge(o) === 'left' ? ' selected' : '') + '>يسار</option></select></label>'
+          + '<label>اتجاه فتح الباب <select id="pxSwing"><option value="in"' + (dz.openingSwing(o) !== 'out' ? ' selected' : '') + '>للداخل</option>'
+          + '<option value="out"' + (dz.openingSwing(o) === 'out' ? ' selected' : '') + '>للخارج</option></select></label>'
+          + '</div>' : '')
         + '<div class="px-tools">'
         + '<button type="button" class="tbtn" data-odel><svg><use href="#x-trash"/></svg><span>حذف</span></button>'
         + '</div>';
@@ -973,6 +979,13 @@
       };
       var mw = $('[data-owminus]', sh); if (mw) mw.onclick = function () { step(-0.1); };
       var pw = $('[data-owplus]', sh); if (pw) pw.onclick = function () { step(0.1); };
+      /* الخياران مستقلان تماماً — لا أثر لأحدهما على الآخر */
+      var bindOpt = function (sel, prop) {
+        var el = $(sel, sh); if (!el) return;
+        el.onchange = function () { var p2 = {}; p2[prop] = el.value; dz.updateOpening(o.id, p2); markDirty(); };
+      };
+      bindOpt('#pxHinge', 'hinge');
+      bindOpt('#pxSwing', 'swing');
       var ow = $('#pxOW', sh);
       if (ow) ow.addEventListener('change', function () {
         var v = Math.max(0.3, numOf(ow.value) || o.w);
