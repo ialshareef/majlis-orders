@@ -77,11 +77,25 @@ console.log('== 4) HTML الورقة ==');
   t('عنوان المرجع', /مقرّر توزيع الأثاث الداخلي/.test(html));
   t('جدول الأثاث + دليل الألوان', /جداول الأثاث/.test(html) && /دليل الألوان والمواد/.test(html));
   t('بطاقة السعة بالمعيار', /مقعداً – سعة الجلوس/.test(html) && />6</.test(html));
-  t('خطوط قياس الغرفة بالسنتيمتر', /600 سم/.test(html) && /400 سم/.test(html), html.match(/\d+ سم/g));
-  t('مقياس الرسم بثلاثة أقسام', /ds-scale-bar/.test(html) && /سم/.test(html));
+  /* D4: عرض × طول (walls[0] × walls[1]) متسقة مع roomSummary والجداول */
+  t('أبعاد الغرفة عرض × طول', /600 × 400 سم/.test(html), (html.match(/<dd class="num">[^<]*سم/) || [])[0]);
+  /* D5: لا طبقة قياس HTML فوق الصورة — الشارات داخل صورة التصدير نفسها */
+  t('بلا تكرار خطوط القياس فوق الصورة', !/ds-dim/.test(html));
+  const scStyle = ((/class="ds-scale" style="([^"]*)"/.exec(html) || [])[1]) || '';
+  const scNums = ((/class="ds-scale-n">([\s\S]*?)<\/span>/.exec(html) || [])[1] || '')
+    .replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+  /* D3: الحاوية بعرض محسوب (15م × 10px/م ÷ 1200px = 12.5%) والشريط 100% منها */
+  t('مقياس الرسم: حاوية بعرض محسوب في الزاوية', /right:3\.5%/.test(scStyle) && /width:12\.5%/.test(scStyle), scStyle);
+  t('مقياس الرسم: أقسام 0/500/1000/1500 سم', scNums === '0 500 1000 1500', scNums);
   t('حقل رقم التصميم في الصدر', /رقم التصميم/.test(html) && /D-101/.test(html));
   t('بلا أي بيانات مالية', !/ر\.س|السعر|الإجمالي|دفعة|price/i.test(html));
   t('تهريب قيمة meta', !/<script>/.test(DS.render(f, pl, { meta: [{ label: 'x', value: '<script>' }] })));
+
+  /* D1: الشريط بلا ارتفاع ثابت يقصّ المحتوى، والمرور يقيس ارتفاعه فعلياً */
+  const css = read('css/style.css');
+  const footRule = (/\.ds-foot\s*\{[^}]*\}/s.exec(css) || [''])[0];
+  t('style.css: شريط تواصل بارتفاع مرن (min-height بلا قصّ)', /min-height:\s*16mm/.test(footRule) && /height:\s*auto/.test(footRule) && !/[^-]height:\s*16mm/.test(footRule), footRule);
+  t('js/design-sheet.js: قياس ارتفاع الشريط وضبط صندوق المخطط', /function fitFoot\(/.test(read('js/design-sheet.js')) && /planBoxStyle\(pl, opts, footMm\)/.test(read('js/design-sheet.js')));
 }
 
 /* ---------- 5) المسارات الثلاثة تستخدم الوحدة نفسها ---------- */

@@ -28,7 +28,8 @@
      مطابقة تماماً للصورة مهما اختلف المتصفح. */
   var PLAN_BOX = { w: 178, h: 153 };
 
-  /* ارتفاع شريط التواصل بالمليمتر: 16مم للمحتوى + 2مم فاصل علوي (.ds-foot) */
+  /* ارتفاع شريط التواصل بالمليمتر (قيمة ابتدائية قبل القياس الحيّ):
+     16مم محتوى + 2مم فاصل علوي (.ds-foot) — الحقيقية تُقاس في fitFoot */
   var FOOT_H = 18;
 
   /* عرض المقعد الواحد بالمتر — مطابق لمعيار رسم الوسائد في المحرك */
@@ -226,7 +227,9 @@
     return best;
   }
 
-  /** صورة المخطط + مواقع خطوط القياس فوقها (بنِسَب من حجم الصورة) */
+  /** صورة المخطط (بنِسَب من حجم الصورة) — خطوط القياس تُرسم داخل الصورة
+      عند التصدير (designer.js _drawOpeningDimsTop لكل جدار) فلا تُكرَّر
+      فوقها بطبقة HTML منفصلة */
   function plan(design, opts, W) {
     opts = opts || {};
     W = W || 1600;
@@ -264,41 +267,54 @@
     return d.getDate() + ' ' + MONTHS[d.getMonth()] + ' ' + d.getFullYear();
   }
 
-  function pct(v) { return (Math.round(num(v) * 1000) / 10) + '%'; }
+  /** كسر (0..1) إلى نسبة مئوية بعلامة % — القيم القادمة إلى هنا كسور دائماً */
+  function pct(frac) { return (Math.round(num(frac) * 1000) / 10) + '%'; }
 
+  /* مقياس الرسم: الشريط يمثّل m متراً أرضياً.
+     الحساب: طول الشريط بالبكسل = m × pl.scale (بكسل/م من _fitView)،
+     وعرض الحاوية = طول الشريط ÷ عرض صورة المخطط (كسر) → تُكتب كنسبة من
+     عرض صندوق المخطط؛ لأن الصورة ملء عرض الصندوق (تكبير k موحّد) تنطبق
+     النسبة نفسها على المم: طول_مم = نسبة × عرض_صندوق_مم، فيصحّ القياس
+     في PDF. الزاوية اليمنى السفلية: خارج شارة «المقاسات الداخلية بالمتر»
+     (يسار الصورة) وخارج مركز شارات طول الجدران (وسط الحواف). */
   function scaleBlock(pl) {
     if (!pl || !pl.scale || !(pl.scale > 0)) return '';
     var target = pl.W * 0.17;
     var m = pickScaleMeters(pl.scale, target);
     var px = m * pl.scale;
+    var wFrac = px / pl.W;
     var third = Math.round(m * 100 / 3);
     var mid = Math.round(m * 100 * 2 / 3);
     var end = Math.round(m * 100);
-    return '<span class="ds-scale" style="left:' + pct(pl.W * 0.045) + ';bottom:' + pct(pl.H * 0.045) + '">'
-      + '<span class="ds-scale-bar" style="width:' + (Math.round(px / pl.W * 1000) / 10) + '%"><i></i><i></i><i></i></span>'
+    return '<span class="ds-scale" style="right:' + pct(0.035) + ';bottom:' + pct(0.035) + ';width:' + pct(wFrac) + '">'
+      + '<span class="ds-scale-bar"><i></i><i></i><i></i></span>'
       + '<span class="ds-scale-n"><b class="num">0</b><b class="num">' + third + '</b>'
       + '<b class="num">' + mid + '</b><b class="num">' + end + '</b></span>'
       + '<span class="ds-scale-u">سم</span></span>';
   }
 
-  function dimBlocks(pl, room) {
-    if (!pl || !pl.room || !room || !(room.w > 0) || !(room.h > 0)) return '';
-    var R = pl.room;
-    var wCm = cm(room.w), hCm = cm(room.h);
-    var out = '';
-    out += '<span class="ds-dim ds-dim-w" style="left:' + pct(R.l) + ';width:' + pct(R.w) + ';top:' + pct(R.t) + '">'
-      + '<i class="num">' + wCm + ' سم</i></span>';
-    out += '<span class="ds-dim ds-dim-h" style="top:' + pct(R.t) + ';height:' + pct(R.h) + ';left:' + pct(R.l) + '">'
-      + '<i class="num">' + hCm + ' سم</i></span>';
-    return out;
+  /* مقطع الصورة بالمليمتر: تُملأ المساحة المتاحة بالكامل مع الحفاظ على
+     النسبة — فالصندوق المحتضن للصورة يساوي الصورة تماماً وتصحّ النِسَب.
+     ارتفاع شريط التواصل لا يُفترض بثابت: يُقاس في build() بعد بناء
+     التخطيط الفعلي (fitFoot) وتُطرح قيمته الفعلية (محتوى + الفاصل 2مم)
+     من صندوق المخطط 153مم — أي زيادة في الشريط تُنقص من المخطط بدل أن
+     تُقصّ المحتوى أو تُشوّه نسبة الصورة. FOOT_H قيمة ابتدائية قبل القياس. */
+  function planBoxStyle(pl, opts, footMm) {
+    if (!pl || !pl.img || !(pl.W > 0) || !(pl.H > 0)) return '';
+    var footTotal = 0;
+    if (opts && opts.footHtml) footTotal = (footMm != null && footMm > 0) ? footMm : FOOT_H;
+    var boxH = PLAN_BOX.h - footTotal;
+    var k = Math.min(PLAN_BOX.w / pl.W, boxH / pl.H);
+    return 'width:' + r2(pl.W * k) + 'mm;height:' + r2(pl.H * k) + 'mm;';
   }
 
   /** HTML الورقة كاملة (سلسلة — قابلة للاختبار بلا متصفح) */
   function render(f, pl, opts) {
     opts = opts || {};
     var meta = (opts.meta || []).slice();
+    /* الترتيب عرض × طول — نفس اتجاه roomSummary والجداول (walls[0] × walls[1]) */
     var roomTxt = f.room && f.room.w > 0
-      ? cm(f.room.h) + ' × ' + cm(f.room.w) + ' سم' : '—';
+      ? cm(f.room.w) + ' × ' + cm(f.room.h) + ' سم' : '—';
     var head = [{ label: 'التاريخ', value: fmtDate(opts.date) },
       { label: 'الغرفة', value: roomTxt }].concat(meta);
 
@@ -320,19 +336,11 @@
       ? '<div class="ds-cap"><b class="num">' + f.capacity + '</b><span>مقعداً – سعة الجلوس</span></div>'
       : '';
 
-    /* مقطع الصورة بالمليمتر: تُملأ المساحة المتاحة بالكامل مع الحفاظ على
-       النسبة — فالصندوق المحتضن للصورة يساوي الصورة تماماً وتصحّ النِسَب.
-       شريط التواصل (16مم) يُطرح من ارتفاع الصندوق حين يُطلب. */
-    var box = '';
-    if (pl && pl.img && pl.W > 0 && pl.H > 0) {
-      var boxH = PLAN_BOX.h - (opts.footHtml ? FOOT_H : 0);
-      var k = Math.min(PLAN_BOX.w / pl.W, boxH / pl.H);
-      box = 'width:' + r2(pl.W * k) + 'mm;height:' + r2(pl.H * k) + 'mm;';
-    }
+    var box = planBoxStyle(pl, opts);
     var img = pl && pl.img
       ? '<span class="ds-img" style="' + box + '">'
       + '<img src="' + pl.img + '" alt="مخطط المجلس">'
-      + dimBlocks(pl, f.room) + scaleBlock(pl) + '</span>'
+      + scaleBlock(pl) + '</span>'
       : '<span class="ds-img ds-img-empty">لا يوجد مخطط</span>';
 
     return '<div class="dsheet">'
@@ -360,6 +368,23 @@
       + '</div>';
   }
 
+  /** قياس شريط التواصل فعلياً (محتوى + الفاصل العلوي) بالمليمتر وضبط
+      ارتفاع صندوق المخطط — التخطيط يجب أن يكون متصلاً بالصفحة أولاً */
+  function fitFoot(el, pl, opts) {
+    if (!el || !el.querySelector || !opts || !opts.footHtml || !pl || !pl.img) return;
+    var foot = el.querySelector('.ds-foot');
+    var img = el.querySelector('.ds-img');
+    if (!foot || !img) return;
+    var pxmm = el.getBoundingClientRect().width / SHEET_W;
+    if (!(pxmm > 0)) return;
+    var footMm = foot.getBoundingClientRect().height / pxmm;
+    if (window.getComputedStyle) {
+      footMm += (parseFloat(window.getComputedStyle(foot).marginTop) || 0) / pxmm;
+    }
+    if (!(footMm > 0)) return;
+    img.style.cssText = planBoxStyle(pl, opts, footMm);
+  }
+
   function build(opts) {
     opts = opts || {};
     var f = facts(opts.design, opts);
@@ -368,6 +393,17 @@
     el.innerHTML = render(f, pl, opts);
     el = el.firstChild;
     el.__facts = f;
+    el.__pl = pl;
+    /* قياس الشريط في تخطيط حقيقي (بلا تغيير على الصفحة المعروضة) ثم إعادة
+       قصّ صندوق المخطط حسبه: لا ارتفاع ثابت قد يقصّ محتوى آخر. */
+    if (opts.footHtml && pl && pl.img && document.body) {
+      var host = document.createElement('div');
+      host.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden;';
+      document.body.appendChild(host);
+      host.appendChild(el);
+      try { fitFoot(el, pl, opts); }
+      finally { host.removeChild(el); document.body.removeChild(host); }
+    }
     return el;
   }
 
@@ -385,6 +421,8 @@
     return Promise.resolve()
       .then(function () { return document.fonts && document.fonts.ready ? document.fonts.ready : null; })
       .then(function () {
+        /* إعادة القياس بعد تحميل الخطوط: قد يتغيّر التفاف نص الشريط */
+        try { fitFoot(el, el.__pl, opts); } catch (_) { /* noop */ }
         return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
       })
       .then(function (canvas) {
