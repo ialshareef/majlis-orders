@@ -185,14 +185,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.63';
-// بصمة asalh-najd-1.0.63.apk (إصدار GitHub v1.0.63، بناء CI الموقّع).
-const UPDATE_FALLBACK_SHA256 = 'e1bae40d3b65a3fb28794e5796056c7462c5cb60509147f3b1ae1c45f0346ef5';
+const UPDATE_FALLBACK_VERSION = '1.0.67';
+// بصمة asalh-najd-1.0.67.apk (إصدار GitHub v1.0.67، بناء CI الموقّع).
+const UPDATE_FALLBACK_SHA256 = '13f5b85d18e2184360d1041abead986dbcd85494e341c02fe3ed1be005fa4b00';
 const UPDATE_FALLBACK_NOTES = [
-  'شارة عرض الباب في فتحة الجدار بدل الطفو في العمق',
-  'كتلة «تواصل معنا» برموز QR حقيقية في أمر الشراء بنفس حسابات صفحة العميل',
-  'فرش الكل يفرش بجانب الأبواب والمشب بدل تخطي الجدار',
-  'حقول كمية رقمية مباشرة بدل أزرار (+) و(-) في البوابتين والموظف',
+  'إصلاح اكتشاف التحديث: رقم الإصدار يُحقن تلقائياً من وسم Git عند كل بناء (لم يعد 1.0.63 عالقاً)',
+  'اتساق صارم في بيانات تحديث APK: بصمة الملف نفسه، رابط مطابق، ورفض أي بيانات متضاربة',
+  'فحص التحديث يبدأ بعد تسجيل الدخول ولا يقاطع الدخول أو الطلب الحالي',
 ];
 
 function versionCodeOfName(v) {
