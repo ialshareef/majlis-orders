@@ -39,6 +39,7 @@ $files = @(
   @{ url = '/css/style.css'; path = 'css\style.css' },
   @{ url = '/js/store.js';   path = 'js\store.js' },
   @{ url = '/js/designer.js';path = 'js\designer.js' },
+  @{ url = '/js/design-sheet.js'; path = 'js\design-sheet.js' },
   @{ url = '/js/update.js';  path = 'js\update.js' },
   @{ url = '/js/portal.js';  path = 'js\portal.js' },
   @{ url = '/js/app.js';     path = 'js\app.js' },

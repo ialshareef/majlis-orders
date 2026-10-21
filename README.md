@@ -211,6 +211,7 @@ index.html        الواجهة
 css/style.css     التنسيق + الفاتورة
 js/store.js       طبقة البيانات (localStorage)
 js/designer.js    محرر التصميم (Canvas): الجدران، الفتحات، القطع، التكبير
+js/design-sheet.js ورقة التصميم المشتركة (PDF أفقي) الثلاثة للعميل/الموظف/الموسّع
 js/app.js         منطق التطبيق
 serve.ps1         خادم محلي بسيط
 ```

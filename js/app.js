@@ -1758,9 +1758,11 @@ function canEditOrder(o) {
     return { lines, subtotal, vatEnabled: !!vat.enabled, vatRate, vatAmount, discount, taxable, total };
   }
 
-  /* ---------------- التكاليف والربح (للمدير فقط) ---------------- */
-  /** من يرى التكاليف وصافي الربح ويعدّلهما */
-  const canSeeCosts = () => isAdmin();
+  /* ---------------- التكاليف والربح (للمدير، وللمنشئ على طلباته) ---------------- */
+  /** من يرى التكاليف وصافي الربح ويعدّلهما: المدير يرى الجميع، والموظف
+      والمندوب طلباتهم الخاصة فقط — نفس حدّ الملكية الذي يفرضه الخادم
+      من العمود created_by، فالواجهة تخفي هنا ما يرفضه الخادم هناك. */
+  const canSeeCosts = (o) => isAdmin() || !!(o && o.createdBy && currentUser && o.createdBy === currentUser.id);
 
   /** تكلفة الوحدة المحفوظة لسطر تسعير، أو null إن لم تُدخل بعد */
   function lineCost(order, l) {
@@ -3606,8 +3608,8 @@ function docTitle(order) {
      ولا يمسّ البيانات ولا يخرج من الجهاز. */
   const ORD_COLS_KEY = 'majlis_order_cols';
   const ORD_COLS = [
-    { k: 'cost', label: 'التكلفة', admin: true },
-    { k: 'profit', label: 'صافي الربح', admin: true },
+    { k: 'cost', label: 'التكلفة' },
+    { k: 'profit', label: 'صافي الربح' },
     { k: 'comm', label: 'العمولة', admin: true },
     { k: 'paid', label: 'المدفوع' },
     { k: 'deliv', label: 'التوصيل' },
@@ -3618,7 +3620,7 @@ function docTitle(order) {
   function renderOrdCols() {
     $('#ordersTable').setAttribute('data-hide', ordHidden.join(' '));
     const menu = $('#ordColsMenu');
-    menu.innerHTML = ORD_COLS.filter((c) => !c.admin || canSeeCosts()).map((c) => {
+    menu.innerHTML = ORD_COLS.filter((c) => !c.admin || isAdmin()).map((c) => {
       const on = !ordHidden.includes(c.k);
       return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" aria-pressed="${on}" data-col="${c.k}">${icon('check')}<span>${c.label}</span></button>`;
     }).join('');
@@ -3664,7 +3666,7 @@ function docTitle(order) {
       <div class="stat"><span>قيد التنفيذ</span><b>${list.filter((o) => o.status === 'progress').length}</b></div>
       <div class="stat"><span>اكتمال التنفيذ</span><b>${list.filter((o) => o.status === 'done').length}</b></div>
       <div class="stat"><span>عروض أسعار مفتوحة</span><b>${list.filter((o) => o.status === 'quote').length}</b><small>لا تدخل في المبيعات</small></div>
-      ${canSeeCosts() ? `
+      ${(isAdmin() || costed.length) ? `
       <div class="stat cost"><span>إجمالي التكاليف</span><b class="${costed.length ? '' : 'is-na'}">${costed.length ? fmt(costSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">بتكلفة: ${costed.length}${noCost ? ` • بلا تكلفة: ${noCost}` : ''}</small></div>
       <div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : 'is-na'}">${costed.length ? fmt(profitSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">${costed.length ? `هامش ${fmtQty(marginPct)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>` : ''}`;
 
@@ -3694,10 +3696,12 @@ function docTitle(order) {
         <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? ` • ${esc(o.createdByName)}` : ''}</span></td>
         <td data-label="العميل" class="c-cust"><b title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
-        ${canSeeCosts() ? `
+        ${canSeeCosts(o) ? `
         <td data-label="التكلفة" class="num c-money c-cost">${cost === null ? dash : fmt(cost)}</td>
-        <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? '' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>
-        <td data-label="العمولة" class="num c-money c-comm">${comm === null ? dash : fmt(comm)}</td>` : ''}
+        <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? '' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : `
+        <td data-label="التكلفة" class="num c-money c-cost">${dash}</td>
+        <td data-label="صافي الربح" class="num c-money c-cost c-profit">${dash}</td>`}
+        ${isAdmin() ? `<td data-label="العمولة" class="num c-money c-comm">${comm === null ? dash : fmt(comm)}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
         <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
@@ -3706,8 +3710,8 @@ function docTitle(order) {
           <button class="btn small" data-open="${oid}">${canEditOrder(o) ? `${icon('pen')} فتح` : `${icon('lock')} عرض`}</button>
           ${rowMenu([
             menuItem(`data-print="${oid}"`, 'file', 'تصدير PDF ومشاركته'),
-            canSeeCosts() ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
-            canSeeCosts() ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
+            canSeeCosts(o) ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
+            isAdmin() ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
             isAdmin() ? menuItem(`data-owner="${oid}"`, 'swap', 'نقل ملكية الطلب') : '',
             isAdmin() ? '<hr>' + menuItem(`data-delo="${oid}"`, 'trash', 'حذف الطلب', true) : '',
           ], `إجراءات الطلب ${esc(o.number || '')}`)}
@@ -3801,7 +3805,7 @@ function docTitle(order) {
 
   /** نافذة إدخال تكلفة كل صنف في الطلب مع حساب الربح مباشرة */
   function costForm(o) {
-    if (!o || !canSeeCosts()) return;
+    if (!o || !canSeeCosts(o)) return;
     const info = computeCosts(o);
     const cur$ = esc(currency());
     // طلب بلا أصناف يبقى قابلاً لتسجيل التكاليف الإضافية (توصيل ونحوه)
@@ -4018,7 +4022,8 @@ function docTitle(order) {
 
   /** نافذة تعديل نسب عمولة الطلب (تحسب على صافي الربح) */
   function commissionForm(o) {
-    if (!o || !canSeeCosts()) return;
+    /* نسب العمولة للمدير وحده — لا تُفتح بتغيّر رؤية التكاليف */
+    if (!o || !isAdmin()) return;
     const profit = orderProfit(o);
     const cur$ = esc(currency());
     const seller = esc(o.createdByName || 'غير محدد');
@@ -4831,47 +4836,26 @@ function docTitle(order) {
     }, 'drawer wide');
   }
 
-  /** ورقة PDF للتصميم من جهة الموظف (هندسة فقط، بلا مالية) */
+  /** ورقة PDF للتصميم من جهة الموظف (هندسة فقط، بلا مالية)
+      تُبنى من الوحدة المشتركة js/design-sheet.js — نفس ورقة العميل
+      والموسّع حرفياً، والمكوّنات الإضافية في صدر الصفحة فقط. */
   async function makeDesignSheetBlob(d) {
     if (!navigator.onLine) throw new Error('تصدير PDF يحتاج اتصالًا بالإنترنت.');
     try { await loadScript(H2C_URL); await loadScript(JSPDF_URL); }
     catch (_) { throw new Error('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.'); }
-    const f = desFacts(d.design);
-    const off = new Designer(document.createElement('canvas'), { getItem, pieceSpecLabel: () => '', pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) });
-    off.setState(JSON.parse(JSON.stringify(d.design || {})));
-    const W = 1600, H = Math.max(500, Math.round(W / off.aspect()));
-    const img = off.toImage(W, H);
-    const el = document.createElement('div');
-    el.className = 'inv';
-    el.innerHTML = ''
-      + '<div class="inv-head"><div class="inv-brand"><span class="mark"></span><div><h1>' + esc(settings().shopName || 'أصالة نجد') + '</h1><small>ورقة تصميم عميل</small></div></div>'
-      + '<div class="inv-title-box"><div class="inv-title">تصميم</div><div class="inv-no">' + esc(d.number || '') + '</div></div></div>'
-      + '<div class="inv-info"><div><span>التصميم</span><b class="num">' + esc(d.number || '') + '</b></div>'
-      + '<div><span>العميل</span><b>' + esc(d.name || '—') + '</b></div>'
-      + '<div><span>الجوال</span><b class="num">' + esc(d.phone || '—') + '</b></div>'
-      + '<div><span>الحالة</span><b>' + esc(DESIGN_STATUS[d.status] || '') + '</b></div></div>'
-      + '<div class="inv-visuals"><div class="inv-design"><div class="imgbox"><img src="' + img + '" alt="مخطط"></div></div></div>'
-      + '<div class="inv-items"><table><thead><tr><th>البند</th><th>التفاصيل</th></tr></thead><tbody>'
-      + '<tr><td>الغرفة</td><td>' + esc(f.walls) + '</td></tr>'
-      + '<tr><td>الأبواب/الشبابيك</td><td>' + f.doors + ' / ' + f.wins + '</td></tr>'
-      + '<tr><td>أمتار الكنب</td><td>' + f.meters + ' م</td></tr>'
-      + '</tbody></table></div>';
-    const area = $('#printArea');
-    area.innerHTML = '';
-    area.appendChild(el);
-    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
-    try {
-      const canvas = await window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      const im = canvas.toDataURL('image/jpeg', 0.94);
-      const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      const h = Math.min(276, 190 * (canvas.height / canvas.width));
-      pdf.addImage(im, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
-      return pdf.output('blob');
-    } finally {
-      area.style.cssText = '';
-      area.innerHTML = '';
-    }
+    const meta = [
+      { label: 'التصميم', value: d.number || '—' },
+      { label: 'العميل', value: d.name || '—' },
+      { label: 'الجوال', value: d.phone || '—' },
+      { label: 'الحالة', value: DESIGN_STATUS[d.status] || '—' },
+    ];
+    return DesignSheet.pdfBlob({
+      design: d.design,
+      getItem,
+      pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined),
+      meta,
+      mount: $('#printArea'),
+    });
   }
 
   async function convertDesignFlow(id) {

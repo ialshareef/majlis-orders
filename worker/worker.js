@@ -730,7 +730,7 @@ async function bootstrap(env, user) {
   const [settings, items, orders] = await Promise.all([
     env.DB.prepare('SELECT data FROM settings WHERE id = 1').first(),
     env.DB.prepare('SELECT data FROM items ORDER BY updated_at').all(),
-    env.DB.prepare('SELECT data FROM orders ORDER BY created_at').all(),
+    env.DB.prepare('SELECT data, created_by FROM orders ORDER BY created_at').all(),
   ]);
   const out = {
     // قدرات هذا الخادم: الواجهة الأحدث لا تعتمد على ميزة لم يُنشر خادمها بعد
@@ -738,8 +738,16 @@ async function bootstrap(env, user) {
     user: publicUser(user),
     settings: settings ? safeParse(settings.data, {}) : {},
     items: items.results.map((r) => safeParse(r.data)),
-    // التكاليف والربح لا تُرسل للموظف: إخفاؤها في الواجهة وحدها يتركها مقروءة من أدوات المتصفح
-    orders: orders.results.map((r) => { const o = safeParse(r.data); return admin ? o : stripCosts(o); }),
+    /* التكاليف والربح: المدير يرى الجميع، والموظف والمندوب يرون تكاليف
+       طلباتهم الخاصة فقط — الملكية تُقرأ من العمود created_by في القاعدة
+       (لا من الطلب ولا من أي حقل يرسله العميل). ما عدا طلباتك يمرّ
+       على stripCosts قبل الإرسال: الإخفاء في الخادم لا في الواجهة وحدها. */
+    orders: orders.results.map((r) => {
+      const o = safeParse(r.data);
+      if (admin) return o;
+      const mine = r.created_by !== null && r.created_by !== undefined && String(r.created_by) === String(user.id);
+      return mine ? o : stripCosts(o);
+    }),
     activity: [],
     users: [],
   };
@@ -948,9 +956,11 @@ async function sync(env, user, body) {
     if (numbers[rec.id] !== undefined) rec.number = numbers[rec.id];
     // طلب جديد من موظف: مالكه هو مرسله دائماً، لا ما يدّعيه الطلب
     if (!admin && !existing.has(rec.id)) { rec.createdBy = user.id; rec.createdByName = user.name; }
-    // التكاليف والأرباح للمدير وحده: لا تصل الموظف أصلاً (bootstrap يحذفها)، فما
-    // يرسله الموظف بلا تكاليف لا يعني أنها حُذفت — تُعاد من النسخة المخزّنة.
-    if (!admin) restoreCosts(rec, existing.has(rec.id) ? existing.get(rec.id).data : {});
+    // التكاليف والأرباح: فحص الملكية أعلاه يرفض طلبات الغير (403) قبل هنا،
+    // فما يصل من موظف أو مندوب هو طلباته الخاصة — حفظ التكاليف فيها مسموح.
+    // ما يرسله بلا أي أثر تكلفة ليس حذفاً: نسخه المحلية قد لم ترَ التكاليف
+    // أصلاً (كانت مخفية عن الموظفين قديماً)، فتُستعاد من المخزّن لا تُمحى.
+    if (!admin && !hasCostIntent(rec)) restoreCosts(rec, existing.has(rec.id) ? existing.get(rec.id).data : {});
     // created_by يُحدَّث أيضاً: بدونه يبقى نقل الملكية في JSON فقط، ويرفض فحص الملكية
     // (المبني على العمود) تعديلات المالك الجديد. COALESCE تحمي الطلبات القديمة بلا مالك.
     q(
@@ -983,7 +993,12 @@ async function sync(env, user, body) {
   return { ok: true, applied: stmts.length, numbers };
 }
 
-/* ------------------------------ إخفاء التكاليف عن الموظفين ------------------------------ */
+/* --------------------- التكاليف: رؤية مملوكة وحفظ مقصود ---------------------
+   المدير يرى التكاليف ويدخلها في كل الطلبات. والموظف والمندوب يُضافون
+   التكاليف ويعدّلونها في طلباتهم الخاصة فقط: الملكية تُقرأ من العمود
+   created_by في جدول orders (وهو نفسه أساس فحص الملكية في sync)، وطلب
+   الغير يصل مكسوفاً stripCosts في bootstrap، وأي محاولة تعديله عبر /api/sync
+   تُرفض 403 قبل الكتابة. الهوية والدور يأتان من جلسة الخادم لا من الحمولة. */
 const COST_FIELDS = ['costs', 'costTotal', 'extraCosts', 'costUpdatedAt', 'costUpdatedByName'];
 
 /** نسخة الطلب كما تصل الموظف: بلا تكلفة ولا ربح */
@@ -998,6 +1013,23 @@ function stripCosts(o) {
     });
   }
   return r;
+}
+
+/* هل ما أرسله الموظف يحمل نيةً واضحة لتعديل التكاليف؟
+   - ختم التكاليف (costUpdatedAt / costUpdatedByName) لا يكتبه في الواجهة
+     إلا نافذة «تكاليف الطلب» عند الحفظ — فظهوره حفظ مقصود.
+   - أمّا محتوى غير فارغ (تكاليف أصناف، بنود إضافية، تكلفة صنف يدوي،
+     إجمالي) فلا يأتِ إلا من نسخة رأت التكاليف — أي تعديل مقصود أيضاً.
+   - وانعدام الأثر كله يعني نسخة لم ترَ التكاليف (كانت مخفية عن الموظف
+     قديماً، أو طلب جديد): لا تُعتبر حذفاً، وتُستعاد من المخزّن. */
+function hasCostIntent(o) {
+  if (!o || typeof o !== 'object') return false;
+  if (o.costUpdatedAt !== undefined || o.costUpdatedByName !== undefined) return true;
+  if (o.costs && typeof o.costs === 'object' && Object.keys(o.costs).length > 0) return true;
+  if (Array.isArray(o.extraCosts) && o.extraCosts.length > 0) return true;
+  if (o.costTotal !== undefined && o.costTotal !== null && o.costTotal !== '') return true;
+  if (Array.isArray(o.manualRows) && o.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== '')) return true;
+  return false;
 }
 
 /** إعادة تكاليف النسخة المخزّنة إلى ما أرسله الموظف (وإسقاط أي تكلفة ادّعاها) */

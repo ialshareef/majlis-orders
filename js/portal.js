@@ -441,11 +441,7 @@ function portalAddAcc(itemId) {
         toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود' : 'يبقى العنصر داخل حدود الغرفة', true);
       },
       pieceSpecLabel: function () { return ''; },
-      pieceStyle: function (p) {
-        if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? { name: a.name, color: a.color } : null; }
-        var f = S.catMap[p.fabricId];
-        return { name: pieceLabel(p), color: f && f.color ? f.color : '#8b5a2b' };
-      },
+      pieceStyle: portalPieceStyle,
       onChange: function () { markDirty(); },
       onSelect: function (info) { renderSheet(info); },
       // النقر المزدوج على الجدار يفرش مساحاته المتاحة (بما فيها بجانب باب/مشب)
@@ -1019,6 +1015,15 @@ function portalAddAcc(itemId) {
   $('#pModal').addEventListener('click', function (e) { if (e.target === $('#pModal')) closePModal(); });
 
   /* ---------------- المراجعة والإنهاء ---------------- */
+  /* ---------------- حقائق التصميم ----------------
+     لون القطعة واسمها كما تُرسم على الشاشة: مرجع واحد يستعمله المصمم
+     وورقة التصميم معاً فلا يختلف لون الدليل عن لون المخطط. */
+  function portalPieceStyle(p) {
+    if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? { name: a.name, color: a.color } : null; }
+    var f = S.catMap[p.fabricId];
+    return { name: pieceLabel(p), color: f && f.color ? f.color : '#8b5a2b' };
+  }
+
   function designFacts(design) {
     var d = design || { walls: [], openings: [], pieces: [] };
     var walls = (d.walls || []).map(function (w) { return w.len + 'م'; }).join(' × ');
@@ -1281,16 +1286,23 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
     tel: '<svg viewBox="0 0 24 24"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.2a2 2 0 0 1 2.1-.5c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/></svg>',
   };
 
-  async function buildDesignPdf(number) {
-    var s = S.settings || {};
-    var st = S.designer.getState();
-    var facts = designFacts(st);
-    var img = designImage(st, 1600);
-    var noTxt = number || 'مسودة';
-    var d = new Date();
-    var date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
-    // بطاقات التواصل: أيقونة + باركود لكل قناة (النقر على البطاقة كلها يفتحها، والمسح يفتحها مباشرة)
+  /* ---------------- ورقة التصميم (PDF) ----------------
+     تُبنى من الوحدة المشتركة js/design-sheet.js: نفس ورقة الموظف ونفس
+     الورقة الموسّعة، وبلا أي بيانات مالية — هنا العميل فقط يرى المخطط
+     وجدول الأثاث وسعة الجلوس ودليل الألوان وقنوات التواصل. */
+  function designSheetOpts(number) {
+    return {
+      design: S.designer.getState(),
+      getItem: getCatItem,
+      pieceStyle: portalPieceStyle,
+      meta: number ? [{ label: 'رقم التصميم', value: number }] : []
+    };
+  }
+
+  /** بطاقات التواصل: أيقونة + باركود لكل قناة (النقر يفتحها، والمسح مباشرة) */
+  async function designContactHtml() {
     var chans = contactChannels();
+    if (!chans.length) return '';
     var chanHtml = '';
     for (var ci = 0; ci < chans.length; ci++) {
       var c = chans[ci];
@@ -1302,52 +1314,30 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
         + '<span class="inv-chan-url">' + esc(c.text || c.url.replace(/^https?:\/\//i, '')) + '</span>'
         + '</div>';
     }
-    var el = document.createElement('div');
-    el.className = 'inv';
-    el.innerHTML = ''
-      + '<div class="inv-head"><div class="inv-brand"><img class="inv-mark" src="/icons/icon-512.png" alt="" width="60" height="60">'
-      + '<div><h1>' + esc(s.shopName || 'أصالة نجد') + '</h1><small>تصميم مجلس</small></div></div>'
-      + '<div class="inv-title-box"><div class="inv-title">تصميم العميل</div></div></div>'
-      + '<div class="inv-info">'
-      + '<div><span>رقم التصميم</span><b class="num">' + esc(noTxt) + '</b></div>'
-      + '<div><span>التاريخ</span><b class="num">' + esc(date) + '</b></div>'
-      + '</div>'
-      + '<div class="inv-visuals"><div class="inv-design"><div class="imgbox"><img src="' + img + '" alt="مخطط المجلس"></div></div></div>'
-      + '<div class="inv-items"><table><thead><tr><th>البند</th><th>التفاصيل</th></tr></thead><tbody>'
-      + facts.map(function (f) { return '<tr><td>' + f[0] + '</td><td>' + esc(f[1]) + '</td></tr>'; }).join('')
-      + '</tbody></table></div>'
-      + '<div class="inv-bottom"><div class="inv-contact"><b>تواصل معنا</b>'
+    var s = S.settings || {};
+    return '<div class="inv-contact"><b>تواصل معنا</b>'
       + '<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</div>'
-      + '<div class="inv-chans">' + (chanHtml || '') + '</div></div>'
-      + '</div>'
-      + '</div>'
-      + '<div class="inv-foot"><span>احتفظ برقم التصميم لمراجعته مع المحل</span></div>';
-    return el;
+      + '<div class="inv-chans">' + chanHtml + '</div></div>'
+      + '<div class="ds-foot-note"><b>' + esc(s.shopName || 'أصالة نجد') + '</b>'
+      + 'احتفظ برقم التصميم لمراجعته مع المحل</div>';
+  }
+
+  async function buildDesignPdf(number) {
+    var o = designSheetOpts(number);
+    o.footHtml = await designContactHtml();
+    return DesignSheet.build(o);
   }
 
   async function makeDesignPdfBlob(number) {
     if (!navigator.onLine) throw new Error('تصدير PDF يحتاج اتصالًا بالإنترنت.');
     try { await loadScript(H2C_URL); await loadScript(JSPDF_URL); }
     catch (_) { throw new Error('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.'); }
-    var area = $('#pPrint');
-    area.innerHTML = '';
-    var inv = await buildDesignPdf(number);
-    area.appendChild(inv);
-    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
-    try {
-      var canvas = await window.html2canvas(inv, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      var img = canvas.toDataURL('image/jpeg', 0.94);
-      var jsPDF = window.jspdf.jsPDF;
-      var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      var h = Math.min(276, 190 * (canvas.height / canvas.width));
-      pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
-      // الأيقونات والباركود روابط حقيقية: النقر عليها يفتح القناة أو التصميم
-      addPdfLinks(pdf, inv, 10, 10, 190);
-      return pdf.output('blob');
-    } finally {
-      area.style.cssText = '';
-      area.innerHTML = '';
-    }
+    var o = designSheetOpts(number);
+    o.footHtml = await designContactHtml();
+    o.mount = $('#pPrint');
+    // الأيقونات والباركود روابط حقيقية: النقر عليها يفتح القناة أو التصميم
+    o.addLinks = function (pdf, el, x0, y0, wMm) { addPdfLinks(pdf, el, x0, y0, wMm); };
+    return DesignSheet.pdfBlob(o);
   }
 
   /** تحويل مواضع العناصر (data-url) إلى毫米 على صفحة PDF وإضافتها كروابط قابلة للنقر */

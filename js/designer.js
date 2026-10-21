@@ -2050,9 +2050,21 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
   }
 
   /* ---------- طبقة أرقام المقاسات العلوية ----------
-     تُرسم بعد كل القطع (opts.pieceLabelsOnTop): حين يوضع إكسسوار فوق
-     كنبة تحجب خطوط القياس، تبقى الأرقام مقروءة بتسمية داكنة على شارة فاتحة.
-     الشارة تُرسم خلف النص وحده — لا تُغطّي الرسمة بأكملها. */
+     تُرسم بعد كل القطع (opts.pieceLabelsOnTop أو التصدير): حين يوضع إكسسوار
+     فوق كنبة تحجب خطوط القياس، تبقى الأرقام مقروءة بتسمية داكنة على شارة فاتحة.
+     الشارة تُرسم خلف النص وحده — لا تُغطّي الرسمة بأكملها.
+     _topLabelCovers يحكم على القطعة نفسها من الطبقتين، فلا يُرسم الرقم مرتين:
+     مرة داخل ترتيب القطع ومرة في الطبقة العلوية. */
+  _topLabelCovers(p, S, W, opt) {
+    if (!(this.opts.pieceLabelsOnTop || opt.export)) return false;
+    if (p.kind !== 'sofa') return false;
+    const k = opt.export ? Math.max(1.8, W / 720) : 1;
+    const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
+    const span = this._visualSpan(p, this.geometry(), this.state.pieces.indexOf(p));
+    const pw = Math.max(0, (span.lx1 - span.lx0) * S);
+    const ph = p.h * S;
+    return !(pw < fs * 1.6 || ph < fs * 0.7);
+  }
   _drawPieceLabelsTop(ctx, v, W, opt) {
       const S = v.scale;
       const k = opt.export ? Math.max(1.8, W / 720) : 1;
@@ -2411,18 +2423,23 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
         ctx.lineWidth = Math.max(1.2 * k, 0.03 * S);
         ctx.strokeStyle = isSel ? SEL : (o.type === 'door' ? '#8a5a2b' : '#5A7B8E');
         if (o.type === 'door') {
-          /* ضلفة الباب + قوس الفتح: جهة المفصلات (يمين/يسار على محور الجدار)
-             واتجاه الفتح (داخل/خارج الغرفة) خياران مستقلان — الاثنان يعكسان
-             موضع الضلفة واتجاه دورانها دون تغيير موضع الفتحة ولا عرضها. */
-          const leftHinge = this.openingHinge(o) === 'left';        // المفصل على حدّ الفتحة الأيسر
+          /* ضلفة الباب + قوس الفتح — الرسم القديم المُستعاد بزيادة خيارين:
+             الضلفة عمودية على الجدار تماماً (طولها = عرض الفتحة) والقوس
+             ربع دائرة من طرفها إلى الحافة الأخرى من الفتحة — لا ميلان ولا
+             ضرب في اتجاه الجدار (ذلك كان الزاوية الحادة غير المرغوبة).
+             الخياران مستقلان: جهة المفصلات تحدد أي حدّ يحمل المفصلة،
+             واتجاه الفتح يقلب الضلفة داخل الغرفة أو خارجها. الافتراضي
+             (يمين + للداخل) يطابق الرسم القديم حرفياً: المفصلة على pA
+             والضلفة على امتداد w.n — وهو ما كانت عليه قبل خيارات الاتجاه. */
+          const leftHinge = this.openingHinge(o) === 'left';        // المفصلة على الحافة الأخرى
           const inward = this.openingSwing(o) !== 'out';           // الضلفة داخل الغرفة
-          const hinge = leftHinge ? pA : pB;                       // حدّ الفتحة الذي يحمل المِفصلة
-          const swingDir = leftHinge ? w.dir : { x: -w.dir.x, y: -w.dir.y };  // اتجاه امتداد الورقة
+          const hinge = leftHinge ? pB : pA;                       // حدّ الفتحة الذي يحمل المفصلة (يمين = pA قديماً)
+          const far = leftHinge ? pA : pB;                         // الحافة الثانية: نهاية القوس
           const depth = inward ? w.n : { x: -w.n.x, y: -w.n.y };   // داخل الغرفة أم خارجها
-          const leafEnd = { x: hinge.x + swingDir.x * o.w + depth.x * o.w, y: hinge.y + swingDir.y * o.w + depth.y * o.w };
+          const leafEnd = { x: hinge.x + depth.x * o.w, y: hinge.y + depth.y * o.w };
           const h = P(hinge.x, hinge.y), le = P(leafEnd.x, leafEnd.y);
           ctx.beginPath(); ctx.moveTo(h.x, h.y); ctx.lineTo(le.x, le.y); ctx.stroke();
-          const a0 = Math.atan2(le.y - h.y, le.x - h.x), pb = P(pB.x, pB.y), a1 = Math.atan2(pb.y - h.y, pb.x - h.x);
+          const a0 = Math.atan2(le.y - h.y, le.x - h.x), pf = P(far.x, far.y), a1 = Math.atan2(pf.y - h.y, pf.x - h.x);
           ctx.setLineDash([3, 3]);
           ctx.beginPath();
           let d = a1 - a0; while (d > Math.PI) d -= 2 * Math.PI; while (d < -Math.PI) d += 2 * Math.PI;
@@ -2655,10 +2672,15 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
           const nm = fitText(ctx, (item.name || 'كنب') + (extra ? ` • ${extra}` : ''), maxW);
           const back = Math.min(ph * 0.3, 0.22 * S);
           const dimsLabel = ctx.measureText(dims).width <= maxW ? dims : `${round(p.w, 2)} م`;
+          /* الرقم يُرسم هنا بلا خلفية (ترتيب القطع)، والطبقة العلوية
+             _drawPieceLabelsTop — الآن مضمونة في الشاشة والتصدير معاً —
+             تعيد رسمه فوق كل شيء بشارة بيضاء فلا يغطّيه إكسسوار ولا قطعة.
+             متى كانت الطبقة العلوية ترسم هذه القطعة فعلاً تُسكَت هنا نسخة
+             الرقم الداخلية: رقم واحد لا رقمان متداخلان. */
           if (ph > fs * 2.6 && pw > fs * 3) {
             ctx.fillText(nm, 0, (flip ? -1 : 1) * back * 0.35 - fs * 0.6);
-            ctx.fillText(dimsLabel, 0, (flip ? -1 : 1) * back * 0.35 + fs * 0.65);
-          } else if (pw > fs * 2) {
+            if (!this._topLabelCovers(p, S, W, opt)) ctx.fillText(dimsLabel, 0, (flip ? -1 : 1) * back * 0.35 + fs * 0.65);
+          } else if (pw > fs * 2 && !this._topLabelCovers(p, S, W, opt)) {
             ctx.fillText(dimsLabel, 0, (flip ? -1 : 1) * back * 0.3);
           }
         } else if (pw > fs * 1.5 && !(this.opts.pieceArt && p.kind === 'acc')) {
@@ -2695,10 +2717,15 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
         }
       });
 
-      // طبقة القياس فوق القطع: تبقى الأرقام واضحة مهما جرت قطعة فوقها
+      // طبقة القياس فوق القطع: تبقى الأرقام واضحة مهما جرت قطعة فوقها.
+      // في التصدير تُرسم دائماً (opt.export) ولو لم يفعّلها الخيار: نسخة PDF
+      // تُقرأ بالمسطرة، وبناؤها في الواجهات منفصل عن مصمم الشاشة فلا نصحّ
+      // على خيارات قد تُنسى — القواعد واحدة للمخرجات كلّها.
       if (this.opts.dimsOnTop) this._drawDimsTop(ctx, v, W, opt);
-      // طبقة أرقام مقاسات القطع فوق كل الرسومات (مركى/طاولة فوق كنبة لا تحجبها)
-      if (this.opts.pieceLabelsOnTop) this._drawPieceLabelsTop(ctx, v, W, opt);
+      // طبقة أرقام مقاسات القطع فوق كل الرسومات (مركى/طاولة فوق كنبة لا تحجبها).
+      // مطلوبة في التصدير أيضاً: بدونها يُرسم الرقم داخل ترتيب القطع فيغطيه
+      // الإكسسوار — وهو ما كان يفقد أرقام المقاسات من ملف PDF.
+      if (this.opts.pieceLabelsOnTop || opt.export) this._drawPieceLabelsTop(ctx, v, W, opt);
 // طبقة قياسات الباب/المشب: خط قياس وأرقام من طرفي الجدار إلى الفتحة.
 // في طبقة مستقلة فوق كل شيء — لا يخفيها كنبة ولا إكسسوار ولا قياس آخر.
 // في التصدير تُرسم دائماً (opt.export) ولو لم يفعّلها الخيار: نسخة PDF تُطبع

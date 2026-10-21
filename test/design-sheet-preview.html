@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>معاينة ورقة التصميم المشتركة</title>
+<link rel="stylesheet" href="/css/style.css">
+<style>
+  body{font-family:var(--font);background:#EFEAE2;margin:0;padding:16px}
+  #bar{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+  button{font:inherit;padding:6px 14px;border:1px solid #c9bfae;border-radius:8px;background:#fff;cursor:pointer}
+  #sheetWrap{display:inline-block;box-shadow:0 6px 24px rgba(0,0,0,.18);background:#fff}
+</style>
+</head><body>
+<div id="bar">
+  <b>معاينة الورقة المشتركة (277×190مم)</b>
+  <button id="bClient">نسخة العميل (مع شريط التواصل)</button>
+  <button id="bStaff">نسخة الموظف (مع بيانات العميل)</button>
+  <button id="bPdf">تنزيل PDF</button>
+  <span id="st" style="font:12px monospace"></span>
+</div>
+<div id="sheetWrap"></div>
+
+<script src="/js/designer.js"></script>
+<script src="/js/design-sheet.js"></script>
+<script>
+/* معاينة بصرية للورقة على متصفح حقيقي: نفس بناء المسارات الثلاثة
+   (js/design-sheet.js) مع بيانات نموذجية — تُفتح عبر serve.ps1 على
+   http://localhost:8090/test/design-sheet-preview.html */
+const st = document.getElementById('st');
+const wrap = document.getElementById('sheetWrap');
+
+function sampleDesign() {
+  const off = new Designer(document.createElement('canvas'), {
+    getItem: (id) => ({ id, name: 'إكسسوار', color: '#2f6f4f' }),
+    pieceSpecLabel: () => '', pieceStyle: () => null,
+    onChange() {}, onSelect() {}
+  });
+  off.setState(Designer.emptyState(6, 4));
+  const door = off.addOpening(0, 'door');
+  off.addOpening(1, 'mashab');
+  off.addPiece({ kind: 'sofa', w: 2.4, h: 0.8, rot: 0, x: 0.4, y: 0.4, seating: 'sofa', fabricId: null });
+  off.addPiece({ kind: 'sofa', w: 1.6, h: 0.8, rot: 90, x: 5.2, y: 0.4, seating: 'floor', fabricId: null });
+  off.addPiece({ kind: 'sofa', w: 3.2, h: 0.8, rot: 180, x: 5.6, y: 3.6, seating: 'arabic', fabricId: null });
+  off.addAccessory('a1'); off.addAccessory('a2');
+  off.render();
+  return off.getState();
+}
+
+const design = sampleDesign();
+function footHtml() {
+  return '<div class="inv-contact"><b>تواصل معنا</b>'
+    + '<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</div>'
+    + '<div class="inv-chans"><div class="inv-chan"><span class="inv-chan-ic wa"></span>'
+    + '<span class="inv-chan-lb">واتساب</span></div></div></div>'
+    + '<div class="ds-foot-note"><b>أصالة نجد</b>احتفظ برقم التصميم لمراجعته مع المحل</div>';
+}
+
+function show(kind) {
+  const opts = {
+    design,
+    getItem: (id) => ({ id, name: 'إكسسوار', color: '#2f6f4f' }),
+    pieceStyle: () => null
+  };
+  if (kind === 'client') { opts.footHtml = footHtml(); }
+  if (kind === 'staff') {
+    opts.meta = [
+      { label: 'التصميم', value: 'D-101' },
+      { label: 'العميل', value: 'عبدالله الشمري' },
+      { label: 'الجوال', value: '0501234567' },
+      { label: 'الحالة', value: 'قيد التنفيذ' }
+    ];
+  }
+  if (kind === 'expanded') { opts.meta = [{ label: 'الرقم المرجعي', value: 'D-101' }]; }
+  wrap.innerHTML = '';
+  wrap.appendChild(DesignSheet.build(opts));
+  st.textContent = kind + ' — ' + DesignSheet.facts(design, opts).capacity + ' مقعد';
+}
+show('client');
+document.getElementById('bClient').onclick = () => show('client');
+document.getElementById('bStaff').onclick = () => show('staff');
+document.getElementById('bPdf').onclick = async () => {
+  st.textContent = 'جارٍ بناء PDF…';
+  function load(src) { return new Promise((res, rej) => { const s = document.createElement('script'); s.src = src; s.onload = res; s.onerror = rej; document.head.appendChild(s); }); }
+  try {
+    await load('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+    await load('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+    const blob = await DesignSheet.pdfBlob({
+      design, getItem: (id) => ({ id, name: 'إكسسوار', color: '#2f6f4f' }),
+      pieceStyle: () => null, mount: document.createElement('div')
+    });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'design-sheet-preview.pdf'; a.click();
+    st.textContent = 'تم التنزيل';
+  } catch (e) { st.textContent = 'خطأ: ' + e.message; }
+};
+</script>
+</body></html>

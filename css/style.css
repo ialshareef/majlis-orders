@@ -2428,6 +2428,145 @@ body.modal-open { overflow: hidden; }
 .inv.receipt .inv-foot { margin-top: 10mm; }
 
 /* =====================================================================
+   28ب) ورقة التصميم المشتركة (js/design-sheet.js) — A4 أفقي
+   القياسات هنا هي مصدر الحقيقة لصندوق المخطط في الوحدة:
+     عرض المحتوى = 277 − 2×10 = 257   ← العمليات 72 + فاصل 7 = 79
+     ⇒ صندوق المخطط 178مم
+     ارتفاع المحتوى = 190 − 8 − 7 = 175 ← العنوان 18 + فاصل 4
+     ⇒ صندوق المخطط 153مم (وتُطرح 16مم شريط التواصل إن وُجد)
+   ===================================================================== */
+.dsheet {
+  width: 277mm; height: 190mm; box-sizing: border-box; overflow: hidden;
+  display: flex; flex-direction: column;
+  padding: 8mm 10mm 7mm;
+  font-family: var(--font, 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif);
+  font-size: 10pt; color: #1F1B18; direction: rtl; background: #fff;
+  --ds-accent: #7A5230; --ds-line: #E4DACB; --ds-soft: #F6F1E9;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.dsheet * { box-sizing: border-box; letter-spacing: normal; word-spacing: normal; }
+.dsheet .num { direction: ltr; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+
+.ds-head {
+  flex: none; height: 18mm; display: flex; align-items: flex-end;
+  justify-content: space-between; gap: 5mm; padding-bottom: 2.4mm;
+  border-bottom: 1px solid var(--ds-line);
+}
+.ds-titles { flex: 1 1 auto; min-width: 0; }
+.ds-caption { margin: 0; font-size: 8.5pt; color: #8A7E70; }
+.ds-title { margin: .6mm 0 0; font-size: 19pt; font-weight: 800; line-height: 1.15; color: #1F1B18; }
+.ds-meta {
+  flex: none; display: flex; flex-wrap: wrap; justify-content: flex-end;
+  align-content: flex-end; gap: .6mm 5mm; margin: 0; max-width: 108mm;
+}
+.ds-meta-i { margin: 0; max-width: 48mm; }
+.ds-meta dt { margin: 0 0 .4mm; font-size: 7.5pt; color: #8A7E70; white-space: nowrap; }
+.ds-meta dd {
+  margin: 0; font-size: 10pt; font-weight: 700; color: #2A2622; white-space: nowrap;
+  overflow: hidden; text-overflow: ellipsis;
+}
+
+.ds-body { flex: 1 1 auto; min-height: 0; display: flex; gap: 7mm; padding-top: 4mm; }
+.ds-side { flex: none; width: 72mm; min-height: 0; display: flex; flex-direction: column; }
+.ds-h {
+  margin: 0 0 1.6mm; font-size: 11.5pt; font-weight: 800; color: var(--ds-accent);
+  border-bottom: 1px solid var(--ds-line); padding-bottom: 1.2mm;
+}
+.ds-h + .ds-h, .ds-cap + .ds-h { margin-top: 4mm; }
+.ds-tbl { width: 100%; border-collapse: collapse; font-size: 9pt; }
+.ds-tbl th {
+  background: #F1EADF; color: #4A3A2C; font-weight: 700; text-align: start;
+  padding: 1.2mm 2mm; border-bottom: 1px solid #DFD2BF;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.ds-tbl td { padding: 1.05mm 2mm; border-bottom: 1px solid #EFE9DF; }
+.ds-tbl tr:nth-child(even) td { background: #FBF9F5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.ds-tbl th.c-qty, .ds-tbl td.c-qty { width: 13mm; text-align: center; }
+.ds-tbl td.c-name { font-weight: 600; color: #2A2622; }
+.ds-tbl td.c-dims { color: #4A413A; white-space: nowrap; }
+.ds-empty { color: #8A7E70; text-align: center; }
+
+.ds-cap {
+  margin: 3.2mm 0 0; display: flex; align-items: center; justify-content: center; gap: 3mm;
+  background: var(--ds-soft); border-radius: 1.6mm; padding: 2.6mm 4mm;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.ds-cap b { font-size: 23pt; font-weight: 800; color: #2A2622; line-height: 1; }
+.ds-cap span { font-size: 9.5pt; color: #5A5147; }
+
+.ds-legend { list-style: none; margin: 0 0 auto; padding: 0; display: grid; gap: 1.5mm; }
+.ds-legend li { display: flex; align-items: center; gap: 2.2mm; font-size: 8.5pt; }
+.ds-legend .sw { flex: none; width: 8.5mm; height: 6mm; border-radius: 1.2mm; border: 1px solid rgba(0, 0, 0, .16); }
+.ds-legend .sw.circle { width: 6mm; height: 6mm; border-radius: 50%; }
+.ds-legend .sw.outline { background: rgba(90, 116, 134, .14); border: 1px dashed #5A7486; }
+.ds-legend .lb { font-weight: 700; color: #2A2622; white-space: nowrap; }
+.ds-legend .sb { color: #8A7E70; font-size: 8pt; margin-inline-start: auto; padding-inline-start: 2mm; }
+
+.ds-note {
+  margin: 3mm 0 0; font-size: 7.8pt; line-height: 1.65; color: #7A6F63;
+  border-top: 1px solid var(--ds-line); padding-top: 1.8mm;
+}
+
+.ds-plan { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+.ds-img {
+  position: relative; display: block; margin: auto; line-height: 0;
+  width: 100%; height: 100%; max-width: 100%; max-height: 100%;
+}
+.ds-img > img { display: block; width: 100%; height: 100%; }
+.ds-img-empty { display: flex; align-items: center; justify-content: center; font-size: 10pt; color: #8A7E70; }
+
+/* خطوط قياس الغرفة حول المخطط (بنِسَب من صورة المخطط تماماً) */
+.ds-dim { position: absolute; display: block; }
+.ds-dim-w {
+  height: 5.2mm; border-bottom: 1.1px solid #6B625A;
+}
+.ds-dim-w::before, .ds-dim-w::after {
+  content: ''; position: absolute; bottom: -1.2mm; width: 1.1px; height: 2.6mm; background: #6B625A;
+}
+.ds-dim-w::before { left: 0; }
+.ds-dim-w::after { right: 0; }
+.ds-dim-w i {
+  position: absolute; left: 50%; bottom: .6mm; transform: translateX(-50%);
+  font-style: normal; font-size: 9pt; font-weight: 700; color: #2A2622;
+  background: #fff; padding: 0 2mm; line-height: 1.2; white-space: nowrap;
+}
+.ds-dim-h {
+  width: 5.2mm; border-right: 1.1px solid #6B625A;
+}
+.ds-dim-h::before, .ds-dim-h::after {
+  content: ''; position: absolute; right: -1.2mm; height: 1.1px; width: 2.6mm; background: #6B625A;
+}
+.ds-dim-h::before { top: 0; }
+.ds-dim-h::after { bottom: 0; }
+.ds-dim-h i {
+  position: absolute; right: .8mm; top: 50%;
+  transform: translate(50%, -50%) rotate(-90deg); transform-origin: center;
+  font-style: normal; font-size: 9pt; font-weight: 700; color: #2A2622;
+  background: #fff; padding: 0 2mm; line-height: 1.2; white-space: nowrap;
+}
+
+/* مقياس الرسم: شريط متقاطع + أرقام المسافة بالسنتيمتر */
+.ds-scale { position: absolute; display: block; line-height: 1; }
+.ds-scale-bar { display: flex; width: 100%; height: 1.7mm; border: .6px solid #2A2622; }
+.ds-scale-bar i { flex: 1 1 0; }
+.ds-scale-bar i:nth-child(odd) { background: #2A2622; }
+.ds-scale-bar i:nth-child(even) { background: #fff; }
+.ds-scale-n {
+  display: flex; justify-content: space-between; direction: ltr;
+  margin-top: .5mm; font-size: 6.6pt; color: #4A413A; font-weight: 600;
+}
+.ds-scale-n b { font-weight: 600; }
+.ds-scale-u { display: block; font-size: 6.6pt; color: #8A7E70; text-align: end; margin-top: .2mm; }
+
+.ds-foot {
+  flex: none; height: 16mm; box-sizing: border-box; margin-top: 2mm;
+  padding-top: 1.6mm; border-top: 1px dashed #D5C8B4; display: flex; align-items: center; gap: 4mm;
+}
+.ds-foot .inv-contact { flex: 1 1 auto; min-width: 0; }
+.ds-foot-note { flex: none; width: 62mm; font-size: 8pt; color: #6A5F54; line-height: 1.55; }
+.ds-foot-note b { display: block; font-size: 9.5pt; color: #1F1B18; margin-bottom: .4mm; }
+
+/* =====================================================================
    29) الوضع الداكن — خشب إسبريسو دافئ
    يتبع الجهاز افتراضياً، ويُفرض من الإعدادات (data-theme). المخطط والفاتورة
    يبقيان ورقاً أبيض: هما ما يُطبع ويُرسل، فيجب أن يُرى كما سيخرج.

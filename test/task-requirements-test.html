@@ -117,10 +117,17 @@ try{
   /* ===== بند 8) طبقة القياسات فوق الأثاث ===== */
   t('8) dimsOnTop موجود في المحرك', /_drawDimsTop/.test(djs));
   t('8) pieceLabelsOnTop موجود في المحرك', /_drawPieceLabelsTop/.test(djs));
+  /* القواعد: أرقام المقاسات فوق كل شيء دائماً (الشاشة + التصدير)، وطبقة
+     openings تُرسم بعدها. الأرقام الداخلية للقطعة تُسكَت متى رسمتها الطبقة. */
+  t('8) أرقام المقاسات تُرسم في التصدير أيضاً (طبقة واحدة لكل الواجهات)',
+     /if \(this\.opts\.pieceLabelsOnTop \|\| opt\.export\) this\._drawPieceLabelsTop/.test(djs));
+  t('8) الرقم الداخلي يُسكَت متى رسمته الطبقة (لا رقمين متداخلين)',
+     /!this\._topLabelCovers\(p, S, W, opt\)/.test(djs) && /_topLabelCovers\(p, S, W, opt\) \{/.test(djs));
   /* نتحقق من الترتيب داخل دالة الرسم نفسها: الاستدعاء بعد for للقطع */
   const djs2=djs.slice(djs.indexOf('for (const p of this._drawOrder())'));
   t('8) يُرسم بعد القطع في ترتيب الرسم', djs2.indexOf('if (this.opts.dimsOnTop) this._drawDimsTop')>0
-     && djs2.indexOf('if (this.opts.dimsOnTop) this._drawDimsTop') < djs2.indexOf('if (this.opts.pieceLabelsOnTop)'));
+     && djs2.indexOf('if (this.opts.dimsOnTop) this._drawDimsTop') < djs2.indexOf('this._drawPieceLabelsTop(ctx'));
+  t('8) وطبقة الفتحات آخر طبقة', djs2.indexOf('this._drawPieceLabelsTop(ctx') < djs2.indexOf('this._drawOpeningDimsTop(ctx'));
   d=mk({}); d.addSofaOnWall(2,{seating:'floor',depth:0.8});
   d.render();
   t('8) الرسم لا يرمي مع الطبقتين', true);

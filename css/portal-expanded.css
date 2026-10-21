@@ -195,7 +195,9 @@
 /* ======================================================================
    ملف PDF للنسخة الموسّعة — بادئة xp (لا تلمس .inv المستخدمة في البوابة الحالية)
    ====================================================================== */
-.xp-doc { width: 190mm; background: #fff; color: #1F1B18; direction: rtl; font-family: var(--font); }
+/* العرض 277مم لأن الصفحة الثانية ورقة التصميم المشتركة أفقي؛ وصفحتا
+   الغلاف والختام تبقيان عموديتين 190مم في منتصف الورقة. */
+.xp-doc { width: 277mm; background: #fff; color: #1F1B18; direction: rtl; font-family: var(--font); display: flex; flex-direction: column; align-items: center; }
 .xp-page { width: 190mm; min-height: 276mm; box-sizing: border-box; padding: 12mm 10mm; display: flex; flex-direction: column; background: #fff; }
 .xp-page + .xp-page { border-top: 1px dashed #D5C8B4; }
 

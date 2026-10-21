@@ -457,14 +457,7 @@
         toast(why === 'column' ? 'لا يمكن وضع العنصر فوق العامود' : 'يبقى العنصر داخل حدود الغرفة', true);
       },
       pieceSpecLabel: function () { return ''; },
-      pieceStyle: function (p) {
-        if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? { name: a.name, color: a.color, art: a.shape || a.name } : null; }
-        var f = S.catMap[p.fabricId];
-        var sc = SEAT_COLOR[p.seating] || SEAT_COLOR.floor;
-        // لون الجلسة هو الأساس، والقماش يغيّر النبرة فقط — فيبقى النوع مقروءاً
-        var col = f && f.color ? mixHex(sc.base, f.color, 0.35) : sc.base;
-        return { name: pieceLabel(p), color: col, light: sc.light, art: pieceLabel(p) };
-      },
+      pieceStyle: expPieceStyle,
       onChange: function () { markDirty(); },
       onSelect: function (info) { renderSheet(info); },
       // النقر المزدوج على الجدار يفرش مساحاته المتاحة (بما فيها بجانب باب/مشب)
@@ -1087,6 +1080,17 @@
     };
   }
 
+  /** لون القطعة كما يرسمه محرّك النسخة الموسّعة (درجة نوع الجلسة + القماش)
+      — مرجع واحد للمصمم ولورقة التصميم فلا يختلف الدليل عن المخطط. */
+  function expPieceStyle(p) {
+    if (p.kind === 'acc') { var a = S.catMap[p.itemId]; return a ? { name: a.name, color: a.color, art: a.shape || a.name } : null; }
+    var f = S.catMap[p.fabricId];
+    var sc = SEAT_COLOR[p.seating] || SEAT_COLOR.floor;
+    // لون الجلسة هو الأساس، والقماش يغيّر النبرة فقط — فيبقى النوع مقروءاً
+    var col = f && f.color ? mixHex(sc.base, f.color, 0.35) : sc.base;
+    return { name: pieceLabel(p), color: col, light: sc.light, art: pieceLabel(p) };
+  }
+
   function renderReviewPanel(box, dz) {
     var cust = S.cust || { name: '', phone: '' };
     var sum = designSummary();
@@ -1280,7 +1284,6 @@ async function buildExpandedDoc(number) {
     var s = S.settings || {};
     var st = S.designer.getState();
     var sum = designSummary(st);
-    var img = designImage(st, 1600);
     var noTxt = number || 'مسودة (لم يُنهَ بعد)';
     var d = new Date();
     var date = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
@@ -1311,9 +1314,11 @@ async function buildExpandedDoc(number) {
 
     var el = document.createElement('div');
     el.className = 'xp-doc';
-    el.innerHTML = ''
-      /* --- صفحة ١: الغلاف --- */
-      + '<div class="xp-page xp-cover">'
+
+    /* --- صفحة ١: الغلاف --- */
+    var cover = document.createElement('div');
+    cover.className = 'xp-page xp-cover';
+    cover.innerHTML = ''
       + logo
       + '<p class="xp-cover-shop">' + esc(s.shopName || 'أصالة نجد') + '</p>'
       + (s.tagline ? '<p class="xp-cover-tag">' + esc(String(s.tagline).slice(0, 140)) + '</p>' : '')
@@ -1325,30 +1330,26 @@ async function buildExpandedDoc(number) {
       + nameRow + phoneRow
       + '</div>'
       + '<p class="xp-cover-note">وثيقة مرجعية بمقاسات تصميمك على منصة «' + esc(s.shopName || 'أصالة نجد') + '». '
-      + 'لا تحتوي على أسعار — التسعير يُحدَّد بعد مراجعة المحل للتصميم.</p>'
-      + '</div>'
-      /* --- صفحة ٢: المخطط + الملخص + الكميات --- */
-      + '<div class="xp-page">'
-      + '<h2 class="xp-h">مخطط المجلس</h2>'
-      + '<div class="xp-plan"><img src="' + img + '" alt="مخطط المجلس"></div>'
-      + '<h3 class="xp-sub">ملخص التصميم</h3>'
-      + '<div class="xp-facts">'
-      + '<div class="frow"><span>العرض</span><b class="num">' + sum.w + ' م</b></div>'
-      + '<div class="frow"><span>الطول</span><b class="num">' + sum.h + ' م</b></div>'
-      + (sum.area != null ? '<div class="frow"><span>المساحة</span><b class="num">' + sum.area + ' م²</b></div>' : '')
-      + '<div class="frow"><span>نوع الجلسة</span><b>' + esc(sum.seatTxt) + '</b></div>'
-      + '<div class="frow"><span>أمتار الكنب</span><b class="num">' + sum.meters + ' م</b></div>'
-      + '<div class="frow"><span>الأبواب</span><b class="num">' + sum.doors + '</b></div>'
-      + '<div class="frow"><span>المشب</span><b class="num">' + sum.mashabs + '</b></div>'
-      + (sum.windows ? '<div class="frow"><span>الشبابيك</span><b class="num">' + sum.windows + '</b></div>' : '')
-      + (sum.cols ? '<div class="frow"><span>الأعمدة</span><b class="num">' + sum.cols + '</b></div>' : '')
-      + (sum.free ? '<div class="frow"><span>مساحات فارغة</span><b class="num">' + sum.free + '</b></div>' : '')
-      + '</div>'
-      + '<h3 class="xp-sub">جدول الإكسسوارات والكميات</h3>'
-      + '<table class="xp-items"><thead><tr><th>العنصر</th><th class="num">الكمية</th></tr></thead><tbody>' + itemRows + '</tbody></table>'
-      + '</div>'
-      /* --- صفحة ٣: الختام والتواصل --- */
-      + '<div class="xp-page xp-end">'
+      + 'لا تحتوي على أسعار — التسعير يُحدَّد بعد مراجعة المحل للتصميم.</p>';
+    el.appendChild(cover);
+
+    /* --- صفحة ٢: ورقة التصميم المشتركة (أفقي 277×190مم) ---
+       نفس ورقة العميل والموظف حرفياً: جدول الأثاث + سعة الجلوس +
+       دليل الألوان + خطوط القياس ومقياس الرسم. */
+    var sheetMeta = [{ label: 'الرقم المرجعي', value: noTxt }];
+    if (cust.name) sheetMeta.push({ label: 'اسم العميل', value: cust.name });
+    if (phoneRow) sheetMeta.push({ label: 'رقم الجوال', value: cust.phone });
+    el.appendChild(DesignSheet.build({
+      design: st,
+      getItem: getCatItem,
+      pieceStyle: expPieceStyle,
+      meta: sheetMeta
+    }));
+
+    /* --- صفحة ٣: الختام والتواصل + ملحق الإكسسوارات والكميات --- */
+    var end = document.createElement('div');
+    end.className = 'xp-page xp-end';
+    end.innerHTML = ''
       + logo
       + '<h2>شكرًا لثقتك</h2>'
       + '<p>هذا التصميم وثيقة مرجعية يمكن عرضها على المحل. راجعه مع <b>' + esc(s.shopName || 'أصالة نجد') + '</b>'
@@ -1356,10 +1357,13 @@ async function buildExpandedDoc(number) {
       + (chans.length ? '<p class="xp-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</p>' : '')
       + (chans.length ? '<div class="xp-chans">' + chanHtml + '</div>' : '')
       + (chans.length ? '' : '<p class="xp-empty">لم تُضف قنوات تواصل في إعدادات المحل بعد.</p>')
-      + '<div class="xp-endfoot">' + esc(s.shopName || 'أصالة نجد')
+      + '<h3 class="xp-sub">جدول الإكسسوارات والكميات</h3>'
+      + '<table class="xp-items"><thead><tr><th>العنصر</th><th class="num">الكمية</th></tr></thead><tbody>' + itemRows + '</tbody></table>'
       // الرقم داخل span بـ direction:ltr وإلا قلبه RTL فظهر «966…+» في آخر السطر
-      + (s.phone && /^\+?[\d\s-]{7,16}$/.test(s.phone) ? ' — <span dir="ltr">' + esc(s.phone.trim()) + '</span>' : '') + '</div>'
+      + '<div class="xp-endfoot">' + esc(s.shopName || 'أصالة نجد')
+      + (s.phone && /^\+?[\d\s-]{7,16}$/.test(s.phone) ? ' — <span dir="ltr">' + esc(s.phone.trim()) + '</span>' : '')
       + '</div>';
+    el.appendChild(end);
     return el;
   }
 
@@ -1374,16 +1378,24 @@ async function buildExpandedDoc(number) {
     area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
     try {
       await document.fonts.ready;
-      var pages = $$('.xp-page', doc);
+      var pages = Array.prototype.slice.call(doc.children);
       var jsPDF = window.jspdf.jsPDF;
       var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       for (var i = 0; i < pages.length; i++) {
-        var canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        var page = pages[i];
+        // ورقة التصميم المشتركة أفقي 277×190مم، وباقي الصفحات عمودي 190×276مم
+        var isSheet = page.classList && page.classList.contains('dsheet');
+        var canvas = await window.html2canvas(page, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
         var jpg = canvas.toDataURL('image/jpeg', 0.94);
-        if (i > 0) pdf.addPage();
-        pdf.addImage(jpg, 'JPEG', 10, 10, 190, 276, undefined, 'FAST');
-        // روابط قابلة للنقر: حوّل مواضع data-url إلى مم
-        addLinks(pdf, pages[i], canvas, 10, 10, 190, 276);
+        if (i > 0) { if (isSheet) pdf.addPage('a4', 'landscape'); else pdf.addPage('a4', 'portrait'); }
+        if (isSheet) {
+          pdf.addImage(jpg, 'JPEG', 10, 10, DesignSheet.SHEET_W, DesignSheet.SHEET_H, undefined, 'FAST');
+          // روابط قابلة للنقر: حوّل مواضع data-url إلى مم
+          addLinks(pdf, page, canvas, 10, 10, DesignSheet.SHEET_W, DesignSheet.SHEET_H);
+        } else {
+          pdf.addImage(jpg, 'JPEG', 10, 10, 190, 276, undefined, 'FAST');
+          addLinks(pdf, page, canvas, 10, 10, 190, 276);
+        }
       }
       return pdf.output('blob');
     } finally {
