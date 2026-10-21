@@ -172,12 +172,16 @@ async function route(request, env, url) {
 
 /* ------------------------------ بيانات تحديث التطبيق ------------------------------
    المصدر الرسمي الوحيد لملف APK هو إصدارات GitHub لهذا المستودع (HTTPS).
-   الأولوية لمتغيرات البيئة (تُضبط من لوحة Cloudflare دون إعادة نشر):
+   الأولوية لمتغيّرات البيئة (تُضبط من لوحة Cloudflare):
      APP_UPDATE_VERSION  اسم الإصدار (مثال 1.0.13)
-     APP_UPDATE_CODE     رقم البناء (مثال 10013)
-     APP_UPDATE_URL      رابط APK (يجب أن يكون ضمن مسار الإصدارات الرسمي)
-     APP_UPDATE_SHA256   بصمة SHA-256 للملف (64 خانة hex)
-   وإلا تُستخدم قيم افتراضية مضمّنة تشير إلى أحدث إصدار معلوم.
+     APP_UPDATE_CODE     رقم البناء (مثال 10013) — يُقبل فقط إن وافق معادلة الإصدار
+     APP_UPDATE_URL      رابط APK — يجب أن ينتهي بـ asalh-najd-<الإصدار>.apk ضمن مسار الإصدارات
+     APP_UPDATE_SHA256   بصمة SHA-256 لنفس الإصدار (64 خانة hex)؛ غيابها = null
+   وإلا تُستخدم القيم الافتراضية المضمّنة (UPDATE_FALLBACK_*) — تُحدَّث في إجراء
+   نشر الإصدار بعد بناء APK والتحقق منه وحساب بصمته الفعلية (لا بصمة قبلها).
+   اتساق صارم: بيانات جزئية أو متضاربة لا تُقدَّم كاستجابة سليمة —
+   بصمة إصدار آخر لا تُستخدم مع إصدار آخر (null ترفض التنزيل)، ورابط لا يطابق
+   الإصدار = apkUrl فارغ (التطبيق يعرض خطأ لا تنزيلًا خاطئاً).
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
@@ -199,22 +203,41 @@ function versionCodeOfName(v) {
   return 1;
 }
 
+function shaOk(s) { return /^[0-9a-f]{64}$/.test(String(s || '').trim().toLowerCase()); }
+
 function appUpdateMeta(env) {
   const e = env || {};
-  const versionName = String(e.APP_UPDATE_VERSION || UPDATE_FALLBACK_VERSION).trim() || UPDATE_FALLBACK_VERSION;
+  const envVer = String(e.APP_UPDATE_VERSION || '').trim();
+  const usingEnv = !!envVer && /^\d+\.\d+\.\d+([-+][0-9A-Za-z.\-]+)?$/.test(envVer);
+  const versionName = usingEnv ? envVer : UPDATE_FALLBACK_VERSION;
+  // رقم البناء يُشتق من اسم الإصدار بمعادلة الإصدار نفسها؛
+  // APP_UPDATE_CODE يُقبل فقط إن وافق المعادلة (بيانات متضاربة = تُهمَل)
+  const derivedCode = versionCodeOfName(versionName);
   let versionCode = Number(e.APP_UPDATE_CODE);
-  if (!Number.isInteger(versionCode) || versionCode < 1) versionCode = versionCodeOfName(versionName);
-  let apkUrl = String(e.APP_UPDATE_URL || '').trim() ||
-    (UPDATE_APK_ALLOW + 'v' + versionName + '/asalh-najd-' + versionName + '.apk');
-  if (!apkUrl.startsWith(UPDATE_APK_ALLOW)) apkUrl = '';
-  const sha = String(e.APP_UPDATE_SHA256 || UPDATE_FALLBACK_SHA256).trim().toLowerCase();
+  if (!Number.isInteger(versionCode) || versionCode < 1 || versionCode !== derivedCode) {
+    versionCode = derivedCode;
+  }
+  // الرابط: من البيئة إن كان متسقاً مع الإصدار، وإلا يُبنى من الإصدار؛
+  // أي خيار لا ينتهي بـ asalh-najd-<الإصدار>.apk أو خارج المسار الرسمي = فارغ
+  const envUrl = String(e.APP_UPDATE_URL || '').trim();
+  const wantedUrl = envUrl || (UPDATE_APK_ALLOW + 'v' + versionName + '/asalh-najd-' + versionName + '.apk');
+  let apkUrl = '';
+  if (wantedUrl.startsWith(UPDATE_APK_ALLOW) && wantedUrl.endsWith('/asalh-najd-' + versionName + '.apk')) {
+    apkUrl = wantedUrl;
+  }
+  // البصمة: من نفس الإصدار حصراً — إصدار البيئة بلا بصمة = null (لا تُستعمل
+  // بصمة الافتراضي مع إصدار آخر)، وملاحظات الإصدار تُعرض فقط عند تطابقها
+  let sha = null;
+  const rawSha = usingEnv ? e.APP_UPDATE_SHA256 : UPDATE_FALLBACK_SHA256;
+  if (shaOk(rawSha)) sha = String(rawSha).trim().toLowerCase();
+  const notes = (!usingEnv || envVer === UPDATE_FALLBACK_VERSION) ? UPDATE_FALLBACK_NOTES.slice() : [];
   return {
     versionName,
     versionCode,
     apkUrl,
-    sha256: /^[0-9a-f]{64}$/.test(sha) ? sha : null,
+    sha256: sha,
     mandatory: false,
-    releaseNotes: UPDATE_FALLBACK_NOTES.slice(),
+    releaseNotes: notes,
   };
 }
 

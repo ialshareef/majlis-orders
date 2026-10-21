@@ -61,7 +61,7 @@
     el.querySelector('button').addEventListener('click', onMore);
   }
   const ROLES = { admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' };
-  const APP_VERSION = '1.0.63';
+  const APP_VERSION = '0.0.0-dev';
   const icon = (id) => `<svg><use href="#i-${id}"/></svg>`;
   const currency = () => Store.db.settings.currency || 'ر.س';
   const isMobile = () => window.matchMedia('(max-width: 960px)').matches;
@@ -248,6 +248,7 @@
     // وبلا أي تأثير على الدخول أو الطلب الحالي (التفاصيل في js/update.js)
     setTimeout(() => {
       try {
+        if (APP_VERSION.endsWith('-dev')) return;
         if (window.AppUpdate && typeof window.AppUpdate.initAutoCheck === 'function') {
           const p = window.AppUpdate.initAutoCheck({
             current: { versionName: APP_VERSION, versionCode: window.AppUpdate.versionCodeOf(APP_VERSION) },

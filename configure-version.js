@@ -1,5 +1,6 @@
 // =============================================================================
 //  configure-version.js — يضبط versionCode و versionName في android/app/build.gradle
+//  ويحقن نفس الإصدار في js/app.js (APP_VERSION) ليكون وسم Git المصدر الوحيد.
 //  يُشغَّل بعد `npx cap add android`، ويقرأ الإصدار من متغير البيئة APP_VERSION
 // =============================================================================
 const fs = require('fs');
@@ -23,3 +24,17 @@ g = g.replace(/versionName\s+"[^"]*"/, `versionName "${versionName}"`);
 
 fs.writeFileSync(p, g);
 console.log(`version set: ${versionName} (code ${versionCode})`);
+
+// حقن نفس الإصدار في التطبيق (عن التطبيق + مقارنة التحديث) — بلا تعديل يدوي
+if (raw) {
+  const appPath = 'js/app.js';
+  let a = fs.readFileSync(appPath, 'utf8');
+  if (!/const APP_VERSION = '[^']*';/.test(a)) {
+    throw new Error('APP_VERSION pattern not found in js/app.js — build stopped to avoid a wrong version.');
+  }
+  a = a.replace(/const APP_VERSION = '[^']*';/, `const APP_VERSION = '${raw}';`);
+  fs.writeFileSync(appPath, a);
+  console.log(`js/app.js APP_VERSION set: ${raw}`);
+} else {
+  console.log('APP_VERSION env missing — js/app.js left untouched (dev default).');
+}

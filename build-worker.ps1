@@ -65,6 +65,22 @@ foreach ($f in $files) {
   } else {
     $content = [IO.File]::ReadAllText($full, [Text.Encoding]::UTF8)
   }
+  # Inject the git tag version into app.js when available (tag = single source)
+  if ($f.path -eq 'js\app.js') {
+    $tagVer = ''
+    try {
+      $prevEAP = $ErrorActionPreference; $ErrorActionPreference = 'Continue'
+      $tagVer = (& git -C $root describe --tags --abbrev=0 2>$null | Select-Object -First 1)
+      $ErrorActionPreference = $prevEAP
+    } catch { $tagVer = '' }
+    $tagVer = ('' + $tagVer).Trim() -replace '^v', ''
+    if ($tagVer -match '^\d+\.\d+\.\d+$') {
+      $content = [regex]::Replace($content, "const APP_VERSION = '[^']*';", "const APP_VERSION = '" + $tagVer + "';")
+      Write-Host ("  ! APP_VERSION from git tag: " + $tagVer)
+    } else {
+      Write-Host ("  ! git tag version unavailable - js/app.js dev default kept") -ForegroundColor Yellow
+    }
+  }
   $ct = if ($f.ct) { $f.ct } else { $types[$ext] }
   $entries.Add((ConvertTo-JsString $f.url) + ':{ct:' + (ConvertTo-JsString $ct) + ',b64:' + ($(if ($binary) { '1' } else { '0' })) + ',body:' + (ConvertTo-JsString $content) + '}')
   Write-Host ("  + {0,-18} {1,8:N0} bytes" -f $f.url, $content.Length)

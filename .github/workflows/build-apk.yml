@@ -51,16 +51,24 @@ jobs:
       - name: Add Android platform
         run: npx cap add android
 
+      - name: Configure version (versionCode/versionName + app.js APP_VERSION)
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
+        run: node configure-version.js
+
+      - name: Verify app version source
+        env:
+          APP_VERSION: ${{ steps.ver.outputs.version }}
+        run: node test/app-version-test.mjs
+
+      - name: Prepare web assets (with release version)
+        run: node prepare-web.js
+
       - name: Sync web assets
         run: npx cap sync android
 
       - name: Generate app icons & splash
         run: npx @capacitor/assets generate --android
-
-      - name: Configure version (versionCode/versionName)
-        env:
-          APP_VERSION: ${{ steps.ver.outputs.version }}
-        run: node configure-version.js
 
       - name: Configure release signing
         env:
