@@ -2413,6 +2413,9 @@ body.modal-open { overflow: hidden; }
 .inv-chan-qr { width: 15mm; height: 15mm; image-rendering: pixelated; }
 .inv-chan-url { font-size: 6.4pt; color: #6A5F54; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
 .inv-foot { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 4mm; padding-top: 2mm; border-top: 1px dashed #D5C8B4; font-size: 9pt; color: #6A5F54; }
+/* عند تصوير الفاتورة بلا صور (class تُضيفها js/app.js للتصدير فقط):
+   تبقى توقيعات الأسفل في مكانها والفراغ ينضبط للفوق، والطباعة لا تتأثر */
+.inv.no-design .inv-foot { margin-top: auto; }
 .inv-sign { width: 48mm; text-align: center; }
 .inv-sign i { display: block; height: 9mm; }
 .inv-sign span { display: block; border-top: 1px solid #3A322C; padding-top: 1mm; color: #3A322C; font-weight: 600; }
@@ -2442,6 +2445,13 @@ body.modal-open { overflow: hidden; }
   font-family: var(--font, 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif);
   font-size: 10pt; color: #1F1B18; direction: rtl; background: #fff;
   --ds-accent: #7A5230; --ds-line: #E4DACB; --ds-soft: #F6F1E9;
+  /* ألوان البستيل: كل قسم بخلفية فاتحة ورؤوسه أغمق قليلاً منها */
+  --ds-tbl-bg: #EFF7EF; --ds-tbl-head: #D6E9D5; --ds-tbl-row: #F6FBF6; --ds-tbl-line: #DCE9DA;
+  --ds-h-tbl-bg: #DBEDDA;
+  --ds-leg-bg: #EEF4FB; --ds-h-leg-bg: #DCE9F7;
+  --ds-plan-bg: #FBF6EA;
+  --ds-areas-bg: #F1EFF8; --ds-h-areas-bg: #E3DEF3;
+  --ds-foot-bg: #EDF2F7; --ds-foot-head: #DBE5EF;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .dsheet * { box-sizing: border-box; letter-spacing: normal; word-spacing: normal; }
@@ -2473,28 +2483,40 @@ body.modal-open { overflow: hidden; }
   border-bottom: 1px solid var(--ds-line); padding-bottom: 1.2mm;
 }
 .ds-h + .ds-h, .ds-cap + .ds-h { margin-top: 4mm; }
-.ds-tbl { width: 100%; border-collapse: collapse; font-size: 9pt; }
-.ds-tbl th {
-  background: #F1EADF; color: #4A3A2C; font-weight: 700; text-align: start;
-  padding: 1.2mm 2mm; border-bottom: 1px solid #DFD2BF;
+/* رؤوس الأقسام: شريط أغمق قليلاً من خلفية قسمه (الجدول/الدليل) */
+.ds-h-tbl, .ds-h-leg {
+  border-bottom: 0; padding: 1.1mm 2.6mm 1.2mm;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
-.ds-tbl td { padding: 1.05mm 2mm; border-bottom: 1px solid #EFE9DF; }
-.ds-tbl tr:nth-child(even) td { background: #FBF9F5; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.ds-h-tbl { background: var(--ds-h-tbl-bg); color: #33452F; margin-bottom: 0; border-radius: 1.4mm 1.4mm 0 0; }
+.ds-h-leg { background: var(--ds-h-leg-bg); color: #2F4257; margin-bottom: 0; border-radius: 1.4mm 1.4mm 0 0; }
+.ds-tbl { width: 100%; border-collapse: collapse; font-size: 9pt; background: var(--ds-tbl-bg); }
+.ds-tbl th {
+  background: var(--ds-tbl-head); color: #35482F; font-weight: 700; text-align: start;
+  padding: 1.2mm 2mm; border-bottom: 1px solid var(--ds-tbl-line);
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.ds-tbl td { padding: .95mm 2mm; border-bottom: 1px solid var(--ds-tbl-line); }
+.ds-tbl tr:nth-child(even) td { background: var(--ds-tbl-row); -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .ds-tbl th.c-qty, .ds-tbl td.c-qty { width: 13mm; text-align: center; }
 .ds-tbl td.c-name { font-weight: 600; color: #2A2622; }
 .ds-tbl td.c-dims { color: #4A413A; white-space: nowrap; }
 .ds-empty { color: #8A7E70; text-align: center; }
 
 .ds-cap {
-  margin: 3.2mm 0 0; display: flex; align-items: center; justify-content: center; gap: 3mm;
-  background: var(--ds-soft); border-radius: 1.6mm; padding: 2.6mm 4mm;
+  margin: 2.6mm 0 0; display: flex; align-items: center; justify-content: center; gap: 3mm;
+  background: var(--ds-tbl-bg); border-radius: 1.6mm; padding: 2.4mm 4mm;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .ds-cap b { font-size: 23pt; font-weight: 800; color: #2A2622; line-height: 1; }
 .ds-cap span { font-size: 9.5pt; color: #5A5147; }
 
-.ds-legend { list-style: none; margin: 0 0 auto; padding: 0; display: grid; gap: 1.5mm; }
+.ds-legend {
+  list-style: none; margin: 0 0 auto; padding: 1.2mm 2.4mm;
+  display: grid; gap: 1.5mm;
+  background: var(--ds-leg-bg); border-radius: 0 0 1.4mm 1.4mm;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
 .ds-legend li { display: flex; align-items: center; gap: 2.2mm; font-size: 8.5pt; }
 .ds-legend .sw { flex: none; width: 8.5mm; height: 6mm; border-radius: 1.2mm; border: 1px solid rgba(0, 0, 0, .16); }
 .ds-legend .sw.circle { width: 6mm; height: 6mm; border-radius: 50%; }
@@ -2503,11 +2525,39 @@ body.modal-open { overflow: hidden; }
 .ds-legend .sb { color: #8A7E70; font-size: 8pt; margin-inline-start: auto; padding-inline-start: 2mm; }
 
 .ds-note {
-  margin: 3mm 0 0; font-size: 7.8pt; line-height: 1.65; color: #7A6F63;
-  border-top: 1px solid var(--ds-line); padding-top: 1.8mm;
+  margin: 2.2mm 0 0; font-size: 7.8pt; line-height: 1.6; color: #7A6F63;
+  border-top: 1px solid var(--ds-line); padding-top: 1.6mm;
 }
 
-.ds-plan { flex: 1 1 auto; min-width: 0; min-height: 0; display: flex; }
+/* ملخص المساحات: صندوق بنفسجي-رمادي فاتح بشريط عنوان أغمق وشبكة عمودين
+   (النسبة المشغولة سطر أخير ممتد بخط أكبر) — ارتفاع مضغوط حتى لا يزيح
+   العمود الجانبي عن محتواه في أكثر الحالات ازدحاماً. */
+.ds-areas-wrap {
+  background: var(--ds-areas-bg); border-radius: 1.4mm; overflow: hidden;
+  padding: 0 2.4mm 1.3mm;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.ds-areas-h {
+  margin: 0 -2.4mm .8mm; padding: .7mm 2.4mm;
+  background: var(--ds-h-areas-bg); color: #403A55;
+  display: flex; justify-content: space-between; align-items: baseline; gap: 3mm;
+  font-size: 6.6pt; font-weight: 600; line-height: 1.35;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
+.ds-areas-h b { font-size: 8.4pt; font-weight: 800; }
+.ds-areas { margin: 0; display: grid; grid-template-columns: 1fr 1fr; column-gap: 4mm; row-gap: .35mm; }
+.ds-areas-i { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; min-width: 0; }
+.ds-areas-i.hl { grid-column: 1 / -1; }
+.ds-areas-i dt { margin: 0; font-size: 7.5pt; color: #4A4458; white-space: nowrap; }
+.ds-areas-i dd { margin: 0; font-size: 8.2pt; font-weight: 700; color: #2A2633; }
+.ds-areas-i.hl dt { font-weight: 700; color: #3A3450; }
+.ds-areas-i.hl dd { font-size: 12pt; font-weight: 800; color: #4B3F70; }
+
+.ds-plan {
+  flex: 1 1 auto; min-width: 0; min-height: 0; display: flex;
+  background: var(--ds-plan-bg); border-radius: 1.6mm;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
 .ds-img {
   position: relative; display: block; margin: auto; line-height: 0;
   width: 100%; height: 100%; max-width: 100%; max-height: 100%;
@@ -2544,14 +2594,20 @@ body.modal-open { overflow: hidden; }
    سطراً (أيقونة + الاسم + QR 10مم) بدل العمود الطويل من الفاتورة. */
 .ds-foot {
   flex: none; min-height: 16mm; height: auto; box-sizing: border-box; margin-top: 2mm;
-  padding-top: 1.6mm; border-top: 1px dashed #D5C8B4; display: flex; align-items: center; gap: 4mm;
+  padding-top: 1.6mm; border-top: 1px solid #D9E2EA; display: flex; align-items: center; gap: 4mm;
+  background: var(--ds-foot-bg); border-radius: 0 0 1.6mm 1.6mm;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .ds-foot .inv-contact {
   flex: 1 1 auto; min-width: 0; padding: 0; background: none; border: 0; border-radius: 0;
   display: grid; grid-template-columns: 32mm minmax(0, 1fr); column-gap: 3mm;
   grid-template-areas: 'head chans' 'hint chans'; align-items: center; font-size: 8pt;
 }
-.ds-foot .inv-contact > b { grid-area: head; margin: 0; color: #1F1B18; white-space: nowrap; }
+.ds-foot .inv-contact > b {
+  grid-area: head; margin: 0; color: #2A3A4A; white-space: nowrap; justify-self: start;
+  background: var(--ds-foot-head); padding: .6mm 2mm; border-radius: 1mm;
+  -webkit-print-color-adjust: exact; print-color-adjust: exact;
+}
 .ds-foot .inv-chans-hint {
   grid-area: hint; margin: 0; padding: 0; text-align: start;
   font-size: 6.6pt; font-weight: 600; color: #8A7E70; line-height: 1.4;
@@ -2565,7 +2621,7 @@ body.modal-open { overflow: hidden; }
 .ds-foot .inv-chan-ic svg { width: 3.2mm; height: 3.2mm; }
 .ds-foot .inv-chan-lb {
   min-width: 0; font-size: 6.6pt;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; overflow: visible; text-overflow: clip;
 }
 .ds-foot .inv-chan-qr { flex: none; width: 10mm; height: 10mm; }
 .ds-foot .inv-chan-url { display: none; }

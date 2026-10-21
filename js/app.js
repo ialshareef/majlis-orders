@@ -3008,6 +3008,41 @@ function canEditOrder(o) {
     return shopSocialHtml(list);
   }
 
+  /* شريط التواصل في ورقة التصميم: نفس بنية صفحة العميل حرفياً
+     (portal.js designContactHtml) — بطاقات div تحمل data-url + ملاحظة
+     «احتفظ برقم التصميم» — حتى تتطابقت أبعاد الشريط ومواضع روابط QR
+     في ورقتَي العميل والموظف في كل PDF، مع ترتيب قنوات العميل نفسه. */
+  async function sheetFootHtml() {
+    const list = shopSocialList(settings());
+    if (!list.length) return '';
+    const ORDER = { wa: 0, instagram: 1, tiktok: 2, snapchat: 3, mapsUrl: 4, tel: 5 };
+    list.sort((a, b) => (ORDER[a.key] ?? 9) - (ORDER[b.key] ?? 9));
+    try { await loadScript(QR_URL); } catch (_) { /* بلا مكتبة: بطاقات بلا باركود */ }
+    let cards = '';
+    for (const a of list) {
+      let img = '';
+      if (window.qrcode) {
+        try {
+          const qr = window.qrcode(0, 'M');
+          qr.addData(a.url);
+          qr.make();
+          img = qr.createDataURL(4, 2);
+        } catch (_) { img = ''; }
+      }
+      cards += `<div class="inv-chan" data-url="${esc(a.url)}">`
+        + `<span class="inv-chan-ic ${a.cls}">${a.icon}</span>`
+        + `<span class="inv-chan-lb">${esc(a.label)}</span>`
+        + (img ? `<img class="inv-chan-qr" src="${img}" alt="">` : '')
+        + `<span class="inv-chan-url">${esc(a.text || a.url.replace(/^https?:\/\//i, ''))}</span></div>`;
+    }
+    const s = settings();
+    return `<div class="inv-contact"><b>تواصل معنا</b>`
+      + `<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</div>`
+      + `<div class="inv-chans">${cards}</div></div>`
+      + `<div class="ds-foot-note"><b>${esc(s.shopName || 'أصالة نجد')}</b>`
+      + `احتفظ برقم التصميم لمراجعته مع المحل</div>`;
+  }
+
 /** عنوان المستند حسب حالة الطلب والضريبة.
     «فاتورة ضريبية مبسطة» مستند ضريبي نظامي برمز QR الضريبي — لا نغيّر مسمّاه.
     أما مستند الطلب نفسه فاسمه «أمر شراء». */
@@ -3318,8 +3353,12 @@ function docTitle(order) {
     return n;
   }
 
-  /** تحويل مستند الصفحة الواحدة إلى ملف PDF حقيقي (صورة عالية الدقة تحفظ العربية كما تُعرض) */
-  async function makePdfBlob() {
+  /** تحويل مستند الصفحة الواحدة إلى ملف PDF حقيقي (صورة عالية الدقة تحفظ العربية كما تُعرض).
+      إن كان للطلب مخطط تصميم تُلحق ورقة التصميم المشتركة كصفحة أفقية ثانية —
+      نفس صفحة العميل تماماً (المقياس والجدول والألوان وملخص المساحات وشريط
+      التواصل)، بينما تُخفى صورة المخطط من التصوير فقط ليبقى أمر الشراء
+      صفحة واحدة، والطباعة تُطبع الفاتورة كاملة كما كانت. */
+  async function makePdfBlob(order) {
     await loadScript(H2C_URL);
     await loadScript(JSPDF_URL);
     const area = $('#printArea');
@@ -3327,8 +3366,25 @@ function docTitle(order) {
     if (!inv) throw new Error('تعذّر تجهيز المستند');
     // إظهار مؤقت خارج الشاشة حتى يتمكّن html2canvas من قياسها
     area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
+    const hidden = [];
+    const showHidden = () => {
+      for (const [el, css] of hidden) el.style.cssText = css;
+      hidden.length = 0;
+      inv.classList.remove('no-design');
+    };
     try {
+      // إخفاء التصميم من التصوير: المرفقات وحدها (إن وُجدت) تبقى في الفاتورة
+      const visuals = $('.inv-visuals', inv);
+      const designBox = visuals ? $('.inv-design', inv) : null;
+      const target = (visuals && !$('.inv-atts', inv)) ? visuals : designBox;
+      if (target) {
+        hidden.push([target, target.style.cssText]);
+        target.style.display = 'none';
+        inv.classList.add('no-design');
+      }
+      const needSheet = hidden.length > 0;
       const canvas = await window.html2canvas(inv, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      showHidden();   // الفاتورة تعود كاملة قبل بناء الصفحة الثانية (وتبقى جاهزة للطباعة)
       const img = canvas.toDataURL('image/jpeg', 0.94);
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
@@ -3337,8 +3393,27 @@ function docTitle(order) {
       pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
       // روابط حقيقية فوق الصورة (قنوات التواصل): النقر يفتح الوجهة الصحيحة
       addPdfLinksToDoc(pdf, inv, 10, 10, 190, h);
+      if (needSheet && order && order.design && window.DesignSheet) {
+        try {
+          await DesignSheet.addPage(pdf, {
+            design: order.design,
+            getItem,
+            pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined),
+            meta: [
+              { label: 'رقم الطلب', value: order.number ? '#' + order.number : 'مسودة' },
+              { label: 'العميل', value: (order.customer && order.customer.name) || '—' },
+              { label: 'الجوال', value: (order.customer && order.customer.phone) || '—' },
+              { label: 'الحالة', value: STATUS[order.status] || '—' },
+            ],
+            footHtml: await sheetFootHtml(),
+            mount: area,
+            addLinks: (p2, el, x0, y0, wMm) => addPdfLinksToDoc(p2, el, x0, y0, wMm, DesignSheet.SHEET_H),
+          });
+        } catch (_) { /* فشل ورقة التصميم لا يُبطل الفاتورة */ }
+      }
       return pdf.output('blob');
     } finally {
+      showHidden();
       area.style.cssText = '';
     }
   }
@@ -3509,7 +3584,7 @@ function docTitle(order) {
           const overflow = await renderPrintArea(html);
           if (my !== run) return;
           btnPrint.disabled = false;
-          const blob = await makePdfBlob();
+          const blob = await makePdfBlob(order);
           if (my !== run) return;
           const kb = Math.round(blob.size / 1024);
           const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
@@ -4854,7 +4929,9 @@ function docTitle(order) {
       getItem,
       pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined),
       meta,
+      footHtml: await sheetFootHtml(),
       mount: $('#printArea'),
+      addLinks: (pdf, el, x0, y0, wMm) => addPdfLinksToDoc(pdf, el, x0, y0, wMm, DesignSheet.SHEET_H),
     });
   }
 
@@ -6802,7 +6879,7 @@ function docTitle(order) {
   showStage('design');
 
   /* ---------------- التشغيل ---------------- */
-  window.MajlisApp = { designer, get order() { return cur; }, computeLines, syncFromServer, humanError };
+  window.MajlisApp = { designer, get order() { return cur; }, computeLines, syncFromServer, humanError, sheetFootHtml };
   window.addEventListener('resize', () => { syncMobileSheet(); positionInspector(); });
   renderItemSelects();
   fillOrderForm();

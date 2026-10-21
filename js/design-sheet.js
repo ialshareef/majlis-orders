@@ -48,6 +48,7 @@
 
   function num(v) { var n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
   function r2(v) { return Math.round(num(v) * 100) / 100; }
+  function n2(v) { return num(v).toFixed(2); }
   function cm(m) { return Math.round(num(m) * 100); }
   function esc(s) {
     return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) {
@@ -125,11 +126,20 @@
     var groups = {}, order = [], i, p, key, g;
     var capacity = 0, meters = 0, free = 0, columns = 0;
     var doors = 0, windows = 0, mashabs = 0;
+    var sofaLen = 0, sofaArea = 0;
 
     for (i = 0; i < pieces.length; i++) {
       p = pieces[i];
       if (!p) continue;
-      if (p.kind === 'sofa') { capacity += seatsOf(p); meters += num(p.w); }
+      if (p.kind === 'sofa') {
+        capacity += seatsOf(p);
+        meters += num(p.w);
+        /* ملخص المساحات: الكنب فقط وبأبعاد كاملة (لا افتراض لقياس ناقص) */
+        if (num(p.w) > 0 && num(p.h) > 0) {
+          sofaLen += num(p.w);
+          sofaArea += num(p.w) * num(p.h);
+        }
+      }
       else if (p.kind === 'free') { free++; continue; }
       else if (p.kind === 'column') { columns++; continue; }
       var lbl = ctx.label(p);
@@ -191,6 +201,20 @@
     if (columns) pushLegend('عمود', columns + ' قطعة', '#9aa0a6', '', columns);
 
     var room = roomOf(d);
+    /* ملخص المساحات: يُعرض فقط عند اكتمال المعطيات — مساحة الغرفة من
+       المضلع نفسه، ومساقط الكنب من عرض×عمق القطع الفعلية (بلا تخمين).
+       النِسَب تُحسب من القيم الخام ثم تُقرَّب في العرض: (إجمالي / 20 =
+       44.7%) و(20 − إجمالي = 11.06) كما في المواصفة المعتمدة. */
+    var areas = null;
+    if (room.area > 0 && sofaLen > 0.004) {
+      areas = {
+        len: r2(sofaLen),
+        area: r2(sofaArea),
+        room: r2(room.area),
+        frac: sofaArea / room.area,
+        rest: r2(room.area - sofaArea)
+      };
+    }
     return {
       rows: order.map(function (x) {
         return { kind: x.kind, name: x.name, dims: x.dims, qty: x.qty, color: x.color, seats: x.seats };
@@ -203,6 +227,7 @@
       windows: windows,
       mashabs: mashabs,
       room: room,
+      areas: areas,
       legend: legend,
       note: opts.note || DEFAULT_NOTE
     };
@@ -336,6 +361,30 @@
       ? '<div class="ds-cap"><b class="num">' + f.capacity + '</b><span>مقعداً – سعة الجلوس</span></div>'
       : '';
 
+    /* صندوق ملخص المساحات (يظهر فقط عند اكتمال ف.areas في facts) —
+       بالقيم نفسها وبلا معلومات مالية، والحاشية توضّح أن المساقط قد تتداخل.
+       التخطيط مضغوط (شريط عنوان + شبكة عمودين) ليبقى ارتفاع العمود
+       الجانبي مطابقاً لارتفاعه قبل الإضافة حتى في أكثر الحالات ازدحاماً. */
+    var areas = '';
+    if (f.areas) {
+      var ar = f.areas;
+      var aitems = [
+        ['طول الجلوس', n2(ar.len) + ' م', ''],
+        ['مساحة الارتكاز', n2(ar.area) + ' م²', ''],
+        ['مساحة الغرفة', n2(ar.room) + ' م²', ''],
+        ['المساحة المتبقية', n2(ar.rest) + ' م²', ''],
+        ['النسبة المشغولة', pct(ar.frac), ' hl']
+      ];
+      areas = '<div class="ds-areas-wrap">'
+        + '<p class="ds-areas-h"><b>ملخص المساحات</b><span>مجموع مساقط القطع وقد تتداخل</span></p>'
+        + '<dl class="ds-areas">'
+        + aitems.map(function (a) {
+            return '<div class="ds-areas-i' + a[2] + '"><dt>' + a[0] + '</dt>'
+              + '<dd class="num">' + a[1] + '</dd></div>';
+          }).join('')
+        + '</dl></div>';
+    }
+
     var box = planBoxStyle(pl, opts);
     var img = pl && pl.img
       ? '<span class="ds-img" style="' + box + '">'
@@ -354,13 +403,14 @@
       + '</div>'
       + '<div class="ds-body">'
       + '<aside class="ds-side">'
-      + '<h2 class="ds-h">جداول الأثاث</h2>'
+      + '<h2 class="ds-h ds-h-tbl">جداول الأثاث</h2>'
       + '<table class="ds-tbl"><thead><tr><th>القطعة</th><th>المقاس (سم)</th><th class="c-qty">العدد</th></tr></thead>'
       + '<tbody>' + rows + '</tbody></table>'
       + cap
-      + '<h2 class="ds-h">دليل الألوان والمواد</h2>'
+      + '<h2 class="ds-h ds-h-leg">دليل الألوان والمواد</h2>'
       + '<ul class="ds-legend">' + legend + '</ul>'
       + '<p class="ds-note">' + esc(f.note) + '</p>'
+      + areas
       + '</aside>'
       + '<div class="ds-plan">' + img + '</div>'
       + '</div>'
@@ -407,8 +457,9 @@
     return el;
   }
 
-  /** PDF أفقي 277×190مم — المكتبة نفسها (html2canvas + jsPDF) كما كانت */
-  function pdfBlob(opts) {
+  /* رفع الورقة إلى موضع خارج الشاشة وتصويرها — internals مشتركة بين
+     pdfBlob (ملف مستقل) وaddPage (صفحة ثانية داخل أمر قائمة) */
+  function shoot(opts) {
     opts = opts || {};
     var el = build(opts);
     var area = opts.mount;
@@ -426,16 +477,40 @@
         return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
       })
       .then(function (canvas) {
-        var jpg = canvas.toDataURL('image/jpeg', 0.94);
-        var jsPDF = window.jspdf.jsPDF;
-        var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-        pdf.addImage(jpg, 'JPEG', 10, 10, SHEET_W, SHEET_H, undefined, 'FAST');
-        if (typeof opts.addLinks === 'function') {
-          try { opts.addLinks(pdf, el, 10, 10, SHEET_W); } catch (_) { /* noop */ }
-        }
-        return pdf.output('blob');
-      })
-      .then(function (b) { restore(); return b; }, function (e) { restore(); throw e; });
+        restore();
+        return { canvas: canvas, el: el };
+      }, function (e) { restore(); throw e; });
+  }
+
+  /** تطبيق لقطة الورقة كصفحة A4 أفقي 277×190مم داخل PDF قائمة */
+  function stamp(pdf, shot, opts) {
+    var jpg = shot.canvas.toDataURL('image/jpeg', 0.94);
+    pdf.addImage(jpg, 'JPEG', 10, 10, SHEET_W, SHEET_H, undefined, 'FAST');
+    if (typeof (opts && opts.addLinks) === 'function') {
+      try { opts.addLinks(pdf, shot.el, 10, 10, SHEET_W); } catch (_) { /* noop */ }
+    }
+    return pdf;
+  }
+
+  /** PDF أفقي 277×190مم — المكتبة نفسها (html2canvas + jsPDF) كما كانت */
+  function pdfBlob(opts) {
+    return shoot(opts).then(function (shot) {
+      var jsPDF = window.jspdf.jsPDF;
+      var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+      stamp(pdf, shot, opts);
+      return pdf.output('blob');
+    });
+  }
+
+  /** إضافة ورقة التصميم كصفحة أفقية ثانية إلى أمر شراء/تصنيع قائمة
+      (نفس صفحة العميل تماماً: المقياس والجدول والألوان وملخص المساحات) */
+  function addPage(pdf, opts) {
+    if (!pdf) return Promise.reject(new Error('لا يوجد موضع لعرض الورقة.'));
+    return shoot(opts).then(function (shot) {
+      pdf.addPage('a4', 'landscape');
+      stamp(pdf, shot, opts);
+      return pdf;
+    });
   }
 
   var api = {
@@ -453,6 +528,7 @@
     render: render,
     build: build,
     pdfBlob: pdfBlob,
+    addPage: addPage,
     fmtDate: fmtDate,
     pickScaleMeters: pickScaleMeters
   };
