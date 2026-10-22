@@ -30,23 +30,47 @@ const shootSlice = ds.slice(ds.indexOf('function shoot('), ds.indexOf('function 
 const pdfBlobSlice = ds.slice(ds.indexOf('function pdfBlob('), ds.indexOf('function addPage('));
 const addPageSlice = ds.slice(ds.indexOf('function addPage('), ds.indexOf('var api ='));
 const afterH2c = shootSlice.slice(shootSlice.indexOf('html2canvas('));
-t('shoot: ترجع release مع الورقة', /return \{\s*canvas: canvas,\s*el: el,\s*release: release\s*\}/.test(shootSlice));
+/* الورقة قد صارت أكثر من صفحة: shoot يبنيها كلها داخل الموضع ويصوّرها واحداً
+   واحداً، وكل لقطة تُختم ثم يتحرّر الموضع بعد آخر ختم (روابط حيّة لكل صفحة). */
+t('shoot: ترجع اللقطات مع release', /return \{\s*shots: shots,\s*release: release\s*\}/.test(shootSlice));
+t('shoot: تبني كل الصفحات داخل الموضع الموصول (قياس حقيقي)', /buildPages\(opts, area\)/.test(shootSlice));
 t('shoot: بعد html2canvas لا استدعاء restore() مباشر', !afterH2c.includes('restore()'), afterH2c.match(/restore\(\)/) ? 'restore() بعد html2canvas' : '');
 t('shoot: فشل الالتقاط يحرّر بـ release()', /function \(e\) \{ release\(\); throw e; \}/.test(shootSlice));
-t('pdfBlob: stamp قبل release', pdfBlobSlice.indexOf('stamp(pdf, shot, opts)') > -1
-  && pdfBlobSlice.indexOf('shot.release()') > pdfBlobSlice.indexOf('stamp(pdf, shot, opts)'));
-t('pdfBlob: تحرير مضمون في finally', /finally \{\s*shot\.release\(\);?\s*\}/.test(pdfBlobSlice));
-t('addPage: stamp قبل release', addPageSlice.indexOf('stamp(pdf, shot, opts)') > -1
-  && addPageSlice.indexOf('shot.release()') > addPageSlice.indexOf('stamp(pdf, shot, opts)'));
-t('addPage: تحرير مضمون في finally', /finally \{\s*shot\.release\(\);?\s*\}/.test(addPageSlice));
+t('pdfBlob: ختم كل اللقطات قبل release', pdfBlobSlice.indexOf('stamp(pdf, s.shots[i], opts)') > -1
+  && pdfBlobSlice.indexOf('s.release()') > pdfBlobSlice.indexOf('stamp(pdf, s.shots[i], opts)'));
+t('pdfBlob: تحرير مضمون في finally', /finally \{\s*s\.release\(\);?\s*\}/.test(pdfBlobSlice));
+t('pdfBlob: الصفحة الأولى أصلية والباقي بـ addPage أفقي',
+  /if \(i > 0\) pdf\.addPage\('a4', 'landscape'\)/.test(pdfBlobSlice));
+t('addPage: ختم كل اللقطات قبل release', addPageSlice.indexOf('stamp(pdf, s.shots[i], opts)') > -1
+  && addPageSlice.indexOf('s.release()') > addPageSlice.indexOf('stamp(pdf, s.shots[i], opts)'));
+t('addPage: تحرير مضمون في finally', /finally \{\s*s\.release\(\);?\s*\}/.test(addPageSlice));
+t('addPage: كل لقطة تفتح صفحة أفقية', /pdf\.addPage\('a4', 'landscape'\)/.test(addPageSlice));
 const stampSlice = ds.slice(ds.indexOf('function stamp('), ds.indexOf('function pdfBlob('));
 t('stamp: تستدعي addLinks بالورقة الحية', /opts\.addLinks\(pdf, shot\.el, 10, 10, SHEET_W\)/.test(stampSlice));
 t('release: idempotent ويجري مرة واحدة', /var released = false;\s*function release\(\) \{ if \(released\) return; released = true; restore\(\); \}/.test(shootSlice));
 t('shoot: release معرّف قبل الإعداد المتصلاً', shootSlice.indexOf('function release()') > -1
   && shootSlice.indexOf('function release()') < shootSlice.indexOf("area.innerHTML = ''"));
-t('shoot: فشل الإعداد المزامني يُعيد رفضاً بعد release()',
-  /catch \(e\) \{[\s\S]{0,200}?try \{ release\(\); \} catch \(_\) \{[\s\S]{0,80}?\}[\s\S]{0,80}?return Promise\.reject\(e\);/.test(shootSlice)
-  && shootSlice.indexOf('return Promise.reject(e)') < shootSlice.indexOf('return Promise.resolve()'));
+  t('shoot: فشل الإعداد المزامني يُعيد رفضاً بعد release()',
+    /catch \(e\) \{[\s\S]{0,200}?try \{ release\(\); \} catch \(_\) \{[\s\S]{0,80}?\}[\s\S]{0,80}?return Promise\.reject\(e\);/.test(shootSlice)
+    && shootSlice.indexOf('return Promise.reject(e)') < shootSlice.indexOf('return Promise.resolve()'));
+
+/* ============ 1ب) أمر الشراء: قياس صفحة الفاتورة قبل الاستعادة ============ */
+console.log('== 1ب) makePdfBlob: قياس الصفحة الأولى على تخطيط الصورة ==');
+const orderSlice = app.slice(app.indexOf('async function makePdfBlob('), app.indexOf('function browserDownload('));
+const shotSlice2 = orderSlice.slice(orderSlice.indexOf('window.html2canvas('), orderSlice.indexOf('if (needSheet'));
+const idxMeasure = shotSlice2.indexOf('addPdfLinksToDoc(pdf, inv');
+const idxRestore = shotSlice2.indexOf('showHidden()');
+t('makePdfBlob موجود', orderSlice.length > 400, 'len=' + orderSlice.length);
+t('makePdfBlob: قياس روابط الفاتورة قبل استعادة التصميم',
+  idxMeasure > -1 && idxRestore > idxMeasure,
+  idxMeasure < 0 ? 'لا استدعاء addPdfLinksToDoc' : 'showHidden عند ' + idxRestore + ' والقياس عند ' + idxMeasure);
+t('makePdfBlob: الاستعادة تقع قبل DesignSheet.addPage (لا فصل قبل القياس)',
+  orderSlice.indexOf('showHidden()') > -1
+  && orderSlice.indexOf('showHidden()') < orderSlice.indexOf('DesignSheet.addPage('));
+t('makePdfBlob: showHidden() مضمون في finally', /finally \{\s*showHidden\(\);/.test(orderSlice));
+t('makePdfBlob: قياس الصفحة الأولى على عنصر الفاتورة نفسه inv',
+  /addPdfLinksToDoc\(pdf, inv, 10, 10, 190, h\)/.test(orderSlice));
+
 
 /* ============ 2) توصيل المسارات ومصادر الروابط ============ */
 console.log('== 2) مساري التصدير ومصادر الروابط ==');
@@ -108,12 +132,12 @@ t('مكتبة jsPDF متاحة لفحص PDF الناتج', !!jsPDF, 'npm i --no-
    (غير مفعّل حيًّا: snapchat = فارغ) بنموذج الرابط المعتمد في واجهة
    الإعدادات placeholder «https://snapchat.com/…» لتغطية فرع القناة السادسة. */
 const URLS = [
-  'https://wa.me/966533724290',
+  'https://wa.me/966549955622',
   'https://www.instagram.com/asalanajd_vip',
   'https://www.tiktok.com/@asalahnajed',
   'https://snapchat.com/add/asalhnajd',
   'https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8?g_st=ac',
-  'tel:+966533724290',
+  'tel:+966549955622',
 ];
 const MM = 72 / 25.4;
 const PAGE_W = 841.89, PAGE_H = 595.28;          // A4 أفقي بالنقاط
@@ -168,6 +192,14 @@ function parseLinks(text) {
   return out;
 }
 const near = (a, b, eps = 0.08) => Math.abs(a - b) <= eps;
+function pageSegments(text) {
+  const idx = [];
+  const re = /\/Type \/Page(?!s)/g;
+  let m;
+  while ((m = re.exec(text))) idx.push(m.index);
+  if (!idx.length) return [text];
+  return idx.map((v, i) => text.slice(v, i + 1 < idx.length ? idx[i + 1] : text.length));
+}
 
 if (jsPDF) {
   console.log('== 3) PDF حقيقي: الدوال المستخرجة + jsPDF ==');
@@ -255,6 +287,40 @@ if (jsPDF) {
     const annotBlocks = (txt.match(/\/Annots \[[\s\S]*?\]/g) || []);
     const urisInFirst = annotBlocks.length > 1 ? (annotBlocks[0].match(/\/URI \(/g) || []).length : 0;
     t('الصفحة الأولى بلا روابط (الروابط في ورقة التصميم)', urisInFirst === 0, 'blocks=' + annotBlocks.length);
+  }
+
+  // (ج2) التدفق الحقيقي لأمر الشراء: روابط الفاتورة أولاً على الصفحة 1، ثم الصفحة 2
+  {
+    const fx = attachedFixture();
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    const n1 = addDoc(pdf, fx.el, 10, 10, 190, 276);
+    pdf.addPage('a4', 'landscape');
+    const n2 = addDoc(pdf, fx.el, 10, 10, 277, 190);
+    const txt = pdfText(pdf.output('arraybuffer'));
+    const segs = pageSegments(txt);
+    t('أمر الشراء: صفحتان عند التدفق الحقيقي', segs.length === 2, 'segs=' + segs.length);
+    const l1 = parseLinks(segs[0] || ''), l2 = parseLinks(segs[1] || '');
+    t('الفاتورة: 6 روابط على الصفحة الأولى', n1 === 6 && l1.length === 6, 'n1=' + n1 + ' l1=' + l1.length);
+    t('ورقة التصميم: 6 روابط على الصفحة الثانية', n2 === 6 && l2.length === 6, 'n2=' + n2 + ' l2=' + l2.length);
+    // إحداثيات y تُحسب بارتفاع صفحتها: 297مم عمودي مقابل 210مم أفقي
+    let ok1 = true, ok2 = true;
+    for (const l of l1) {
+      const yTop = 297 - l.rect.ury / MM, yBot = 297 - l.rect.lly / MM;
+      if (l.rect.llx / MM < 9.5 || l.rect.urx / MM > 200.5 || yTop < 9.5 || yBot > 286.5) ok1 = false;
+    }
+    for (const l of l2) {
+      const yTop = 210 - l.rect.ury / MM, yBot = 210 - l.rect.lly / MM;
+      if (l.rect.llx / MM < 9.5 || l.rect.urx / MM > 287.5 || yTop < 9.5 || yBot > 200.5) ok2 = false;
+    }
+    t('الفاتورة: إحداثياتها داخل صندوق 190×276 بصفحة عمودية 297مم', ok1);
+    t('ورقة التصميم: إحداثياتها داخل صندوق 277×190 بصفحة أفقية 210مم', ok2);
+    // عرض البطاقة يثبت مقياس كل صفحة: 171px × (190/1108) للفاتورة و× (277/1108) للورقة
+    const w1 = l1.map((l) => (l.rect.urx - l.rect.llx) / MM);
+    const w2 = l2.map((l) => (l.rect.urx - l.rect.llx) / MM);
+    t('الفاتورة بمقياس 190مم وورقة التصميم بمقياس 277مم (لا خلط بالمقياس)',
+      w1.every((w) => near(w, 171 * 190 / 1108, 0.3))
+      && w2.every((w) => near(w, 171 * 277 / 1108, 0.3)),
+      'w1=' + w1[0].toFixed(2) + ' w2=' + w2[0].toFixed(2));
   }
 
   // (د) آلة الحالة الفاشلة: عنصر مفصول (أصفار) = صفر روابط — سبب الانكسار السابق

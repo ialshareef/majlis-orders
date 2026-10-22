@@ -64,8 +64,8 @@
       lead: 'اكتب عرض الغرفة وطولها بالمتر، وسيتغيّر الرسم أمامك مباشرة.',
       hint: 'حدد عرض وطول الغرفة فقط — نتكفّل بالباقي.', next: 'التالي → العناصر المعمارية' },
     { id: 'openings', label: 'العناصر المعمارية', title: 'العناصر المعمارية',
-      lead: 'اختر الجدار أولاً ثم أضف الباب أو المشب عليه.',
-      hint: 'أضف بابًا أو مشبًا على الجدار الذي تريد.', next: 'التالي → المجلس' },
+      lead: 'اختر الجدار أولاً ثم أضف الباب أو الشباك أو المشب أو التلفاز عليه.',
+      hint: 'أضف بابًا أو شباكًا أو مشبًا أو تلفازًا على الجدار الذي تريد.', next: 'التالي → المجلس' },
     { id: 'majlis', label: 'المجلس', title: 'المجلس',
       lead: 'اختر نوع الجلسة المناسب لغرفتك، وسيُطبَّق على كل كنبة.',
       hint: 'اختر نوع المجلس — يُستخدم مع كل كنبة جديدة.', next: 'التالي → الأثاث والإكسسوارات' },
@@ -369,20 +369,45 @@ function portalAddAcc(itemId) {
           if (document.activeElement !== nEl) nEl.value = String(N);
           rowsEl.innerHTML = paint();
         }
-        // إدخال مباشر 1–99: الفارغ وغير الرقمي يُرفض ويُعاد العدد الحالي
+        /* إدخال مباشر 1–99: الفارغ والصفر والسالب وغير الرقمي يُرفض ويُعاد
+           العدد الحالي — نفس القواعد القديمة. تُرجع 'ok' عند اعتماد رقم،
+           'empty' عند حقل فارغ (لا تغيير)، 'bad' عند قيمة غير صالحة.
+           lastRaw: لا يُعالَج النص نفسه مرتين فيتكرر التنبيه مع زر/Enter. */
+        var applied = false, lastRaw = null, lastSt = 'ok';
         function commitInput() {
           var raw = String(nEl.value == null ? '' : nEl.value).trim();
+          if (raw === lastRaw) return lastSt;
+          if (raw === '') {
+            nEl.value = String(N); lastRaw = String(N); lastSt = 'empty';
+            return lastSt;
+          }
           var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : NaN;
           if (!Number.isFinite(v) || v < 1 || v > 99) {
             nEl.value = String(N);
-            if (raw !== '') toast('أدخل عددًا صحيحًا من 1 إلى 99.', true);
-            return;
+            lastRaw = String(N); lastSt = 'bad';
+            toast('أدخل عددًا صحيحًا من 1 إلى 99.', true);
+            return lastSt;
           }
           N = v;
           redraw();
+          lastRaw = raw; lastSt = 'ok';
+          return lastSt;
         }
-        nEl.addEventListener('change', commitInput);
-        nEl.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); nEl.blur(); } });
+        /* التطبيق بمسار واحد: Enter وزر «تطبيق الكمية» يستدعيان الدالة نفسها،
+           وبعد ضبط applied لا تعمل اثنتين (لا Enter ولا change بعد الإغلاق). */
+        function confirmQty() {
+          if (applied) return;
+          var st = commitInput();
+          if (st === 'bad') { nEl.focus(); return; }
+          applied = true;
+          apply();
+          closePModal();
+          toast('تم ضبط الكمية: ' + N);
+        }
+        nEl.addEventListener('change', function () { if (!applied) commitInput(); });
+        nEl.addEventListener('keydown', function (e) {
+          if (e.key === 'Enter') { e.preventDefault(); confirmQty(); }
+        });
         nEl.addEventListener('focus', function () { try { nEl.select(); } catch (_) { /* noop */ } });
         function apply() {
           // اضبط العدد: زد أو أنقص قطع هذا الإكسسوار حتى يصبح N
@@ -401,7 +426,7 @@ function portalAddAcc(itemId) {
           renderPanel();
         }
         $('#accqCancel', b).onclick = closePModal;
-        b.querySelector('#accqOk').onclick = function () { apply(); closePModal(); toast('تم ضبط الكمية: ' + N); };
+        b.querySelector('#accqOk').onclick = confirmQty;
         // حذف صف معيّن من القائمة (حذف من التصميم عند التطبيق)
         rowsEl.addEventListener('click', function (e) {
           var btn = e.target.closest('[data-accq-rm]');
@@ -750,30 +775,35 @@ function portalAddAcc(itemId) {
     } else if (S.step === 'openings') {
       var walls = (dz.state && dz.state.walls) || [];
       var ops = (dz.state && dz.state.openings) || [];
-      /* المرحلة ٢: الجدار ثم الباب والمشب فقط. لا «عامود» ولا «شباك»
-         كخيار مستقل — والعمود القديم يبقى قابلًا للحذف من خصائصه على الرسم. */
+      /* المرحلة ٢: الجدار ثم العناصر المعمارية الأربعة (باب/شباك/مشب/تلفاز).
+         لا «عامود» كخيار مستقل — والعمود القديم يبقى قابلًا للحذف من خصائصه
+         على الرسم. الشباك لا يمنع الأثاث أمامه، والتلفاز يمنعه. */
       box.innerHTML = ''
         + '<div class="p-optgrid">'
-        + '<div class="p-opt"><label for="pfOWall">الجدار — أين تريد الباب والمشب؟</label>'
+        + '<div class="p-opt"><label for="pfOWall">الجدار — أين تريد الباب أو الشباك أو المشب أو التلفاز؟</label>'
         + '<select id="pfOWall">' + walls.map(function (w, i) {
             return '<option value="' + i + '"' + (i === targetWall() ? ' selected' : '') + '>جدار ' + (i + 1) + '</option>';
           }).join('') + '</select></div></div>'
         + '<div class="p-optgrid two">'
         + '<div class="p-opt"><button type="button" class="btn" data-add="door"><svg><use href="#p-door"/></svg><span>باب</span></button>'
         + '<small>باب على الجدار المختار</small></div>'
+        + '<div class="p-opt"><button type="button" class="btn" data-add="window"><svg><use href="#p-window"/></svg><span>شباك</span></button>'
+        + '<small>شباك على الجدار المختار — يجوز الأثاث أمامه</small></div>'
         + '<div class="p-opt"><button type="button" class="btn" data-add="mashab"><svg><use href="#p-fire"/></svg><span>مشب</span></button>'
         + '<small>مشب على الجدار المختار</small></div>'
+        + '<div class="p-opt"><button type="button" class="btn" data-add="tv"><svg><use href="#p-tv"/></svg><span>تلفاز</span></button>'
+        + '<small>تلفاز على الجدار المختار — لا يوضع الكنب أمامه</small></div>'
         + '</div>'
         + '<div id="pfOps">'
         + (ops.length ? ops.map(function (o) {
-          var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
+          var onm = { door: 'باب', window: 'شباك', mashab: 'مشب', tv: 'التلفاز' }[o.type] || 'عنصر';
           return '<div class="p-wallrow"><span>' + onm + ' — جدار ' + (o.wall + 1) + '</span>'
             + '<span class="p-opw"><button type="button" class="btn" data-opwminus="' + esc(o.id) + '" aria-label="تضييق">−</button>'
             + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-opw="' + esc(o.id) + '" value="' + o.w + '" aria-label="عرض ' + onm + '">'
             + '<button type="button" class="btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع">+</button></span>'
             + '<button type="button" class="icon-btn del-danger" data-opdel="' + esc(o.id) + '" aria-label="حذف"><svg><use href="#p-trash"/></svg></button></div>';
         }).join('') : '')
-        + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو مشبًا بعد.</p>' : '')
+        + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو شباكًا أو مشبًا أو تلفازًا بعد.</p>' : '')
         + '</div>';
       $$('button[data-add]', box).forEach(function (b) {
         b.addEventListener('click', function () { addOpeningOf(b.dataset.add); renderPanel(); });
@@ -992,7 +1022,21 @@ function portalAddAcc(itemId) {
       }
     };
     var qi = $('#psQty', sh);
-    if (qi) qi.addEventListener('change', function () { qtyApply(qi.value); });
+    if (qi) {
+      /* Enter يطبّق الكمية مباشرة، ومانع qiLast يمنع التطبيق المزدوج
+         عند اندفاع change الناتج عن نفس ضغطة Enter. */
+      var qiLast = null;
+      var qiRun = function () {
+        if (String(qi.value) === qiLast) return;
+        qiLast = String(qi.value);
+        qtyApply(qi.value);
+      };
+      qi.addEventListener('input', function () { qiLast = null; });
+      qi.addEventListener('change', qiRun);
+      qi.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); qiRun(); }
+      });
+    }
     var act = function (sel, fn) { var el = $(sel, sh); if (el) el.onclick = function () { fn(); renderSheet(dz.selectionInfo()); }; };
     act('[data-del]', function () { dz.removeSelected(); renderSheet(null); });
     act('[data-rot]', function () { dz.rotateSelected(90); });
@@ -1027,8 +1071,11 @@ function portalAddAcc(itemId) {
   function designFacts(design) {
     var d = design || { walls: [], openings: [], pieces: [] };
     var walls = (d.walls || []).map(function (w) { return w.len + 'م'; }).join(' × ');
-    var doors = 0, mashabs = 0, cols = 0;
-    (d.openings || []).forEach(function (o) { if (o.type === 'door') doors++; else if (o.type === 'mashab') mashabs++; });
+    var doors = 0, mashabs = 0, wins = 0, tvs = 0, cols = 0;
+    (d.openings || []).forEach(function (o) {
+      if (o.type === 'door') doors++; else if (o.type === 'mashab') mashabs++;
+      else if (o.type === 'window') wins++; else if (o.type === 'tv') tvs++;
+    });
     (d.pieces || []).forEach(function (p) { if (p.kind === 'column') cols++; });
     var meters = 0, accs = {}, free = 0, seats = {};
     (d.pieces || []).forEach(function (p) {
@@ -1041,7 +1088,9 @@ function portalAddAcc(itemId) {
     return [
       ['مقاسات الغرفة', walls || '—'],
       ['الأبواب', doors ? doors + '' : '—'],
+      ['الشباك', wins ? wins + '' : '—'],
       ['المشب', mashabs ? mashabs + '' : '—'],
+      ['التلفاز', tvs ? tvs + '' : '—'],
       ['الأعمدة', cols ? cols + '' : '—'],
       ['أنواع المجلس', seatTxt || '—'],
       ['أمتار الكنب', meters ? (Math.round(meters * 100) / 100) + ' م' : '—'],
@@ -1150,7 +1199,7 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
     var seen = {};
     v.issues.forEach(function (i) {
       if (i.type === 'opening') {
-        var nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+        var nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : i.openingType === 'tv' ? 'التلفاز' : 'الباب';
         if (!seen['o' + nm]) { msgs.push('كنبة تسدّ ' + nm + ' — انقلها بعيداً عنه.'); seen['o' + nm] = 1; }
       } else if (i.type === 'overlap') {
         if (!seen.ov) { msgs.push('تداخل بين قطعتين في التصميم — أعد توزيعهما.'); seen.ov = 1; }
@@ -1158,7 +1207,7 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
     });
     var warns = [];
     dz.designWarnings().forEach(function (w) {
-      var nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : 'الباب';
+      var nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : w.openingType === 'tv' ? 'التلفاز' : 'الباب';
       if (!seen['w' + nm]) { warns.push('كنبة ملاصقة لمنطقة ' + nm + ' — مقبول لكن الأفضل إبعادها قليلاً.'); seen['w' + nm] = 1; }
     });
     return { err: msgs.join(' '), warn: warns.join(' ') };
@@ -1250,7 +1299,7 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
     if (/^5\d{8}$/.test(d)) return '966' + d;
     return d;
   }
-  /** العرض البشري المطلوب: +966 53 372 4290. */
+  /** العرض البشري المطلوب: +966 54 995 5622. */
   function formatSaudiIntl(d) {
     var m = /^(966)(5\d)(\d{3})(\d{4})$/.exec(d || '');
     return m ? '+' + m[1] + ' ' + m[2] + ' ' + m[3] + ' ' + m[4] : (d ? '+' + d : '');

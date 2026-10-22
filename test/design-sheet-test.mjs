@@ -106,7 +106,7 @@ console.log('== 5) الربط ==');
   const expanded = read('js/portal-expanded.js');
   t('portal.js: DesignSheet.build + pdfBlob', /DesignSheet\.build\(/.test(portal) && /DesignSheet\.pdfBlob\(/.test(portal));
   t('app.js: makeDesignSheetBlob تستخدم DesignSheet.pdfBlob', /DesignSheet\.pdfBlob\(/.test(app));
-  t('portal-expanded.js: وصفحة الغلاف والختام تبقيان عموديتين', /DesignSheet\.build\(/.test(expanded) && /addPage\('a4', 'landscape'\)/.test(expanded));
+  t('portal-expanded.js: وصفحة الغلاف والختام تبقيان عموديتين', /DesignSheet\.buildPages\(/.test(expanded) && /addPage\('a4', 'landscape'\)/.test(expanded));
   for (const f of ['index.html', 'portal.html', 'portal-expanded.html']) {
     t(f + ' يحمّل design-sheet.js', /js\/design-sheet\.js/.test(read(f)));
   }
@@ -137,7 +137,7 @@ console.log('== 6) ملخص المساحات ==');
   };
   const pl = { img: 'data:image/png;base64,x', W: 1200, H: 800, scale: 10, room: null };
   const fa = DS.facts(ex54, { getItem });
-  t('طول الجلوس = 11.17 م (2.17+2.6+3.2×2)', fa.areas && fa.areas.len === 11.17, JSON.stringify(fa.areas));
+  t('طول الجلسة = 11.17 م (2.17+2.6+3.2×2)', fa.areas && fa.areas.len === 11.17, JSON.stringify(fa.areas));
   t('مساحة الارتكاز = 8.94 م² (0.8×11.17 ثم ر2)', fa.areas && fa.areas.area === 8.94, JSON.stringify(fa.areas));
   t('مساحة الغرفة = 20 م² (5×4)', fa.areas && fa.areas.room === 20);
   t('المساحة المتبقية = 11.06 م² من القيم الخام', fa.areas && fa.areas.rest === 11.06, JSON.stringify(fa.areas && fa.areas.rest));
@@ -147,7 +147,8 @@ console.log('== 6) ملخص المساحات ==');
   t('HTML بقيم المواصفة كاملة', /11\.17 م</.test(html) && /8\.94 م²/.test(html) && /20\.00 م²/.test(html)
     && /44\.7%/.test(html) && /11\.06 م²/.test(html), (html.match(/ds-areas[\s\S]{0,600}/) || [''])[0].slice(0, 300));
   t('الحاشية المطلوبة بالضبط', /مجموع مساقط القطع وقد تتداخل/.test(html));
-  t('طول الجلوس بالمتر لا بالمتر المربع', /<dt>طول الجلوس<\/dt><dd class="num">11\.17 م<\/dd>/.test(html));
+  t('طول الجلسة بالمتر لا بالمتر المربع', /<dt>طول الجلسة<\/dt><dd class="num">11\.17 م<\/dd>/.test(html));
+  t('لا يبقى أثر لصيغة «الجلوس» في أي قالب', !/طول الجلوس/.test(read('js/design-sheet.js')));
   t('عنوان القسم وفئاته', /ملخص المساحات/.test(html) && /ds-areas-h/.test(html));
   t('بلا أي بيانات مالية في المساحات', !/ر\.س|السعر|الإجمالي|دفعة|price/i.test(html));
   /* الحصر: الكنب فقط وبأبعاد كاملة وبغرفة معلومة */

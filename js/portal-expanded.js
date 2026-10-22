@@ -696,25 +696,29 @@
       var ops = (dz.state && dz.state.openings) || [];
       box.innerHTML = ''
         + '<div class="px-optgrid"><div class="px-opt">'
-        + '<label for="pxOWall">الجدار — أين تريد الباب أو المشب؟</label>'
+        + '<label for="pxOWall">الجدار — أين تريد الباب أو الشباك أو المشب أو التلفاز؟</label>'
         + '<select id="pxOWall">' + walls.map(function (w, i) {
             return '<option value="' + i + '"' + (i === targetWall() ? ' selected' : '') + '>جدار ' + (i + 1) + '</option>';
           }).join('') + '</select></div></div>'
         + '<div class="px-optgrid two">'
         + '<div class="px-opt"><button type="button" class="btn" data-add="door"><svg><use href="#x-door"/></svg><span>باب</span></button>'
         + '<small>باب على الجدار المختار</small></div>'
+        + '<div class="px-opt"><button type="button" class="btn" data-add="window"><svg><use href="#x-window"/></svg><span>شباك</span></button>'
+        + '<small>شباك على الجدار المختار — يجوز الأثاث أمامه</small></div>'
         + '<div class="px-opt"><button type="button" class="btn" data-add="mashab"><svg><use href="#x-fire"/></svg><span>مشب</span></button>'
         + '<small>مشب على الجدار المختار</small></div>'
+        + '<div class="px-opt"><button type="button" class="btn" data-add="tv"><svg><use href="#x-tv"/></svg><span>تلفاز</span></button>'
+        + '<small>تلفاز على الجدار المختار — لا يوضع الكنب أمامه</small></div>'
         + '</div>'
-        + '<p class="hint">لتغيير موضع الباب أو المشب: اسحبه على الجدار — تظهر المسافات من طرفيه أثناء السحب. لإزالته: المسه ثم «حذف».</p>'
+        + '<p class="hint">لتغيير موضع الباب أو المشب أو التلفاز: اسحبه على الجدار — تظهر المسافات من طرفيه أثناء السحب. لإزالته: المسه ثم «حذف».</p>'
         + '<div id="pxOps">' + (ops.length ? ops.map(function (o) {
-            var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
+            var onm = { door: 'باب', window: 'شباك', mashab: 'مشب', tv: 'التلفاز' }[o.type] || 'عنصر';
             return '<div class="px-wallrow"><span>' + onm + ' — جدار ' + (o.wall + 1) + '</span>'
               + '<span class="px-opw"><button type="button" class="btn px-step-btn" data-opwplus="' + esc(o.id) + '" aria-label="توسيع ' + onm + '">+</button>'
               + '<input type="number" step="0.1" min="0.3" inputmode="decimal" data-opw="' + esc(o.id) + '" value="' + o.w + '" aria-label="عرض ' + onm + '">'
               + '<button type="button" class="btn px-step-btn" data-opwminus="' + esc(o.id) + '" aria-label="تضييق ' + onm + '">−</button></span>'
               + '<button type="button" class="icon-btn px-del" data-opdel="' + esc(o.id) + '" aria-label="حذف ' + onm + '" title="حذف ' + onm + '"><svg><use href="#x-trash"/></svg></button></div>';
-          }).join('') : '') + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو مشبًا بعد.</p>' : '') + '</div>';
+          }).join('') : '') + ((!ops.length) ? '<p class="hint">لم تضف بابًا أو شباكًا أو مشبًا أو تلفازًا بعد.</p>' : '') + '</div>';
       $$('button[data-add]', box).forEach(function (b) {
         b.addEventListener('click', function () { addOpeningOf(b.dataset.add); renderPanel(); });
       });
@@ -819,23 +823,32 @@
         + '<p class="hint">اضغط على العنصر لتكتب عدده. اكتب 0 لحذفه. الحد الأقصى ' + MAX_QTY + ' قطعة.</p>';
         + '<p class="hint">اكتب 0 في مربع العدد لحذف العنصر من التصميم. الحد الأقصى ' + MAX_QTY + ' قطعة.</p>';
 
-      /* الإدخال اليدوي: يُطبَّق عند blur أو Enter (لا استجابة لكل ضغطة مفتاح) */
+      /* التزام واحد مشترك (blur أو change أو Enter أو زر «تم») مع قفل qtyLock
+         يُرفع بحدث input — فلا يُنفَّذ التزامان على نفس القيمة. كان blur+change
+         أو Enter+«تم» يكرّران setAccQty والتنبيه. تُرجع:
+         'ok' | 'empty' | 'bad' | 'blocked'. */
+      function commitQty(inp) {
+        if (!inp || inp.dataset.qtyLock === '1') return 'blocked';
+        var id = inp.dataset.qtyin;
+        var raw = String(inp.value == null ? '' : inp.value).trim();
+        inp.dataset.qtyLock = '1';
+        if (raw === '') { inp.value = String(accCount(id)); return 'empty'; }
+        var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : null;
+        if (v == null) {                       // رفض السالب والحروف: نعيد العدد الحقيقي
+          inp.value = String(accCount(id));
+          toast('أدخل عددًا صحيحًا (0 أو أكثر).', true);
+          return 'bad';
+        }
+        if (v > MAX_QTY) { toast('الحد الأقصى ' + MAX_QTY + ' قطعة.', true); }
+        setAccQty(id, v);
+        syncTile(id);
+        return 'ok';
+      }
       $$('input[data-qtyin]', box).forEach(function (inp) {
         var panel = inp.closest('.px-qtybar');
         inp.addEventListener('click', function (e) { e.stopPropagation(); inp.select(); });
-        var commit = function () {
-          var id = inp.dataset.qtyin;
-          var raw = inp.value.trim();
-          var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : null;
-          if (v == null) {                       // رفض السالب والحروف: نعيد العدد الحقيقي
-            inp.value = String(accCount(id));
-            if (raw !== '') toast('أدخل عددًا صحيحًا (0 أو أكثر).', true);
-            return;
-          }
-          if (v > MAX_QTY) { toast('الحد الأقصى ' + MAX_QTY + ' قطعة.', true); }
-          setAccQty(id, v);
-          syncTile(id);
-        };
+        /* أي تعديل جديد من المستخدم يرفع القفل فيسمح بقيد/التزام جديد */
+        inp.addEventListener('input', function () { inp.dataset.qtyLock = '0'; });
         /* blur بسبب نقرة على زر داخل البطاقة لا يُعتبر تعديلًا:
            نترك القيمة كما كتبها المستخدم وبجانبها زر «تم».
            نكتفي بتحديث الرقم والشارة في مكانهما بلا إعادة بناء.
@@ -846,11 +859,16 @@
         inp.addEventListener('blur', function (e) {
           if (e.relatedTarget && panel.contains(e.relatedTarget)) return;
           var el = inp;
-          setTimeout(function () { if (!el.isConnected) return; commit(); }, 0);
+          setTimeout(function () { if (!el.isConnected) return; commitQty(el); }, 0);
         });
-        inp.addEventListener('change', commit);
+        inp.addEventListener('change', function () { commitQty(inp); });
+        /* Enter يطبق ويسكّر اللوحة تمامًا كزر «تم»، والقفل يمنع الالتزام المزدوج */
         inp.addEventListener('keydown', function (e) {
-          if (e.key === 'Enter') { e.preventDefault(); inp.blur(); }
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            commitQty(inp);
+            renderPanel();
+          }
         });
       });
       $$('button[data-spread]', box).forEach(function (b) {
@@ -905,13 +923,11 @@
       $$('button[data-qtyok]', box).forEach(function (b) {
         b.addEventListener('click', function (e) {
           e.stopPropagation();
-          var id = b.dataset.qtyok;
-          var inp = box.querySelector('input[data-qtyin="' + id + '"]');
-          var raw = inp ? inp.value.trim() : '';
-          var v = /^\d+$/.test(raw) ? parseInt(raw, 10) : null;
-          if (v == null) { if (inp) inp.value = String(accCount(id)); toast('أدخل عددًا صحيحًا (0 أو أكثر).', true); return; }
-          if (v > MAX_QTY) { v = MAX_QTY; toast('الحد الأقصى ' + MAX_QTY + ' قطعة.', true); }
-          setAccQty(id, v);
+          var inp = box.querySelector('input[data-qtyin="' + b.dataset.qtyok + '"]');
+          var st = commitQty(inp);
+          /* قيمة غير صالحة: رسالة وبقاء اللوحة مفتوحة — لا إغلاق قبل التطبيق */
+          if (st === 'bad') return;
+          if (st === 'empty') toast('أدخل عددًا صحيحًا (0 أو أكثر).', true);
           renderPanel();
         });
       });
@@ -948,7 +964,7 @@
     var html = '';
     if (info.type === 'opening') {
       var o = info.opening;
-      var onm = { door: 'باب', window: 'شباك', mashab: 'مشب' }[o.type] || 'عنصر';
+      var onm = { door: 'باب', window: 'شباك', mashab: 'مشب', tv: 'التلفاز' }[o.type] || 'عنصر';
       html += '<div class="px-sheet-head"><b>' + onm + ' — جدار ' + (o.wall + 1) + '</b></div>'
         + '<div class="px-qtybar">'
         + '<button type="button" class="qbtn" data-owminus aria-label="تضييق"><svg><use href="#x-minus"/></svg></button>'
@@ -1059,9 +1075,10 @@
     st = st || (S.designer && S.designer.getState()) || { walls: [], openings: [], pieces: [] };
     var walls = (st.walls || []).map(function (w) { return Number(w.len); });
     var w1 = walls[0] != null ? walls[0] : 0, h1 = walls[1] != null ? walls[1] : 0;
-    var doors = 0, mashabs = 0, windows = 0, cols = 0;
+    var doors = 0, mashabs = 0, windows = 0, tvs = 0, cols = 0;
     (st.openings || []).forEach(function (o) {
-      if (o.type === 'door') doors++; else if (o.type === 'mashab') mashabs++; else if (o.type === 'window') windows++;
+      if (o.type === 'door') doors++; else if (o.type === 'mashab') mashabs++;
+      else if (o.type === 'window') windows++; else if (o.type === 'tv') tvs++;
     });
     var seats = {}, meters = 0, accs = {}, free = 0;
     (st.pieces || []).forEach(function (p) {
@@ -1074,7 +1091,7 @@
     var accRows = Object.keys(accs).map(function (k) { return { name: k, qty: accs[k] }; });
     var area = (w1 > 0 && h1 > 0) ? Math.round(w1 * h1 * 100) / 100 : null;
     return {
-      w: w1, h: h1, area: area, doors: doors, mashabs: mashabs, windows: windows, cols: cols,
+      w: w1, h: h1, area: area, doors: doors, mashabs: mashabs, windows: windows, tvs: tvs, cols: cols,
       free: free, meters: Math.round(meters * 100) / 100, seatTxt: seatTxt || 'جلسة أرضية',
       accRows: accRows, total: accRows.reduce(function (s, r) { return s + r.qty; }, 0)
     };
@@ -1104,7 +1121,7 @@
       + (sum.area != null ? '<div class="srow"><span>المساحة</span><b class="num">' + sum.area + ' م²</b></div>' : '')
       + '<div class="srow"><span>نوع الجلسة</span><b>' + esc(sum.seatTxt) + '</b></div>'
       + '<div class="srow"><span>أمتار الكنب</span><b class="num">' + sum.meters + ' م</b></div>'
-      + '<div class="srow"><span>الأبواب / المشب</span><b class="num">' + sum.doors + ' / ' + sum.mashabs + '</b></div>'
+      + '<div class="srow"><span>أبواب / شبابيك / مشب / تلفاز</span><b class="num">' + sum.doors + ' / ' + sum.windows + ' / ' + sum.mashabs + ' / ' + sum.tvs + '</b></div>'
       + '<div class="srow"><span>إجمالي الإكسسوارات</span><b class="num">' + sum.total + ' قطعة</b></div>'
       + '</div>'
       + '<table class="px-qtable"><thead><tr><th>الإكسسوار</th><th class="num">الكمية</th></tr></thead><tbody>' + rows + '</tbody></table>'
@@ -1169,7 +1186,7 @@
     var seen = {};
     v.issues.forEach(function (i) {
       if (i.type === 'opening') {
-        var nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+        var nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : i.openingType === 'tv' ? 'التلفاز' : 'الباب';
         if (!seen['o' + nm]) { msgs.push('كنبة تسدّ ' + nm + ' — انقلها بعيداً عنه.'); seen['o' + nm] = 1; }
       } else if (i.type === 'overlap') {
         if (!seen.ov) { msgs.push('تداخل بين قطعتين في التصميم — أعد توزيعهما.'); seen.ov = 1; }
@@ -1177,7 +1194,7 @@
     });
     var warns = [];
     dz.designWarnings().forEach(function (w) {
-      var nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : 'الباب';
+      var nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : w.openingType === 'tv' ? 'التلفاز' : 'الباب';
       if (!seen['w' + nm]) { warns.push('كنبة ملاصقة لمنطقة ' + nm + ' — مقبول لكن الأفضل إبعادها قليلاً.'); seen['w' + nm] = 1; }
     });
     return { err: msgs.join(' '), warn: warns.join(' ') };
@@ -1339,12 +1356,14 @@ async function buildExpandedDoc(number) {
     var sheetMeta = [{ label: 'الرقم المرجعي', value: noTxt }];
     if (cust.name) sheetMeta.push({ label: 'اسم العميل', value: cust.name });
     if (phoneRow) sheetMeta.push({ label: 'رقم الجوال', value: cust.phone });
-    el.appendChild(DesignSheet.build({
+    /* ورقة التصميم قد تمتد على أكثر من صفحة — كل الصفحات تُلحق بالوثيقة
+       بالترتيب (حلقة التصدير تعالج كل ابن كصفحة أفقية) */
+    DesignSheet.buildPages({
       design: st,
       getItem: getCatItem,
       pieceStyle: expPieceStyle,
       meta: sheetMeta
-    }));
+    }).forEach(function (page) { el.appendChild(page); });
 
     /* --- صفحة ٣: الختام والتواصل + ملحق الإكسسوارات والكميات --- */
     var end = document.createElement('div');
@@ -1373,6 +1392,8 @@ async function buildExpandedDoc(number) {
     catch (_) { throw new Error('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.'); }
     var area = $('#pxPrint');
     area.innerHTML = '';
+    // قياس ورقة التصميم (تفاف شريط التواصل) يتوقّع الخطوط محمّلة أولاً
+    try { await document.fonts.ready; } catch (_) { /* noop */ }
     var doc = await buildExpandedDoc(number);
     area.appendChild(doc);
     area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';

@@ -193,7 +193,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return q('#pPanel button[data-add="mashab"]'); });
       var addBtns = {};
       qAll('#pPanel button[data-add]').forEach(function (b) { addBtns[b.dataset.add] = b; });
-      t('D-add-buttons', !!(addBtns.door && addBtns.mashab) && !addBtns.column && !q('#pPanel button[data-add="window"]'), 'door/mashab only');
+      t('D-add-buttons', !!(addBtns.door && addBtns.window && addBtns.mashab && addBtns.tv) && !addBtns.column, 'door/window/mashab/tv, no column');
       addBtns.mashab.click();
       await waitFor(function () { return (P.state().openings || []).some(function (o) { return o.type === 'mashab'; }); }, 60000);
       t('F-mashab', true);
@@ -536,7 +536,8 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
       // G: مراحل وأزرار كل مرحلة + زوم خارج الرسم
       step(1);
       await waitFor(function () { return q('#pPanel button[data-add="door"]'); }, 60000);
-      t('G-openings', !!q('#pPanel button[data-add="door"]') && !!q('#pPanel button[data-add="mashab"]'), 'door/mashab');
+      t('G-openings', !!q('#pPanel button[data-add="door"]') && !!q('#pPanel button[data-add="window"]')
+        && !!q('#pPanel button[data-add="mashab"]') && !!q('#pPanel button[data-add="tv"]'), 'door/window/mashab/tv');
       step(2);
       await waitFor(function () { return q('#pfFillMajlis'); }, 60000);
       t('G-majlis', q('#pfFillMajlis').textContent.indexOf('فرش الكل') >= 0, 'fill-all in majlis');
@@ -688,8 +689,8 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
       q('#pActWa').click();
       await waitFor(function () { return openedUrls.length > 0 || q('#pToast').textContent.indexOf('PDF') >= 0; }, 120000);
       t('M-wa', openedUrls.some(function (u) { return u.indexOf('wa.me/966512345678') >= 0; }) || q('#pToast').textContent.length > 0, (openedUrls[0] || 'toast-fallback').slice(0, 60));
-      t('M-phone-format', P.saudiIntl('0533724290') === '966533724290'
-        && P.formatSaudiIntl('966533724290') === '+966 53 372 4290'
+      t('M-phone-format', P.saudiIntl('0549955622') === '966549955622'
+        && P.formatSaudiIntl('966549955622') === '+966 54 995 5622'
         && P.contactChannels().some(function (c) { return c.key === 'wa' && c.url === 'https://wa.me/966512345678' && c.text === '+966 51 234 5678'; })
         && P.contactChannels().some(function (c) { return c.key === 'tel' && c.url === 'tel:+966512345678' && c.text === '+966 51 234 5678'; }),
         JSON.stringify(P.contactChannels()));

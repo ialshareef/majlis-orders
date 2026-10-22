@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8">
+<title>design-sheet paginate harness</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>
+  body { margin: 0; background: #eee; }
+  #mount { position: fixed; left: -10000px; top: 0; background: #fff; }
+  #pdfMount { position: fixed; left: -10000px; top: 0; }
+  #note { font: 14px system-ui; padding: 8px; }
+</style>
+</head><body>
+<div id="note">design-sheet paginate harness</div>
+<div id="mount"></div>
+<div id="pdfMount"></div>
+<script src="../node_modules/html2canvas/dist/html2canvas.min.js"></script>
+<script src="../node_modules/jspdf/dist/jspdf.umd.min.js"></script>
+<script src="../js/designer.js"></script>
+<script src="../js/design-sheet.js"></script>
+<script>
+(function () {
+  /* ---- مولّد قطع: مقاسات متمايزة تصنع صفوفاً كثيرة بلا تكرار ---- */
+  function sofas(n, w0, step) {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      out.push({
+        kind: 'sofa', w: +(w0 + i * step).toFixed(2), h: 0.8, rot: 0,
+        x: 0.3, y: 0.3, seating: i % 3 === 0 ? 'sofa' : (i % 3 === 1 ? 'arabic' : 'floor'),
+        fabricId: null
+      });
+    }
+    return out;
+  }
+  function accs(n) {
+    var out = [];
+    for (var i = 0; i < n; i++) {
+      out.push({ kind: 'acc', itemId: 'a' + (i + 1), w: 0.4, h: 0.4, rot: 0, x: 0.1, y: 0.1 });
+    }
+    return out;
+  }
+  function getItem(id) {
+    if (!id) return null;
+    var n = { a1: 'سفرة جانبية', a2: 'طاولة وسط', a3: 'مزهرية', a4: 'خزانة', a5: 'مرآة', a6: 'سجادة',
+      a7: 'مصباح أرضي', a8: 'براد', a9: 'وسائد', a10: 'رفّ كتب', a11: 'نبّورة', a12: 'ستارة',
+      a13: 'ساعة حائط', a14: 'زربية', a15: 'أباجورة', a16: 'كوخ', a17: 'صندوق تنظيم',
+      a18: 'طاولة قهوة', a19: 'كرسي إضافي', a20: 'مشجب' };
+    return { id: id, name: n[id] || ('قطعة ' + id), color: '#' + ((id.length * 7919) % 0xffffff).toString(16).padStart(6, '0') };
+  }
+  var WALLS = [
+    { len: 5, angle: 0 }, { len: 4, angle: 90 }, { len: 5, angle: 180 }, { len: 4, angle: 270 }
+  ];
+  var LONG_NOTE = ('يُنفَّذ التصميم بعد معاينة المحل والتأكد من المقاسات النهائية. ')
+    + Array(6).join('تُراجع القياسات مع فريق التركيب قبل التسليم، ويُبلَّغ فريق الصيانة عن أي ملاحظة. ');
+
+  var SCENARIOS = {
+    few: { walls: WALLS, pieces: sofas(3, 2.0, 0.4) },
+    medium: { walls: WALLS, pieces: sofas(10, 1.6, 0.3) },
+    large: { walls: WALLS, pieces: sofas(45, 1.0, 0.1).concat(accs(12)) },
+    long: { walls: WALLS, pieces: sofas(60, 1.0, 0.1).concat(accs(12)) },
+    /* دليل ألوان أطول من الصفحة كلها: كتلة لا تتّسع أبداً — يجب أن تظهر
+       معلّمة بوضوح ولا أن تُحذف أو تُقصّ */
+    tall: { walls: WALLS, pieces: sofas(3, 2.0, 0.4).concat(accs(45)) }
+  };
+
+  function optsFor(kind) {
+    var o = {
+      design: SCENARIOS[kind],
+      getItem: getItem,
+      pieceStyle: function () { return null; },
+      footHtml: '<div class="inv-contact"><b>تواصل معنا</b>'
+        + '<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</div>'
+        + '<div class="inv-chans"><div class="inv-chan" data-url="https://wa.me/966549955622">'
+        + '<span class="inv-chan-lb">واتساب</span></div></div></div>'
+        + '<div class="ds-foot-note"><b>أصالة نجد</b>احتفظ برقم التصميم لمراجعته مع المحل</div>',
+      meta: [{ label: 'رقم الطلب', value: '#410' }, { label: 'العميل', value: 'عبدالله الشمري' }]
+    };
+    if (kind === 'long') { o.note = LONG_NOTE; o.caption = 'ورقة تصميم مجلس — نسخة الموظف'; }
+    return o;
+  }
+
+  /* قياس صفحة واحدة كما يقيس محرّك التقسيم: أسفل العمود مقابل أسفل الجسم */
+  function measurePage(el, k) {
+    var body = el.querySelector('.ds-body');
+    var side = el.querySelector('.ds-side');
+    var foot = el.querySelector('.ds-foot');
+    /* العائق الفعلي أسفل العمود: بداية الشريط (إن وُجد) وإلا حافة الصفحة */
+    var obstacle = foot ? foot.getBoundingClientRect().top : el.getBoundingClientRect().bottom;
+    var limit = obstacle - 1.2 * k;
+    var bottom = 0, i;
+    for (i = 0; i < side.children.length; i++) {
+      bottom = Math.max(bottom, side.children[i].getBoundingClientRect().bottom);
+    }
+    var rows = [];
+    var trs = el.querySelectorAll('.ds-tbl tbody tr');
+    for (i = 0; i < trs.length; i++) {
+      var tds = trs[i].querySelectorAll('td');
+      if (tds.length === 1 && tds[0].className === 'ds-empty') continue;   // صف «لا قطع» لا يُعدّ
+      rows.push([].map.call(tds, function (td) { return td.textContent.trim(); }).join(' | '));
+    }
+    var legend = [];
+    var lis = el.querySelectorAll('.ds-legend li .lb');
+    for (i = 0; i < lis.length; i++) legend.push(lis[i].textContent.trim());
+    var order = [];
+    for (i = 0; i < side.children.length; i++) {
+      var c = side.children[i];
+      order.push(c.className || c.tagName);
+    }
+    return {
+      overflowMm: +((bottom - limit) / k).toFixed(2),
+      footOverlap: foot ? bottom > foot.getBoundingClientRect().top - 0.2 : false,
+      rows: rows,
+      sideOrder: order,
+      thead: !!el.querySelector('.ds-tbl thead'),
+      headTitle: (el.querySelector('.ds-h-tbl') || {}).textContent || '',
+      cont: el.classList.contains('ds-cont'),
+      pageof: ((el.querySelector('.ds-pageof') || {}).textContent || '').trim(),
+      plan: !!el.querySelector('.ds-plan'),
+      areas: !!el.querySelector('.ds-areas-wrap'),
+      legend: legend,
+      note: (el.querySelector('.ds-note') || {}).textContent || '',
+      cap: (el.querySelector('.ds-cap b') || {}).textContent || '',
+      over: !!el.querySelector('.ds-over'),
+      heightMm: +(el.getBoundingClientRect().height / k).toFixed(1),
+      widthMm: +(el.getBoundingClientRect().width / k).toFixed(1)
+    };
+  }
+
+  window.__build = function (kind) {
+    return document.fonts.ready.then(function () {
+      var mount = document.getElementById('mount');
+      mount.innerHTML = '';
+      var o = optsFor(kind);
+      var pages = DesignSheet.buildPages(o, mount);
+      var k = pages.length ? pages[0].getBoundingClientRect().width / DesignSheet.SHEET_W : 0;
+      var f = DesignSheet.facts(SCENARIOS[kind], o);
+      return {
+        kind: kind,
+        n: pages.length,
+        rowsExpected: f.rows.map(function (r) { return r.name + ' | ' + r.dims + ' | ' + r.qty; }),
+        totalRows: f.rows.length,
+        hasAreas: !!f.areas,
+        noteExpected: f.note || '',
+        legendExpected: f.legend.map(function (e) { return e.label; }),
+        capExpected: f.capacity > 0 ? String(f.capacity) : '',
+        k: k,
+        data: pages.map(function (el) { return measurePage(el, k); })
+      };
+    });
+  };
+
+  /* مسار العميل/الموظف المستقل: DesignSheet.pdfBlob → عدد صفحات PDF فعلي */
+  window.__pdfClient = function (kind) {
+    var mount = document.getElementById('pdfMount');
+    mount.innerHTML = '';
+    return DesignSheet.pdfBlob(Object.assign(optsFor(kind), { mount: mount }))
+      .then(function (blob) { return blobTo64(blob); });
+  };
+
+  /* مسار الموظف داخل أمر الشراء: فاتورة عمودية + صفحات الورقة بـ addPage */
+  window.__pdfOrder = function (kind) {
+    var mount = document.getElementById('pdfMount');
+    mount.innerHTML = '';
+    var pdf = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
+    pdf.setFontSize(12);
+    pdf.text('فاتورة أمر شراء', 100, 20);
+    return DesignSheet.addPage(pdf, Object.assign(optsFor(kind), { mount: mount }))
+      .then(function (p) { return blobTo64(p.output('blob')); });
+  };
+
+  function blobTo64(blob) {
+    return new Promise(function (res, rej) {
+      var fr = new FileReader();
+      fr.onload = function () {
+        var s = String(fr.result);
+        res(s.slice(s.indexOf(',') + 1));
+      };
+      fr.onerror = rej;
+      fr.readAsDataURL(blob);
+    });
+  }
+})();
+</script>
+</body></html>

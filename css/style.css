@@ -2439,7 +2439,7 @@ body.modal-open { overflow: hidden; }
       ⇒ صندوق المخطط 153مم (وتُطرح منه القياس الفعلي لشريط التواصل إن وُجد)
    ===================================================================== */
 .dsheet {
-  width: 277mm; height: 190mm; box-sizing: border-box; overflow: hidden;
+  width: 277mm; height: 190mm; box-sizing: border-box; position: relative;
   display: flex; flex-direction: column;
   padding: 8mm 10mm 7mm;
   font-family: var(--font, 'IBM Plex Sans Arabic', Tahoma, Arial, sans-serif);
@@ -2456,6 +2456,24 @@ body.modal-open { overflow: hidden; }
 }
 .dsheet * { box-sizing: border-box; letter-spacing: normal; word-spacing: normal; }
 .dsheet .num { direction: ltr; font-variant-numeric: tabular-nums; font-feature-settings: 'tnum' 1; }
+
+/* صفحات تالية من الورقة: العمود يمتد بعرض الصفحة كلها (لا مخطط بجواره) */
+.dsheet.ds-cont .ds-body { gap: 0; }
+.dsheet.ds-cont .ds-side { width: 100%; }
+/* شارة ترقيم الصفحات — أعلى اليسار (الاتجاه rtl: بداية السطر) */
+.ds-pageof {
+  position: absolute; top: 1.4mm; left: 10mm; z-index: 2;
+  font-size: 7.5pt; font-weight: 700; color: #8A7E70;
+  background: var(--ds-soft); border: 1px solid var(--ds-line);
+  border-radius: 1.2mm; padding: .3mm 1.6mm;
+}
+/* لوحة ظاهرة متى ما تجاوز محتوى الصفحة مساحتتها: لا قصّ ولا إخفاء */
+.ds-over {
+  position: absolute; top: 1.4mm; right: 10mm; z-index: 2;
+  font-size: 7pt; font-weight: 700; color: #8C2F0D;
+  background: #FDECE3; border: 1px dashed #E0A484;
+  border-radius: 1.2mm; padding: .3mm 1.6mm;
+}
 
 .ds-head {
   flex: none; height: 18mm; display: flex; align-items: flex-end;

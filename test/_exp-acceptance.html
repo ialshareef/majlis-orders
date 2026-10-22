@@ -39,7 +39,7 @@ const TAG='W'+W+': ';
     sqlite.run("CREATE INDEX IF NOT EXISTS designs_exp_token_idx ON customer_designs_exp(token)");
     sqlite.run("INSERT OR IGNORE INTO counters (key,value) VALUES ('design_no_exp',90000000)");
     sqlite.run("UPDATE settings SET data=? WHERE id=1",[JSON.stringify({
-      shopName:'أصالة نجد', phone:'+966533724290', whatsapp:'+966533724290',
+      shopName:'أصالة نجد', phone:'+966549955622', whatsapp:'+966549955622',
       instagram:'https://instagram.com/asalhnajd', tiktok:'https://tiktok.com/@asalhnajd',
       mapsUrl:'https://maps.google.com/?q=24.7,46.6', tagline:'أثاث مجلس أصيل حسب مقاسك',
       currency:'ر.س', vatEnabled:true, vatRate:15, cornerMode:'deduct'})]);
@@ -106,7 +106,7 @@ const TAG='W'+W+': ';
 
     // ---- المرحلة ٢: العناصر المعمارية ----
     T2().gotoStep('openings'); await wait(350);
-    t(TAG+'wall picker + door/mashab only', !!$('#pxOWall')&&!!$('[data-add="door"]')&&!!$('[data-add="mashab"]')&&!$('[data-add="window"]'));
+    t(TAG+'wall picker + door/window/mashab/tv', !!$('#pxOWall')&&!!$('[data-add="door"]')&&!!$('[data-add="window"]')&&!!$('[data-add="mashab"]')&&!!$('[data-add="tv"]'));
     $('#pxOWall').value='1'; $('#pxOWall').dispatchEvent(new Event('change',{bubbles:true}));
     $('[data-add="door"]').click(); await wait(450);
     t(TAG+'door added', dz.state.openings.length>=1, 'openings='+dz.state.openings.length);
@@ -135,22 +135,24 @@ const TAG='W'+W+': ';
     t(TAG+'each qty input is numeric keypad', qInputs.every(i=>i.getAttribute('inputmode')==='numeric'));
     const id=qInputs[0].dataset.qtyin;
     const qi=()=>$$('[data-qtyin]').find(i=>i.dataset.qtyin===id);
-    qi().value='1'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(500);
+    /* الكتابة الحقيقية تُطلق input ثم change (القفل يُرفع بـ input — تعديل 1) */
+    const typeQty=(v)=>{ const el=qi(); el.value=String(v); el.dispatchEvent(new Event('input',{bubbles:true})); el.dispatchEvent(new Event('change',{bubbles:true})); };
+    typeQty('1'); await wait(500);
     t(TAG+'type 1 -> 1 piece', T2().accCount(id)===1, 'got '+T2().accCount(id));
-    qi().value='5'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(700);
+    typeQty('5'); await wait(700);
     t(TAG+'type 5 -> 5 pieces', T2().accCount(id)===5, 'got '+T2().accCount(id));
-    qi().value='10'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(900);
+    typeQty('10'); await wait(900);
     t(TAG+'type 10 -> 10 pieces', T2().accCount(id)===10, 'got '+T2().accCount(id));
     t(TAG+'plan reflects quantity', dz.state.pieces.filter(p=>p.kind==='acc'&&p.itemId===id).length===10);
-    qi().value='3'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(600);
+    typeQty('3'); await wait(600);
     t(TAG+'repeat change -> 3', T2().accCount(id)===3, 'got '+T2().accCount(id));
-    qi().value='-3'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(450);
+    typeQty('-3'); await wait(450);
     t(TAG+'negative rejected', T2().accCount(id)===3, 'got '+T2().accCount(id));
-    qi().value='abc'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(450);
+    typeQty('abc'); await wait(450);
     t(TAG+'non-numeric rejected', T2().accCount(id)===3, 'got '+T2().accCount(id));
-    qi().value='0'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(600);
+    typeQty('0'); await wait(600);
     t(TAG+'zero deletes item', T2().accCount(id)===0, 'got '+T2().accCount(id));
-    qi().value='2'; qi().dispatchEvent(new Event('change',{bubbles:true})); await wait(600);
+    typeQty('2'); await wait(600);
     t(TAG+'re-add after delete', T2().accCount(id)===2, 'got '+T2().accCount(id));
     $('[data-qtyplus="'+id+'"]').click(); await wait(450);
     t(TAG+'+ button increments', T2().accCount(id)===3, 'got '+T2().accCount(id));

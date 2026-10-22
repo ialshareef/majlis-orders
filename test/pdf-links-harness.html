@@ -175,6 +175,7 @@ async function runClient(cfg, src) {
 
 async function runOrder(cfg, src) {
   var inst = null;
+  var origAdd = null;
   try {
     var missing = installApp(src);
     window.settings = function () { return cfg; };
@@ -185,23 +186,67 @@ async function runOrder(cfg, src) {
     area.style.cssText = '';
     area.innerHTML = '<div class="inv">'
       + '<div class="inv-head"><div class="inv-brand"><h1>أصالة نجد</h1>'
-      + '<small>0533724290</small></div><div class="inv-title-box">'
+      + '<small>0549955622</small></div><div class="inv-title-box">'
       + '<div class="inv-title">أمر شراء</div><div class="inv-no">#1042</div></div></div>'
-      + '<div class="inv-visuals"><div class="inv-design">مخطط التصميم (يُخفى من التصوير)</div></div>'
+      + '<div class="inv-visuals"><div class="inv-design">مخطط التصميم (يُخفي من التصوير)</div></div>'
       + '<div class="inv-tbl"><div class="inv-row"><span>كنب 3.2م</span><span>3,200 ر.س</span></div></div>'
       + contact
       + '</div>';
+    if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (_) {} }
+    /* مِسبار حالة القياس: مواضع بطاقات الشريط في الحالتين — «مخفية» (كما صُوّرت
+       الصورة) و«مستعادة» (كما كان يقيس الإنتاج قبل هذا الإصلاح). */
+    var snapOn = function (root) {
+      var ir = root.getBoundingClientRect();
+      var out = [];
+      var nd = root.querySelectorAll('[data-url]');
+      for (var i = 0; i < nd.length; i++) {
+        var rr = nd[i].getBoundingClientRect();
+        out.push({ u: nd[i].getAttribute('data-url'), dx: rr.left - ir.left, dy: rr.top - ir.top });
+      }
+      return { w: ir.width, h: ir.height, cards: out };
+    };
+    var pickTarget = function (root) {
+      var vs = root.querySelector('.inv-visuals');
+      var db = vs ? root.querySelector('.inv-design') : null;
+      return (vs && !root.querySelector('.inv-atts')) ? vs : db;
+    };
+    var invEl = area.querySelector('.inv');
+    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
+    var tgA = pickTarget(invEl), cssA = tgA ? tgA.style.cssText : null;
+    if (tgA) tgA.style.display = 'none';
+    var snapShot = snapOn(invEl);
+    if (tgA) tgA.style.cssText = cssA;
+    var snapShow = snapOn(invEl);
+    area.style.cssText = '';
+    // راصد لحظة القياس داخل makePdfBlob نفسها (الصفحة الأولى فقط: عنصر .inv)
+    origAdd = window.addPdfLinksToDoc;
+    var p1 = null;
+    window.addPdfLinksToDoc = function (pdf, el) {
+      var n = origAdd.apply(window, arguments);
+      try {
+        if (el && el.classList && el.classList.contains('inv')) {
+          var tg = pickTarget(el);
+          p1 = { n: n, display: tg ? window.getComputedStyle(tg).display : null, m: snapOn(el) };
+        }
+      } catch (_) { /* noop */ }
+      return n;
+    };
     inst = instrument();
-    var blob = await window.makePdfBlob({
-      number: 1042, status: 'progress',
-      customer: { name: 'عبدالله الشمري', phone: '0501234567' },
-      design: sampleDesign()
-    });
+    var blob = null;
+    try {
+      blob = await window.makePdfBlob({
+        number: 1042, status: 'progress',
+        customer: { name: 'عبدالله الشمري', phone: '0501234567' },
+        design: sampleDesign()
+      });
+    } finally { window.addPdfLinksToDoc = origAdd; }
     var caps = inst.take();
-    return { b64: await toB64(blob), caps: caps, missing: missing, err: null };
+    return { b64: await toB64(blob), caps: caps, missing: missing, err: null,
+      p1: p1, snapShot: snapShot, snapShow: snapShow };
   } catch (e) {
+    if (origAdd) window.addPdfLinksToDoc = origAdd;
     if (inst) inst.take();
-    return { b64: null, caps: [], missing: [], err: String((e && e.stack) || e) };
+    return { b64: null, caps: [], missing: [], err: String((e && e.stack) || e), p1: null };
   }
 }
 

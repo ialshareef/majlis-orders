@@ -508,7 +508,7 @@ function canEditOrder(o) {
     '#m-price input', '#m-price select', '#m-price button',
     '#attList input', '#attList button',
     '.designer-panel input', '.designer-panel select', '.designer-panel button',
-    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddColumn', '#tbFillAll', '#btnAddManual', '#btnPickMap',
+    '#tbAddSofa', '#tbAddDoor', '#tbAddWindow', '#tbAddMashab', '#tbAddTv', '#tbAddColumn', '#tbFillAll', '#btnAddManual', '#btnPickMap',
   ].join(', ');
 
   function applyOrderLock() {
@@ -739,7 +739,7 @@ function canEditOrder(o) {
     const seen = {};
     v.issues.forEach((i) => {
       if (i.type === 'opening') {
-        const nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+        const nm = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : i.openingType === 'tv' ? 'التلفاز' : 'الباب';
         if (!seen['o' + nm]) { msgs.push(`كنبة تسدّ ${nm} — انقلها بعيداً عنه`); seen['o' + nm] = 1; }
       } else if (i.type === 'overlap') {
         if (!seen.ov) { msgs.push('تداخل بين قطعتين — أعد توزيعهما'); seen.ov = 1; }
@@ -747,7 +747,7 @@ function canEditOrder(o) {
     });
     const warns = [];
     designer.designWarnings().forEach((w) => {
-      const nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : 'الباب';
+      const nm = w.openingType === 'mashab' ? 'المشب' : w.openingType === 'window' ? 'الشباك' : w.openingType === 'tv' ? 'التلفاز' : 'الباب';
       if (!seen['w' + nm]) { warns.push(`كنبة ملاصقة لمنطقة ${nm} — الموضع مقبول لكن الأفضل إبعادها قليلاً`); seen['w' + nm] = 1; }
     });
     return { err: msgs.join(' · '), warn: warns.join(' · ') };
@@ -1242,6 +1242,7 @@ function canEditOrder(o) {
   $('#tbAddDoor').addEventListener('click', () => designer.addOpening(targetWall(), 'door'));
   $('#tbAddWindow').addEventListener('click', () => designer.addOpening(targetWall(), 'window'));
   $('#tbAddMashab').addEventListener('click', () => designer.addOpening(targetWall(), 'mashab'));
+  $('#tbAddTv').addEventListener('click', () => designer.addOpening(targetWall(), 'tv'));
   /* --- التراجع والإعادة --- */
   function updateUndoButtons() {
     $('#tbUndo').disabled = readOnly || !designer.canUndo();
@@ -1274,7 +1275,7 @@ function canEditOrder(o) {
     if (info.type === 'wall') return 'جدار ' + (info.index + 1);
     if (info.type === 'opening') {
       const o = info.opening;
-      return (o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك') + ' — جدار ' + (o.wall + 1);
+      return (o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : o.type === 'tv' ? 'تلفاز' : 'شباك') + ' — جدار ' + (o.wall + 1);
     }
     const p = info.piece;
     if (p.kind === 'column') return 'عامود';
@@ -1407,15 +1408,16 @@ function canEditOrder(o) {
           <button class="btn small" data-act="door">${icon('door')} باب</button>
           <button class="btn small" data-act="window">${icon('window')} شباك</button>
           <button class="btn small" data-act="mashab">${icon('fire')} مشب</button>
+          <button class="btn small" data-act="tv">${icon('tv')} تلفاز</button>
           <button class="btn small danger" data-act="delwall" ${nWalls <= 3 ? 'disabled' : ''} title="حذف الجدار">${icon('trash')}</button>
         </div>
         ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     } else if (info.type === 'opening') {
       const o = info.opening;
       html += `
-        <div class="insp-head"><b>${icon(o.type === 'door' ? 'door' : o.type === 'mashab' ? 'fire' : 'window')} ${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك'} <small>على جدار ${o.wall + 1}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
+        <div class="insp-head"><b>${icon(o.type === 'door' ? 'door' : o.type === 'mashab' ? 'fire' : o.type === 'tv' ? 'tv' : 'window')} ${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : o.type === 'tv' ? 'التلفاز' : 'شباك'} <small>على جدار ${o.wall + 1}</small></b><button class="btn small" data-close aria-label="إنهاء تعديل القطعة">تم ${icon('check')}</button></div>
         <div class="row2">
-          <label>النوع <select id="inspType"><option value="door" ${o.type === 'door' ? 'selected' : ''}>باب</option><option value="window" ${o.type === 'window' ? 'selected' : ''}>شباك</option><option value="mashab" ${o.type === 'mashab' ? 'selected' : ''}>مشب</option></select></label>
+          <label>النوع <select id="inspType"><option value="door" ${o.type === 'door' ? 'selected' : ''}>باب</option><option value="window" ${o.type === 'window' ? 'selected' : ''}>شباك</option><option value="mashab" ${o.type === 'mashab' ? 'selected' : ''}>مشب</option><option value="tv" ${o.type === 'tv' ? 'selected' : ''}>تلفاز</option></select></label>
           <label>العرض (م) <input id="inspOW" type="number" step="0.05" min="0.3" value="${Designer.util.round(o.w, 2)}"></label>
         </div>
         <label>البُعد من بداية الجدار (م) <input id="inspOT" type="number" step="0.05" min="0" value="${Designer.util.round(o.t - o.w / 2, 2)}"></label>
@@ -1425,7 +1427,7 @@ function canEditOrder(o) {
           <label>اتجاه فتح الباب <select id="inspSwing"><option value="in" ${designer.openingSwing(o) !== 'out' ? 'selected' : ''}>للداخل</option><option value="out" ${designer.openingSwing(o) === 'out' ? 'selected' : ''}>للخارج</option></select></label>
         </div>` : ''}
         <label class="check"><input id="inspBlocks" type="checkbox" ${o.blocks ? 'checked' : ''}> لا يوضع كنب أمامه</label>
-        <div class="insp-actions"><button class="btn small danger del-danger" data-act="del" aria-label="حذف ${o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب'}">${icon('trash')} حذف</button></div>
+        <div class="insp-actions"><button class="btn small danger del-danger" data-act="del" aria-label="حذف ${o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : o.type === 'tv' ? 'التلفاز' : 'الباب'}">${icon('trash')} حذف</button></div>
         ${readOnly ? '' : `<button type="button" class="btn primary block insp-save" data-save>${icon('save')} حفظ الطلب</button>`}`;
     } else {
       const p = info.piece;
@@ -1512,6 +1514,7 @@ function canEditOrder(o) {
         else if (a === 'door') designer.addOpening(i, 'door');
         else if (a === 'window') designer.addOpening(i, 'window');
         else if (a === 'mashab') designer.addOpening(i, 'mashab');
+        else if (a === 'tv') designer.addOpening(i, 'tv');
         else if (a === 'delwall') { if (designer.removeWall(i)) { designer.select(null); toast('تم حذف الجدار'); } }
       }));
     } else if (info.type === 'opening') {
@@ -2955,7 +2958,7 @@ function canEditOrder(o) {
     if (/example\.com|localhost|127\.0\.0\.1|\/test(\/|$)/i.test(u)) return '';
     return u;
   }
-  /* عرض الرقم بالصيغة الدولية نفسها في PDF العميل: +966 53 372 4290 للسعودي،
+  /* عرض الرقم بالصيغة الدولية نفسها في PDF العميل: +966 54 995 5622 للسعودي،
      وإلا +الأرقام كما هي (بعد إسقاط 00 والأصفار المحلية الزائدة عبر waPhone). */
   function fmtIntl(d) {
     const m = /^(966)(5\d)(\d{3})(\d{4})$/.exec(d || '');
@@ -3158,7 +3161,7 @@ function docTitle(order) {
       .map((p) => `${Designer.util.round(p.w, 2)} × ${Designer.util.round(p.h, 2)} م${p.note ? ` (${esc(p.note)})` : ''}`).join('، ');
     const manual = (order.manualRows || []).filter((r) => String(r.name || '').trim()).map((r) => `${esc(r.name)} (${esc(r.qty)} ${esc(r.unit || '')})`).join('، ');
     const meters = Designer.util.round(sofas.reduce((s, p) => s + num(p.w), 0), 2);
-    const openings = (d.openings || []).map((o) => `${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك'} ${Designer.util.round(o.w, 2)} م على جدار ${o.wall + 1}`).join('، ');
+    const openings = (d.openings || []).map((o) => `${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : o.type === 'tv' ? 'تلفاز' : 'شباك'} ${Designer.util.round(o.w, 2)} م على جدار ${o.wall + 1}`).join('، ');
     return `
     <div class="inv work ${sofas.length > 12 ? 'dense' : ''}">
       ${invHead('أمر تصنيع', order.number ? '#' + order.number : 'مسودة')}
@@ -3385,15 +3388,16 @@ function docTitle(order) {
       }
       const needSheet = hidden.length > 0;
       const canvas = await window.html2canvas(inv, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      showHidden();   // الفاتورة تعود كاملة قبل بناء الصفحة الثانية (وتبقى جاهزة للطباعة)
       const img = canvas.toDataURL('image/jpeg', 0.94);
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       // الصورة تُوضع بنسبة أبعاد المستند نفسه (السند أقصر من أمر الشراء)
       const h = Math.min(276, 190 * (canvas.height / canvas.width));
       pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
-      // روابط حقيقية فوق الصورة (قنوات التواصل): النقر يفتح الوجهة الصحيحة
+      // روابط حقيقية فوق الصورة (قنوات التواصل): النقر يفتح الوجهة الصحيحة —
+      // تُقاس وهي على التخطيط نفسه الذي صُوّرت به الصورة (والتصميم ما يزال مخفياً)
       addPdfLinksToDoc(pdf, inv, 10, 10, 190, h);
+      showHidden();   // الفاتورة تعود كاملة قبل بناء الصفحة الثانية (وتبقى جاهزة للطباعة)
       if (needSheet && order && order.design && window.DesignSheet) {
         try {
           await DesignSheet.addPage(pdf, {
@@ -4834,14 +4838,14 @@ function docTitle(order) {
   function desFacts(design) {
     const d = design || { walls: [], openings: [], pieces: [] };
     const walls = (d.walls || []).map((w) => w.len + 'م').join(' × ');
-    let doors = 0, wins = 0, meters = 0;
+    let doors = 0, wins = 0, tvs = 0, meters = 0;
     const accs = {};
-    (d.openings || []).forEach((o) => { if (o.type === 'door') doors++; else if (o.type === 'window') wins++; });
+    (d.openings || []).forEach((o) => { if (o.type === 'door') doors++; else if (o.type === 'window') wins++; else if (o.type === 'tv') tvs++; });
     (d.pieces || []).forEach((p) => {
       if (p.kind === 'sofa') meters += num(p.w);
       else if (p.kind === 'acc') { const n = (getItem(p.itemId) || {}).name || 'إكسسوار'; accs[n] = (accs[n] || 0) + 1; }
     });
-    return { walls: walls || '—', doors, wins, meters: Math.round(meters * 100) / 100, accs };
+    return { walls: walls || '—', doors, wins, tvs, meters: Math.round(meters * 100) / 100, accs };
   }
 
   async function openDesign(id) {
@@ -4865,7 +4869,7 @@ function docTitle(order) {
           <div><dt>الحالة</dt><dd><select id="dvStatus" aria-label="حالة التصميم">${Object.entries(DESIGN_STATUS).map(([k, v]) => `<option value="${k}"${d.status === k ? ' selected' : ''}>${v}</option>`).join('')}</select></dd></div>
           <div><dt>العميل</dt><dd>${esc(d.name || '—')}${d.phone ? ` <span class="num">${esc(d.phone)}</span>` : ''}${d.contactRequested ? ' <span class="badge st-delivered">طلب التواصل</span>' : ''}</dd></div>
           <div><dt>الغرفة</dt><dd>${esc(f.walls)}</dd></div>
-          <div><dt>أبواب/شبابيك</dt><dd>${f.doors} / ${f.wins}</dd></div>
+          <div><dt>أبواب / شبابيك / تلفاز</dt><dd>${f.doors} / ${f.wins} / ${f.tvs}</dd></div>
           <div><dt>أمتار الكنب</dt><dd>${f.meters} م</dd></div>
           <div><dt>الطلب المرتبط</dt><dd>${d.orderNumber ? '#' + esc(d.orderNumber) : '—'}</dd></div>
         </dl>

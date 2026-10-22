@@ -74,7 +74,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('touch-44', small.length === 0, small.slice(0, 5).join('|'));
       // هيكل المصمم موجود ومخفي
       t('wizard-dom', !!q('#pSteps') && !!q('#pCanvas') && !!q('#pPanel') && !!q('#pSheet') && !!q('.p-zoombar'), 'wizard');
-      // خمس مراحل مسماة + لا شباك في واجهة العميل
+      // خمس مراحل مسماة + شبابيك وتلفاز مضافَان من واجهة العميل (لا عامود ولا نوع درس)
       var css = await get('/css/style.css');
       var ph0 = await get('/portal.html');
       t('steps-5', (ph0.match(/data-step=/g) || []).length === 0, 'steps built by JS');
@@ -86,7 +86,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         && css.indexOf('.p-steps button i {') >= 0
         && /\.p-steps button \{[^}]*width: 100%;/.test(css), 'equal-width steps, number pinned');
       t('room-live', pjs0.indexOf('pfRect') < 0 && pjs0.indexOf('liveDim') >= 0 && pjs0.indexOf('تطبيق كغرفة مستطيلة') < 0, 'no apply button');
-      t('no-window-add', ph0.indexOf('شباك') < 0 && pjs0.indexOf("data-t=\"window\"") < 0 && pjs0.indexOf("<option value=\"window\"") < 0, 'no window add UI');
+      t('window-tv-add', pjs0.indexOf('data-add="window"') >= 0 && pjs0.indexOf('data-add="tv"') >= 0
+        && pjs0.indexOf("data-t=\"window\"") < 0 && pjs0.indexOf("<option value=\"window\"") < 0, 'window + tv add UI, no type select');
       t('no-global-toolbar', ph0.indexOf('id="pTools"') < 0 && ph0.indexOf('id="pReview"') < 0, 'no toolbar/review view');
       t('zoom-outside', ph0.indexOf('p-zoombar') >= 0 && ph0.indexOf('zoom-ctl') < 0, 'zoom outside canvas');
       // واجهة مُبسّطة: زر «التالي» كـ Layout، ولا قوائم أطوال جدران
@@ -103,7 +104,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('room-simple', pjs0.indexOf('عرض الغرفة') >= 0 && pjs0.indexOf('طول الغرفة') >= 0
         && pjs0.indexOf("id=\"pfAddWall\"") < 0 && pjs0.indexOf('id="pfWalls"') < 0
         && pjs0.indexOf('data-walldel') < 0, 'room = w+l only');
-      t('arch-simple', pjs0.indexOf('تغيير الجدار') < 0 && pjs0.indexOf('أين تريد الباب والمشب') >= 0, 'wall picker wording');
+      t('arch-simple', pjs0.indexOf('تغيير الجدار') < 0 && pjs0.indexOf('أين تريد الباب أو الشباك أو المشب أو التلفاز') >= 0, 'wall picker wording');
       t('seat-cards', pjs0.indexOf('pfMajLen') >= 0 && pjs0.indexOf('عمق المجلس') >= 0
         && pjs0.indexOf('يوزّع المجلس على كل الجدران الفارغة') >= 0
         && pjs0.indexOf('data-seat="floor"') < 0, 'majlis by size, auto-fill explained');
@@ -156,8 +157,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       catch (e) { t('portal-syntax', false, String(e.message).slice(0, 150)); }
       // شريط الموظفين: صفّان وكل الأدوات
       var idx = await get('/index.html');
-      var tbIds = ['tbAddSofa', 'tbAddDoor', 'tbAddWindow', 'tbAddMashab', 'tbAddSofaFree', 'tbFillAll'];
-      t('toolbar-ids', tbIds.every(function (id) { return idx.indexOf('id="' + id + '"') >= 0; }), '6 tools');
+      var tbIds = ['tbAddSofa', 'tbAddDoor', 'tbAddWindow', 'tbAddMashab', 'tbAddTv', 'tbAddSofaFree', 'tbFillAll'];
+      t('toolbar-ids', tbIds.every(function (id) { return idx.indexOf('id="' + id + '"') >= 0; }), '7 tools');
       t('toolbar-rows', (idx.match(/class="tb-row"/g) || []).length === 2, 'two rows');
       t('toolbar-css', css.indexOf('.tb-insert .tb-row') >= 0 && css.indexOf('.tb-insert .tb-btn span { font-size: .76rem') < 0, 'row css, no shrink');
 // About: المطوران (اسم خالد موجود وبريده محذوف بقرار صريح)

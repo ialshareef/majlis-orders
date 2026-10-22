@@ -650,7 +650,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
     /** رسالة عربية موحّدة تصف التعارض بلا التباس. */
     static blockingMessage(reason) {
       if (reason === 'opening' || (reason && reason.why === 'opening'))
-        return 'لا يمكن وضع الكنبة أمام الباب أو المشب — اختر موضعاً آخر.';
+        return 'لا يمكن وضع الكنبة أمام الباب أو المشب أو التلفاز — اختر موضعاً آخر.';
       if (reason === 'overlap' || (reason && reason.why === 'overlap'))
         return 'لا يمكن وضع الكنبة هنا — تتداخل مع قطعة أخرى.';
       return 'لا توجد مساحة صالحة لهذه القطعة — اختر موضعاً آخر.';
@@ -673,18 +673,18 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       /* فتحات نُقلت إجباراً لتبقي داخل جدار قُصِّر: نصرّح بذلك ونطلب المعالجة
          بدل اعتبار النقل الصامت تعديلاً مقبولاً. */
       (this._clippedOpenings || []).forEach((o) => {
-        const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب';
+        const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : o.type === 'tv' ? 'التلفاز' : 'الباب';
         msgs.push(name + ' على الجدار ' + ((o.wall || 0) + 1) + ' خرج عن الجدار فنُقل تلقائياً من '
           + round(o.fromT, 2) + ' م إلى ' + round(o.toT, 2) + ' م — انقله بنفسك أو كبّر الجدار.');
       });
       const clippedIds = new Set((this._clippedOpenings || []).map((o) => o.id));
       openingOut.filter((o) => !clippedIds.has(o.id)).forEach((o) => {
-        const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : 'الباب';
+        const name = o.type === 'mashab' ? 'المشب' : o.type === 'window' ? 'الشباك' : o.type === 'tv' ? 'التلفاز' : 'الباب';
         msgs.push(name + ' على الجدار ' + ((o.wall || 0) + 1) + ' خرج عن حدود الجدار بعد تقصيره — انقله أو كبّر الجدار.');
       });
       d.issues.forEach((i) => {
         if (i.type === 'opening') {
-          const name = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : 'الباب';
+          const name = i.openingType === 'mashab' ? 'المشب' : i.openingType === 'window' ? 'الشباك' : i.openingType === 'tv' ? 'التلفاز' : 'الباب';
           msgs.push('كنبة تسدّ ' + name + ' — انقلها بعيداً عنه.');
         } else if (i.type === 'overlap') {
           msgs.push('تداخل بين قطعتين في التصميم.');
@@ -744,14 +744,16 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const g = this.geometry();
       const w = g.walls[wallIndex];
       if (!w) return null;
-      const width = Math.min(type === 'door' ? 0.9 : type === 'mashab' ? 1.0 : 1.2, w.len);
+      const width = Math.min(type === 'door' ? 0.9 : type === 'mashab' ? 1.0 : type === 'tv' ? 1.4 : 1.2, w.len);
       // أول موضع حر على الجدار
       const occ = this.state.openings.filter((o) => o.wall === wallIndex).map((o) => [o.t - o.w / 2, o.t + o.w / 2]);
       const free = this._freeIntervals(w.len, occ, width).sort((a, b) => (b[1] - b[0]) - (a[1] - a[0]));
       const t = free.length ? (free[0][0] + free[0][1]) / 2 : w.len / 2;
       /* الباب: جهة المفصلات (يمين/يسار) واتجاه الفتح (داخل/خارج) بحقلين مستقلين،
          الافتراضي = السلوك القديم: مفصلات على حدّ الفتحة الأيسر وورقة للداخل. */
-      const o = { id: uid(), wall: wallIndex, t: round(t, 3), w: width, type, blocks: type === 'door' || type === 'mashab', depth: type === 'mashab' ? 0.5 : 0 };
+      /* التلفاز يُمنع أمامه (كنب/جلسات) كما الباب والمشب؛ الشباك وحده لا يمنع
+         شيء — يُسمح بوضع الأثاث أمامه (نافذة تُفتح عليها الجلسة بلا تعقيد). */
+      const o = { id: uid(), wall: wallIndex, t: round(t, 3), w: width, type, blocks: type === 'door' || type === 'mashab' || type === 'tv', depth: type === 'mashab' ? 0.5 : 0 };
       if (type === 'door') { o.hinge = 'right'; o.swing = 'in'; }
       this.state.openings.push(o);
       this.select({ type: 'opening', id: o.id });
@@ -778,7 +780,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const o = this.opening(id);
       if (!o) return;
       Object.assign(o, props);
-      if (props.type) o.type = ['door', 'window', 'mashab'].includes(props.type) ? props.type : 'door';
+      if (props.type) o.type = ['door', 'window', 'mashab', 'tv'].includes(props.type) ? props.type : 'door';
       /* تطبيع الخيارين: قيم ثابتة فقط، وقبل أي قيمة ← الافتراضي القديم
          (مفصلات يمين، فتح للداخل) فيبقىسلوك الطلبات القديمة كما هو. */
       if (o.hinge != null) o.hinge = o.hinge === 'left' ? 'left' : 'right';
@@ -1446,6 +1448,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
         • المشب: بروز الموقد (o.depth) + مساحة وقوف لاستخدامه ⇒ 0.4م فوق البروز. */
   static OPENING_USE_DEPTH(o) {
     if (o.type === 'mashab') return Math.max(0.6, (+o.depth || 0.5) + 0.4);
+    if (o.type === 'tv') return 0.8;                             // طاولة التلفاز (0.28م) + مساحة المشاهدة أمامها (0.52م)
     if (o.type === 'door' && o.swing === 'out') return 0.05;   // الحركة خارج الغرفة فقط (لا حجز داخلها)
     return 0.9;
   }
@@ -2142,7 +2145,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const cm = (x) => Math.round(x * 100) + ' سم';
 
       for (const o of this.state.openings) {
-          if (!o || (o.type !== 'door' && o.type !== 'mashab')) continue;
+          if (!o || o.type === 'window') continue;   // قياسات المسافات والعرض للباب والمشب والتلفاز
           const w = g.walls[o.wall];
           if (!w) continue;
           const gaps = this.openingGaps(o.id);
@@ -2198,10 +2201,12 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
           }
           /* شارة عرض الفتحة: للباب في فتحة الجدار نفسها (فراغ مقطوع أبيض) —
              فلا تطفو في عمق الغرفة فتُقرأ «عمق باب» ولا تُخفي شيئاً. وللمشب
-             خلف منطقة استخدامه لأن جسمه يشغل الجدار. تُختبر ضد الأثاث وضد
-             ما رُسم قبلاً؛ والبديل عند التعارض خلف منطقة الاستخدام. */
+             خلف منطقة استخدامه لأن جسمه يشغل الجدار. وللتلفاز على خط القياس
+             نفسه (0.34م) ملاصقاً لأمام طاولته فلا تطفو خلف منطقة المشاهدة.
+             تُختبر ضد الأثاث وضد ما رُسم قبلاً؛ والبديل عند التعارض خلف
+             منطقة الاستخدام. */
           const sUse = 0.34 + Designer.OPENING_USE_DEPTH(o) + 0.06;
-          const wCands = o.type === 'door' ? [-0.05, sUse] : [sUse];
+          const wCands = o.type === 'door' ? [-0.05, sUse] : o.type === 'tv' ? [0.34] : [sUse];
           const halfWw = (ctx.measureText(cm(o.w)).width + 10 * k) / 2 / S;
           let wS = wCands[wCands.length - 1];
           for (const cand of wCands) {
@@ -2301,7 +2306,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       /* 2) قياسات الفتحة: خط واحد بمحاذاة الجدار — داخل الغرفة متى كان
           الممر خالياً من الأثاث، وإلا خارج الجدار (مواضع المخطط). */
       for (const o of this.state.openings) {
-        if (o.type !== 'door' && o.type !== 'mashab') continue;
+        if (o.type === 'window') continue;
         const w = g.walls[o.wall];
         if (!w) continue;
         const gaps = this.openingGaps(o.id);
@@ -2495,6 +2500,41 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
           ctx.strokeStyle = isSel ? SEL : '#C05621';
           ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
           ctx.beginPath(); ctx.moveTo(q[0].x, q[0].y); ctx.lineTo(q[1].x, q[1].y); ctx.stroke(); ctx.setLineDash([]);
+        } else if (o.type === 'tv') {
+          /* التلفاز فوق طاولة التلفاز — يُرسم من الأعلى: أولًا منطقة
+             المشاهدة أمامه (تعبئة خفيفة + حدّ منقط) وهي نفس المستطيل
+             المحظور على الأثاث في openingBlockRect، ثم الطاولة الملاصقة
+             للجدار، ثم جسم التلفاز الداكن وشاشته الفاتحة. */
+          const nIn = w.n;
+          const P2 = (pt, s) => P(pt.x + nIn.x * s, pt.y + nIn.y * s);
+          const quad = (s0, s1, a, b) => [P2(a, s0), P2(b, s0), P2(b, s1), P2(a, s1)];
+          const paint = (poly, fill, stroke, dash) => {
+            ctx.fillStyle = fill;
+            ctx.beginPath(); poly.forEach((s, i) => (i ? ctx.lineTo(s.x, s.y) : ctx.moveTo(s.x, s.y)));
+            ctx.closePath(); ctx.fill();
+            if (stroke) {
+              ctx.strokeStyle = stroke;
+              ctx.lineWidth = Math.max(1 * k, 0.03 * S);
+              if (dash) ctx.setLineDash([3, 3]);
+              ctx.stroke();
+              if (dash) ctx.setLineDash([]);
+            }
+          };
+          const STAND = 0.28, PANEL = 0.08;                    // عمق طاولة التلفاز وسماكة شاشته
+          const use = Designer.OPENING_USE_DEPTH(o);           // حد منطقة المشاهدة (0.8م)
+          const insetT = Math.min(0.06, o.w * 0.12);           // هامش الطاولة عن طرفي الفتحة
+          const inA = { x: pA.x + w.dir.x * insetT, y: pA.y + w.dir.y * insetT };
+          const inB = { x: pB.x - w.dir.x * insetT, y: pB.y - w.dir.y * insetT };
+          const tvA = { x: pA.x + w.dir.x * o.w * 0.1, y: pA.y + w.dir.y * o.w * 0.1 };
+          const tvB = { x: pB.x - w.dir.x * o.w * 0.1, y: pB.y - w.dir.y * o.w * 0.1 };
+          paint(quad(-0.05, use, pA, pB), 'rgba(192,86,33,0.10)', isSel ? SEL : '#C05621', true);
+          paint(quad(0, STAND, inA, inB), '#E7DAC6', isSel ? SEL : '#8A7A66');
+          paint(quad(0, PANEL, tvA, tvB), '#2F3640', isSel ? SEL : '#1F242B');
+          // الشاشة: خط فاتح على الحافة الداخلية من جسم التلفاز
+          const scr0 = P2(tvA, PANEL), scr1 = P2(tvB, PANEL);
+          ctx.strokeStyle = isSel ? SEL : '#8FB8DE';
+          ctx.lineWidth = Math.max(1 * k, 0.03 * S);
+          ctx.beginPath(); ctx.moveTo(scr0.x, scr0.y); ctx.lineTo(scr1.x, scr1.y); ctx.stroke();
         } else {
           // شباك: خطان للزجاج داخل حزام الجدار
           ctx.strokeStyle = isSel ? SEL : '#858B8C';
@@ -2511,8 +2551,9 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
         }
         // تسمية (عند التحديد فقط، داخل الغرفة لتجنب تسميات الجدران)
         if (isSel) {
-          const lab = (o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : 'شباك') + ' ' + round(o.w, 2) + ' م';
-          const inset = o.type === 'door' ? o.w + 0.25 : 0.3;
+          const lab = (o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : o.type === 'tv' ? 'تلفاز' : 'شباك') + ' ' + round(o.w, 2) + ' م';
+          const inset = o.type === 'door' ? o.w + 0.25
+            : (o.type === 'tv' ? Designer.OPENING_USE_DEPTH(o) + 0.15 : 0.3);
           const lp = P(w.A.x + w.dir.x * o.t + w.n.x * inset, w.A.y + w.dir.y * o.t + w.n.y * inset);
           const fs = Math.max(10, Math.min(13, S * 0.2));
           ctx.font = `700 ${fs}px ${FONT}`;

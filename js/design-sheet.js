@@ -125,7 +125,7 @@
     var ctx = makeCtx(opts);
     var groups = {}, order = [], i, p, key, g;
     var capacity = 0, meters = 0, free = 0, columns = 0;
-    var doors = 0, windows = 0, mashabs = 0;
+    var doors = 0, windows = 0, mashabs = 0, tvs = 0;
     var sofaLen = 0, sofaArea = 0;
 
     for (i = 0; i < pieces.length; i++) {
@@ -158,6 +158,7 @@
       if (o.type === 'door') doors++;
       else if (o.type === 'window') windows++;
       else if (o.type === 'mashab') mashabs++;
+      else if (o.type === 'tv') tvs++;
     });
 
     /* الترتيب كما في المرجع: المقاعد تصاعدياً بعرضها ثم الإكسسوارات بالاسم */
@@ -226,6 +227,7 @@
       doors: doors,
       windows: windows,
       mashabs: mashabs,
+      tvs: tvs,
       room: room,
       areas: areas,
       legend: legend,
@@ -333,9 +335,22 @@
     return 'width:' + r2(pl.W * k) + 'mm;height:' + r2(pl.H * k) + 'mm;';
   }
 
-  /** HTML الورقة كاملة (سلسلة — قابلة للاختبار بلا متصفح) */
-  function render(f, pl, opts) {
+  /** HTML صفحة واحدة من الورقة (سلسلة — قابلة للاختبار بلا متصفح).
+      بلا pg أو بلا alloc → الصفحة الوحيدة بكل المحتوى (سلوك قديم حرفياً).
+      pg = { idx, total, alloc } وalloc يحدّد ما تحمله هذه الصفحة:
+        { rows: prefix من صفوف الجدول, cap, legend, note, areas, cont, first }
+      الصفوف تُقسَّم على صفحات متتابعة برأس جدول مكرّر ولا يُقسَّم صف قطّاعاً،
+      وما بعد الجدول (السعة والدليل والحاشية وملخص المساحات) يأتي بعد آخر صف. */
+  function render(f, pl, opts, pg) {
     opts = opts || {};
+    pg = pg || {};
+    var a = pg.alloc || null;
+    var cont = !!(a && a.cont);
+    var rowsSrc = a ? a.rows : f.rows;
+    var showCap = a ? !!a.cap : true;
+    var showLegend = a ? !!a.legend : true;
+    var showNote = a ? !!a.note : true;
+    var showAreas = a ? !!a.areas : true;
     var meta = (opts.meta || []).slice();
     /* الترتيب عرض × طول — نفس اتجاه roomSummary والجداول (walls[0] × walls[1]) */
     var roomTxt = f.room && f.room.w > 0
@@ -343,13 +358,17 @@
     var head = [{ label: 'التاريخ', value: fmtDate(opts.date) },
       { label: 'الغرفة', value: roomTxt }].concat(meta);
 
-    var rows = f.rows.map(function (r) {
+    var rows = rowsSrc.map(function (r) {
       return '<tr><td class="c-name">' + esc(r.name) + '</td>'
         + '<td class="c-dims"><bdi class="num">' + esc(r.dims) + '</bdi></td>'
         + '<td class="c-qty num">' + r.qty + '</td></tr>';
     }).join('') || '<tr><td colspan="3" class="ds-empty">لا توجد قطع على المخطط</td></tr>';
+    /* رأس القسم يتكرر على كل صفحة تحمل جدول الأثاث — ما عدا صفحة أولى بلا جدول */
+    var showTable = !a || !!a.first || rowsSrc.length > 0;
 
-    var legend = f.legend.map(function (e) {
+    var legendSrc = f.legend.slice(a && a.legendFrom ? a.legendFrom : 0,
+      a && a.legendTo != null ? a.legendTo : undefined);
+    var legend = legendSrc.map(function (e) {
       var cls = 'sw' + (e.shape === 'circle' ? ' circle' : '') + (e.shape === 'outline' ? ' outline' : '');
       var style = e.shape === 'outline' ? '' : ' style="background:' + esc(e.color) + '"';
       return '<li><span class="' + cls + '"' + style + '></span>'
@@ -357,7 +376,7 @@
         + (e.sub ? '<span class="sb">' + esc(e.sub) + '</span>' : '') + '</li>';
     }).join('');
 
-    var cap = f.capacity > 0
+    var cap = showCap && f.capacity > 0
       ? '<div class="ds-cap"><b class="num">' + f.capacity + '</b><span>مقعداً – سعة الجلوس</span></div>'
       : '';
 
@@ -366,10 +385,10 @@
        التخطيط مضغوط (شريط عنوان + شبكة عمودين) ليبقى ارتفاع العمود
        الجانبي مطابقاً لارتفاعه قبل الإضافة حتى في أكثر الحالات ازدحاماً. */
     var areas = '';
-    if (f.areas) {
+    if (showAreas && f.areas) {
       var ar = f.areas;
       var aitems = [
-        ['طول الجلوس', n2(ar.len) + ' م', ''],
+        ['طول الجلسة', n2(ar.len) + ' م', ''],
         ['مساحة الارتكاز', n2(ar.area) + ' م²', ''],
         ['مساحة الغرفة', n2(ar.room) + ' م²', ''],
         ['المساحة المتبقية', n2(ar.rest) + ' م²', ''],
@@ -378,9 +397,9 @@
       areas = '<div class="ds-areas-wrap">'
         + '<p class="ds-areas-h"><b>ملخص المساحات</b><span>مجموع مساقط القطع وقد تتداخل</span></p>'
         + '<dl class="ds-areas">'
-        + aitems.map(function (a) {
-            return '<div class="ds-areas-i' + a[2] + '"><dt>' + a[0] + '</dt>'
-              + '<dd class="num">' + a[1] + '</dd></div>';
+        + aitems.map(function (a2) {
+            return '<div class="ds-areas-i' + a2[2] + '"><dt>' + a2[0] + '</dt>'
+              + '<dd class="num">' + a2[1] + '</dd></div>';
           }).join('')
         + '</dl></div>';
     }
@@ -392,7 +411,8 @@
       + scaleBlock(pl) + '</span>'
       : '<span class="ds-img ds-img-empty">لا يوجد مخطط</span>';
 
-    return '<div class="dsheet">'
+    return '<div class="dsheet' + (cont ? ' ds-cont' : '') + '">'
+      + ((pg.total || 0) > 1 ? '<span class="ds-pageof">صفحة ' + (pg.idx + 1) + ' من ' + pg.total + '</span>' : '')
       + '<div class="ds-head">'
       + '<div class="ds-titles"><p class="ds-caption">' + esc(opts.caption || DEFAULT_CAPTION) + '</p>'
       + '<h1 class="ds-title">' + esc(opts.title || DEFAULT_TITLE) + '</h1></div>'
@@ -403,16 +423,20 @@
       + '</div>'
       + '<div class="ds-body">'
       + '<aside class="ds-side">'
-      + '<h2 class="ds-h ds-h-tbl">جداول الأثاث</h2>'
-      + '<table class="ds-tbl"><thead><tr><th>القطعة</th><th>المقاس (سم)</th><th class="c-qty">العدد</th></tr></thead>'
-      + '<tbody>' + rows + '</tbody></table>'
+      + (showTable
+        ? '<h2 class="ds-h ds-h-tbl">جداول الأثاث</h2>'
+          + '<table class="ds-tbl"><thead><tr><th>القطعة</th><th>المقاس (سم)</th><th class="c-qty">العدد</th></tr></thead>'
+          + '<tbody>' + rows + '</tbody></table>'
+        : '')
       + cap
-      + '<h2 class="ds-h ds-h-leg">دليل الألوان والمواد</h2>'
-      + '<ul class="ds-legend">' + legend + '</ul>'
-      + '<p class="ds-note">' + esc(f.note) + '</p>'
+      + (showLegend
+        ? '<h2 class="ds-h ds-h-leg">دليل الألوان والمواد</h2>'
+          + '<ul class="ds-legend">' + legend + '</ul>'
+        : '')
+      + (showNote ? '<p class="ds-note">' + esc(f.note) + '</p>' : '')
       + areas
       + '</aside>'
-      + '<div class="ds-plan">' + img + '</div>'
+      + (cont ? '' : '<div class="ds-plan">' + img + '</div>')
       + '</div>'
       + (opts.footHtml ? '<div class="ds-foot">' + opts.footHtml + '</div>' : '')
       + '</div>';
@@ -435,26 +459,317 @@
     img.style.cssText = planBoxStyle(pl, opts, footMm);
   }
 
-  function build(opts) {
+  /* ================= تقسيم الورقة على أكثر من صفحة =================
+     لا يُعتمد على overflow:hidden ولا يُقصّ محتوى صامتاً: كل صفحة تُبنى ثم
+     تُقاس فعلياً وهي موصولة (خطوط حقيقية وقياس حقيقي)، فإن جاوز محتوى
+     العمود أسفله (نحو شريط التواصل) تُنقص مواصفة الصفحة وتُعاد — فلا يتداخل
+     الجدول مع التذييل ولا تنقطع معلومة عن ملخص المساحات.
+     القواعد: الصفوف تُقصّ من آخر صفوف الصفحة ولا يُقسَّم صف قطّاعاً؛ وما بعد
+     الجدول (السعة ← الدليل ← الحاشية ← المساحات) كتل كاملة تنتقل بالترتيب
+     نفسه إلى الصفحة التالية؛ ورأس القسم يتكرر على كل صفحة تحمل الجدول. */
+  var SAFE_MM = 1.2;    // هامش أمان أسفل محتوى العمود قبل حدّ الصفحة (مم)
+  var TOL_MM = 0.4;     // سماحية القياس (مم)
+  var MAX_TRIES = 8;    // محاولات ضبط صفحة واحدة
+  var MAX_PAGES = 24;   // سقف أمان لعدد الصفحات
+
+  /** مم لكل بكسل داخل الورقة (عرضها ثابت 277مم) */
+  function pxmmOf(el) {
+    var w = el && el.getBoundingClientRect ? el.getBoundingClientRect().width : 0;
+    return w > 0 ? w / SHEET_W : 0;
+  }
+
+  /** ارتفاع عنصر مع هوامشه بالمليمتر — الهامش التلقائي لا يضيف ارتفاعاً
+      (لا فراغ فيه: لا يُقاس إلا عند تجاوز، حيث يصبح الفراغ سالباً فيُصفَّر) */
+  function boxMm(el, k) {
+    if (!el || !el.getBoundingClientRect) return 0;
+    var mt = 0, mb = 0;
+    if (window.getComputedStyle) {
+      var cs = window.getComputedStyle(el);
+      mt = parseFloat(cs.marginTop) || 0;
+      mb = parseFloat(cs.marginBottom) || 0;
+    }
+    return (el.getBoundingClientRect().height + mt + mb) / k;
+  }
+
+  /** قياس صفحة موصولة بالمليمتر: المتاح في العمود حتى العائق الفعلي أسفله
+      (بداية شريط التواصل إن وُجد وإلا حافة الصفحة نفسها)، تجاوز محتواه،
+      ارتفاع الصف وكتل ما بعد الجدول. */
+  function measureSheet(el) {
+    var k = pxmmOf(el);
+    if (!(k > 0)) return null;
+    var body = el.querySelector('.ds-body'), side = el.querySelector('.ds-side');
+    if (!body || !side) return null;
+    var foot = el.querySelector('.ds-foot');
+    /* العائق الفعلي: الشريط لا يُقاس من أسفل الجسم (بينهما هامش 2مم ينتمي
+       للشريط)، وبلا شريط يبقى أسفل الصفحة هو الحد الفيزيائي */
+    var obstacle = foot ? foot.getBoundingClientRect().top : el.getBoundingClientRect().bottom;
+    var limit = obstacle - SAFE_MM * k;
+    var sideTop = side.getBoundingClientRect().top;
+    var bottom = 0, i;
+    for (i = 0; i < side.children.length; i++) {
+      bottom = Math.max(bottom, side.children[i].getBoundingClientRect().bottom);
+    }
+    var rows = el.querySelectorAll('.ds-tbl tbody tr');
+    var rowsH = 0;
+    for (i = 0; i < rows.length; i++) rowsH += rows[i].getBoundingClientRect().height;
+    var thead = el.querySelector('.ds-tbl thead');
+    /* كم عنصر دليل يتّسع حتى الحد الفعلي — لتفصيل دليل طويل على صفحات
+       متتابعة بدل إخفائه أو إعلان تجاوزه */
+    var legFit = null;
+    var legEl = el.querySelector('.ds-legend');
+    if (legEl) {
+      legFit = 0;
+      var lis = legEl.querySelectorAll('li');
+      for (i = 0; i < lis.length; i++) {
+        if (lis[i].getBoundingClientRect().bottom <= limit) legFit = i + 1;
+        else break;
+      }
+    }
+    return {
+      k: k,
+      avail: Math.max(0, (limit - sideTop) / k),
+      overflow: (bottom - limit) / k,
+      rowsN: rows.length,
+      rowH: rows.length ? (rowsH / rows.length) / k : 0,
+      tblHead: boxMm(el.querySelector('.ds-h-tbl'), k) + (thead ? thead.getBoundingClientRect().height / k : 0),
+      cap: boxMm(el.querySelector('.ds-cap'), k),
+      leg: boxMm(el.querySelector('.ds-h-leg'), k) + boxMm(el.querySelector('.ds-legend'), k),
+      legFit: legFit,
+      note: boxMm(el.querySelector('.ds-note'), k),
+      areas: boxMm(el.querySelector('.ds-areas-wrap'), k)
+    };
+  }
+
+  /** مواصفة الصفحة بعد قياسها: done = تكفي، وإلا مواصفة أصغر تُعاد المحاولة بها.
+      الجدول الجاري يُقصّ أولاً، ثم تُهمل الكتل اللاحقة من آخرها، ولا يُحذف
+      آخر ما في الصفحة قطّاً (يُوضع ويُعلَم تجاوزه بدل أن يختفي صامتاً). */
+  function shrinkAlloc(alloc, m, f) {
+    var next = { rows: alloc.rows.slice(), cap: !!alloc.cap, legend: !!alloc.legend,
+      legendFrom: alloc.legendFrom || 0, legendTo: alloc.legendTo != null ? alloc.legendTo : null,
+      note: !!alloc.note, areas: !!alloc.areas,
+      cont: !!alloc.cont, first: !!alloc.first };
+    var isEmpty = function (x) {
+      return !x.rows.length && !x.cap && !x.legend && !x.note && !x.areas;
+    };
+    if (m.overflow <= TOL_MM) return { done: true, alloc: next, overflow: 0 };
+    /* المتاح يشمل هامش الأمان أصلاً (avail = حتى العائق ناقصه) */
+    var room = m.avail - m.tblHead;
+    var nFit = m.rowH > 0 ? Math.floor(room / m.rowH) : 0;
+    if (next.rows.length > 0 && nFit < next.rows.length) {
+      var keep = Math.max(1, Math.min(nFit, next.rows.length - 1));
+      if (keep < next.rows.length) {
+        next.rows = next.rows.slice(0, keep);
+        next.cap = false; next.legend = false; next.note = false; next.areas = false;
+        next.legendTo = null;
+        return { done: false, alloc: next };
+      }
+    }
+    function drop(key) {
+      var probe = { rows: next.rows, cap: next.cap, legend: next.legend,
+        legendFrom: next.legendFrom, legendTo: next.legendTo,
+        note: next.note, areas: next.areas,
+        cont: next.cont, first: next.first };
+      probe[key] = false;
+      /* آخر ما في الصفحة لا يُحذف أبداً: يُوضع ويُعلَم تجاوزه بدل أن يختفي */
+      if (isEmpty(probe)) return { done: true, alloc: next, overflow: m.overflow };
+      next = probe;
+      return { done: false, alloc: next };
+    }
+    if (next.areas) return drop('areas');
+    if (next.note) return drop('note');
+    if (next.legend) {
+      var probeL = { rows: next.rows, cap: next.cap, legend: next.legend,
+        legendFrom: next.legendFrom, legendTo: next.legendTo,
+        note: next.note, areas: next.areas,
+        cont: next.cont, first: next.first };
+      probeL.legend = false;
+      if (isEmpty(probeL)) {
+        /* الدليل وحده هو كل ما بقي وهو أطول من الصفحة: نُجزّئه على صفحات
+           متتابعة (عناصر تناسقاً) بدل إخفائه أو قصّه */
+        var fit = m.legFit | 0;
+        var from = next.legendFrom;
+        var end = next.legendTo != null ? next.legendTo
+          : (f && f.legend && f.legend.length ? f.legend.length : from);
+        if (fit >= 1 && from + fit < end) {
+          next.legendTo = from + fit;
+          return { done: false, alloc: next };
+        }
+        return { done: true, alloc: next, overflow: m.overflow };
+      }
+      next = probeL;
+      return { done: false, alloc: next };
+    }
+    if (next.cap) return drop('cap');
+    if (next.rows.length > 1) {
+      next.rows = next.rows.slice(0, next.rows.length - 1);
+      return { done: false, alloc: next };
+    }
+    /* لا شيء يُحذف: محتوى لا يتّسع حتى مفرداً — يُبقي ويُعلَم بوضوح */
+    return { done: true, alloc: next, overflow: m.overflow };
+  }
+
+  function tempHost() {
+    var h = document.createElement('div');
+    h.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden;';
+    if (document.body) document.body.appendChild(h);
+    return h;
+  }
+
+  function buildPage(opts, f, pl, alloc, idx, total) {
+    var el = document.createElement('div');
+    el.innerHTML = render(f, pl, opts, { alloc: alloc, idx: idx, total: total });
+    el = el.firstChild;
+    el.__facts = f; el.__pl = pl; el.__alloc = alloc; el.__page = idx + 1;
+    return el;
+  }
+
+  /** لوحة ظاهرة (لا إخفاء ولا قصّ): محتوى الصفحة أطول من مساحتها حتى
+      تتحسّن التفاصيل لاحقاً — التقرير لا يكذب ولا يُطمس */
+  function markOverflow(el) {
+    if (!el || !el.appendChild || el.querySelector('.ds-over')) return;
+    var s = document.createElement('span');
+    s.className = 'ds-over';
+    s.textContent = 'محتوى هذه الصفحة أطول من مساحتها — معروض كاملاً';
+    el.appendChild(s);
+  }
+
+  /** صفحة واحدة تُبنى وتُقاس وتُضبط مواصفتها حتى تتّسع — المحاولات الفاشلة
+      تبقى مرفوعة حتى تُستبدل (قياس الصفحة الجديدة لا يتأثّر بجوارها) ثم تُرفع.
+      لو تعذّر الضبط تماماً تُبقي آخر محاولة مع لوحة ظاهرة — لا محتوى مفقود. */
+  function tunePage(h, opts, f, pl, alloc, idx, total) {
+    var builtEls = [], lastAlloc = alloc;
+    function dropExcept(keep) {
+      builtEls.forEach(function (x) { if (x !== keep && x.parentNode === h) h.removeChild(x); });
+    }
+    try {
+      for (var t = 0; t < MAX_TRIES; t++) {
+        lastAlloc = alloc;
+        var el = buildPage(opts, f, pl, alloc, idx, total);
+        h.appendChild(el); builtEls.push(el);
+        var res = null;
+        try {
+          if (opts.footHtml && pl && pl.img) { try { fitFoot(el, pl, opts); } catch (_) { /* noop */ } }
+          var m = measureSheet(el);
+          res = m ? shrinkAlloc(alloc, m, f) : { done: true, alloc: alloc, overflow: 0 };
+        } catch (_) { res = { done: true, alloc: alloc, overflow: 0 }; }
+        if (res.done) {
+          if (res.overflow > TOL_MM) { el.__overflow = res.overflow; markOverflow(el); }
+          dropExcept(el);
+          return { el: el, alloc: res.alloc };
+        }
+        alloc = res.alloc;
+      }
+      /* سقف المحاولات: آخر محاولة تُبقي ويُعلَم تجاوزها ظاهراً */
+      var lastEl = builtEls[builtEls.length - 1];
+      if (lastEl) {
+        if (!lastEl.__overflow) { lastEl.__overflow = TOL_MM + 1; markOverflow(lastEl); }
+        dropExcept(lastEl);
+        return { el: lastEl, alloc: lastAlloc };
+      }
+      return null;
+    } catch (e) {
+      dropExcept(null);
+      throw e;
+    }
+  }
+
+  /** كل صفحات الورقة داخل host (وإلا مضيف مؤقت تُرفع منه الصفحات بعد البناء).
+      الصفحات تُقاس وهي موصولة، ثم تُعاد بأرقام صفحاتها إن تعدّدت. */
+  function buildPages(opts, host) {
     opts = opts || {};
     var f = facts(opts.design, opts);
     var pl = opts.img === null ? null : plan(opts.design, opts, opts.imgW || 1600);
-    var el = document.createElement('div');
-    el.innerHTML = render(f, pl, opts);
-    el = el.firstChild;
-    el.__facts = f;
-    el.__pl = pl;
-    /* قياس الشريط في تخطيط حقيقي (بلا تغيير على الصفحة المعروضة) ثم إعادة
-       قصّ صندوق المخطط حسبه: لا ارتفاع ثابت قد يقصّ محتوى آخر. */
-    if (opts.footHtml && pl && pl.img && document.body) {
-      var host = document.createElement('div');
-      host.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden;';
-      document.body.appendChild(host);
-      host.appendChild(el);
-      try { fitFoot(el, pl, opts); }
-      finally { host.removeChild(el); document.body.removeChild(host); }
+    var own = !host;
+    var h = host || tempHost();
+    /* موضع غير موصول لا يقيس شيئاً (أبعاد صفرية) — نرفعه مؤقتاً ليفصل
+       الصفحات فعلياً بدل تركها مجتمعة في صفحة واحدة مكتومة */
+    if (!own && document.body && h.isConnected === false) {
+      try { document.body.appendChild(h); } catch (_) { /* noop */ }
     }
-    return el;
+    var pages = [];
+    var pendingRows = (f.rows || []).slice();
+    var pendingTrail = ['cap', 'legend', 'note'].concat(f.areas ? ['areas'] : []);
+    var legendFrom = 0;   /* أول عنصر دليل لم يُوضع بعد (يُنصّب على صفحات) */
+    var guard = 0;
+    try {
+      while ((pendingRows.length || pendingTrail.length) && guard++ < MAX_PAGES) {
+        var idx = pages.length;
+        var alloc = {
+          rows: pendingRows.slice(), cont: idx > 0, first: idx === 0,
+          cap: pendingTrail.indexOf('cap') >= 0,
+          legend: pendingTrail.indexOf('legend') >= 0,
+          legendFrom: legendFrom, legendTo: null,
+          note: pendingTrail.indexOf('note') >= 0,
+          areas: pendingTrail.indexOf('areas') >= 0
+        };
+        var built = tunePage(h, opts, f, pl, alloc, idx, 0);
+        if (!built) break;
+        alloc = built.alloc;
+        pages.push(built.el);
+        pendingRows = pendingRows.slice(alloc.rows.length);
+        if (alloc.legend) {
+          /* ما وُضع من الدليل (حتى الجزء المقصوص منه على هذه الصفحة) صار مرفوعاً */
+          legendFrom = alloc.legendTo != null ? alloc.legendTo : (f.legend || []).length;
+          if (legendFrom >= (f.legend || []).length) {
+            pendingTrail = pendingTrail.filter(function (x) { return x !== 'legend'; });
+          }
+        }
+        ['cap', 'note', 'areas'].forEach(function (key) {
+          if (alloc[key]) pendingTrail = pendingTrail.filter(function (x) { return x !== key; });
+        });
+      }
+      /* لم يبقَ مكان (سقف الصفحات): لا نُسقط محتوى صامتاً — نعلّم آخر صفحة */
+      if ((pendingRows.length || pendingTrail.length) && pages.length) {
+        var last = pages[pages.length - 1];
+        if (!last.__overflow) { last.__overflow = TOL_MM + 1; markOverflow(last); }
+      }
+      /* شارة «صفحة N من M» تحتاج العدد النهائي: تُعاد بناء الصفحات بنفس
+         المواصفات ويُتحقق منها — وإن خالف القياس الجديد مواصفة قديمة تُرفض
+         الشارة لكل الصفحات معاً (توافق تام أجمل من شارات ناقصة)، والصفوف
+         لا تُقاس من جديد في أي حال. */
+      if (pages.length > 1) {
+        var repl = [], ok = true;
+        for (var i = 0; i < pages.length; i++) {
+          var old = pages[i];
+          var again = tunePage(h, opts, f, pl, old.__alloc, i, pages.length);
+          if (!again) { ok = false; break; }
+          var a1 = again.alloc, a0 = old.__alloc;
+          var same = a1.rows.length === a0.rows.length
+            && !!a1.cap === !!a0.cap && !!a1.legend === !!a0.legend
+            && (a1.legendFrom || 0) === (a0.legendFrom || 0)
+            && (a1.legendTo == null ? null : a1.legendTo) === (a0.legendTo == null ? null : a0.legendTo)
+            && !!a1.note === !!a0.note && !!a1.areas === !!a0.areas;
+          if (!same || again.el.__overflow) {
+            ok = false;
+            try { if (again.el.parentNode === h) h.removeChild(again.el); } catch (_) { /* noop */ }
+            break;
+          }
+          repl.push(again.el);
+        }
+        if (ok && repl.length === pages.length) {
+          for (var r = 0; r < pages.length; r++) {
+            try { if (pages[r].parentNode === h) h.removeChild(pages[r]); } catch (_) { /* noop */ }
+            pages[r] = repl[r];
+          }
+        } else {
+          repl.forEach(function (x) { try { if (x.parentNode === h) h.removeChild(x); } catch (_) { /* noop */ } });
+        }
+      }
+      if (own) {
+        for (var j = 0; j < pages.length; j++) { try { h.removeChild(pages[j]); } catch (_) { /* noop */ } }
+        try { if (h.parentNode) h.parentNode.removeChild(h); } catch (_) { /* noop */ }
+      }
+      return pages;
+    } catch (e) {
+      if (own) { try { if (h.parentNode) h.parentNode.removeChild(h); } catch (_) { /* noop */ } }
+      throw e;
+    }
+  }
+
+  /** الصفحة الأولى فقط (للمعاينة على الشاشة) — السلوك القديم لـ build() */
+  function build(opts) {
+    var pages = buildPages(opts, null);
+    return pages.length ? pages[0] : document.createElement('div');
   }
 
   /* رفع الورقة إلى موضع خارج الشاشة وتصويرها — internals مشتركة بين
@@ -465,7 +780,6 @@
      release() يستدعي restore() بعد stamp() بترتيب واحد ويمنع التكرار. */
   function shoot(opts) {
     opts = opts || {};
-    var el = build(opts);
     var area = opts.mount;
     if (!area || !area.appendChild) return Promise.reject(new Error('لا يوجد موضع لعرض الورقة.'));
     var prevHtml = area.innerHTML, prevCss = area.style.cssText;
@@ -474,7 +788,6 @@
     function release() { if (released) return; released = true; restore(); }
     try {
       area.innerHTML = '';
-      area.appendChild(el);
       area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
     } catch (e) {
       /* فشل الإعداد المزامني (قبل Promise): لا نترك الواحة مفرّغة */
@@ -484,13 +797,20 @@
     return Promise.resolve()
       .then(function () { return document.fonts && document.fonts.ready ? document.fonts.ready : null; })
       .then(function () {
-        /* إعادة القياس بعد تحميل الخطوط: قد يتغيّر التفاف نص الشريط */
-        try { fitFoot(el, el.__pl, opts); } catch (_) { /* noop */ }
-        return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        /* البناء والقياس بعد تحميل الخطوط (التفاف نص الشريط قد يتغيّر) —
+           كل الصفحات داخل الواحة نفسها فالقياس حقيقي ومتوافق مع التصوير */
+        var els = buildPages(opts, area);
+        if (!els.length) { var one = build(opts); area.appendChild(one); els = [one]; }
+        var shots = [];
+        var chain = Promise.resolve();
+        els.forEach(function (el) {
+          chain = chain.then(function () {
+            return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+          }).then(function (canvas) { shots.push({ canvas: canvas, el: el }); });
+        });
+        return chain.then(function () { return { shots: shots, release: release }; });
       })
-      .then(function (canvas) {
-        return { canvas: canvas, el: el, release: release };
-      }, function (e) { release(); throw e; });
+      .then(null, function (e) { release(); throw e; });
   }
 
   /** تطبيق لقطة الورقة كصفحة A4 أفقي 277×190مم داخل PDF قائمة */
@@ -503,32 +823,38 @@
     return pdf;
   }
 
-  /** PDF أفقي 277×190مم — المكتبة نفسها (html2canvas + jsPDF) كما كانت.
-      release() بعد stamp() بإطار واحد: قياس الروابط يقع والورقة موصولة. */
+  /** PDF أفقي 277×190مم — المكتبة نفسها (html2canvas + jsPDF) كما كانت،
+      وعدد صفحاته = عدد الصفحات المبنية فعلياً (الصفحة الأولى بلا addPage).
+      release() بعد آخر stamp: قياس الروابط يقع والصفحات موصولة. */
   function pdfBlob(opts) {
-    return shoot(opts).then(function (shot) {
+    return shoot(opts).then(function (s) {
       try {
         var jsPDF = window.jspdf.jsPDF;
         var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-        stamp(pdf, shot, opts);
+        for (var i = 0; i < s.shots.length; i++) {
+          if (i > 0) pdf.addPage('a4', 'landscape');
+          stamp(pdf, s.shots[i], opts);
+        }
         return pdf.output('blob');
       } finally {
-        shot.release();
+        s.release();
       }
     });
   }
 
-  /** إضافة ورقة التصميم كصفحة أفقية ثانية إلى أمر شراء/تصنيع قائمة
-      (نفس صفحة العميل تماماً: المقياس والجدول والألوان وملخص المساحات) */
+  /** إضافة ورقة التصميم كصفحات أفقية إلى أمر شراء/تصنيف قائمة
+      (نفس صفحات العميل تماماً: المقياس والجدول والألوان وملخص المساحات) */
   function addPage(pdf, opts) {
     if (!pdf) return Promise.reject(new Error('لا يوجد موضع لعرض الورقة.'));
-    return shoot(opts).then(function (shot) {
+    return shoot(opts).then(function (s) {
       try {
-        pdf.addPage('a4', 'landscape');
-        stamp(pdf, shot, opts);
+        for (var i = 0; i < s.shots.length; i++) {
+          pdf.addPage('a4', 'landscape');
+          stamp(pdf, s.shots[i], opts);
+        }
         return pdf;
       } finally {
-        shot.release();
+        s.release();
       }
     });
   }
@@ -547,6 +873,8 @@
     plan: plan,
     render: render,
     build: build,
+    buildPages: buildPages,
+    measureSheet: measureSheet,
     pdfBlob: pdfBlob,
     addPage: addPage,
     fmtDate: fmtDate,
