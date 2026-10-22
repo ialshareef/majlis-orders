@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>مِسبار روابط PDF — مسارات الإنتاج مباشرة</title>
+<link rel="stylesheet" href="../css/style.css">
+<style>body{font-family:monospace;background:#EFEAE2;margin:0;padding:12px;font-size:13px}
+#status{position:sticky;top:0;background:#fff;padding:6px;border:1px solid #ccc}</style>
+</head><body>
+<div id="status">جاهز</div>
+<div id="printArea"></div>
+<div id="pPrint"></div>
+
+<script src="../js/designer.js"></script>
+<script src="../js/design-sheet.js"></script>
+<script src="./_js-extract.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"
+        data-lib="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"
+        data-lib="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"
+        data-lib="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script>
+/* المكتبات محملة ومعلّمة data-ok كما تفعل loadScript في الإنتاج (تصدير ثانٍ بلا شبكة) */
+document.querySelectorAll('script[data-lib]').forEach(function (s) { s.dataset.ok = '1'; });
+</script>
+<script>
+/* مِسبار E2E لمسارات الإنتاج الفعلية الثلاثة — بلا إعادة هيكلة للكود:
+   1) js/app.js  makeDesignSheetBlob  (تصميم الموظف)
+   2) js/portal.js makeDesignPdfBlob  (تصميم العميل)
+   3) js/app.js  makePdfBlob          (أمر الشراء: فاتورة + ورقة تصميم)
+   الدوال وتبعياتها تُستخرج من المصدر نفسه عبر JSExtract وتُشغَّل على
+   مكتبتين حقيقيتين (html2canvas + jsPDF) داخل متصفح حقيقي. المُدخل الوحيد
+   المُستبدل هو مصدر الإعدادات (settings/S.settings) ليمرَّ بقيم حقيقية
+   يمرّها المشغّل من الخادم الحيّ — وكل ما بعده منطق إنتاج كامل
+   (shopSocialList/validSocialUrl/contactChannels/… حتى تعليقات PDF). */
+window.__res = null;
+window.__err = null;
+
+var ORIG = { pdfBlob: DesignSheet.pdfBlob, addPage: DesignSheet.addPage };
+
+function setStatus(t) { try { document.getElementById('status').textContent = t; } catch (_) {} }
+
+function sampleDesign() {
+  var off = new Designer(document.createElement('canvas'), {
+    getItem: function (id) { return { id: id, name: 'إكسسوار', color: '#2f6f4f' }; },
+    pieceSpecLabel: function () { return ''; }, pieceStyle: function () { return null; },
+    onChange: function () {}, onSelect: function () {}
+  });
+  off.setState(Designer.emptyState(6, 4));
+  off.addOpening(0, 'door');
+  off.addOpening(1, 'mashab');
+  off.addPiece({ kind: 'sofa', w: 2.4, h: 0.8, rot: 0, x: 0.4, y: 0.4, seating: 'sofa', fabricId: null });
+  off.addPiece({ kind: 'sofa', w: 1.6, h: 0.8, rot: 90, x: 5.2, y: 0.4, seating: 'floor', fabricId: null });
+  off.addPiece({ kind: 'sofa', w: 3.2, h: 0.8, rot: 180, x: 5.6, y: 3.6, seating: 'arabic', fabricId: null });
+  off.addAccessory('a1'); off.addAccessory('a2');
+  off.render();
+  return off.getState();
+}
+
+var ITEMS = {
+  a1: { id: 'a1', name: 'طاولة جانبية', price: 350, color: '#7a5c3e', category: 'acc', unit: 'each', fabric: '' },
+  a2: { id: 'a2', name: 'مصباح أرضي', price: 180, color: '#c9a227', category: 'acc', unit: 'each', fabric: '' }
+};
+var CATMAP = {
+  a1: { id: 'a1', name: 'طاولة جانبية', color: '#7a5c3e', fabric: 'كتان', category: 'acc' },
+  a2: { id: 'a2', name: 'مصباح أرضي', color: '#c9a227', fabric: '', category: 'acc' }
+};
+
+function assign(target, src, name) {
+  var v = null, err = null, s;
+  s = JSExtract.extractFn(src, name);
+  if (s) { try { v = new Function('return ' + s)(); } catch (e) { err = name + ' (fn): ' + e.message; } }
+  if (v == null) {
+    s = JSExtract.extractAssign(src, name);
+    if (s) { try { v = new Function('return (' + s + ')')(); } catch (e) { err = name + ' (asg): ' + e.message; } }
+    else if (!err) err = name + ': missing';
+  }
+  if (v == null) return err || (name + ': missing');
+  target[name] = v;
+  return null;
+}
+
+function installApp(src) {
+  var missing = [];
+  var fns = ['loadScript', 'sheetFootHtml', 'shopSocialList', 'shopSocialHtml', 'socialQrList',
+    'validSocialUrl', 'waPhone', 'fmtIntl', 'addPdfLinksToDoc', 'makeDesignSheetBlob', 'makePdfBlob'];
+  var asgs = ['$', 'esc', 'getItem', 'latinDigits', 'STATUS', 'DESIGN_STATUS',
+    'H2C_URL', 'JSPDF_URL', 'QR_URL', 'SOCIAL_CHANS', 'WA_ICON', 'TEL_ICON'];
+  var e;
+  for (var i = 0; i < fns.length; i++) { e = assign(window, src, fns[i]); if (e) missing.push(e); }
+  for (var j = 0; j < asgs.length; j++) { e = assign(window, src, asgs[j]); if (e) missing.push(e); }
+  return missing;
+}
+
+function installPortal(src) {
+  var missing = [];
+  var fns = ['loadScript', 'designContactHtml', 'designSheetOpts', 'contactChannels', 'qrDataUrl',
+    'saudiIntl', 'formatSaudiIntl', 'httpsUrl', 'safeHref', 'digits', 'addPdfLinks',
+    'makeDesignPdfBlob', 'getCatItem', 'pieceLabel', 'portalPieceStyle'];
+  var asgs = ['$', 'esc', 'SEATING', 'CONTACT_ICON', 'H2C_URL', 'JSPDF_URL', 'QR_URL'];
+  var e;
+  for (var i = 0; i < fns.length; i++) { e = assign(window, src, fns[i]); if (e) missing.push(e); }
+  for (var j = 0; j < asgs.length; j++) { e = assign(window, src, asgs[j]); if (e) missing.push(e); }
+  return missing;
+}
+
+/* راصد شفاف: يقرأ n (عدد الروابط المقاسة) وdom (بطاقات الشريط الموصولة)
+   أثناء addLinks نفسه — دون تغيير السلوك — ويُعيد الوضع الأصلي بعده. */
+function capInto(o, into) {
+  if (!o || typeof o.addLinks !== 'function') { into.push({ n: -1, dom: -1 }); return; }
+  var inner = o.addLinks;
+  o.addLinks = function (pdf, el, x0, y0, wMm) {
+    var n = inner.call(o, pdf, el, x0, y0, wMm);
+    var dom = -2;
+    try { dom = el.querySelectorAll('[data-url]').length; } catch (_) {}
+    into.push({ n: n, dom: dom });
+    return n;
+  };
+}
+function instrument() {
+  var captured = [];
+  DesignSheet.pdfBlob = function (o) { capInto(o, captured); return ORIG.pdfBlob.call(this, o); };
+  DesignSheet.addPage = function (p, o) { capInto(o, captured); return ORIG.addPage.call(this, p, o); };
+  return {
+    take: function () {
+      DesignSheet.pdfBlob = ORIG.pdfBlob;
+      DesignSheet.addPage = ORIG.addPage;
+      return captured;
+    }
+  };
+}
+
+function toB64(blob) {
+  return blob.arrayBuffer().then(function (ab) {
+    var u = new Uint8Array(ab), s = '', CH = 0x8000;
+    for (var i = 0; i < u.length; i += CH) s += String.fromCharCode.apply(null, u.subarray(i, i + CH));
+    return btoa(s);
+  });
+}
+
+async function runStaff(cfg, src) {
+  var inst = null;
+  try {
+    var missing = installApp(src);
+    window.settings = function () { return cfg; };
+    window.Store = { getItem: function (id) { return ITEMS[id] || null; } };
+    inst = instrument();
+    var blob = await window.makeDesignSheetBlob({
+      id: 'D-101', number: 'D-101', name: 'عبدالله الشمري', phone: '0501234567',
+      status: 'new', design: sampleDesign()
+    });
+    var caps = inst.take();
+    return { b64: await toB64(blob), caps: caps, missing: missing, err: null };
+  } catch (e) {
+    if (inst) inst.take();
+    return { b64: null, caps: [], missing: [], err: String((e && e.stack) || e) };
+  }
+}
+
+async function runClient(cfg, src) {
+  var inst = null;
+  try {
+    var missing = installPortal(src);
+    window.S = {
+      settings: cfg, catalog: [], catMap: CATMAP,
+      designer: { getState: function () { return sampleDesign(); } }
+    };
+    inst = instrument();
+    var blob = await window.makeDesignPdfBlob('D-101');
+    var caps = inst.take();
+    return { b64: await toB64(blob), caps: caps, missing: missing, err: null };
+  } catch (e) {
+    if (inst) inst.take();
+    return { b64: null, caps: [], missing: [], err: String((e && e.stack) || e) };
+  }
+}
+
+async function runOrder(cfg, src) {
+  var inst = null;
+  try {
+    var missing = installApp(src);
+    window.settings = function () { return cfg; };
+    window.Store = { getItem: function (id) { return ITEMS[id] || null; } };
+    // فاتورة واقعية: كتلة التواصل نفسها من socialQrList الإنتاجية
+    var contact = await window.socialQrList();
+    var area = document.getElementById('printArea');
+    area.style.cssText = '';
+    area.innerHTML = '<div class="inv">'
+      + '<div class="inv-head"><div class="inv-brand"><h1>أصالة نجد</h1>'
+      + '<small>0533724290</small></div><div class="inv-title-box">'
+      + '<div class="inv-title">أمر شراء</div><div class="inv-no">#1042</div></div></div>'
+      + '<div class="inv-visuals"><div class="inv-design">مخطط التصميم (يُخفى من التصوير)</div></div>'
+      + '<div class="inv-tbl"><div class="inv-row"><span>كنب 3.2م</span><span>3,200 ر.س</span></div></div>'
+      + contact
+      + '</div>';
+    inst = instrument();
+    var blob = await window.makePdfBlob({
+      number: 1042, status: 'progress',
+      customer: { name: 'عبدالله الشمري', phone: '0501234567' },
+      design: sampleDesign()
+    });
+    var caps = inst.take();
+    return { b64: await toB64(blob), caps: caps, missing: missing, err: null };
+  } catch (e) {
+    if (inst) inst.take();
+    return { b64: null, caps: [], missing: [], err: String((e && e.stack) || e) };
+  }
+}
+
+window.__runAll = async function (cfgs) {
+  try {
+    if (!window.__appSrc) {
+      window.__appSrc = await (await fetch('../js/app.js')).text();
+      window.__portalSrc = await (await fetch('../js/portal.js')).text();
+    }
+    var out = {};
+    var keys = Object.keys(cfgs || {});
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i], cfg = cfgs[k] || {};
+      setStatus(k + ': مسار الموظف…');
+      out[k] = { staff: await runStaff(cfg, window.__appSrc) };
+      setStatus(k + ': مسار أمر الشراء…');
+      out[k].order = await runOrder(cfg, window.__appSrc);
+      setStatus(k + ': مسار العميل…');
+      out[k].client = await runClient(cfg, window.__portalSrc);
+    }
+    setStatus('اكتمل');
+    window.__res = out;
+    return out;
+  } catch (e) {
+    var msg = String((e && e.stack) || e);
+    setStatus('خطأ: ' + msg);
+    window.__err = msg;
+    throw e;
+  }
+};
+</script>
+</body></html>

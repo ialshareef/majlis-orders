@@ -458,17 +458,29 @@
   }
 
   /* رفع الورقة إلى موضع خارج الشاشة وتصويرها — internals مشتركة بين
-     pdfBlob (ملف مستقل) وaddPage (صفحة ثانية داخل أمر قائمة) */
+     pdfBlob (ملف مستقل) وaddPage (صفحة ثانية داخل أمر قائمة).
+     الترتيب حاسم للروابط: el يجب أن يبقى متصلاً بالوثيقة حتى يقيس
+     addLinks مواقع البطاقات — فإن فُصل أولاً ترجع getBoundingClientRect
+     أصفاراً وتُصفَّر روابط PDF كلها (ما حدث في cbe9ad4).
+     release() يستدعي restore() بعد stamp() بترتيب واحد ويمنع التكرار. */
   function shoot(opts) {
     opts = opts || {};
     var el = build(opts);
     var area = opts.mount;
     if (!area || !area.appendChild) return Promise.reject(new Error('لا يوجد موضع لعرض الورقة.'));
     var prevHtml = area.innerHTML, prevCss = area.style.cssText;
-    area.innerHTML = '';
-    area.appendChild(el);
-    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
     function restore() { area.style.cssText = prevCss; area.innerHTML = prevHtml; }
+    var released = false;
+    function release() { if (released) return; released = true; restore(); }
+    try {
+      area.innerHTML = '';
+      area.appendChild(el);
+      area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
+    } catch (e) {
+      /* فشل الإعداد المزامني (قبل Promise): لا نترك الواحة مفرّغة */
+      try { release(); } catch (_) { /* noop */ }
+      return Promise.reject(e);
+    }
     return Promise.resolve()
       .then(function () { return document.fonts && document.fonts.ready ? document.fonts.ready : null; })
       .then(function () {
@@ -477,9 +489,8 @@
         return window.html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
       })
       .then(function (canvas) {
-        restore();
-        return { canvas: canvas, el: el };
-      }, function (e) { restore(); throw e; });
+        return { canvas: canvas, el: el, release: release };
+      }, function (e) { release(); throw e; });
   }
 
   /** تطبيق لقطة الورقة كصفحة A4 أفقي 277×190مم داخل PDF قائمة */
@@ -492,13 +503,18 @@
     return pdf;
   }
 
-  /** PDF أفقي 277×190مم — المكتبة نفسها (html2canvas + jsPDF) كما كانت */
+  /** PDF أفقي 277×190مم — المكتبة نفسها (html2canvas + jsPDF) كما كانت.
+      release() بعد stamp() بإطار واحد: قياس الروابط يقع والورقة موصولة. */
   function pdfBlob(opts) {
     return shoot(opts).then(function (shot) {
-      var jsPDF = window.jspdf.jsPDF;
-      var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-      stamp(pdf, shot, opts);
-      return pdf.output('blob');
+      try {
+        var jsPDF = window.jspdf.jsPDF;
+        var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+        stamp(pdf, shot, opts);
+        return pdf.output('blob');
+      } finally {
+        shot.release();
+      }
     });
   }
 
@@ -507,9 +523,13 @@
   function addPage(pdf, opts) {
     if (!pdf) return Promise.reject(new Error('لا يوجد موضع لعرض الورقة.'));
     return shoot(opts).then(function (shot) {
-      pdf.addPage('a4', 'landscape');
-      stamp(pdf, shot, opts);
-      return pdf;
+      try {
+        pdf.addPage('a4', 'landscape');
+        stamp(pdf, shot, opts);
+        return pdf;
+      } finally {
+        shot.release();
+      }
     });
   }
 
