@@ -16,6 +16,9 @@ const WORKER = path.join(ROOT, 'worker', 'worker.js');
 const TMP = fs.mkdtempSync(path.join(os.tmpdir(), 'mjs-run-'));
 
 fs.copyFileSync(WORKER, path.join(TMP, 'worker.mjs'));
+// الاختبارات التي تستورد D1 الوهمية نسبياً يجب أن تجدها بجانب النسخة المؤقتة.
+const D1_HELPER = path.join(ROOT, 'test', '_d1-mem.mjs');
+if (fs.existsSync(D1_HELPER)) fs.copyFileSync(D1_HELPER, path.join(TMP, '_d1-mem.mjs'));
 const src = fs.readFileSync(TEST, 'utf8');
 const fixed = src.replace(/from\s+(['"])[^'"]*worker(\.js|\.mjs)\1/g, "from './worker.mjs'");
 const copy = path.join(TMP, 'test.mjs');

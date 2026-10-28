@@ -212,6 +212,67 @@ await ta('5هـ) سجل نشاط مزوَّر الهوية يُصحَّح من �
   assert.strictEqual(parsed.userName, 'موظف');
 });
 
+/* ==================== 5و–5ك) عزل القراءة على مستوى API ==================== */
+await ta('5و) bootstrap يعيد للموظف طلباته وحدها ويمنع الطلبات القديمة بلا مالك', async () => {
+  const env = envWith(seeded());
+  // الاسم لا يمنح صلاحية مدير؛ الدور في سجل المستخدم هو المرجع.
+  env.DB.tables.get('users').find((u) => u.id === '2').name = 'admin موظف تجريبي';
+  const r = await call(env, '/api/bootstrap', 'tok-staff');
+  assert.strictEqual(r.status, 200);
+  assert.deepStrictEqual(r.data.orders.map((o) => o.id), ['o-staff']);
+  assert.ok(!JSON.stringify(r.data).includes('آخر'), 'لا تتسرب بيانات طلب آخر');
+});
+
+await ta('5ز) bootstrap يعزل كل موظف ومندوب، والمدير وحده يرى جميع الطلبات القديمة', async () => {
+  const env = envWith(seeded());
+  const ids = {};
+  for (const [key, token] of [['staffA', 'tok-staff'], ['staffB', 'tok-staff2'], ['mandoubA', 'tok-mb'], ['mandoubB', 'tok-mb2'], ['admin', 'tok-admin']]) {
+    const r = await call(env, '/api/bootstrap', token);
+    assert.strictEqual(r.status, 200, key + ' status=' + r.status);
+    ids[key] = r.data.orders.map((o) => o.id).sort();
+  }
+  assert.deepStrictEqual(ids.staffA, ['o-staff']);
+  assert.deepStrictEqual(ids.staffB, ['o-staff2']);
+  assert.deepStrictEqual(ids.mandoubA, ['o-mb']);
+  assert.deepStrictEqual(ids.mandoubB, ['o-mb2']);
+  assert.deepStrictEqual(ids.admin, ['o-admin', 'o-mb', 'o-mb2', 'o-orphan', 'o-staff', 'o-staff2']);
+});
+
+await ta('5ح) تغيير الحالة أو الدفعات والاسترداد على طلب غير مملوك يُرفض بلا كتابة', async () => {
+  const env = envWith(seeded());
+  const before = stored(env, 'o-staff2');
+  const r = await syncUp(env, 'tok-mb', Object.assign(orderJSON('o-staff2', 1002), {
+    status: 'delivered', paid: 500, payments: [{ id: 'refund', amount: -500, method: 'cash' }],
+  }));
+  assert.strictEqual(r.status, 403);
+  assert.deepStrictEqual(stored(env, 'o-staff2'), before);
+  assert.ok(!JSON.stringify(r.data).includes('1002'), 'رسالة الرفض لا تكشف رقم الطلب');
+});
+
+await ta('5ط) المندوب لا يعدّل طلب موظف أو مندوب آخر أو طلب قديم بلا مالك', async () => {
+  const env = envWith(seeded());
+  for (const id of ['o-staff', 'o-mb2', 'o-orphan']) {
+    const before = stored(env, id);
+    const r = await syncUp(env, 'tok-mb', Object.assign(orderJSON(id, 1001), { status: 'delivered' }));
+    assert.strictEqual(r.status, 403, id + ' status=' + r.status);
+    assert.deepStrictEqual(stored(env, id), before, id + ' تغيّر بعد الرفض');
+  }
+});
+
+await ta('5ي) تغيير معرّف طلب في مسار تفاصيل مباشر لا يكشف طلباً غير مملوك', async () => {
+  const env = envWith(seeded());
+  const r = await call(env, '/api/orders/o-staff2', 'tok-staff');
+  assert.strictEqual(r.status, 404, 'المسار المباشر لم يُرفض: ' + r.status);
+  assert.ok(!JSON.stringify(r.data).includes('عميل'), 'تسرّبت تفاصيل الطلب');
+});
+
+await ta('5ك) العميل لا يستطيع تعيين مالك الطلب عبر createdBy مزوّر', async () => {
+  const env = envWith(seeded());
+  const r = await syncUp(env, 'tok-staff', Object.assign(orderJSON('o-new', null, { createdBy: '4' }), { number: null }));
+  assert.strictEqual(r.status, 403);
+  assert.strictEqual(stored(env, 'o-new'), null, 'كُتب الطلب قبل رفض الملكية');
+});
+
 /* ============================ 6) المدير ============================ */
 await ta('6) المدير يعدّل تكاليف أي طلب بغضّ النظر عن المالك', async () => {
   const env = envWith(seeded());
@@ -232,7 +293,7 @@ await ta('7) بلا جلسة: 401 — وجلسة منتهية: 401 — وتوك�
 });
 
 /* ================= 8) الإجمالي وبقاء البيانات بعد إعادة الفتح ================= */
-await ta('8أ) bootstrap للمنشئ: تكاليفه تصله كاملة — وتكاليف الغير مكسوفة', async () => {
+await ta('8أ) bootstrap يعيد الطلب المملوك فقط، بما فيه تكاليفه كاملة', async () => {
   const env = envWith(seeded());
   await syncUp(env, 'tok-staff', costPayload(orderJSON('o-staff', 1001), { 'k': 100 }, [{ name: 'توصيل', amount: 70 }], { name: 'موظف' }, 170));
   const boot = await call(env, '/api/bootstrap', 'tok-staff');
@@ -242,11 +303,7 @@ await ta('8أ) bootstrap للمنشئ: تكاليفه تصله كاملة — و
   assert.deepStrictEqual(mine.costs, { k: 100 }, 'تكاليف طلبي لا تصلني');
   assert.strictEqual(mine.costTotal, 170);
   assert.strictEqual(mine.extraCosts[0].amount, 70);
-  assert.strictEqual(theirs.costs, undefined, 'تكاليف طلب زميل وصلتني');
-  assert.strictEqual(theirs.costTotal, undefined);
-  assert.strictEqual(theirs.extraCosts, undefined);
-  const man = ((theirs.manualRows) || []);
-  assert.ok(!man.some((m) => m && m.cost !== undefined), 'تكلفة صنف يدوي تسرّبت');
+  assert.strictEqual(theirs, undefined, 'طلب زميل وصل إلى الاستجابة');
 });
 
 await ta('8ب) الإجمالي متسق مع البنود (50 توصيل + 100 صنف = 150) ويبقى بعد إعادة الفتح', async () => {
@@ -303,10 +360,11 @@ await ta('8و) المدير يرى تكاليف الجميع في bootstrap — 
   const env = envWith(seeded());
   await syncUp(env, 'tok-staff', costPayload(orderJSON('o-staff', 1001), { k: 3 }, [], { name: 'موظف' }, 3));
   const admin = await call(env, '/api/bootstrap', 'tok-admin');
+  assert.ok(admin.data.orders.some((o) => o.id === 'o-staff'), 'المدير يجب أن يرى جميع الطلبات: ' + JSON.stringify(admin.data.orders.map((o) => o.id)));
   assert.strictEqual(admin.data.orders.find((o) => o.id === 'o-staff').costs.k, 3, 'المدير لا يرى تكاليف الموظف');
   const mb = await call(env, '/api/bootstrap', 'tok-mb');
   assert.strictEqual(mb.data.orders.find((o) => o.id === 'o-mb').costs, undefined, 'المندوب طلبه بلا تكاليف (لم يدخلها)');
-  assert.strictEqual(mb.data.orders.find((o) => o.id === 'o-staff').costs, undefined, 'تكاليف الموظف وصلت المندوب');
+  assert.ok(!mb.data.orders.some((o) => o.id === 'o-staff'), 'طلب الموظف وصل للمندوب');
 });
 
 /* ---------- النتيجة ---------- */

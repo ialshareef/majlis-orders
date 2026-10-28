@@ -752,7 +752,12 @@ async function bootstrap(env, user) {
   const [settings, items, orders] = await Promise.all([
     env.DB.prepare('SELECT data FROM settings WHERE id = 1').first(),
     env.DB.prepare('SELECT data FROM items ORDER BY updated_at').all(),
-    env.DB.prepare('SELECT data, created_by FROM orders ORDER BY created_at').all(),
+    // الطلب هو ملك منشئه الحالي (created_by)، سواء كان موظفاً أو مندوباً.
+    // التقييد في SQL نفسه يمنع تسرب الطلبات القديمة أو نتائج البحث/التقارير
+    // المبنية على bootstrap. الطلبات القديمة بلا مالك تبقى للمدير وحده.
+    admin
+      ? env.DB.prepare('SELECT data FROM orders ORDER BY created_at').all()
+      : env.DB.prepare('SELECT data FROM orders WHERE created_by = ? ORDER BY created_at').bind(user.id).all(),
   ]);
   const out = {
     // قدرات هذا الخادم: الواجهة الأحدث لا تعتمد على ميزة لم يُنشر خادمها بعد
@@ -760,16 +765,9 @@ async function bootstrap(env, user) {
     user: publicUser(user),
     settings: settings ? safeParse(settings.data, {}) : {},
     items: items.results.map((r) => safeParse(r.data)),
-    /* التكاليف والربح: المدير يرى الجميع، والموظف والمندوب يرون تكاليف
-       طلباتهم الخاصة فقط — الملكية تُقرأ من العمود created_by في القاعدة
-       (لا من الطلب ولا من أي حقل يرسله العميل). ما عدا طلباتك يمرّ
-       على stripCosts قبل الإرسال: الإخفاء في الخادم لا في الواجهة وحدها. */
-    orders: orders.results.map((r) => {
-      const o = safeParse(r.data);
-      if (admin) return o;
-      const mine = r.created_by !== null && r.created_by !== undefined && String(r.created_by) === String(user.id);
-      return mine ? o : stripCosts(o);
-    }),
+    // الملكية مصفّاة أعلاه من عمود قاعدة البيانات الموثوق، لا من بيانات الطلب.
+    // لا نعيد صفوفاً جزئية للغير؛ ذلك يمنع التسريب عبر التفاصيل أو التصدير.
+    orders: orders.results.map((r) => safeParse(r.data)).filter(Boolean),
     activity: [],
     users: [],
   };
@@ -928,7 +926,8 @@ async function sync(env, user, body) {
     for (const o of od.upsert) {
       const row = existing.get(o.id);
       // طلب بلا مالك (قديم): المدير فقط — لا يصبح تلقائياً قابلاً للتعديل من أي موظف
-      if (row && row.owner !== user.id) throw new HttpError(403, `لا يمكنك تعديل الطلب ${o.number ? '#' + o.number : ''} لأنه من إنشاء موظف آخر`);
+      // رسالة عامة: لا نكشف حتى رقم الطلب أو مالكه عند استهداف سجل غير مصرح به.
+      if (row && row.owner !== user.id) throw new HttpError(403, 'لا تملك صلاحية تنفيذ هذه العملية');
       if (o.createdBy && o.createdBy !== user.id) throw new HttpError(403, 'لا يمكن نسب الطلب إلى موظف آخر');
     }
   }
