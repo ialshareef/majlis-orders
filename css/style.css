@@ -3213,3 +3213,51 @@ body.portal { background: var(--bg); }
 .ai-input input:focus { outline: none; border-color: var(--accent-line); box-shadow: var(--focus); }
 .ai-input input:disabled { background: var(--surface-2); color: var(--ink-3); }
 .ai-input .btn { min-height: 46px; flex: none; }
+
+/* ===================== صفحة التقارير ===================== */
+.rep-catalog { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; margin: 0 0 14px; }
+.rep-tab { text-align: start; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r); padding: 10px 12px; cursor: pointer; font: inherit; color: var(--ink); display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.rep-tab b { font-size: .95rem; }
+.rep-tab small { font-size: .78rem; color: var(--ink-3); line-height: 1.5; }
+.rep-tab:hover { border-color: var(--line-strong); }
+.rep-tab.on { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.rep-tab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.rep-filters select[hidden] { display: none; }
+#repKpis { margin-bottom: 14px; }
+.rep-table { margin-bottom: 14px; }
+.rep-table .table-wrap { overflow-x: auto; }
+.rep-table table { min-width: 100%; white-space: nowrap; }
+.rep-table tfoot td { border-top: 2px solid var(--line-strong); background: var(--surface-2); }
+.rep-notes { margin: 4px 0 20px; padding-inline-start: 18px; line-height: 1.8; }
+@media (max-width: 640px) { .rep-catalog { grid-template-columns: 1fr 1fr; } .rep-tab small { display: none; } }
+
+/* صفحات PDF (تُصوَّر خارج الشاشة): ألوان ثابتة فاتحة بغض النظر عن وضع العرض */
+.rep-print { font-family: var(--font); color: #222; }
+.rep-page { box-sizing: border-box; padding: 26px 30px 0; background: #fff; display: flex; flex-direction: column; overflow: hidden; }
+.rep-page .rp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 20px; border-bottom: 2px solid #8B5E34; padding-bottom: 10px; margin-bottom: 12px; }
+.rep-page .rp-head h1 { font-size: 22px; color: #5a3b1f; margin: 0 0 4px; }
+.rep-page .rp-head p { margin: 0; font-size: 13px; color: #555; }
+.rep-page .rp-head dl { margin: 0; display: grid; grid-template-columns: repeat(2, auto); gap: 2px 18px; font-size: 11.5px; }
+.rep-page .rp-head dl div { display: flex; gap: 6px; }
+.rep-page .rp-head dt { color: #777; }
+.rep-page .rp-head dd { margin: 0; font-weight: 600; }
+.rep-page .rp-head.small { align-items: center; font-size: 13px; padding-bottom: 6px; margin-bottom: 8px; }
+.rep-page .rp-body { flex: 1; min-height: 0; overflow: hidden; }
+.rep-page .rp-kpis { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-bottom: 12px; }
+.rep-page .rp-kpis div { border: 1px solid #e3d8c7; background: #faf6ef; border-radius: 6px; padding: 7px 10px; }
+.rep-page .rp-kpis span { display: block; font-size: 11px; color: #666; }
+.rep-page .rp-kpis b { font-size: 15px; }
+.rep-page h2 { font-size: 14px; margin: 8px 0 6px; color: #5a3b1f; }
+.rep-page .rp-table { width: 100%; border-collapse: collapse; font-size: 11px; }
+.rep-page .rp-table.mid { font-size: 10px; }
+.rep-page .rp-table.dense { font-size: 8.6px; }
+.rep-page .rp-table th { background: #f3e9dc; color: #4a3218; font-weight: 700; text-align: start; padding: 5px 5px; border: 1px solid #dccfbb; }
+.rep-page .rp-table td { padding: 4px 5px; border: 1px solid #e6dccd; vertical-align: top; }
+.rep-page .rp-table tbody tr:nth-child(even) td { background: #fcfaf6; }
+.rep-page .rp-table .n { text-align: end; white-space: nowrap; }
+.rep-page .rp-table tr.tot td { background: #f3e9dc; font-weight: 700; border-top: 2px solid #8B5E34; }
+.rep-page .rp-table .hint { color: #999; }
+.rep-page .rp-notes { font-size: 10.5px; color: #555; margin: 10px 0 0; padding-inline-start: 16px; line-height: 1.7; }
+.rep-page .rp-foot { display: flex; justify-content: space-between; font-size: 10px; color: #777; border-top: 1px solid #e3d8c7; padding: 6px 0 10px; margin-top: 6px; }
+.rep-page .rp-table td bdi { white-space: nowrap; }
+.rep-page .rp-table.dense th, .rep-page .rp-table.dense td { padding: 3px 3px; }

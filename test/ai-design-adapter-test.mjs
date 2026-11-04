@@ -206,7 +206,7 @@ console.log('== 4) فحوص ثابتة: تكامل الواجهة والخادم
   t('worker.js: checkDesign يقبل التلفاز', /\['door', 'window', 'mashab', 'tv'\]\.includes\(o\.type\)/.test(wk));
   t('worker.js: علم aiDesign في إعدادات البوابة', /aiDesign:\s*\{\s*enabled:/.test(wk));
   t('worker.js: حدّ الطلبات والتعقيم موجودان', /AI_RATE_LIMIT/.test(wk) && /aiSanitizeModelOut/.test(wk));
-  t('sw.js: الملفان في ASSETS مع CACHE جديد', /ai-design-adapter\.js/.test(sw) && /ai-design\.js/.test(sw) && /majlis-v7/.test(sw));
+  t('sw.js: الملفان في ASSETS مع CACHE جديد', /ai-design-adapter\.js/.test(sw) && /ai-design\.js/.test(sw) && (+((sw.match(/majlis-v(\d+)/) || [])[1]) >= 7));
   t('build-worker.ps1: الملفان في قائمة البناء', /ai-design-adapter\.js/.test(bw) && /ai-design\.js/.test(bw));
   t('style.css: أنماط .ai-card موجودة', /\.ai-card/.test(css));
   t('لا مفتاح مزوّد مكتوب في أي ملف واجهة', !/sk-[A-Za-z0-9]{8,}/.test(pHtml + pJs + aJs + css));

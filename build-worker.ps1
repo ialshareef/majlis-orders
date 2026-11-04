@@ -45,6 +45,7 @@ $files = @(
   # بوت التصميم الذكي (بوابة العميل)
   @{ url = '/js/ai-design-adapter.js'; path = 'js\ai-design-adapter.js' },
   @{ url = '/js/ai-design.js'; path = 'js\ai-design.js' },
+  @{ url = '/js/reports.js'; path = 'js\reports.js' },
   @{ url = '/js/app.js';     path = 'js\app.js' },
   # نظام الشرح والمساعدة (وحدة مشتركة بين الموظف والعميل)
   @{ url = '/js/help.js';    path = 'js\help.js' },

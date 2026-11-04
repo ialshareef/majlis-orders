@@ -3,7 +3,7 @@
    - الشبكة أولاً: تعكس التحديثات فوراً، والكاش احتياطي عند انقطاع الاتصال.
    - لا يخزّن طلبات /api/* (بيانات حيّة من الخادم).
    ====================================================================== */
-const CACHE = 'majlis-v7';
+const CACHE = 'majlis-v8';
 const ASSETS = [
   '/',
   '/index.html',
@@ -21,6 +21,7 @@ const ASSETS = [
   '/js/ai-design.js',
   '/js/portal-expanded.js',
   '/js/help.js',
+  '/js/reports.js',
   '/js/app.js',
   '/manifest.json',
   '/icons/icon-192.png',

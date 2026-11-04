@@ -316,6 +316,7 @@
     bi: () => canAny('reports.view_own', 'reports.view_all'),
     designs: () => can('designs.view'),
     expenses: () => canAny('expenses.view_own', 'expenses.view_all'),
+    reports: () => canAny('reports.view_own', 'reports.view_all'),
   };
   const canPage = (name) => !PAGE_PERMS[name] || PAGE_PERMS[name]();
 
@@ -499,11 +500,12 @@
     if (name === 'customers') renderCustomers();
     if (name === 'activity') renderActivity();
     if (name === 'bi') renderBI();
+    if (name === 'reports') renderReports();
     if (name === 'settings') renderSettings();
     if (name === 'mandoubs') renderMandoubs();
     if (name === 'designs') renderDesigns();
     if (name === 'about') renderAbout();
-    if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'mandoubs', 'designs'].includes(name)) syncFromServer();
+    if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'reports', 'mandoubs', 'designs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
     if (name === 'expenses') renderExpenses();
@@ -7378,6 +7380,282 @@ async function exportExpensesXlsx() {
 
 
 
+  /* ======================= صفحة «التقارير» =======================
+     الحسابات في js/reports.js (نقية ومُختبرة)، وهنا: السياق والصلاحيات والعرض والتصدير.
+     البيانات هي ما يراه المستخدم فقط (الخادم يصفّي الطلبات والتكاليف)، والأعمدة الحساسة
+     (الربح، التكاليف، العمولات) تتبع صلاحية كل طلب. التصدير بصلاحية reports.export. */
+  const REP_RANGES = { d: 'اليوم', m: 'هذا الشهر', lm: 'الشهر الماضي', d30: 'آخر 30 يوماً', q: 'هذا الربع', y: 'هذه السنة', ly: 'السنة الماضية', all: 'كل الفترات', custom: 'فترة مخصصة' };
+  const repStore = {
+    get(k, d) { try { const v = localStorage.getItem('majlis_rep_' + k); return v === null ? d : v; } catch (_) { return d; } },
+    set(k, v) { try { localStorage.setItem('majlis_rep_' + k, v); } catch (_) { /* تخزين غير متاح */ } },
+  };
+  let repId = repStore.get('id', 'orders');
+  let repRange = repStore.get('range', 'm');
+  let repLast = null;   // آخر تقرير معروض — هو نفسه ما يُصدَّر
+
+  function repPeriod() {
+    const t = new Date(), to = ymd(t);
+    if (repRange === 'd') return { from: to, to };
+    if (repRange === 'm') return { from: ymd(new Date(t.getFullYear(), t.getMonth(), 1)), to };
+    if (repRange === 'lm') return { from: ymd(new Date(t.getFullYear(), t.getMonth() - 1, 1)), to: ymd(new Date(t.getFullYear(), t.getMonth(), 0)) };
+    if (repRange === 'd30') return { from: ymd(addDays(t, -29)), to };
+    if (repRange === 'q') return { from: ymd(new Date(t.getFullYear(), Math.floor(t.getMonth() / 3) * 3, 1)), to };
+    if (repRange === 'y') return { from: ymd(new Date(t.getFullYear(), 0, 1)), to };
+    if (repRange === 'ly') return { from: ymd(new Date(t.getFullYear() - 1, 0, 1)), to: ymd(new Date(t.getFullYear() - 1, 11, 31)) };
+    if (repRange === 'all') return { from: '', to: '' };
+    return { from: $('#repFrom').value, to: $('#repTo').value };
+  }
+
+  /** تفصيل عمولة الطلب بأنواعها — نفس orderCommBreakdown (النسب المحفوظة على الطلب أولاً) */
+  function repBreakdown(o) {
+    const b = orderCommBreakdown(o);
+    if (!b) return null;
+    const hasParent = b.rows.length === 3;
+    return { profit: b.profit, rows: b.rows.map((r, i) => ({ ...r, kind: i === 0 ? 'owner' : (hasParent && i === 1 ? 'parent' : 'share') })) };
+  }
+
+  function repCtx() {
+    const p = repPeriod();
+    const scopeAll = can('reports.view_all');
+    return {
+      orders: db().orders || [], expenses: db().expenses || [], users: db().users || [],
+      from: p.from, to: p.to, today: today(),
+      userId: scopeAll ? $('#repUser').value : '',
+      status: $('#repStatus').value,
+      me: currentUser && currentUser.id, scopeAll,
+      perms: {
+        profitAny: canAny('profit.view_own', 'profit.view_all'),
+        commAny: canAny('commission.view_own', 'commission.view_all'),
+        expenses: canAny('expenses.view_own', 'expenses.view_all'),
+        profit: (o) => canFor(o, 'profit.view'),
+        comm: (o) => canFor(o, 'commission.view'),
+      },
+      calc: {
+        revenue: orderRevenue, cost: orderCost, breakdown: repBreakdown, ordDate,
+        payDay: (pm) => String((pm && (pm.at || pm.date || pm.createdAt)) || '').slice(0, 10),
+        expDay,
+      },
+      labels: { STATUS, PAY_METHOD: PAY_METHODS, ROLES },
+      userName: (id, fb) => { const u = id && Store.getUser(id); return (u && u.name) || fb || 'غير محدد'; },
+      userRole: (id) => { const u = id && Store.getUser(id); return (u && u.role) || (id && currentUser && id === currentUser.id ? currentUser.role : ''); },
+    };
+  }
+
+  const repCell = (v, kind) => {
+    if (v === null || v === undefined || v === '') return '<span class="hint">—</span>';
+    if (kind === 'money') return `<bdi>${fmt(v)}</bdi>`;
+    if (kind === 'pct') return `<bdi>${r2(v)}٪</bdi>`;
+    if (kind === 'num') return `<bdi>${esc(String(v))}</bdi>`;
+    if (kind === 'date') return `<bdi>${esc(String(v))}</bdi>`;
+    return esc(String(v));
+  };
+  const isNumKind = (k) => k === 'money' || k === 'num' || k === 'pct';
+  /** الفترة بتواريخ معزولة اتجاهياً (تاريخ لاتيني داخل نص عربي لا ينقلب) */
+  const repPeriodHtml = (rep) => `من ${rep.from ? `<bdi dir="ltr">${esc(rep.from)}</bdi>` : 'أول سجل'} إلى <bdi dir="ltr">${esc(rep.to)}</bdi>`;
+
+  function repMeta(rep) {
+    const ctx = repCtx();
+    const meta = [['المتجر', settings().shopName || 'أصالة نجد']];
+    if (ctx.scopeAll) meta.push(['الموظف / المندوب', ctx.userId ? ctx.userName(ctx.userId) : 'الكل']);
+    else meta.push(['النطاق', 'طلباتي فقط (' + ((currentUser && currentUser.name) || '') + ')']);
+    if (rep && rep.id === 'orders') meta.push(['الحالة', $('#repStatus').selectedOptions[0] ? $('#repStatus').selectedOptions[0].textContent : '']);
+    meta.push(['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']);
+    return meta;
+  }
+
+  function renderReports() {
+    if (!canPage('reports') || !window.Reports) return;
+    // المصروفات لا تصل مع المزامنة: تُجلب (مرة كل دقيقة على الأكثر) ثم يُعاد الرسم
+    if (canAny('expenses.view_own', 'expenses.view_all') && Date.now() - expLoadedAt > 60000 && !expLoading) {
+      loadExpenses().then(() => { if (document.body.dataset.page === 'reports') renderReports(); }).catch(() => {});
+    }
+    const ctx = repCtx();
+    const cat = Reports.catalog(ctx);
+    if (!cat.some((c) => c.id === repId)) repId = cat[0].id;
+    $('#repCatalog').innerHTML = cat.map((c) => `<button type="button" class="rep-tab${c.id === repId ? ' on' : ''}" role="tab" aria-selected="${c.id === repId}" data-rep="${esc(c.id)}"><b>${esc(c.title)}</b><small>${esc(c.desc)}</small></button>`).join('');
+    $$('#repCatalog [data-rep]').forEach((b) => b.addEventListener('click', () => { repId = b.dataset.rep; repStore.set('id', repId); renderReports(); }));
+
+    // الموظفون والمناديب: من المستخدمين ومن الطلبات (مستخدم محذوف له طلبات)
+    const sel = $('#repUser');
+    sel.hidden = !ctx.scopeAll;
+    if (ctx.scopeAll) {
+      const prev = sel.value, names = new Map();
+      db().users.forEach((u) => names.set(u.id, `${u.name}${ROLES[u.role] ? ' · ' + ROLES[u.role] : ''}`));
+      db().orders.forEach((o) => { if (o.createdBy && !names.has(o.createdBy)) names.set(o.createdBy, o.createdByName || 'مستخدم محذوف'); });
+      sel.innerHTML = '<option value="">كل الموظفين والمناديب</option>' + [...names.entries()].map(([id, n]) => `<option value="${esc(id)}">${esc(n)}</option>`).join('');
+      if (names.has(prev)) sel.value = prev;
+    }
+    const def = cat.find((c) => c.id === repId);
+    $('#repStatus').hidden = !def.usesStatus;
+
+    const p = repPeriod();
+    if (repRange !== 'custom') { $('#repFrom').value = p.from; $('#repTo').value = p.to; }
+    $$('#repRangeChips .chip').forEach((c) => { const on = c.dataset.rr === repRange; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); });
+
+    let rep;
+    try { rep = Reports.build(repId, repCtx()); } catch (e) { toast(e.message || 'تعذّر إعداد التقرير', true); return; }
+    repLast = rep;
+    $('#repNote').innerHTML = `${esc(rep.title)} • ${esc(REP_RANGES[repRange] || '')} • ${repPeriodHtml(rep)}${ctx.scopeAll ? '' : ' • طلباتي فقط'}`;
+    $('#repKpis').innerHTML = rep.summary.map((s) => `<div class="stat"><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : (s.kind === 'money' ? fmt(s.value) : s.kind === 'pct' ? r2(s.value) + '٪' : esc(String(s.value)))}</b></div>`).join('');
+    const MAX = 300;
+    $('#repTables').innerHTML = rep.tables.map((t) => `
+      <section class="card module rep-table">
+        <div class="module-head"><h3>${esc(t.title)}</h3><span class="hint">${t.rows.length} صف</span></div>
+        <div class="table-wrap"><table class="table compact">
+          <thead><tr>${t.columns.map((c) => `<th${isNumKind(c.kind) ? ' class="ta-end"' : ''}>${esc(c.label)}</th>`).join('')}</tr></thead>
+          <tbody>${t.rows.length ? t.rows.slice(0, MAX).map((r) => `<tr>${t.columns.map((c) => `<td${isNumKind(c.kind) ? ' class="ta-end"' : ''}>${repCell(r[c.key], c.kind)}</td>`).join('')}</tr>`).join('')
+            : `<tr><td colspan="${t.columns.length}" class="hint">لا توجد بيانات في هذه الفترة</td></tr>`}</tbody>
+          ${t.totals && t.rows.length ? `<tfoot><tr>${t.columns.map((c) => `<td${isNumKind(c.kind) ? ' class="ta-end"' : ''}><b>${t.totals[c.key] === undefined ? '' : repCell(t.totals[c.key], c.kind)}</b></td>`).join('')}</tr></tfoot>` : ''}
+        </table></div>
+        ${t.rows.length > MAX ? `<p class="hint">يُعرض أول ${MAX} من ${t.rows.length} صفاً — الملف المُصدَّر يحوي الكل.</p>` : ''}
+      </section>`).join('');
+    $('#repNotes').innerHTML = (rep.notes || []).map((n) => `<li>${esc(n)}</li>`).join('');
+  }
+
+  const repFileName = (rep, ext) => `report-${rep.id}-${repPeriod().from || 'all'}_${repPeriod().to || today()}.${ext}`;
+  function repReady() {
+    if (!can('reports.export')) { toast('لا تملك صلاحية تصدير التقارير', true); return null; }
+    renderReports();
+    if (!repLast) { toast('لا يوجد تقرير للتصدير', true); return null; }
+    if (!repLast.tables.some((t) => t.rows.length)) { toast('لا توجد بيانات للتصدير في هذه الفترة', true); return null; }
+    return repLast;
+  }
+
+  function repExportCsv() {
+    const rep = repReady(); if (!rep) return;
+    downloadBlob(new Blob([Reports.toCsv(rep, repMeta(rep))], { type: 'text/csv;charset=utf-8' }), repFileName(rep, 'csv'));
+  }
+
+  const XLSX_URL = 'https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js';
+  async function repExportXlsx() {
+    const rep = repReady(); if (!rep) return;
+    try {
+      if (!window.XLSX) await loadScript(XLSX_URL);
+      const X = window.XLSX;
+      const wb = X.utils.book_new();
+      wb.Workbook = { Views: [{ RTL: true }] };
+      const widths = (aoa) => aoa[0].map((_, i) => ({ wch: Math.min(40, Math.max(8, ...aoa.map((r) => String(r[i] ?? '').length + 2))) }));
+      const head = [...Reports.headerAoa(rep, repMeta(rep)), [], ['الملخص'], ...Reports.summaryAoa(rep), [], ...(rep.notes || []).map((n) => [n])];
+      const ws0 = X.utils.aoa_to_sheet(head); ws0['!cols'] = [{ wch: 34 }, { wch: 34 }];
+      X.utils.book_append_sheet(wb, ws0, 'الملخص');
+      const used = new Set(['الملخص']);
+      rep.tables.forEach((t) => {
+        let name = String(t.title).replace(/[\[\]:*?/\\]/g, ' ').slice(0, 31) || 'بيانات';
+        while (used.has(name)) name = name.slice(0, 28) + ' ' + used.size;
+        used.add(name);
+        const aoa = Reports.tableAoa(t);
+        const ws = X.utils.aoa_to_sheet(aoa);
+        ws['!cols'] = widths(aoa);
+        // تنسيق المبالغ برقمين عشريين
+        t.columns.forEach((c, ci) => {
+          if (c.kind !== 'money' && c.kind !== 'pct') return;
+          for (let ri = 1; ri < aoa.length; ri++) { const ref = X.utils.encode_cell({ r: ri, c: ci }); if (ws[ref] && ws[ref].t === 'n') ws[ref].z = '#,##0.00'; }
+        });
+        X.utils.book_append_sheet(wb, ws, name);
+      });
+      const out = X.write(wb, { bookType: 'xlsx', type: 'array' });
+      downloadBlob(new Blob([out], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' }), repFileName(rep, 'xlsx'));
+    } catch (e) { toast(e.message || 'تعذّر إنشاء ملف Excel', true); }
+  }
+
+  /* PDF: صفحات HTML بحجم A4 أفقي تُصوَّر (html2canvas) — العربية تُرسم بخط الواجهة صحيحة الاتصال،
+     والجدول يُقسَّم صفاً صفاً: رأس الجدول يتكرر في كل صفحة، وترقيم «صفحة N من M» في التذييل. */
+  const REP_PAGE = { w: 1123, h: 794 };
+  async function repExportPdf() {
+    const rep = repReady(); if (!rep) return;
+    const btn = $('#btnRepPdf'); if (btn) btn.disabled = true;
+    const host = document.createElement('div');
+    host.className = 'rep-print'; host.dir = 'rtl';
+    host.style.cssText = 'position:fixed;top:0;left:-20000px;z-index:-1;background:#fff';
+    document.body.appendChild(host);
+    try {
+      toast('جارٍ إنشاء ملف PDF…');
+      await loadScript(H2C_URL);
+      await loadScript(JSPDF_URL);
+      const meta = repMeta(rep);
+      const pages = [];
+      const newPage = (first) => {
+        const pg = document.createElement('div');
+        pg.className = 'rep-page';
+        pg.style.cssText = `width:${REP_PAGE.w}px;height:${REP_PAGE.h}px`;
+        pg.innerHTML = first
+          ? `<div class="rp-head"><div><h1>${esc(rep.title)}</h1><p>الفترة: ${repPeriodHtml(rep)}</p></div><dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl></div>`
+          : `<div class="rp-head small"><b>${esc(rep.title)}</b><span>الفترة: ${repPeriodHtml(rep)}</span></div>`;
+        const body = document.createElement('div'); body.className = 'rp-body'; pg.appendChild(body);
+        const foot = document.createElement('div'); foot.className = 'rp-foot'; pg.appendChild(foot);
+        host.appendChild(pg); pages.push(pg);
+        return body;
+      };
+      const fits = (body) => body.scrollHeight <= body.clientHeight + 1;
+      let body = newPage(true);
+      const sum = document.createElement('div'); sum.className = 'rp-kpis';
+      sum.innerHTML = rep.summary.map((s) => `<div><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : (s.kind === 'money' ? fmt(s.value) : s.kind === 'pct' ? r2(s.value) + '٪' : esc(String(s.value)))}</b></div>`).join('');
+      body.appendChild(sum);
+      for (const t of rep.tables) {
+        const dense = t.columns.length > 14 ? ' dense' : (t.columns.length > 10 ? ' mid' : '');
+        const thead = `<thead><tr>${t.columns.map((c) => `<th${isNumKind(c.kind) ? ' class="n"' : ''}>${esc(c.label)}</th>`).join('')}</tr></thead>`;
+        const rowHtml = (r, bold) => `<tr${bold ? ' class="tot"' : ''}>${t.columns.map((c) => `<td${isNumKind(c.kind) ? ' class="n"' : ''}>${r[c.key] === undefined ? '' : repCell(r[c.key], c.kind)}</td>`).join('')}</tr>`;
+        const startTable = (cont) => {
+          const h = document.createElement('h2'); h.textContent = t.title + (cont ? ' (تابع)' : ''); body.appendChild(h);
+          const tb = document.createElement('table'); tb.className = 'rp-table' + dense; tb.dataset.t = String(rep.tables.indexOf(t)); tb.innerHTML = thead + '<tbody></tbody>'; body.appendChild(tb);
+          return { h, tb, tbody: tb.querySelector('tbody') };
+        };
+        let cur = startTable(false);
+        if (!fits(body)) { cur.h.remove(); cur.tb.remove(); body = newPage(false); cur = startTable(false); }
+        const all = t.rows.length ? t.rows.map((r) => rowHtml(r, false)) : [`<tr><td colspan="${t.columns.length}">لا توجد بيانات في هذه الفترة</td></tr>`];
+        if (t.totals && t.rows.length) all.push(rowHtml(t.totals, true));
+        for (const html of all) {
+          cur.tbody.insertAdjacentHTML('beforeend', html);
+          if (fits(body)) continue;
+          cur.tbody.lastElementChild.remove();
+          if (!cur.tbody.children.length) { cur.h.remove(); cur.tb.remove(); }
+          body = newPage(false);
+          cur = startTable(true);
+          cur.tbody.insertAdjacentHTML('beforeend', html);
+        }
+      }
+      if (rep.notes && rep.notes.length) {
+        const ul = document.createElement('ul'); ul.className = 'rp-notes';
+        ul.innerHTML = rep.notes.map((n) => `<li>${esc(n)}</li>`).join('');
+        body.appendChild(ul);
+        if (!fits(body)) { ul.remove(); body = newPage(false); body.appendChild(ul); }
+      }
+      // جدول أعرض من الصفحة (أعمدة كثيرة): يُصغَّر خطه حتى يتسع — التصغير يُقلّل الارتفاع فقط فلا يكسر التقسيم
+      // ثم يُوحَّد الخط لكل أجزاء الجدول الواحد عبر الصفحات (أصغر ما احتاجه أي جزء)
+      const minFs = {};
+      host.querySelectorAll('.rp-table').forEach((tb) => {
+        const room = tb.parentElement.clientWidth;
+        let fs = parseFloat(getComputedStyle(tb).fontSize) || 11;
+        while (tb.scrollWidth > room + 1 && fs > 6.2) { fs -= 0.4; tb.style.fontSize = fs + 'px'; }
+        minFs[tb.dataset.t] = Math.min(minFs[tb.dataset.t] ?? fs, fs);
+      });
+      host.querySelectorAll('.rp-table').forEach((tb) => { tb.style.fontSize = minFs[tb.dataset.t] + 'px'; });
+      const stamp = fmtDateTime(Store.now());
+      pages.forEach((pg, i) => { pg.querySelector('.rp-foot').innerHTML = `<span>${esc(settings().shopName || 'أصالة نجد')} • ${esc(rep.title)}</span><span>صُدِّر في <bdi>${esc(stamp)}</bdi></span><span>صفحة ${i + 1} من ${pages.length}</span>`; });
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+      for (let i = 0; i < pages.length; i++) {
+        const canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff', logging: false, width: REP_PAGE.w, height: REP_PAGE.h });
+        if (i) pdf.addPage();
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
+      }
+      downloadBlob(pdf.output('blob'), repFileName(rep, 'pdf'));
+    } catch (e) {
+      toast(e.message || 'تعذّر إنشاء ملف PDF', true);
+    } finally {
+      host.remove();
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  $$('#repRangeChips .chip').forEach((c) => c.addEventListener('click', () => { repRange = c.dataset.rr; repStore.set('range', repRange); renderReports(); }));
+  ['repFrom', 'repTo'].forEach((id) => $('#' + id).addEventListener('change', () => { repRange = 'custom'; renderReports(); }));
+  $('#repUser').addEventListener('change', renderReports);
+  $('#repStatus').addEventListener('change', renderReports);
+  $('#btnRepPdf').addEventListener('click', repExportPdf);
+  $('#btnRepXlsx').addEventListener('click', repExportXlsx);
+  $('#btnRepCsv').addEventListener('click', repExportCsv);
+
   $$('#biRangeChips .chip').forEach((c) => c.addEventListener('click', () => { biRange = c.dataset.rg; renderBI(); }));
   ['biFrom', 'biTo'].forEach((id) => $('#' + id).addEventListener('change', () => { biRange = 'custom'; renderBI(); }));
   $('#biUser').addEventListener('change', renderBI);
@@ -7434,6 +7712,7 @@ async function exportExpensesXlsx() {
       else if (active === 'page-items') draw('items', renderItems);
       else if (active === 'page-users') draw('users', renderUsers);
       else if (active === 'page-bi') draw('bi', renderBI);
+      else if (active === 'page-reports') draw('reports', renderReports);
       else if (active === 'page-mandoubs') draw('mandoubs', renderMandoubs);
       draw('itemSelects', renderItemSelects);
       draw('permissions', applyPermissions);
