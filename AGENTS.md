@@ -17,11 +17,13 @@
   ```
 - **النشر الإنتاجي الفعلي** (يطلب كتابة `yes` للتأكيد — يشغّل `schema.sql` أولاً ثم يرفع الكود):
   ```powershell
-  powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production -Preview:$false
+  powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment production -Preview:$false'
   ```
+  - من نافذة **cmd** بدل PowerShell: نفس الأمر بعلامتي تنصيص مزدوجتين `"..."` بدل المفردتين.
+  - **لا تستخدم `-File` مع `-Preview:$false`**: PowerShell 5.1 لا يمرّر القيمة لمفتاح switch عبر `-File` فيفشل قبل بدء السكربت (`Cannot convert value "System.String" to type ...SwitchParameter`). أوامر المعاينة بلا قيمة فتعمل بـ `-File`.
 - **بيئة اختبار منفصلة** (لا تمس الإنتاج؛ الأسماء ومعرّف الحساب إلزامية):
   ```powershell
-  powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment test -AccountId <معرّف الحساب> -DbName <قاعدة اختبار> -WorkerName <Worker اختبار> -Preview:$false
+  powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment test -AccountId <معرّف الحساب> -DbName <قاعدة اختبار> -WorkerName <Worker اختبار> -Preview:$false'
   ```
 - الرابط: `https://majlis-api.asalh-najd.workers.dev`
 - **ترتيب القاعدة**: السكربت يشغّل `worker/schema.sql` (آمن للتكرار) قبل رفع الكود، ثم يفحص تعريفات `permission_audit` و`expenses` (قراءة فقط). إن توقف برسالة `Old definitions with blocking foreign keys` فالقاعدة طُبّقت عليها 001/002 القديمة: خذ نسخة احتياطية، وطبّق `worker/migrations/003_fix_user_delete_fks.sql` مرة واحدة، ثم أعد النشر. لم يُرفع أي كود عند التوقف. **تطبيق أي هجرة على الإنتاج يحتاج موافقة المستخدم الصريحة.**

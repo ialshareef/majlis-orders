@@ -3,10 +3,11 @@
 #  Usage (defaults are SAFE: -Environment test + -Preview, nothing is written):
 #    Preview production plan (no writes):
 #      powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production
-#    Deploy production (asks you to type yes):
-#      powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production -Preview:$false
+#    Deploy production (asks you to type yes) - from PowerShell (use "..." instead of '...' in cmd):
+#      powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment production -Preview:$false'
 #    Deploy to a separate test Worker/DB (test names + account id are mandatory):
-#      ... -Environment test -AccountId <id> -DbName <test-db> -WorkerName <test-worker> -Preview:$false
+#      ... '& .\deploy-cloudflare.ps1 -Environment test -AccountId <id> -DbName <test-db> -WorkerName <test-worker> -Preview:$false'
+#    Do NOT pass -Preview:$false through -File: PowerShell 5.1 cannot bind it to a switch there.
 #  Worker variables/secrets set in the dashboard (ALLOWED_ORIGIN, ADMIN_INIT_PASSWORD, AI_*)
 #  are kept across uploads (keep_bindings below); this script never sets their values.
 #  Requires a file named .cf-token in this folder containing a Cloudflare API token.
@@ -130,7 +131,8 @@ if ($Preview) {
   Write-Host "    6) Enable subdomain for: $WorkerName" -ForegroundColor Yellow
   Write-Host "    7) Health check Worker at published URL" -ForegroundColor Yellow
   Write-Host ''
-  Write-Host 'To execute for real, remove -Preview (or pass -Preview:$false) with -Confirm.' -ForegroundColor Yellow
+  Write-Host 'To execute for real, pass -Preview:$false via -Command (not -File), e.g.:' -ForegroundColor Yellow
+  Write-Host "  powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment $Environment -Preview:`$false'" -ForegroundColor Yellow
   exit 0
 }
 

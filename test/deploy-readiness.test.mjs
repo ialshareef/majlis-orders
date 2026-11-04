@@ -6,7 +6,8 @@
    الاستخدام: node test/deploy-readiness.test.mjs */
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -82,7 +83,25 @@ ok(guardAt > ps.indexOf("worker\\schema.sql") && guardAt < ps.indexOf("Step 'Upl
 /* ---------------- 3) AGENTS.md ---------------- */
 const ag = read('AGENTS.md');
 const codeLines = [...ag.matchAll(/^\s*(powershell[^\n]*deploy-cloudflare\.ps1[^\n]*)$/gm)].map((m) => m[1].trim());
-ok(codeLines.some((l) => /-Environment production\b/.test(l) && /-Preview:\$false/.test(l)), 'agents: أمر النشر الإنتاجي الصحيح موجود', codeLines);
+const prodCmd = codeLines.find((l) => /-Environment production\b/.test(l) && /-Preview:\$false/.test(l));
+ok(!!prodCmd && /-Command\b/.test(prodCmd) && !/-File\b/.test(prodCmd), 'agents: أمر النشر الإنتاجي يستخدم -Command (لا -File)', codeLines);
+
+// -Preview:$false لا يُمرَّر عبر -File في أي أمر موثّق (PowerShell 5.1 يرفضه قبل بدء السكربت)
+const docs = ['AGENTS.md', 'README.md', 'SETUP-CLOUDFLARE.md', 'deploy-cloudflare.ps1'];
+const badFile = docs.flatMap((f) => read(f).split('\n').filter((l) => /powershell[^`\n]*-File[^`\n]*-Preview:\$false/.test(l)).map((l) => f + ': ' + l.trim()));
+ok(badFile.length === 0, 'docs: لا أمر موثّق يمرّر -Preview:$false عبر -File', badFile);
+
+/* تشغيل فعلي لأمر النشر الموثّق كما يُكتب في PowerShell، على سكربت بديل يطبع المعاملات فقط
+   (في مجلد مؤقت — لا اتصال ولا رمز ولا نشر). Windows فقط. */
+if (process.platform === 'win32' && prodCmd) {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'deploy-cmd-'));
+  fs.writeFileSync(path.join(tmp, 'deploy-cloudflare.ps1'),
+    "param([string]$Environment = 'test', [switch]$Preview = $true, [switch]$Confirm = $true)\n\"BOUND Environment=$Environment Preview=$([bool]$Preview)\"\n", 'ascii');
+  const run = spawnSync('powershell', ['-NoProfile', '-NonInteractive', '-Command', prodCmd], { cwd: tmp, encoding: 'utf8', timeout: 60000 });
+  const out = String(run.stdout || '') + String(run.stderr || '');
+  ok(/BOUND Environment=production Preview=False/.test(out), 'agents: أمر النشر الموثّق يعمل فعلاً في PowerShell (Preview=False، production)', out.trim().slice(0, 200));
+  fs.rmSync(tmp, { recursive: true, force: true });
+} else console.log('SKIP  ليس Windows — تخطّي التشغيل الفعلي لأمر النشر');
 ok(codeLines.some((l) => /-Environment production\b/.test(l) && !/-Preview/.test(l)), 'agents: أمر المعاينة منفصل عن النشر', codeLines);
 ok(codeLines.some((l) => /-Environment test\b/.test(l) && /-AccountId/.test(l)), 'agents: أمر بيئة الاختبار منفصل', codeLines);
 ok(!codeLines.some((l) => /deploy-cloudflare\.ps1$/.test(l)), 'agents: لا أمر نشر بلا معاملات (يعمل كمعاينة اختبار لا كنشر)', codeLines);

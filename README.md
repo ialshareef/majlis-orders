@@ -2,7 +2,7 @@
 
 > **النظام منشور ويعمل**: <https://majlis-api.asalh-najd.workers.dev>
 > الدخول الأول يتطلب تعيين كلمة مرور مدير عبر متغير البيئة `ADMIN_INIT_PASSWORD` قبل النشر؛ ثم يُفرض تغييرها عند أول دخول (بلا تجاوز).
-> لإعادة النشر بعد أي تعديل: `powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production -Preview:$false` (بلا معاملات = وضع اختبار ومعاينة لا ينشر شيئاً)
+> لإعادة النشر بعد أي تعديل (من PowerShell): `powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment production -Preview:$false'` (بلا معاملات = وضع اختبار ومعاينة لا ينشر شيئاً)
 
 
 تطبيق ويب مستقل (HTML / CSS / JavaScript) لإدارة طلبات الكنب العربي: تصميم الغرفة، التسعير، بيانات العميل، الدفع، وتصدير فاتورة PDF من صفحة واحدة، مع إدارة الأصناف والطلبات والمستخدمين. يعمل على الكمبيوتر والجوال (لمس).
@@ -295,9 +295,11 @@ SETUP-CLOUDFLARE.md    خطوات النشر بالتفصيل
 ```bash
 # معاينة الخطة فقط (لا كتابة)
 powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production
-# النشر الفعلي (يطلب كتابة yes)
-powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production -Preview:$false
+# النشر الفعلي (يطلب كتابة yes) — من PowerShell؛ في cmd استخدم "..." بدل '...'
+powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment production -Preview:$false'
 ```
+
+لا تمرّر `-Preview:$false` عبر `-File`: PowerShell 5.1 يرفضه قبل بدء السكربت.
 
 ينشئ القاعدة والجداول (`schema.sql` — آمن للتكرار، ويُنفَّذ **قبل** رفع الكود فتوجد الجداول الجديدة قبل أن يحتاجها)، ويبني الـ Worker ويرفعه ويربطه مع الإبقاء على متغيرات اللوحة وأسرارها، ويطبع رابط النظام الجاهز. التشغيل بلا معاملات وضع اختبار ومعاينة لا ينشر شيئاً. قبل رفع الكود يفحص السكربت (قراءة فقط) تعريفات `permission_audit` و`expenses`؛ إن وجد تعريفات الهجرتين 001/002 القديمة يتوقف دون رفع ويطلب تطبيق `worker/migrations/003_fix_user_delete_fks.sql` مرة واحدة بعد نسخة احتياطية.
 

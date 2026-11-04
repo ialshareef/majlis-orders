@@ -32,11 +32,11 @@
 
 ### 2) شغّل النشر
 
-```bash
-powershell -ExecutionPolicy Bypass -File deploy-cloudflare.ps1 -Environment production -Preview:$false
+```powershell
+powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment production -Preview:$false'
 ```
 
-الوضع الافتراضي للسكربت آمن (`-Environment test` مع `-Preview`): بلا معاملات لا ينشر شيئاً. الأمر أعلاه للإنتاج ويطلب كتابة `yes` قبل أي كتابة. للتجربة على Worker وقاعدة منفصلين: `-Environment test -AccountId <id> -DbName <اسم اختبار> -WorkerName <اسم اختبار> -Preview:$false`.
+الوضع الافتراضي للسكربت آمن (`-Environment test` مع `-Preview`): بلا معاملات لا ينشر شيئاً. الأمر أعلاه للإنتاج (من PowerShell؛ في cmd استخدم `"..."` بدل `'...'`) ويطلب كتابة `yes` قبل أي كتابة. لا تمرّر `-Preview:$false` عبر `-File`: PowerShell 5.1 يرفضه قبل بدء السكربت. للتجربة على Worker وقاعدة منفصلين أضف داخل الأمر نفسه: `-Environment test -AccountId <id> -DbName <اسم اختبار> -WorkerName <اسم اختبار>`.
 
 السكربت ينفّذ كل شيء: ينشئ قاعدة `majlis-db`، وينشئ الجداول والبيانات الأولية، ويبني الـ Worker مع الواجهة بداخله، ويرفعه ويربطه بالقاعدة، ويفعّل الرابط العام، ثم يفحص التشغيل ويطبع الرابط النهائي:
 
