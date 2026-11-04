@@ -1520,6 +1520,45 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
     }
   }
 
+  // خطاف بوت التصميم الذكي: قراءة الحالة وتطبيق مواصفات جاهزة فقط — بلا تغيير على منطق البوابة
+  window.PortalAI = {
+    designer: function () { return S.designer; },
+    catalog: function () { return S.catalog || []; },
+    ensureCatalog: function () { return loadCatalog(); },
+    settings: function () { return S.settings || {}; },
+    hasToken: function () { return !!apiToken; },
+    inDesign: function () { return !!(S.designer && $('#pDesign') && !$('#pDesign').hidden); },
+    view: function () {
+      var ids = ['pLanding', 'pDesign', 'pDone', 'pLook'];
+      for (var i = 0; i < ids.length; i++) {
+        var el = document.getElementById(ids[i]);
+        if (el && !el.hidden) return ids[i];
+      }
+      return '';
+    },
+    backToDesign: function () {
+      if (!S.designer) return false;
+      show('pDesign');
+      S.designer.autoFit = true;
+      S.designer.fitView();
+      renderNav();
+      renderPanel();
+      return true;
+    },
+    start: function () { return startNew(); },
+    toast: function (msg, isErr) { toast(msg, isErr); },
+    applyState: function (state) {
+      if (!S.designer || !state) return false;
+      try { S.designer.setState(state); } catch (e) { return false; }
+      S.designer.fitView();
+      renderPanel();
+      renderNav();
+      renderSheet(null);
+      markDirty();
+      return true;
+    },
+  };
+
   // خطاف تشخيص/اختبار (قراءة الحالة وطرق المحرك الموجودة أصلاً — بلا أسرار)
   window.PortalTest = {
     state: function () { return S.designer ? S.designer.getState() : null; },

@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Design Bot Tests</title>
+<link rel="stylesheet" href="../css/style.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/sql-wasm.js"></script>
+</head>
+<body class="portal">
+<div id="testResult">RUNNING</div>
+<pre id="testLog"></pre>
+<script>
+/* بوت التصميم الذكي: backend حقيقي (Worker + SQLite) + portal الحقيقية + مزوّد AI وهمي.
+   يقود المحادثة فعلياً: ترحيب، فهم، أسئلة، فشل، معاينة على مصمم شبح، تطبيق مرتين، تعديل يدوي. */
+window.TEST_ERRORS = [];
+window.addEventListener('error', function (e) { window.TEST_ERRORS.push('onerror: ' + (e.message || e.type)); });
+window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.push('rejection: ' + ((e.reason && (e.reason.message || e.reason)) || e.type)); });
+(function () {
+  var log = function (m) { document.getElementById('testLog').textContent += m + '\n'; };
+  var n = 0, bad = 0;
+  var t = function (name, cond, why) {
+    n++; if (cond) log('PASS F' + n + ' ' + name);
+    else { bad++; log('FAIL F' + n + ' ' + name + (why ? ' :: ' + why : '')); }
+  };
+  var waitFor = function (cond, ms, label) {
+    ms = ms || 60000; var t0 = Date.now();
+    return new Promise(function (res, rej) {
+      (function poll() {
+        var v = null; try { v = cond(); } catch (e) { /* retry */ }
+        if (v) return res(v);
+        if (Date.now() - t0 > ms) return rej(new Error('timeout@' + (label || '?')));
+        setTimeout(poll, 100);
+      })();
+    });
+  };
+  var appDOM = function () {
+    var clone = document.body.cloneNode(true);
+    clone.querySelectorAll('script').forEach(function (s) { s.remove(); });
+    return clone.innerHTML;
+  };
+  var realFetch = window.fetch.bind(window);
+
+  var READY = {
+    status: 'ready', note: 'فهمت طلبك وتجهيزه الآن.', assumptions: ['الباب على بداية الجدار'], issues: [], questions: [],
+    spec: {
+      roomW: 6, roomH: 4, seating: 'arabic',
+      door: { wall: 1, w: 0.9, distFromCorner: 1, side: 'start' },
+      tv: { wall: 2, w: 1.4 },
+      sofaWalls: [0, 1, 2],
+      fabric: 'قطيفة',
+      accessories: [{ name: 'مركى', qty: 2 }],
+    },
+  };
+  var READY2 = JSON.parse(JSON.stringify(READY));
+  READY2.spec.roomW = 7.5;
+  READY2.assumptions = ['الطول 7.5 م كما طلبت'];
+
+  (async function run() {
+    try {
+      var SQL = await initSqlJs({ locateFile: function (f) { return 'https://cdnjs.cloudflare.com/ajax/libs/sql.js/1.10.3/' + f; } });
+      var sqlite = new SQL.Database();
+      sqlite.exec(await (await realFetch('../worker/schema.sql')).text());
+      sqlite.run("UPDATE settings SET data = '{\"shopName\":\"أصالة نجد\",\"phone\":\"0512345678\",\"currency\":\"ر.س\"}' WHERE id = 1");
+      var norm = function (v) { return v === undefined ? null : (typeof v === 'boolean' ? (v ? 1 : 0) : v); };
+      var DB = {
+        prepare: function (sql) {
+          var st = { sql: sql, args: [] };
+          st.bind = function () { st.args = Array.prototype.map.call(arguments, norm); return st; };
+          st.first = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var has = s.step(); var row = has ? s.getAsObject() : null; s.free(); return row; };
+          st.all = async function () { var s = sqlite.prepare(sql); s.bind(st.args); var results = []; while (s.step()) results.push(s.getAsObject()); s.free(); return { results: results, success: true }; };
+          st.run = async function () { sqlite.run(sql, st.args); return { success: true }; };
+          return st;
+        },
+        batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
+      };
+      var mod = await import('../worker/worker.js');
+      var env = { DB: DB, AI_API_KEY: 'sk-test-harness', AI_BASE_URL: 'https://provider.test/v1', AI_MODEL: 'test-model' };
+      var providerScript = [];
+      var providerCalls = [];
+      var reply = function (obj) {
+        return new Response(JSON.stringify({ choices: [{ message: { content: JSON.stringify(obj) } }] }),
+          { status: 200, headers: { 'content-type': 'application/json' } });
+      };
+      window.fetch = async function (input, init) {
+        var url = typeof input === 'string' ? input : input.url;
+        if (url.indexOf('/chat/completions') >= 0) {
+          var body = init && init.body ? JSON.parse(init.body) : {};
+          providerCalls.push(body);
+          var step = providerScript.length ? providerScript.shift() : READY;
+          if (step && step.__status) return new Response('err', { status: step.__status });
+          return reply(step);
+        }
+        if (url.indexOf('/api/portal') >= 0) {
+          var path = url.slice(url.indexOf('/api/portal') + 11);
+          return mod.default.fetch(new Request('https://x.test/api/portal' + path, init), env);
+        }
+        return realFetch(input, init);
+      };
+      sqlite.run("INSERT OR IGNORE INTO items (id, data, updated_at) VALUES ('acc-marka','{\"id\":\"acc-marka\",\"name\":\"مركى\",\"category\":\"acc\",\"price\":80,\"w\":0.6,\"h\":0.35,\"active\":true}','2026-01-01')");
+      sqlite.run("INSERT OR IGNORE INTO items (id, data, updated_at) VALUES ('fab1','{\"id\":\"fab1\",\"name\":\"قطيفة\",\"category\":\"fabric\",\"price\":10,\"active\":true}','2026-01-01')");
+      var html = await (await realFetch('../portal.html')).text();
+      var doc = new DOMParser().parseFromString(html, 'text/html');
+      doc.querySelectorAll('script').forEach(function (s) { s.remove(); });
+      var wrap = document.createElement('div');
+      wrap.innerHTML = doc.body.innerHTML;
+      document.body.appendChild(wrap);
+      for (var p of ['../js/designer.js', '../js/portal.js', '../js/ai-design-adapter.js', '../js/ai-design.js']) {
+        var s = document.createElement('script');
+        s.textContent = await (await realFetch(p)).text();
+        document.body.appendChild(s);
+      }
+      var q = function (sel) { return document.querySelector(sel); };
+      log('stage: scripts-injected');
+      await waitFor(function () { return window.PortalTest && window.AiDesign && window.PortalAI && q('#pStart'); }, 60000, 'boot');
+      log('stage: booted');
+      var P = window.PortalTest, AI = window.AiDesign;
+      var st = function () { return AI.state(); };
+
+      // A: الترحيب — الزر يفتح المحادثة بلا جلسة
+      t('A-landing-btn', !!q('#pAiBtn') && !q('#pAiBtn').hidden, 'pAiBtn');
+      q('#pAiBtn').click();
+      await waitFor(function () { return q('#aiModal') && !q('#aiModal').hidden; }, 60000, 'A-open');
+      t('A-modal-open', !q('#aiModal').hidden && st().msgs >= 1, 'msgs=' + st().msgs);
+      t('A-welcome-arabic', q('#aiBody').textContent.indexOf('أهلاً بك') >= 0, q('#aiBody').textContent.slice(0, 60));
+      t('A-input-enabled', q('#aiText') && !q('#aiText').disabled, 'enabled');
+
+      // B: أول إرسال يبدأ جلسة تلقائياً ويفهم المواصفات
+      q('#aiText').value = 'أبي مجلس ٦ في ٤ باب على اليمين وتلفاز وكنب عربي وقطيفة ومركبتي مركى';
+      q('#aiSend').click();
+      await waitFor(function () { return !st().busy && st().msgs >= 3; }, 60000, 'B-reply');
+      t('B-session-auto-start', !q('#pDesign').hidden && P.state() && P.state().walls.length === 4, 'design view + default state');
+      t('B-status-ready', st().status === 'ready' && st().hasSpec, 'status=' + st().status);
+      t('B-no-raw-json', q('#aiBody').textContent.indexOf('{') < 0, 'no { in chat');
+      t('B-summary-visible', !q('#aiExtra').hidden && q('#aiExtra').textContent.indexOf('المواصفات المفهومة') >= 0, 'summary');
+      t('B-create-btn', !!q('#aiCreate'), 'إنشاء التصميم present');
+      t('B-prompt-uses-catalog', providerCalls.length === 1 && providerCalls[0].messages[0].content.indexOf('قطيفة') >= 0, 'fabric name in system');
+      t('B-no-key-in-dom', appDOM().indexOf('sk-test') < 0, 'no key leak');
+
+      // C: سؤال مع خيارات (زر شريطة يملأ الإدخال)
+      providerScript.push({
+        status: 'need_answers', note: 'ما عدد الأبواب؟',
+        questions: [{ id: 'q1', q: 'كم باباً تحتاج؟', options: ['باب واحد', 'بابان'] }],
+        assumptions: [], issues: [], spec: null,
+      });
+      q('#aiText').value = 'كم باباً؟';
+      q('#aiSend').click();
+      await waitFor(function () { return !st().busy && q('#aiBody').textContent.indexOf('كم باباً تحتاج') >= 0; }, 60000, 'C-question');
+      var chip = q('#aiBody .ai-chip');
+      t('C-question-chip', !!chip && chip.textContent === 'باب واحد', chip && chip.textContent);
+      chip.click();
+      t('C-chip-fills-input', q('#aiText').value === 'باب واحد', q('#aiText').value);
+
+      // D: فشل المزوّد (كل المحاولتين 500) — رسالة عربية وإدخال يعمل
+      providerScript.push({ __status: 500 }, { __status: 500 });
+      q('#aiText').value = 'جرّب مرة ثانية';
+      q('#aiSend').click();
+      await waitFor(function () { return !st().busy && q('#aiBody').textContent.indexOf('تعذّر') >= 0; }, 60000, 'D-fail');
+      t('D-fail-arabic', q('#aiBody').textContent.indexOf('تعذّر') >= 0, 'error shown');
+      t('D-retry-possible', !q('#aiText').disabled && !q('#aiSend').disabled, 'input re-enabled');
+      t('D-status-unchanged', st().status === 'need_answers', 'status=' + st().status);
+
+      // E: إنشاء المعاينة على مصمم شبح — المصمم الحي لم يتغيّر
+      providerScript.push(READY);
+      q('#aiText').value = 'جهّز التصميم من فضلك';
+      q('#aiSend').click();
+      await waitFor(function () { return !st().busy && st().status === 'ready'; }, 60000, 'E-reply');
+      var liveBefore = JSON.stringify(P.state());
+      q('#aiCreate').click();
+      await waitFor(function () { return st().hasPreview; }, 60000, 'E-preview');
+      t('E-preview-img', !!q('.ai-preview img') && /^data:image/.test(q('.ai-preview img').getAttribute('src') || ''), 'preview data url');
+      t('E-live-untouched', JSON.stringify(P.state()) === liveBefore, 'ghost only');
+      t('E-apply-btn', !!q('#aiApply') && q('#aiApply').textContent.indexOf('تطبيق التصميم على المصمم') >= 0, 'apply button');
+      t('E-facts', q('.ai-facts').textContent.indexOf('6 × 4') >= 0, q('.ai-facts').textContent.slice(0, 60));
+
+      // F: التطبيق — ينفّذ على المصمم مرة واحدة فقط
+      q('#aiApply').click();
+      await waitFor(function () { return st().applied; }, 60000, 'F-apply');
+      var appliedState = P.state();
+      t('F-applied-walls', appliedState.walls[0].len === 6 && appliedState.walls[1].len === 4, JSON.stringify(appliedState.walls.map(function (w) { return w.len; })));
+      t('F-applied-openings', (appliedState.openings || []).some(function (o) { return o.type === 'door'; })
+        && (appliedState.openings || []).some(function (o) { return o.type === 'tv'; }), JSON.stringify((appliedState.openings || []).map(function (o) { return o.type; })));
+      t('F-applied-sofas', appliedState.pieces.filter(function (x) { return x.kind === 'sofa'; }).length >= 2,
+        String(appliedState.pieces.filter(function (x) { return x.kind === 'sofa'; }).length));
+      t('F-applied-acc', appliedState.pieces.filter(function (x) { return x.kind === 'acc'; }).length === 2,
+        String(appliedState.pieces.filter(function (x) { return x.kind === 'acc'; }).length));
+      t('F-double-apply-guard', !q('#aiApply'), 'apply button gone after apply');
+      var snap1 = JSON.stringify(P.state());
+      AI.previewState && AI.previewState();
+      t('F-state-stable', JSON.stringify(P.state()) === snap1, 'no accidental reapply');
+      t('F-done-msg', q('#aiBody').textContent.indexOf('تم تطبيق التصميم') >= 0, 'confirmation');
+
+      // G: التعديل اليدوي بعد التطبيق يعمل كالمعتاد
+      P.designer().setRect(7, 5);
+      t('G-manual-edit', P.state().walls[0].len === 7 && P.state().walls[1].len === 5, JSON.stringify(P.state().walls.map(function (w) { return w.len; })));
+
+      // H: تحرير جديد ← معاينة جديدة مع تحذير الاستبدال ← تطبيق ثانٍ مسموح
+      providerScript.push(READY2);
+      q('#aiText').value = 'زد الطول إلى 7.5';
+      q('#aiSend').click();
+      await waitFor(function () { return !st().busy && st().status === 'ready'; }, 60000, 'H-reply');
+      q('#aiCreate').click();
+      await waitFor(function () { return st().hasPreview; }, 60000, 'H-preview');
+      t('H-replace-warn', q('#aiExtra').textContent.indexOf('سيُستبدل التصميم الحالي') >= 0, 'replace warning');
+      q('#aiApply').click();
+      await waitFor(function () { return st().applied && P.state().walls[0].len === 7.5; }, 60000, 'H-apply');
+      t('H-reapply-ok', P.state().walls[0].len === 7.5 && P.state().walls[1].len === 4,
+        JSON.stringify(P.state().walls.map(function (w) { return w.len; })));
+
+      // I: زر المصمم داخل الشريط يفتح المحادثة
+      t('I-in-design-btn', !!q('#pAiOpen'), 'pAiOpen exists');
+      q('#pAiOpen').click();
+      await waitFor(function () { return !q('#aiModal').hidden; }, 60000, 'I-reopen');
+      t('I-reopen', !q('#aiModal').hidden && st().msgs >= 6, 'chat kept');
+
+      // J: مسح المحادثة يعيد الترحيب ويبقي التصميم المُطبَّق
+      var piecesAfter = P.state().pieces.length;
+      q('#aiClear').click();
+      await waitFor(function () { return st().msgs === 1 && !st().hasSpec && !st().hasPreview; }, 30000, 'J-clear');
+      t('J-cleared', st().msgs === 1 && !st().hasSpec && st().status === null, JSON.stringify(st()));
+      t('J-design-kept', P.state().pieces.length === piecesAfter, 'design untouched by clear');
+
+      // K: خصوصية — لا مفتاح في DOM ولا في التخزين ولا رابط المزوّد
+      var dom = appDOM();
+      t('K-no-key-dom', dom.indexOf('sk-test') < 0 && dom.indexOf('sk-live') < 0, 'key absent from DOM');
+      t('K-no-key-storage', JSON.stringify(localStorage).indexOf('sk-') < 0, 'key absent from storage');
+      t('K-no-provider-url', dom.indexOf('provider.test') < 0, 'provider hidden from client');
+
+      window.fetch = realFetch;
+    } catch (e) {
+      bad++; log('FAIL harness :: ' + (e.stack || e.message || e));
+    } finally {
+      try { window.fetch = realFetch; } catch (_) { /* noop */ }
+      if (window.TEST_ERRORS.length) { bad++; log('WINDOW ERRORS: ' + window.TEST_ERRORS.join(' | ')); }
+      var verdict = bad === 0 ? ('PASS ' + n + '/' + n) : 'FAIL';
+      document.getElementById('testResult').textContent = verdict;
+      document.title = verdict;
+      log('---- ' + verdict + ' ----');
+    }
+  })();
+})();
+</script>
+</body>
+</html>
