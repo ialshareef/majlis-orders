@@ -824,6 +824,8 @@
         <div class="ph-title"><h2>ذكاء الأعمال</h2><p>الأرقام قبل الضريبة، والطلبات الملغية وعروض الأسعار خارج المبيعات.</p></div>
         <div class="actions">
           <button id="btnBiCsv" class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير CSV</button>
+          <button id="btnBiPdf" class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير PDF</button>
+          <button id="btnBiXlsx" class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير Excel</button>
         </div>
       </header>
       <div class="toolbar bi-filters">
@@ -973,6 +975,46 @@
           <div id="biInsights" class="bi-insights"></div>
         </section>
       </div>
+
+      <!-- تقرير الطلبات والتحصيل: ملخص حسب الحالة + جدول قابل للفتح + تصدير -->
+      <section class="card module" id="ordersReportCard">
+        <div class="module-head">
+          <h3>تقرير الطلبات والتحصيل</h3>
+          <div class="chip-group seg-chips" role="group" aria-label="تصدير التقرير">
+            <button type="button" class="btn small" id="btnOrdersPdf"><svg><use href="#i-download"/></svg> PDF</button>
+            <button type="button" class="btn small" id="btnOrdersXlsx"><svg><use href="#i-download"/></svg> Excel</button>
+          </div>
+        </div>
+        <div class="toolbar bi-filters ord-filters">
+          <label class="search"><svg><use href="#i-search"/></svg><input id="ordQ" type="search" enterkeyhint="search" aria-label="البحث في العملاء" placeholder="بحث باسم العميل أو رقم الجوال"></label>
+          <select id="ordStatus" aria-label="تصفية حسب الحالة">
+            <option value="">كل الحالات</option>
+            <option value="quote">عرض سعر</option>
+            <option value="new">جديد</option>
+            <option value="progress">قيد التنفيذ</option>
+            <option value="done">اكتمال التنفيذ</option>
+            <option value="delivered">تم التوصيل</option>
+            <option value="cancelled">ملغي</option>
+          </select>
+        </div>
+        <p class="filter-note" id="ordNote"></p>
+        <div class="stats-row kpis kpis-main" id="ordKpis"></div>
+        <div id="ordByStatus" class="ord-by-status"></div>
+        <div class="table-wrap">
+          <table class="table responsive compact" id="ordTable">
+            <thead><tr><th>رقم الطلب</th><th>العميل</th><th>الحالة</th><th>التاريخ</th><th class="ta-end">الإجمالي</th><th class="ta-end">المحصّل</th><th class="ta-end">المتبقي</th><th>الدفعات</th><th><span class="sr-only">فتح</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="hint" id="ordCountNote"></p>
+        <div class="ord-exports">
+          <span class="hint">تقارير جاهزة:</span>
+          <button type="button" class="btn small" id="btnMandoubsPdf"><svg><use href="#i-download"/></svg> المناديب PDF</button>
+          <button type="button" class="btn small" id="btnMandoubsXlsx"><svg><use href="#i-download"/></svg> المناديب Excel</button>
+          <button type="button" class="btn small" id="btnExpensesPdf"><svg><use href="#i-download"/></svg> المصروفات PDF</button>
+          <button type="button" class="btn small" id="btnExpensesXlsx"><svg><use href="#i-download"/></svg> المصروفات Excel</button>
+        </div>
+      </section>
     </section>
 
     <!-- ============ الإعدادات والنسخ الاحتياطي (مدير) ============ -->
@@ -1125,5 +1167,6 @@
     });
   }
 </script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 </body>
 </html>

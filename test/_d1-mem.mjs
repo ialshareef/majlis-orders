@@ -64,7 +64,19 @@ function condOf(where, args) {
       clauses.push({ col: like[1].split('.').pop(), op: 'LIKE', val });
       continue;
     }
-    const m = p.match(/^(\w+(?:\.\w+)?)\s*(=|!=|<=|>=|<|>|<>)\s*(.+)$/);
+    const pDate = p.match(/^date\(\s*(\w+(?:\.\w+)?)\s*\)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)$/i);
+    if (pDate) {
+      const col = pDate[1].split('.').pop();
+      const op = pDate[2];
+      const rhs = pDate[3].trim();
+      let val;
+      if (rhs === '?') val = args.shift();
+      else if (/^'([^']*)'$/.test(rhs)) val = rhs.slice(1, -1);
+      else val = rhs;
+      clauses.push({ col, op, val, dateOnly: true });
+      continue;
+    }
+    const m = p.match(/^(\w+(?:\.\w+)?)\s*(=|!=|<>|<=|>=|<|>)\s*(.+)$/);
     if (m) {
       const [, colRaw, op, rhsRaw] = m;
       const col = colRaw.split('.').pop();
@@ -81,6 +93,18 @@ function condOf(where, args) {
   return (row) => {
     for (const c of clauses) {
       const v = row[c.col];
+      if (c.dateOnly) {
+        const d = String(v ?? '').slice(0, 10);
+        const tgt = String(c.val ?? '').slice(0, 10);
+        if (!d) return false;
+        if (c.op === '>=') { if (!(d >= tgt)) return false; }
+        else if (c.op === '<=') { if (!(d <= tgt)) return false; }
+        else if (c.op === '>') { if (!(d > tgt)) return false; }
+        else if (c.op === '<') { if (!(d < tgt)) return false; }
+        else if (c.op === '=') { if (d !== tgt) return false; }
+        else if (c.op === '!=' || c.op === '<>') { if (d === tgt) return false; }
+        continue;
+      }
       if (c.op === 'IN') { if (!c.vals.some((x) => String(x) === String(v))) return false; continue; }
       if (c.op === 'LIKE') { if (!String(v ?? '').includes(String(c.val).replace(/%/g, ''))) return false; continue; }
       if (c.op === 'ISNULL') { if (v !== null && v !== undefined) return false; continue; }

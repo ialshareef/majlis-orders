@@ -122,6 +122,7 @@
       data.items = normalizeItems(Array.isArray(data.items) ? data.items : d.items);
       data.orders = Array.isArray(data.orders) ? data.orders : [];
       data.activity = Array.isArray(data.activity) ? data.activity : [];
+      data.expenses = Array.isArray(data.expenses) ? data.expenses : [];
       this.db = data;
       for (const u of this.db.users) {
         if (!u.password) u.password = await hash(u.username === 'admin' ? 'admin' : '123456');
@@ -319,6 +320,8 @@
       this.db.users = Array.isArray(b.users) ? b.users : [];
       if (b.user) this.user = b.user;
       this.features = b.features || {};
+      // صلاحياتي الفعّالة من الخادم؛ غيابها (خادم أقدم/فشل) = لا شيء (فشل مُغلق)
+      this.myPermissions = Array.isArray(b.permissions) ? b.permissions : [];
       this.snapshot();
     },
 
@@ -468,13 +471,39 @@
       const r = await this.api('POST', '/api/login', { username: String(username).trim(), password });
       if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'bad_credentials', minutes: r && r.minutes };
       this.token = r.token;
-      localStorage.setItem(this.TOKEN_KEY, r.token);
       this.user = r.user;
+      if (r.mustChangePassword) {
+        // Don't persist token until password is changed — prevents Ctrl+F5 bypass
+        return { ok: true, user: r.user, mustChangePassword: true };
+      }
+      localStorage.setItem(this.TOKEN_KEY, r.token);
       await this.loadAll();
-      return { ok: true, user: r.user, mustChangePassword: !!r.mustChangePassword };
+      return { ok: true, user: r.user, mustChangePassword: false };
     },
 
-    async restoreSession() { return this.user; },
+    async changePassword(currentPassword, newPassword) {
+      const r = await this.api('POST', '/api/change-password', { currentPassword, newPassword });
+      if (!r || !r.ok) throw new Error((r && r.error) || 'تعذر تغيير كلمة المرور');
+      return r;
+    },
+
+    async restoreSession() {
+      if (!this.token) { this.user = null; return null; }
+      try {
+        const r = await this.api('GET', '/api/me');
+        if (r && r.user) { this.user = r.user; await this.loadAll(); return r.user; }
+        this.token = null; this.user = null; localStorage.removeItem(this.TOKEN_KEY);
+        return null;
+      } catch (e) {
+        if (e.status === 403) {
+          // Password change required — keep token for change-password, but don't enter app
+          this.user = null;
+        } else if (e.status === 401) {
+          this.token = null; this.user = null; localStorage.removeItem(this.TOKEN_KEY);
+        }
+        return null;
+      }
+    },
 
     async logout() {
       try { if (this.token) await this.api('POST', '/api/logout'); } catch (_) { /* ignore */ }
@@ -534,6 +563,8 @@
     /** رقم الطلب يمنحه الخادم عند أول حفظ — إن كان الخادم المنشور يدعم ذلك.
         خادم أقدم (لم يُعَد نشره) لا يمنح أرقاماً، فيُحجز الرقم قبل الحفظ كما كان. */
     get serverNumbers() { return remote && !!(Remote.features && Remote.features.serverNumbers); },
+    /** هل أملك هذه الصلاحية؟ للعرض فقط — الخادم يفرضها. الوضع المحلي أو قبل التحميل: لا. */
+    can: (p) => remote && Array.isArray(Remote.myPermissions) && Remote.myPermissions.includes(p),
     get db() { return backend.db; },
     get lastError() { return backend.lastError || ''; },
     get lastStatus() { return backend.lastStatus || 0; },
@@ -553,6 +584,7 @@
     logout: () => backend.logout(),
     nextOrderNo: () => backend.nextOrderNo(),
     saveUser: (d, p) => backend.saveUser(d, p),
+    changePassword: (cp, np) => backend.changePassword(cp, np),
     deleteUser: (id) => backend.deleteUser(id),
     exportJSON: () => backend.exportJSON(),
     importJSON: (t) => backend.importJSON(t),

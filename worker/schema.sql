@@ -2,7 +2,9 @@
 -- أصالة نجد | نظام إدارة طلبات المجالس — قاعدة بيانات Cloudflare D1
 -- شغّل هذا الملف كاملاً مرة واحدة في: Workers & Pages > D1 > (قاعدتك) > Console
 -- (يمكن إعادة تشغيله بأمان)
--- المستخدم الافتراضي admin / admin يُنشأ تلقائياً عند أول طلب للـ Worker
+-- المستخدم الأول يُنشأ عند أول طلب على قاعدة خالية، وكلمة مروره الأولى تأتي حصرياً من
+-- متغير بيئة الخادم `ADMIN_INIT_PASSWORD` (لا كلمة مرور افتراضية ثابتة في الكود).
+-- يُفرض تغيير كلمة المرور عند أول دخول.
 -- ============================================================================
 
 CREATE TABLE IF NOT EXISTS users (
@@ -128,3 +130,76 @@ CREATE TABLE IF NOT EXISTS analytics_events (
   PRIMARY KEY (day, name, dim)
 );
 CREATE INDEX IF NOT EXISTS analytics_events_name_day_idx ON analytics_events(name, day);
+
+-- Permission Manager tables (idempotent)
+-- ============================================================================
+-- Permission Manager — Migration 001: permission tables
+-- Safe/idempotent. Run on an existing D1 database. No data changes.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS user_permissions (
+  user_id    TEXT NOT NULL,
+  permission TEXT NOT NULL,
+  value      INTEGER NOT NULL CHECK (value IN (0, 1)),
+  updated_by TEXT,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, permission),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (updated_by) REFERENCES users(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS user_permissions_user_idx ON user_permissions(user_id);
+CREATE INDEX IF NOT EXISTS user_permissions_perm_idx ON user_permissions(permission);
+
+CREATE TABLE IF NOT EXISTS permission_audit (
+  id             TEXT PRIMARY KEY,
+  at             TEXT NOT NULL,
+  actor_user_id  TEXT,
+  actor_name     TEXT,
+  target_user_id TEXT,
+  target_name    TEXT,
+  change_type    TEXT NOT NULL CHECK (change_type IN ('permission', 'role', 'active', 'defaults_restore')),
+  permission     TEXT,
+  old_value      TEXT,
+  new_value      TEXT,
+  reason         TEXT
+  -- بلا مفاتيح أجنبية عمداً: السجل للإلحاق فقط (المشغّلان أدناه يمنعان أي UPDATE)، و ON DELETE SET NULL
+  -- يُنفَّذ UPDATE فيُفشل حذف أي مستخدم ورد في السجل. المعرّف والاسم يُحفظان نصّاً ويبقيان بعد الحذف.
+);
+
+CREATE INDEX IF NOT EXISTS permission_audit_target_idx ON permission_audit(target_user_id);
+CREATE INDEX IF NOT EXISTS permission_audit_at_idx ON permission_audit(at);
+
+-- Append-only protection for permission_audit (database-level).
+CREATE TRIGGER IF NOT EXISTS permission_audit_no_update
+BEFORE UPDATE ON permission_audit
+BEGIN
+  SELECT RAISE(ABORT, 'permission_audit is append-only');
+END;
+
+CREATE TRIGGER IF NOT EXISTS permission_audit_no_delete
+BEFORE DELETE ON permission_audit
+BEGIN
+  SELECT RAISE(ABORT, 'permission_audit is append-only');
+END;
+
+-- ============================================================================
+-- نظام إدارة طلبات المجالس — جدول المصروفات (الهجرة 002)
+-- آمن للتكرار (idempotent). لا يضيف بيانات افتراضية ولا يعدل بيانات قائمة.
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS expenses (
+  id            TEXT PRIMARY KEY,
+  name          TEXT NOT NULL,
+  amount        REAL NOT NULL DEFAULT 0,
+  category      TEXT,
+  note          TEXT,
+  created_by    TEXT NOT NULL,
+  created_at    TEXT NOT NULL,
+  updated_at    TEXT NOT NULL
+  -- created_by بلا مفتاح أجنبي (مثل orders.created_by): المصروف يبقى منسوباً لصاحبه بعد حذفه.
+  -- (NOT NULL مع ON DELETE SET NULL كان يُفشل حذف أي مستخدم له مصروفات)
+);
+
+CREATE INDEX IF NOT EXISTS expenses_created_at_idx ON expenses(created_at);
+CREATE INDEX IF NOT EXISTS expenses_created_by_idx ON expenses(created_by);

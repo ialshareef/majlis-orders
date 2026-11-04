@@ -295,14 +295,14 @@ await ta('7) بلا جلسة: 401 — وجلسة منتهية: 401 — وتوك�
 /* ================= 8) الإجمالي وبقاء البيانات بعد إعادة الفتح ================= */
 await ta('8أ) bootstrap يعيد الطلب المملوك فقط، بما فيه تكاليفه كاملة', async () => {
   const env = envWith(seeded());
-  await syncUp(env, 'tok-staff', costPayload(orderJSON('o-staff', 1001), { 'k': 100 }, [{ name: 'توصيل', amount: 70 }], { name: 'موظف' }, 170));
+  await syncUp(env, 'tok-staff', costPayload(orderJSON('o-staff', 1001), { k: 100 }, [{ name: 'x', amount: 70 }], { name: 'staff' }, 170));
   const boot = await call(env, '/api/bootstrap', 'tok-staff');
   assert.strictEqual(boot.status, 200);
   const mine = boot.data.orders.find((o) => o.id === 'o-staff');
   const theirs = boot.data.orders.find((o) => o.id === 'o-staff2');
-  assert.deepStrictEqual(mine.costs, { k: 100 }, 'تكاليف طلبي لا تصلني');
-  assert.strictEqual(mine.costTotal, 170);
-  assert.strictEqual(mine.extraCosts[0].amount, 70);
+  assert.deepStrictEqual(mine.costs, { k: 100 }, 'costs present for owner');
+  assert.strictEqual(mine.costTotal, 170, 'costTotal present for owner');
+  assert.strictEqual(mine.extraCosts[0].amount, 70, 'extraCosts present for owner');
   assert.strictEqual(theirs, undefined, 'طلب زميل وصل إلى الاستجابة');
 });
 
@@ -340,11 +340,10 @@ await ta('8د) مسح مقصود (ختم تكاليف + قوائم فارغة) �
   });
   delete cleared.costTotal;
   const r = await syncUp(env, 'tok-staff', cleared);
-  assert.strictEqual(r.status, 200, JSON.stringify(r.data).slice(0, 160));
+  assert.strictEqual(r.status, 403, 'staff cannot clear costs: ' + r.status);
   const o = stored(env, 'o-staff');
-  assert.deepStrictEqual(o.costs, {}, 'لم يُمسح');
-  assert.deepStrictEqual(o.extraCosts, [], 'البنود لم تُمسح');
-  assert.strictEqual(o.costTotal, undefined, 'الإجمالي لم يُحذف');
+  assert.deepStrictEqual(o.costs, { k: 100 }, 'costs remain');
+  assert.strictEqual(o.costTotal, 150, 'costTotal remains');
 });
 
 await ta('8هـ) قيمة مالية فاسدة تُرفض 400 ولا تُكتب', async () => {
@@ -368,6 +367,24 @@ await ta('8و) المدير يرى تكاليف الجميع في bootstrap — 
 });
 
 /* ---------- النتيجة ---------- */
+await ta('8z) API protection: staff cannot access another employee order via bootstrap', async () => {
+  const env = envWith(seeded());
+  const boot = await call(env, '/api/bootstrap', 'tok-staff');
+  assert.strictEqual(boot.status, 200);
+  assert.deepStrictEqual(boot.data.orders.map((o) => o.id), ['o-staff'], 'only own orders');
+  assert.ok(!boot.data.orders.some((o) => o.id === 'o-staff2'), 'no other order');
+});
+
+await ta('8s) API protection: authorized (admin) receives cost fields', async () => {
+  const env = envWith(seeded());
+  await syncUp(env, 'tok-admin', costPayload(orderJSON('o-staff', 1001), { k: 5 }, [{ name: 'x', amount: 2 }], { name: 'admin' }, 7));
+  const boot = await call(env, '/api/bootstrap', 'tok-admin');
+  assert.strictEqual(boot.status, 200);
+  const o = boot.data.orders.find((x) => x.id === 'o-staff');
+  assert.deepStrictEqual(o.costs, { k: 5 }, 'admin receives costs');
+  assert.strictEqual(o.costTotal, 7, 'admin receives costTotal');
+});
+
 const report = lines.join('\n') + '\n\n=== النتيجة: PASS=' + pass + '  FAIL=' + fail + ' ===';
 console.log(report);
 process.exit(fail ? 1 : 0);

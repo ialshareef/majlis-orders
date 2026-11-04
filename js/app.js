@@ -41,6 +41,67 @@
   };
   const fmtDateTime = (iso) => { if (!iso) return '—'; const d = new Date(iso); if (isNaN(d)) return String(iso); return `${fmtDate(d.toISOString())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
   const STATUS = { quote: 'عرض سعر', new: 'جديد', progress: 'قيد التنفيذ', done: 'اكتمال التنفيذ', delivered: 'تم التوصيل', cancelled: 'ملغي' };
+
+  /* ---------------- الصلاحيات: تصنيفات وأسماء عربية للعرض ----------------
+     الترتيب يعرض الأقسام بالترتيب المنطقي للعمل. admin.core محمية (دور فقط). */
+  const PERM_UI = [
+    ['الطلبات', [
+      ['orders.view_own', 'عرض طلباته'],
+      ['orders.view_all', 'عرض كل الطلبات'],
+      ['orders.create', 'إنشاء طلب'],
+      ['orders.edit_own', 'تعديل طلباته'],
+      ['orders.edit_all', 'تعديل كل الطلبات'],
+      ['orders.delete_own', 'حذف طلباته'],
+      ['orders.delete_all', 'حذف أي طلب'],
+    ]],
+    ['التكاليف', [
+      ['costs.view_own', 'عرض تكاليفه'],
+      ['costs.view_all', 'عرض كل التكاليف'],
+      ['costs.add_own', 'إضافة تكاليفه'],
+      ['costs.add_all', 'إضافة تكاليف لأي طلب'],
+      ['costs.edit_own', 'تعديل تكاليفه'],
+      ['costs.edit_all', 'تعديل أي تكاليف'],
+      ['costs.delete_own', 'حذف تكاليفه'],
+      ['costs.delete_all', 'حذف أي تكاليف'],
+    ]],
+    ['الأرباح والعمولات', [
+      ['profit.view_own', 'عرض أرباحه'],
+      ['profit.view_all', 'عرض كل الأرباح'],
+      ['commission.view_own', 'عرض عمولاته'],
+      ['commission.view_all', 'عرض كل العمولات'],
+    ]],
+    ['التقارير', [
+      ['reports.view_own', 'تقاريره فقط'],
+      ['reports.view_all', 'كل التقارير'],
+    ]],
+    ['المصروفات', [
+      ['expenses.view_own', 'عرض مصروفاته'],
+      ['expenses.view_all', 'عرض كل المصروفات'],
+      ['expenses.add_own', 'إضافة مصروفاته'],
+      ['expenses.add_all', 'إضافة أي مصروف'],
+      ['expenses.edit_own', 'تعديل مصروفاته'],
+      ['expenses.edit_all', 'تعديل أي مصروف'],
+      ['expenses.delete_own', 'حذف مصروفاته'],
+      ['expenses.delete_all', 'حذف أي مصروف'],
+    ]],
+    ['المستخدمون والصلاحيات', [
+      ['users.view', 'عرض المستخدمين'],
+      ['users.create', 'إنشاء مستخدم'],
+      ['users.edit', 'تعديل مستخدم'],
+      ['users.disable', 'إيقاف مستخدم'],
+      ['permissions.manage', 'إدارة الصلاحيات'],
+    ]],
+    ['الإعدادات', [
+      ['settings.manage', 'إدارة إعدادات المحل'],
+    ]],
+    ['التصاميم', [
+      ['designs.manage', 'إدارة تصاميم العملاء'],
+    ]],
+    ['الإدارة العامة', [
+      ['admin.core', 'صلاحيات المدير العام'],
+    ]],
+  ];
+  const PERM_PROTECTED = ['admin.core'];
   /** عرض السعر ليس بيعاً بعد، والملغي لم يعد بيعاً: كلاهما خارج كل مبلغ مبيعات */
   const isSale = (o) => !!o && o.status !== 'cancelled' && o.status !== 'quote';
   /** طلب مفتوح: بيع لم يُسلَّم بعد */
@@ -316,19 +377,20 @@
       $('#loginError').textContent = r.error === 'bad_credentials' ? 'اسم المستخدم أو كلمة المرور غير صحيحة'
         : r.error === 'inactive' ? 'هذا الحساب موقوف'
         : r.error === 'locked' ? `محاولات دخول فاشلة كثيرة. حاول مجدداً بعد ${r.minutes || 15} دقيقة.`
+        : r.error === 'password_needs_reset' ? 'كلمة المرور تحتاج إلى إعادة تعيين. تواصل مع المدير.'
         : (r.error || 'تعذر الدخول');
       return;
     }
     $('#loginPass').value = '';
     // كلمة المرور الأولية: بوابة إجبارية قبل دخول التطبيق — لا يدخل النظام قبل تغييرها
-    if (r.mustChangePassword) { forcePasswordChange(r.user, () => enterApp(r.user)); return; }
+    if (r.mustChangePassword) { forcePasswordChange(r.user, pw, () => enterApp(r.user)); return; }
     enterApp(r.user);
   });
 
   /* الحساب بكلمة مرور أولية لا يدخل التطبيق قبل تغييرها: خطوة onboarding مؤقتة
      بلا زر تجاوز ولا إغلاق (X/الخارج/Escape)، ولا تُكشف الكلمة الأولية في أي رسالة.
      من غيّر كلمته سابقاً لا يمر من هنا أصلاً (mustChangePassword=false). */
-  function forcePasswordChange(pendingUser, onDone) {
+  function forcePasswordChange(pendingUser, currentPassword, onDone) {
     if (!pendingUser) return;
     lockModal(true);
     openModal('إنشاء كلمة مرور جديدة', `
@@ -344,9 +406,9 @@
         if (p1 !== p2) { err.textContent = 'كلمتا المرور غير متطابقتين'; return; }
         // المقارنة في الكود فقط: تمنع إعادة استخدام الكلمة الأولية المعروفة دون كشفها في أي رسالة
         if (p1 === 'admin') { err.textContent = 'اختر كلمة مرور مختلفة'; return; }
-        const u = Store.getUser(pendingUser.id) || pendingUser;
-        try { await Store.saveUser({ id: pendingUser.id, name: u.name, username: u.username, role: u.role, active: true }, p1); }
+        try { await Store.changePassword(currentPassword, p1); }
         catch (e) { err.textContent = e.message || 'تعذر الحفظ'; return; }
+        if (Store.token) localStorage.setItem(Store.TOKEN_KEY || 'majlis_token', Store.token);
         lockModal(false);
         closeModal();
         toast('تم إنشاء كلمة المرور');
@@ -4478,8 +4540,138 @@ function docTitle(order) {
     }));
   }
 
+  /** تحميل وعرض تعديل صلاحيات مستخدم قائم — يُستدعى داخل نافذة تعديل المستخدم.
+      يعيد isDirty() ليعرف زر «حفظ» المستخدم أن تعديلات الصلاحيات لم تُحفظ بعد. */
+  function setupUserPermissions(b, user) {
+    const hint = $('#uPermRoleHint', b);
+    const err = $('#uPermErr', b);
+    if (!hint || !err) return { isDirty: () => false };
+    let data = null;
+    let savedJson = '{}'; // آخر تجاوزات محفوظة في الخادم: مرجع «غير محفوظ»
+    const roleSel = $('#uRole', b), activeSel = $('#uActive', b);
+    const ovJson = () => JSON.stringify(Object.keys((data && data.overrides) || {}).sort().map((k) => [k, Number(data.overrides[k])]));
+    const isDirty = () => !!data && ovJson() !== savedJson;
+
+    const load = async () => {
+      try {
+        data = await Store.api('GET', '/api/users/' + encodeURIComponent(user.id) + '/permissions');
+      } catch (e) {
+        data = null;
+        err.textContent = (e && e.message) || 'تعذر تحميل الصلاحيات';
+        return null;
+      }
+      return data;
+    };
+
+    const render = () => {
+      if (!data) return;
+      /* الدور المعروض = المختار في النافذة الآن (قد لا يكون محفوظاً بعد). التجاوزات اليدوية
+         لا تُمس عند تغييره: تبقى مستقلة، والافتراضيات وحدها تتبع الدور الجديد.
+         خادم أقدم بلا roleDefaults: تبقى افتراضيات الدور المحفوظ. */
+      const viewRole = (roleSel && roleSel.value) || data.role;
+      const rd = data.roleDefaults && data.roleDefaults[viewRole];
+      const pendingRole = viewRole !== data.role;
+      const defaults = new Set(rd || data.defaults || []);
+      const overrides = data.overrides || {};
+      const inactive = !!(activeSel && activeSel.value === '0');
+      const roleName = (r) => ({ admin: 'مدير', staff: 'موظف', mandoub: 'مندوب' }[r] || r);
+      hint.textContent = '· الدور: ' + roleName(viewRole)
+        + (pendingRole ? (rd ? ' (غير محفوظ — احفظ المستخدم لتطبيقه)' : ' (تُحدَّث الافتراضيات بعد حفظ المستخدم)') : '')
+        + (inactive ? ' · الحساب موقوف: لا صلاحيات فعّالة' : '');
+      const isFalse = (v) => v === false || v === 0 || v === '0' || v === 'false';
+      const isTrue = (v) => v === true || v === 1 || v === '1' || v === 'true';
+      const effOf = (p) => {
+        if (inactive) return false; // الخادم يرفض كل شيء للموقوف
+        if (PERM_PROTECTED.includes(p)) return defaults.has(p); // الدور فقط
+        if (isFalse(overrides[p])) return false;
+        if (isTrue(overrides[p])) return true;
+        return defaults.has(p);
+      };
+      const curOf = (p) => (Object.prototype.hasOwnProperty.call(overrides, p) ? (isFalse(overrides[p]) ? '0' : '1') : 'default');
+      $('#uPermList', b).innerHTML = PERM_UI.map(([cat, items]) => `
+        <div class="perm-cat">${esc(cat)}</div>
+        ${items.map(([p, label]) => {
+          const prot = PERM_PROTECTED.includes(p);
+          const eff = effOf(p);
+          const cur = curOf(p);
+          const defLabel = defaults.has(p) ? 'مسموح' : 'ممنوع';
+          const ctrls = prot
+            ? '<span class="perm-lock" title="لا تُمنح ولا تُسحب — بالدور فقط"><svg><use href="#i-lock"/></svg> بالدور فقط</span>'
+            : `<div class="perm-tri" role="group" aria-label="${esc(label)}">
+                 <button type="button" data-p="${esc(p)}" data-v="default" class="${cur === 'default' ? 'on' : ''}" title="افتراضي الدور: ${defLabel}">افتراضي</button>
+                 <button type="button" data-p="${esc(p)}" data-v="1" class="${cur === '1' ? 'on perm-allow' : ''}">مسموح</button>
+                 <button type="button" data-p="${esc(p)}" data-v="0" class="${cur === '0' ? 'on perm-deny' : ''}">ممنوع</button>
+               </div>`;
+          return `<div class="perm-row${prot ? ' is-locked' : ''}">
+            <div class="perm-info"><span class="perm-name">${esc(label)}</span><span class="perm-key">${esc(p)}</span></div>
+            <span class="perm-eff ${eff ? 'is-ok' : 'is-no'}">${eff ? 'مسموح' : 'ممنوع'}</span>
+            ${ctrls}
+          </div>`;
+        }).join('')}`).join('');
+      $$('#uPermList .perm-tri button', b).forEach((btn) => btn.addEventListener('click', () => {
+        const p = btn.dataset.p, v = btn.dataset.v;
+        const ov = Object.assign({}, data.overrides || {});
+        if (v === 'default') delete ov[p]; else ov[p] = Number(v);
+        data = Object.assign({}, data, { overrides: ov });
+        render();
+      }));
+      $('#uPermDirty', b).hidden = !isDirty();
+    };
+
+    const setBusy = (off) => { $('#uPermSave', b).disabled = off; $('#uPermReset', b).disabled = off; };
+    const reload = async () => {
+      setBusy(true);
+      if (!(await load())) return; // فشل التحميل: لا تعديل ولا حفظ (يُبقي الأزرار معطّلة)
+      /* فشل مُغلق: الخادم لم يستطع قراءة التجاوزات — الحفظ هنا قد يمسح الموجود، فيُمنع. */
+      if (data.permissionsLoadFailed) {
+        err.textContent = 'تعذرت قراءة الصلاحيات المحفوظة — أعد فتح النافذة لاحقاً (لا يُسمح بالحفظ الآن)';
+        data = null; $('#uPermList', b).innerHTML = ''; return;
+      }
+      err.textContent = '';
+      savedJson = ovJson();
+      setBusy(false);
+      render();
+    };
+    if (roleSel) roleSel.addEventListener('change', render);
+    if (activeSel) activeSel.addEventListener('change', render);
+    reload();
+
+    $('#uPermSave', b).onclick = async () => {
+      err.textContent = '';
+      if (!data) return;
+      try {
+        await Store.api('POST', '/api/users/' + encodeURIComponent(user.id) + '/permissions', { overrides: data.overrides || {} });
+        toast('تم حفظ الصلاحيات');
+        await reload();
+      } catch (e) { err.textContent = (e && e.message) || 'تعذر حفظ الصلاحيات'; }
+    };
+    /* تأكيد داخل النافذة بضغطة ثانية: confirmDlg يستبدل محتوى النافذة نفسها فيُغلق نموذج المستخدم */
+    const resetBtn = $('#uPermReset', b), resetLabel = resetBtn.textContent;
+    let resetTimer = 0;
+    const disarmReset = () => { clearTimeout(resetTimer); resetTimer = 0; resetBtn.textContent = resetLabel; resetBtn.classList.remove('danger'); };
+    resetBtn.onclick = async () => {
+      if (!resetTimer) {
+        resetBtn.textContent = 'اضغط مرة أخرى للتأكيد';
+        resetBtn.classList.add('danger');
+        err.textContent = 'ستُمسح كل تجاوزات هذا المستخدم ويعود إلى افتراضي دوره.';
+        resetTimer = setTimeout(() => { disarmReset(); err.textContent = ''; }, 6000);
+        return;
+      }
+      disarmReset();
+      err.textContent = '';
+      try {
+        await Store.api('DELETE', '/api/users/' + encodeURIComponent(user.id) + '/permissions');
+        toast('أُعيدت الصلاحيات إلى افتراضي الدور');
+        await reload();
+      } catch (e) { err.textContent = (e && e.message) || 'تعذرت الإعادة'; }
+    };
+    return { isDirty };
+  }
+
   function userForm(user) {
     const u = user || { name: '', username: '', role: 'staff', active: true };
+    // قسم الصلاحيات لمن يملك permissions.manage فقط (الخادم يرفض غيره بـ 403 على أي حال)
+    const canPerms = Store.can('permissions.manage');
     openModal(user ? 'تعديل مستخدم' : 'مستخدم جديد', `
       <label>الاسم الكامل <input id="uName" value="${esc(u.name)}"></label>
       <div class="row2">
@@ -4490,14 +4682,36 @@ function docTitle(order) {
         <label>الدور <select id="uRole"><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>موظف</option><option value="mandoub" ${u.role === 'mandoub' ? 'selected' : ''}>مندوب</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير</option></select></label>
         <label>الحالة <select id="uActive"><option value="1" ${u.active !== false ? 'selected' : ''}>نشط</option><option value="0" ${u.active === false ? 'selected' : ''}>موقوف</option></select></label>
       </div>
+      ${canPerms ? `<div class="perm-section" id="uPermSection">
+        <div class="perm-head"><b>الصلاحيات</b><span class="hint" id="uPermRoleHint"></span><span class="perm-dirty" id="uPermDirty" hidden>تعديلات غير محفوظة</span></div>
+        <p class="hint" id="uPermNewHint"${user ? ' hidden' : ''}>احفظ المستخدم أولاً، ثم عدّل صلاحياته من نافذة التعديل.</p>
+        <div id="uPermBox"${user ? '' : ' hidden'}>
+          <p class="hint">تجاوزات لهذا المستخدم فوق افتراضيات دوره. «افتراضي» = يعود لسلوك الدور؛ «ممنوع» يغلب «مسموح» دائماً. تُطبق فور الحفظ دون الحاجة إلى حساب جديد.</p>
+          <div id="uPermList" class="perm-list"></div>
+          <p id="uPermErr" class="error"></p>
+          <div class="perm-actions">
+            <button type="button" class="btn perm-reset" id="uPermReset">إعادة إلى افتراضي الدور</button>
+            <button type="button" class="btn primary" id="uPermSave">حفظ الصلاحيات</button>
+          </div>
+        </div>
+      </div>` : ''}
       <p class="hint">المدير يستطيع إدارة الأصناف والمستخدمين وحذف الطلبات. الموظف يستطيع إنشاء الطلبات وتعديلها واستعراضها. المندوب مثل الموظف لكنه فئة مستقلة تُحسب عمولته بنسبة المناديب لا بنسبة البائع.</p>
       <p id="uErr" class="error"></p>
       <div class="btn-row"><button class="btn" id="uCancel">إلغاء</button><button class="btn primary" id="uSave">حفظ</button></div>`, (b) => {
       $('#uCancel', b).onclick = closeModal;
+      const perms = (user && canPerms) ? setupUserPermissions(b, user) : { isDirty: () => false };
+      let dirtyAck = false;
       $('#uSave', b).onclick = async () => {
         const name = $('#uName', b).value.trim(), username = $('#uUser', b).value.trim(), pass = $('#uPass', b).value;
         const role = $('#uRole', b).value, active = $('#uActive', b).value === '1';
         const err = $('#uErr', b);
+        /* حفظ المستخدم لا يحفظ الصلاحيات (زر مستقل) — تنبيه داخل النافذة قبل أن تضيع
+           التعديلات بإغلاقها؛ الضغطة الثانية على «حفظ» تتابع دونها. */
+        if (perms.isDirty() && !dirtyAck) {
+          dirtyAck = true;
+          err.textContent = 'عدّلت الصلاحيات ولم تحفظها وستُفقد. اضغط «حفظ الصلاحيات» أولاً، أو «حفظ» مرة أخرى للمتابعة دونها.';
+          return;
+        }
         if (!name || !username) { err.textContent = 'الاسم واسم المستخدم مطلوبان'; return; }
         if (!/^[a-zA-Z0-9_.@-]{3,}$/.test(username)) { err.textContent = 'اسم المستخدم: 3 أحرف فأكثر (أحرف إنجليزية وأرقام)'; return; }
         if (db().users.some((x) => x.username.toLowerCase() === username.toLowerCase() && x.id !== u.id)) { err.textContent = 'اسم المستخدم مستخدم من قبل'; return; }
@@ -5759,6 +5973,14 @@ function docTitle(order) {
     const revenue = sum(live, orderRevenue);
     const profit = sum(costed, orderProfit);
     const costedRevenue = sum(costed, orderRevenue);
+
+    // المصروفات من جدول المصروفات (مصروفات مستقلة عن تكاليف الطلبات)
+    let expList = db().expenses || [];
+    if (from) expList = expList.filter((e) => ordDate(e.created_at) >= from);
+    if (to) expList = expList.filter((e) => ordDate(e.created_at) <= to);
+    if (userId) expList = expList.filter((e) => e.created_by === userId);
+    const expenses = sum(expList, (e) => num(e.amount));
+
     return {
       list, live, costed,
       count: live.length,
@@ -5775,6 +5997,8 @@ function docTitle(order) {
       margin: costedRevenue > 0 ? r2((profit / costedRevenue) * 100) : 0,
       avg: live.length ? money(revenue / live.length) : 0,
       meters: r2(live.reduce((s, o) => s + biMeters(o), 0)),
+      expenses,
+      net: money(profit - expenses),
     };
   }
   const biMeters = (o) => ((o.design && o.design.pieces) || []).filter((p) => p.kind === 'sofa').reduce((s, p) => s + num(p.w), 0);
@@ -6457,7 +6681,9 @@ function docTitle(order) {
       <div class="stat"><span>المبيعات <small>(قبل الضريبة)</small></span><b>${fmt(a.revenue)}</b>${biDeltaTag(a.revenue, pv && pv.revenue)}</div>
       <div class="stat"><span>المحصّل</span><b>${fmt(a.paid)}</b><small>${a.gross ? `${fmtQty(r2((a.paid / a.gross) * 100))}٪ من قيمة الطلبات` : '—'}</small></div>
       <div class="stat remaining"><span>المتبقي على العملاء</span><b>${fmt(a.remaining)}</b>${biDeltaTag(a.remaining, pv && pv.remaining, true)}</div>
-      <div class="stat"><span>عدد الطلبات</span><b>${a.count}</b>${biDeltaTag(a.count, pv && pv.count)}</div>`;
+      <div class="stat"><span>عدد الطلبات</span><b>${a.count}</b>${biDeltaTag(a.count, pv && pv.count)}</div>
+      <div class="stat cost"><span>المصروفات</span><b>${fmt(a.expenses)}</b></div>
+      <div class="stat profit"><span>صافي النتيجة</span><b class="${a.net < 0 ? 'neg' : 'pos'}">${fmt(a.net)}</b></div>`;
 
     $('#biKpisSub').innerHTML = `
       <div class="stat profit"><span>صافي الربح</span><b class="${a.costed.length ? (a.profit < 0 ? 'neg' : 'pos') : 'is-na'}">${a.costed.length ? fmt(a.profit) : '—'}</b><small class="${a.costed.length ? '' : 'na-note'}">${a.costed.length ? `هامش ${fmtQty(a.margin)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>
@@ -6485,6 +6711,7 @@ function docTitle(order) {
     biRenderOps(a, userId);
     biRenderInsights(a, pv, p, userId);
     biBalance();
+    renderOrdersReport();
   }
 
   /* موازنة العمودين (الشاشات العريضة): أطوال البطاقات تتبع البيانات، فتُوضع بطاقة
@@ -6559,12 +6786,368 @@ function docTitle(order) {
     downloadBlob(blob, `bi-report-${p.from || 'all'}_${p.to || today()}.csv`);
   }
 
+/* ---------------- تصدير تقرير الذكاء التجاري إلى PDF ---------------- */
+async function biExportPdf() {
+  const p = biPeriod();
+  const userId = $('#biUser').value;
+  const a = biAgg(p.from, p.to, userId);
+  if (!a.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
+  await loadScript(H2C_URL);
+  await loadScript(JSPDF_URL);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  pdf.setFont('arial', 'normal');
+  pdf.setFontSize(14);
+  pdf.text('تقرير ذكاء الأعمال', 10, 10);
+  pdf.setFontSize(10);
+  pdf.text('الفترة: ' + (p.from || 'من أول طلب') + ' إلى ' + (p.to || 'اليوم'), 10, 17);
+  pdf.text('الموظف: ' + (userId ? (Store.getUser(userId) || {}).name || '' : 'كل الموظفين'), 10, 24);
+  pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 31);
+  pdf.text('المبيعات قبل الضريبة: ' + fmt(a.revenue), 10, 41);
+  pdf.text('المحصّل: ' + fmt(a.paid), 10, 48);
+  pdf.text('المتبقي على العملاء: ' + fmt(a.remaining), 10, 55);
+  pdf.text('عدد الطلبات: ' + a.count, 10, 62);
+  pdf.text('إجمالي التكاليف: ' + fmt(a.cost), 10, 69);
+  pdf.text('صافي الربح: ' + fmt(a.profit), 10, 76);
+  pdf.text('إجمالي العمولات: ' + money(a.commission + a.share), 10, 83);
+  pdf.text('صافي النتيجة بعد المصروفات: ' + fmt(a.net), 10, 90);
+  pdf.text('إجمالي المصروفات: ' + fmt(a.expenses), 10, 97);
+  pdf.save('bi-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf');
+}
+
+/* ---------------- تصدير تقرير الذكاء التجاري إلى Excel ---------------- */
+async function biExportXlsx() {
+  const p = biPeriod();
+  const userId = $('#biUser').value;
+  const a = biAgg(p.from, p.to, userId);
+  if (!a.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
+  const { XLSX } = window;
+  const wb = XLSX.utils.book_new();
+  // Sheet 1: KPIs
+  const kpiData = [
+    ['المؤشر', 'القيمة'],
+    ['المبيعات قبل الضريبة', a.revenue],
+    ['المحصّل', a.paid],
+    ['المتبقي على العملاء', a.remaining],
+    ['عدد الطلبات', a.count],
+    ['طلبات ملغية', a.cancelled],
+    ['عروض الأسعار', a.quotes],
+    ['إجمالي التكاليف', a.costed.length ? a.cost : ''],
+    ['صافي الربح', a.costed.length ? a.profit : ''],
+    ['إجمالي العمولات', a.costed.length ? money(a.commission + a.share) : ''],
+    ['هامش الربح %', a.costed.length ? a.margin : ''],
+    ['أمتار الكنب', a.meters],
+    ['عملاء جدد', a.fresh],
+    ['المصروفات', a.expenses],
+    ['صافي النتيجة', a.net],
+  ];
+  const ws1 = XLSX.utils.aoa_to_sheet(kpiData);
+  XLSX.utils.book_append_sheet(wb, ws1, 'المؤشرات');
+  // Sheet 2: الموظفين
+  const staffRows = [['الموظف', 'الطلبات', 'المبيعات', 'صافي الربح', 'العمولة', 'المشاركة', 'الهامش %', 'متوسط الطلب', 'المتبقي']];
+  biStaffRows(a).forEach((e) => staffRows.push([e.name, e.count, money(e.revenue), e.costed ? money(e.profit) : '', e.commission ? money(e.commission) : '', e.share ? money(e.share) : '', e.costed && e.costedRev ? r2((e.profit / e.costedRev) * 100) : '', money(e.revenue / e.count), money(e.remaining)]));
+  const ws2 = XLSX.utils.aoa_to_sheet(staffRows);
+  XLSX.utils.book_append_sheet(wb, ws2, 'أداء الموظفين');
+  XLSX.writeFile(wb, 'bi-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.xlsx');
+}
+
+/* ---------------- تصدير تقرير المناديب إلى PDF ---------------- */
+async function exportMandoubsPdf() {
+  const p = biPeriod();
+  const userId = $('#biUser').value;
+  const qs = new URLSearchParams();
+  if (p.from) qs.set('from', p.from);
+  if (p.to) qs.set('to', p.to);
+  if (userId) qs.set('userId', userId);
+  const url = (Store.apiBase || '') + '/api/reports/mandoubs' + (qs.toString() ? '?' + qs.toString() : '');
+  const res = await fetch(url, { headers: { 'x-session-token': Store.token || '' } });
+  if (!res.ok) { toast('فشل تحميل تقرير المناديب', true); return; }
+  const data = await res.json();
+  if (!data.ok || !data.mandoubs || !data.mandoubs.length) { toast('لا توجد بيانات للتصدير', true); return; }
+  await loadScript(JSPDF_URL);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  pdf.setFont('arial', 'normal');
+  pdf.setFontSize(14);
+  pdf.text('تقرير المناديب', 10, 10);
+  pdf.setFontSize(10);
+  pdf.text('الفترة: ' + (p.from || 'من أول طلب') + ' إلى ' + (p.to || 'اليوم'), 10, 17);
+  pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 24);
+  let y = 40;
+  pdf.text('المندوب', 10, y); pdf.text('الطلبات', 40, y); pdf.text('الإيرادات', 70, y); pdf.text('التكاليف', 110, y); pdf.text('صافي الربح', 150, y); pdf.text('العمولات', 190, y); pdf.text('المشاركة', 230, y);
+  y += 7;
+  for (const m of data.mandoubs) {
+    pdf.text(m.name || 'مندوب غير محدد', 10, y);
+    pdf.text(String(m.count), 40, y);
+    pdf.text(fmt(m.revenue), 70, y);
+    pdf.text(fmt(m.cost), 110, y);
+    pdf.text(fmt(m.profit), 150, y);
+    pdf.text(fmt(m.commission), 190, y);
+    pdf.text(fmt(m.share), 230, y);
+    y += 6;
+  }
+  pdf.save('mandoubs-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf');
+}
+
+/* ---------------- تصدير تقرير المناديب إلى Excel ---------------- */
+async function exportMandoubsXlsx() {
+  const p = biPeriod();
+  const userId = $('#biUser').value;
+  const qs = new URLSearchParams();
+  if (p.from) qs.set('from', p.from);
+  if (p.to) qs.set('to', p.to);
+  if (userId) qs.set('userId', userId);
+  const url = (Store.apiBase || '') + '/api/reports/mandoubs' + (qs.toString() ? '?' + qs.toString() : '');
+  const res = await fetch(url, { headers: { 'x-session-token': Store.token || '' } });
+  if (!res.ok) { toast('فشل تحميل تقرير المناديب', true); return; }
+  const data = await res.json();
+  if (!data.ok || !data.mandoubs || !data.mandoubs.length) { toast('لا توجد بيانات للتصدير', true); return; }
+  const { XLSX } = window;
+  const wb = XLSX.utils.book_new();
+  const rows = [['المندوب', 'الطلبات', 'الإيرادات', 'التكاليف', 'صافي الربح', 'العمولات', 'المشاركة']];
+  data.mandoubs.forEach((m) => rows.push([m.name || 'مندوب غير محدد', m.count, money(m.revenue), money(m.cost), money(m.profit), money(m.commission), money(m.share)]));
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'المناديب');
+  XLSX.writeFile(wb, 'mandoubs-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.xlsx');
+}
+
+/* ---------------- تصدير تقرير المصروفات إلى PDF ---------------- */
+async function exportExpensesPdf() {
+  const p = biPeriod();
+  const userId = $('#biUser').value;
+  const qs = new URLSearchParams();
+  if (p.from) qs.set('from', p.from);
+  if (p.to) qs.set('to', p.to);
+  if (userId) qs.set('userId', userId);
+  const res = await fetch((Store.apiBase || '') + '/api/reports/expenses-summary' + (qs.toString() ? '?' + qs.toString() : ''), { headers: { 'x-session-token': Store.token || '' } });
+  if (!res.ok) { toast('فشل تحميل تقرير المصروفات', true); return; }
+  const data = await res.json();
+  if (!data.ok) { toast('لا توجد بيانات للتصدير', true); return; }
+  await loadScript(JSPDF_URL);
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+  pdf.setFont('arial', 'normal');
+  pdf.setFontSize(14);
+  pdf.text('تقرير المصروفات', 10, 10);
+  pdf.setFontSize(10);
+  pdf.text('الفترة: ' + (p.from || 'من أول طلب') + ' إلى ' + (p.to || 'اليوم'), 10, 17);
+  pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 24);
+  pdf.text('إجمالي المصروفات: ' + fmt(data.total_amount), 10, 34);
+  pdf.text('عدد المصروفات: ' + data.count, 10, 41);
+  pdf.save('expenses-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf');
+}
+
+/* ---------------- تصدير تقرير المصروفات إلى Excel ---------------- */
+async function exportExpensesXlsx() {
+  const p = biPeriod();
+  const userId = $('#biUser').value;
+  const qs = new URLSearchParams();
+  if (p.from) qs.set('from', p.from);
+  if (p.to) qs.set('to', p.to);
+  if (userId) qs.set('userId', userId);
+  const res = await fetch((Store.apiBase || '') + '/api/reports/expenses-summary' + (qs.toString() ? '?' + qs.toString() : ''), { headers: { 'x-session-token': Store.token || '' } });
+  if (!res.ok) { toast('فشل تحميل تقرير المصروفات', true); return; }
+  const data = await res.json();
+  if (!data.ok) { toast('لا توجد بيانات للتصدير', true); return; }
+  const { XLSX } = window;
+  const wb = XLSX.utils.book_new();
+  const rows = [['إجمالي المصروفات', 'عدد المصروفات']];
+  rows.push([data.total_amount, data.count]);
+  const ws = XLSX.utils.aoa_to_sheet(rows);
+  XLSX.utils.book_append_sheet(wb, ws, 'المصروفات');
+  XLSX.writeFile(wb, 'expenses-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.xlsx');
+}
+
+  /* ---------------- تقرير الطلبات والتحصيل ---------------- */
+  const ORD_STATUS_ORDER = ['quote', 'new', 'progress', 'done', 'delivered', 'cancelled'];
+  const PAY_METHOD = { cash: 'نقداً', mada: 'مدى / شبكة', transfer: 'تحويل بنكي', card: 'بطاقة ائتمان', other: 'أخرى' };
+
+  /** صفوف التقرير بعد فلاتر اللوحة نفسها + بحث العميل + الحالة (الأحدث أولاً) */
+  function ordersReportRows() {
+    const p = biPeriod();
+    const userId = $('#biUser').value;
+    const q = ($('#ordQ').value || '').trim().toLowerCase();
+    const st = $('#ordStatus').value;
+    let list = db().orders.filter((o) => o.createdAt);
+    if (p.from) list = list.filter((o) => ordDate(o) >= p.from);
+    if (p.to) list = list.filter((o) => ordDate(o) <= p.to);
+    if (userId) list = list.filter((o) => o.createdBy === userId);
+    if (st) list = list.filter((o) => o.status === st);
+    if (q) {
+      list = list.filter((o) => {
+        const c = o.customer || {};
+        return String(c.name || '').toLowerCase().includes(q) || String(c.phone || '').includes(q);
+      });
+    }
+    list = list.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
+    return { list, p, userId };
+  }
+
+  function ordersReportCalc() {
+    const { list, p, userId } = ordersReportRows();
+    const live = list.filter(isSale); /* عروض الأسعار والملغاة خارج القيم المالية */
+    const sumMoney = (arr, f) => money(arr.reduce((s, o) => s + num(f(o)), 0));
+    const byStatus = {};
+    for (const o of list) {
+      const st = o.status || 'new';
+      if (!byStatus[st]) byStatus[st] = { count: 0, total: 0, paid: 0, remaining: 0 };
+      const b = byStatus[st];
+      b.count += 1;
+      b.total += num(o.total);
+      b.paid += num(o.paid);
+      b.remaining += num(o.remaining);
+    }
+    return {
+      list, p, userId, live, byStatus,
+      revenue: sumMoney(live, orderRevenue),
+      gross: sumMoney(live, (o) => num(o.total)),
+      paid: sumMoney(live, (o) => num(o.paid)),
+      remaining: sumMoney(live, (o) => num(o.remaining)),
+    };
+  }
+
+  function renderOrdersReport() {
+    if (!isAdmin()) return;
+    const c = ordersReportCalc();
+    const userName = c.userId ? ((Store.getUser(c.userId) || {}).name || 'موظف') : 'كل الموظفين';
+    $('#ordNote').textContent = `${BI_RANGES[biRange] || 'فترة'} • من ${c.p.from || 'أول طلب'} إلى ${c.p.to || 'اليوم'} • ${userName}`;
+    $('#ordKpis').innerHTML = `
+      <div class="stat"><span>الطلبات الفعلية</span><b>${c.live.length}</b><small>باستثناء عروض الأسعار والملغاة</small></div>
+      <div class="stat"><span>إجمالي القيمة <small>(شامل الضريبة)</small></span><b>${fmt(c.gross)}</b><small>قبل الضريبة ${fmt(c.revenue)}</small></div>
+      <div class="stat"><span>المحصّل</span><b>${fmt(c.paid)}</b></div>
+      <div class="stat remaining"><span>المتبقي على العملاء</span><b>${fmt(c.remaining)}</b></div>`;
+    $('#ordByStatus').innerHTML = ORD_STATUS_ORDER.filter((s) => c.byStatus[s]).map((s) => {
+      const b = c.byStatus[s];
+      return `<span class="ord-chip"><b>${esc(STATUS[s] || s)}</b> ${b.count} <small>الإجمالي ${fmt(money(b.total))} • المتبقي ${fmt(money(b.remaining))}</small></span>`;
+    }).join('') || '<span class="hint">لا توجد طلبات مطابقة</span>';
+    const MAX_ROWS = 200;
+    const rows = c.list.slice(0, MAX_ROWS).map((o) => {
+      const cust = o.customer || {};
+      const pays = Array.isArray(o.payments) ? o.payments : [];
+      const paysHtml = pays.length
+        ? `<details class="ord-pays"><summary>${pays.length} دفعة</summary><ul>${pays.map((p) => `<li><span>${esc(p.at || p.date || '—')}</span><span>${esc(PAY_METHOD[p.method] || p.method || '')}</span><b>${fmt(num(p.amount))}</b></li>`).join('')}</ul></details>`
+        : '<span class="hint">لا توجد دفعات</span>';
+      return `<tr>
+        <td>#${esc(o.number ?? '')}</td>
+        <td>${esc(cust.name || '—')}${cust.phone ? `<br><small class="hint" dir="ltr">${esc(cust.phone)}</small>` : ''}</td>
+        <td>${esc(STATUS[o.status] || o.status || '')}</td>
+        <td>${esc(ordDate(o) || '—')}</td>
+        <td class="ta-end">${fmt(num(o.total))}</td>
+        <td class="ta-end">${fmt(num(o.paid))}</td>
+        <td class="ta-end">${fmt(num(o.remaining))}</td>
+        <td>${paysHtml}</td>
+        <td><button type="button" class="btn small" data-open-ord="${esc(o.id)}">فتح</button></td>
+      </tr>`;
+    }).join('');
+    $('#ordTable tbody').innerHTML = rows || '<tr><td colspan="9" class="hint">لا توجد طلبات مطابقة للفترة والفلاتر</td></tr>';
+    $('#ordCountNote').textContent = c.list.length > MAX_ROWS
+      ? `يُعرض أول ${MAX_ROWS} من ${c.list.length} طلب — ضيّق الفترة أو الفلاتر للتفاصيل.`
+      : `${c.list.length} طلب مطابق.`;
+    $$('#ordTable [data-open-ord]').forEach((b) => b.addEventListener('click', async () => {
+      if (dirty && !(await confirmDlg('فتح طلب', 'سيتم تجاهل التغييرات غير المحفوظة في الطلب الحالي. متابعة؟'))) return;
+      const o = db().orders.find((x) => x.id === b.dataset.openOrd);
+      if (o) loadOrder(o);
+    }));
+  }
+
+  async function exportOrdersPdf() {
+    const c = ordersReportCalc();
+    if (!c.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
+    await loadScript(JSPDF_URL);
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+    pdf.setFont('arial', 'normal');
+    pdf.setFontSize(14);
+    pdf.text('تقرير الطلبات والتحصيل', 10, 12);
+    pdf.setFontSize(10);
+    pdf.text('الفترة: ' + (c.p.from || 'من أول طلب') + ' إلى ' + (c.p.to || 'اليوم'), 10, 20);
+    pdf.text('الموظف: ' + (c.userId ? ((Store.getUser(c.userId) || {}).name || '') : 'كل الموظفين'), 10, 27);
+    pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 34);
+    let y = 46;
+    pdf.setFontSize(12);
+    pdf.text('الملخص المالي (الطلبات الفعلية، بلا عروض الأسعار والملغاة)', 10, y); y += 8;
+    pdf.setFontSize(10);
+    pdf.text('عدد الطلبات الفعلية: ' + c.live.length, 10, y); y += 7;
+    pdf.text('إجمالي القيمة شامل الضريبة: ' + fmt(c.gross), 10, y); y += 7;
+    pdf.text('قبل الضريبة: ' + fmt(c.revenue), 10, y); y += 7;
+    pdf.text('المحصّل: ' + fmt(c.paid), 10, y); y += 7;
+    pdf.text('المتبقي على العملاء: ' + fmt(c.remaining), 10, y); y += 12;
+    pdf.setFontSize(12);
+    pdf.text('التوزيع حسب الحالة', 10, y); y += 8;
+    pdf.setFontSize(10);
+    for (const s of ORD_STATUS_ORDER) {
+      const b = c.byStatus[s];
+      if (!b) continue;
+      pdf.text(`${STATUS[s] || s}: ${b.count} طلب • الإجمالي ${fmt(money(b.total))} • المحصّل ${fmt(money(b.paid))} • المتبقي ${fmt(money(b.remaining))}`, 10, y);
+      y += 7;
+      if (y > 185) { pdf.addPage(); y = 15; }
+    }
+    pdf.text('التفصيل الكامل للطلبات والدفعات في ملف Excel المُصدَّر مع هذا التقرير.', 10, y + 6);
+    pdf.save('orders-report-' + (c.p.from || 'all') + '_' + (c.p.to || today()) + '.pdf');
+  }
+
+  async function exportOrdersXlsx() {
+    const c = ordersReportCalc();
+    if (!c.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
+    const { XLSX } = window;
+    const wb = XLSX.utils.book_new();
+    const summary = [
+      ['تقرير الطلبات والتحصيل'],
+      ['الفترة', (c.p.from || 'من أول طلب') + ' إلى ' + (c.p.to || 'اليوم')],
+      ['الموظف', c.userId ? ((Store.getUser(c.userId) || {}).name || '') : 'كل الموظفين'],
+      ['صُدِّر في', fmtDateTime(Store.now())],
+      [],
+      ['المؤشر', 'القيمة'],
+      ['الطلبات الفعلية (بلا عروض الأسعار والملغاة)', c.live.length],
+      ['إجمالي القيمة شامل الضريبة', c.gross],
+      ['قبل الضريبة', c.revenue],
+      ['المحصّل', c.paid],
+      ['المتبقي على العملاء', c.remaining],
+      [],
+      ['الحالة', 'عدد', 'الإجمالي', 'المحصّل', 'المتبقي'],
+    ];
+    for (const s of ORD_STATUS_ORDER) {
+      const b = c.byStatus[s];
+      if (!b) continue;
+      summary.push([STATUS[s] || s, b.count, money(b.total), money(b.paid), money(b.remaining)]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), 'المؤشرات');
+    const ordersRows = [['رقم الطلب', 'العميل', 'الجوال', 'الحالة', 'التاريخ', 'الإجمالي', 'المحصّل', 'المتبقي', 'عدد الدفعات']];
+    for (const o of c.list) {
+      const cust = o.customer || {};
+      ordersRows.push([o.number ?? '', cust.name || '', cust.phone || '', STATUS[o.status] || o.status || '', ordDate(o) || '', num(o.total), num(o.paid), num(o.remaining), Array.isArray(o.payments) ? o.payments.length : 0]);
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(ordersRows), 'الطلبات');
+    const payRows = [['رقم الطلب', 'العميل', 'تاريخ الدفعة', 'طريقة الدفع', 'المبلغ', 'ملاحظة']];
+    for (const o of c.list) {
+      const pays = Array.isArray(o.payments) ? o.payments : [];
+      const cust = o.customer || {};
+      for (const p of pays) {
+        payRows.push([o.number ?? '', cust.name || '', p.at || p.date || '', PAY_METHOD[p.method] || p.method || '', num(p.amount), p.note || '']);
+      }
+    }
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(payRows), 'الدفعات');
+    XLSX.writeFile(wb, 'orders-report-' + (c.p.from || 'all') + '_' + (c.p.to || today()) + '.xlsx');
+  }
+
+
+
   $$('#biRangeChips .chip').forEach((c) => c.addEventListener('click', () => { biRange = c.dataset.rg; renderBI(); }));
   ['biFrom', 'biTo'].forEach((id) => $('#' + id).addEventListener('change', () => { biRange = 'custom'; renderBI(); }));
   $('#biUser').addEventListener('change', renderBI);
   $$('#biGranChips .chip').forEach((c) => c.addEventListener('click', () => { biGran = c.dataset.gr; renderBI(); }));
   $$('#biTopChips .chip').forEach((c) => c.addEventListener('click', () => { biTopTab = c.dataset.tp; renderBI(); }));
   $('#btnBiCsv').addEventListener('click', biExportCsv);
+  $('#btnBiPdf').addEventListener('click', biExportPdf);
+  $('#btnBiXlsx').addEventListener('click', biExportXlsx);
+  $('#btnMandoubsPdf').addEventListener('click', exportMandoubsPdf);
+  $('#btnMandoubsXlsx').addEventListener('click', exportMandoubsXlsx);
+  $('#btnExpensesPdf').addEventListener('click', exportExpensesPdf);
+  $('#btnExpensesXlsx').addEventListener('click', exportExpensesXlsx);
+  $('#btnOrdersPdf').addEventListener('click', exportOrdersPdf);
+  $('#btnOrdersXlsx').addEventListener('click', exportOrdersXlsx);
+  $('#ordQ').addEventListener('input', renderOrdersReport);
+  $('#ordStatus').addEventListener('change', renderOrdersReport);
   $('#biShowAll').addEventListener('click', () => { biRange = 'all'; $('#biUser').value = ''; renderBI(); });
   // أبعاد الرسم تتبع عرض الشاشة: يُعاد الرسم عند عبور حدّ الجوال فقط
   window.addEventListener('resize', () => {

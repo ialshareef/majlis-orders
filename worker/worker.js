@@ -2,7 +2,7 @@
    أصالة نجد | نظام إدارة طلبات المجالس — الخادم (Cloudflare Worker + D1)
    - يُلصق كاملاً في محرر الـ Worker في لوحة Cloudflare
    - يحتاج ربط قاعدة D1 باسم المتغيّر: DB   (Settings > Bindings > D1 database)
-   - متغيّرات اختيارية: ALLOWED_ORIGIN (نطاق الواجهة بدل *)، PBKDF2_ITER (افتراضي 20000)
+   - متغيّرات اختيارية: ALLOWED_ORIGIN (نطاق الواجهة بدل *)، PBKDF2_ITER (افتراضي 100000)
     المسارات:
       GET  /customer-design      بوابة العميل (واجهة مستقلة بلا دخول)
       GET  /api/app-update       بيانات تحديث التطبيق (عام: بلا دخول وبلا قاعدة)
@@ -33,6 +33,183 @@
    ====================================================================== */
 
 const SESSION_DAYS = 30;
+
+/* ------------------------------ Permission Manager (Phase 2: constants + resolver) ------------------------------ */
+// الصلاحيات المعتمدة في النظام — المرجع الوحيد لأسماء الصلاحيات.
+const PERMISSIONS = Object.freeze({
+  'orders.view_own': true,
+  'orders.view_all': true,
+  'orders.create': true,
+  'orders.edit_own': true,
+  'orders.edit_all': true,
+  'orders.delete_own': true,
+  'orders.delete_all': true,
+  'costs.view_own': true,
+  'costs.view_all': true,
+  'costs.add_own': true,
+  'costs.add_all': true,
+  'costs.edit_own': true,
+  'costs.edit_all': true,
+  'costs.delete_own': true,
+  'costs.delete_all': true,
+  'profit.view_own': true,
+  'profit.view_all': true,
+  'commission.view_own': true,
+  'commission.view_all': true,
+  'reports.view_own': true,
+  'reports.view_all': true,
+  'expenses.view_own': true,
+  'expenses.view_all': true,
+  'expenses.add_own': true,
+  'expenses.add_all': true,
+  'expenses.edit_own': true,
+  'expenses.edit_all': true,
+  'expenses.delete_own': true,
+  'expenses.delete_all': true,
+  'users.view': true,
+  'users.create': true,
+  'users.edit': true,
+  'users.disable': true,
+  'permissions.manage': true,
+  'settings.manage': true,
+  'designs.manage': true,
+  'admin.core': true,
+});
+
+// الدور يحدد صلاحياته الافتراضية؛ أي دور أو صلاحية غير معروفة => مرفوضة افتراضياً (default deny).
+const ROLE_PERMISSIONS = Object.freeze({
+  admin: new Set(Object.keys(PERMISSIONS)),
+  staff: new Set([
+    'orders.view_own', 'orders.create', 'orders.edit_own',
+    'costs.view_own', 'costs.add_own', 'costs.edit_own',
+    'profit.view_own',
+    'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own',
+    'reports.view_own',
+  ]),
+  mandoub: new Set([
+    'orders.view_own', 'orders.create', 'orders.edit_own',
+    'costs.view_own', 'costs.add_own', 'costs.edit_own',
+    'commission.view_own',
+    'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own',
+    'reports.view_own',
+  ]),
+});
+// hasPerm: defaults + overrides; fail-closed on load failure.
+function hasPerm(user, permission, overrides = null) {
+  if (!user || typeof user !== "object") return false;
+  if (typeof permission !== "string" || !Object.prototype.hasOwnProperty.call(PERMISSIONS, permission)) return false;
+  const defaults = ROLE_PERMISSIONS[user.role];
+  if (!defaults) return false;
+  const active = (user.active === true || user.active === 1);
+  if (!active) return false;
+
+  // admin.core is protected: role-only, never overridden.
+  if (permission === "admin.core") {
+    return user.role === "admin";
+  }
+
+  let source = null;
+  let loadFailed = false;
+  if (overrides && typeof overrides === "object") {
+    if (Object.prototype.hasOwnProperty.call(overrides, "ok") && Object.prototype.hasOwnProperty.call(overrides, "overrides")) {
+      if (overrides.ok !== true) loadFailed = true;
+      source = (overrides.overrides && typeof overrides.overrides === "object") ? overrides.overrides : {};
+    } else {
+      source = overrides;
+    }
+  } else if (user.permissions && typeof user.permissions === "object") {
+    if (Object.prototype.hasOwnProperty.call(user.permissions, "ok") && Object.prototype.hasOwnProperty.call(user.permissions, "overrides")) {
+      if (user.permissions.ok !== true) loadFailed = true;
+      source = (user.permissions.overrides && typeof user.permissions.overrides === "object") ? user.permissions.overrides : {};
+    } else {
+      source = user.permissions;
+    }
+  }
+
+  if (loadFailed) return false;
+
+  if (source && Object.prototype.hasOwnProperty.call(source, permission)) {
+    const v = source[permission];
+    if (v === false || v === 0 || v === "0" || v === "false") return false;
+    if (v === true || v === 1 || v === "1" || v === "true") return true;
+  }
+
+  return defaults.has(permission);
+}
+
+function effectivePermissions(user, overrides = null) {
+  const out = new Set();
+  if (!user || typeof user !== "object") return out;
+  let source = null;
+  let loadFailed = false;
+  if (overrides && typeof overrides === "object") {
+    if (Object.prototype.hasOwnProperty.call(overrides, "ok") && Object.prototype.hasOwnProperty.call(overrides, "overrides")) {
+      if (overrides.ok !== true) loadFailed = true;
+      source = (overrides.overrides && typeof overrides.overrides === "object") ? overrides.overrides : {};
+    } else {
+      source = overrides;
+    }
+  } else if (user.permissions && typeof user.permissions === "object") {
+    if (Object.prototype.hasOwnProperty.call(user.permissions, "ok") && Object.prototype.hasOwnProperty.call(user.permissions, "overrides")) {
+      if (user.permissions.ok !== true) loadFailed = true;
+      source = (user.permissions.overrides && typeof user.permissions.overrides === "object") ? user.permissions.overrides : {};
+    } else {
+      source = user.permissions;
+    }
+  }
+  if (loadFailed) return out;
+  for (const p of Object.keys(PERMISSIONS)) {
+    if (hasPerm(user, p, source ? { ok: true, overrides: source } : null)) out.add(p);
+  }
+  return out;
+}
+
+async function loadUserPermissions(env, userId) {
+  if (!env || !env.DB || !userId) return { ok: false, overrides: {} };
+  try {
+    const r = await env.DB.prepare("SELECT permission, value FROM user_permissions WHERE user_id = ?").bind(userId).all();
+    const out = {};
+    for (const row of (r && r.results) || []) {
+      if (Object.prototype.hasOwnProperty.call(PERMISSIONS, row.permission)) {
+        out[row.permission] = (row.value === 1 || row.value === true);
+      }
+    }
+    return { ok: true, overrides: out };
+  } catch (e) {
+    return { ok: false, overrides: {} };
+  }
+}
+
+// D2: central ownership check (ownership only; permissions are checked separately).
+async function verifyOrderOwnership(env, user, orderId) {
+  if (!user || typeof user !== "object" || typeof user.id !== "string" || user.id === "") {
+    return { allowed: false, reason: "invalid_user", ownerId: null };
+  }
+  if (typeof orderId !== "string" || orderId === "") {
+    return { allowed: false, reason: "invalid_order_id", ownerId: null };
+  }
+  if (!env || !env.DB || typeof env.DB.prepare !== "function") {
+    return { allowed: false, reason: "db_error", ownerId: null };
+  }
+  try {
+    const row = await env.DB.prepare("SELECT created_by FROM orders WHERE id = ?").bind(orderId).first();
+    if (!row) return { allowed: false, reason: "not_found", ownerId: null };
+    const ownerId = row.created_by;
+    if (typeof ownerId !== "string" || ownerId === "") {
+      return { allowed: false, reason: "invalid_owner", ownerId: null };
+    }
+    if (ownerId !== user.id) {
+      return { allowed: false, reason: "not_owned", ownerId };
+    }
+    return { allowed: true, reason: "owned", ownerId };
+  } catch (e) {
+    return { allowed: false, reason: "db_error", ownerId: null };
+  }
+}
+
+const PROTECTED_ADMIN_PERMISSIONS = Object.freeze(["admin.core"]);
+
+export { PERMISSIONS, ROLE_PERMISSIONS, hasPerm, effectivePermissions, loadUserPermissions, verifyOrderOwnership, PROTECTED_ADMIN_PERMISSIONS };
 
 // ملفات الواجهة المضمّنة (يملؤها build-worker.ps1 عند بناء النسخة المنشورة)
 const ASSETS = null; /* __ASSETS__ */
@@ -104,6 +281,7 @@ async function route(request, env, url) {
   if (path === '/api/portal/contact' && method === 'POST') return portalContact(env, request, body);
   const mView = path.match(/^\/api\/portal\/view\/([A-Za-z0-9-]+)$/);
   if (mView && method === 'GET') return portalView(env, mView[1], request);
+  if (path === '/api/portal/ai-design' && method === 'POST') return portalAiDesign(env, request, body);
 
   /* واجهة النسخة التجريبية (التصميم الموسّع): نفس منطق الأمان لكن على جدول
      منفصل (customer_designs_exp) وبادئة توكن x — فالتصميم التجريبي لا يختلط
@@ -131,41 +309,65 @@ async function route(request, env, url) {
   if (path === '/api/me' && method === 'GET') return { user: user ? publicUser(user) : null };
   if (!user) throw new HttpError(401, 'غير مسجّل الدخول أو انتهت الجلسة');
 
+  // فرض تغيير كلمة المرور المؤقتة قبل أي طلب آخر (يبقى تغييرها وتسجيل الخروج فقط)
+  if (user.must_change_password === 1 && path !== '/api/logout' && path !== '/api/change-password') {
+    throw new HttpError(403, 'يجب تغيير كلمة المرور أولاً قبل المتابعة');
+  }
+
+  if (path === '/api/change-password' && method === 'POST') return changePassword(env, user, token, body);
   if (path === '/api/logout' && method === 'POST') {
     await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
     return { ok: true };
   }
   if (path === '/api/bootstrap' && method === 'GET') return bootstrap(env, user);
   if (path === '/api/sync' && method === 'POST') return sync(env, user, body);
-  if (path === '/api/next-order-no' && method === 'POST') {
-    const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'order_no' RETURNING value").first();
+  if (path === '/api/next-order-no' && method === 'POST') { requirePerm(user, 'orders.create'); const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'order_no' RETURNING value").first();
     return { number: r ? r.value : null };
   }
-  if (path === '/api/sync-order-seq' && method === 'POST') {
-    requireAdmin(user);
-    const m = await env.DB.prepare('SELECT COALESCE(MAX(number), 1000) AS m FROM orders').first();
+  if (path === '/api/sync-order-seq' && method === 'POST') { requireAdmin(user); const m = await env.DB.prepare('SELECT COALESCE(MAX(number), 1000) AS m FROM orders').first();
     await env.DB.prepare("UPDATE counters SET value = ? WHERE key = 'order_no'").bind(Math.max(Number(m.m) || 1000, 1000)).run();
     return { ok: true };
   }
-  if (path === '/api/users' && method === 'GET') { requireAdmin(user); return { users: await listUsers(env) }; }
-  if (path === '/api/users' && method === 'POST') { requireAdmin(user); return saveUser(env, user, body, token); }
-  // إحصاءات زيارات روابط «عن التطبيق»: للمدير فقط (بيانات حركة زيارات لا يراها الموظفون)
+  if (path === '/api/users' && method === 'GET') { requirePerm(user, 'users.view'); return { users: await listUsers(env) }; }
+  if (path === '/api/users' && method === 'POST') { if (body && body.id) requirePerm(user, 'users.edit'); else requirePerm(user, 'users.create'); return saveUser(env, user, body, token); }
+  // --- صلاحيات المستخدم التفصيلية (مدير بصلاحيات permissions.manage) ---
+  const mPerms = path.match(/^\/api\/users\/([^/]+)\/permissions$/);
+  if (mPerms && method === 'GET') return getUserPermissions(env, user, decodeURIComponent(mPerms[1]));
+  if (mPerms && method === 'POST') return saveUserPermissions(env, user, decodeURIComponent(mPerms[1]), body);
+  if (mPerms && method === 'DELETE') return resetUserPermissions(env, user, decodeURIComponent(mPerms[1]), body);
+  // زيارات الرابط ولوحة التحليل: للمدير فقط (بيانات التتبع لا تُعرض لغيره)
   if (path === '/api/link-visits' && method === 'GET') { requireAdmin(user); return linkVisits(env); }
   // لوحة تحليلات المالك: للمدير فقط على مستوى الخادم — الموظف والمندوب يُرفضان (403)
   if (path === '/api/owner-analytics' && method === 'GET') { requireAdmin(user); return ownerAnalytics(env, new URL(request.url).searchParams); }
   const mUser = path.match(/^\/api\/users\/([^/]+)$/);
-  if (mUser && method === 'DELETE') { requireAdmin(user); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
+  if (mUser && method === 'DELETE') { requirePerm(user, 'users.disable'); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
 
   // تصاميم العملاء (موظفون: مدير وموظف — بلا مندوب، وبلا كشف للتوكن أبداً)
-  if (path === '/api/designs' && method === 'GET') { requireStaff(user); return { designs: await listDesigns(env) }; }
+  if (path === '/api/designs' && method === 'GET') { requirePerm(user, 'designs.manage'); return { designs: await listDesigns(env) }; }
   // حذف جملة: ids مصفوفة معرّفات. التحقق من الشكل والحدّ قبل التنفيذ.
-  if (path === '/api/designs/bulk-delete' && method === 'POST') { requireStaff(user); return bulkDeleteDesigns(env, body, user); }
+  if (path === '/api/designs/bulk-delete' && method === 'POST') { requirePerm(user, 'designs.manage'); return bulkDeleteDesigns(env, body, user); }
   const mConv = path.match(/^\/api\/designs\/([^/]+)\/convert$/);
-  if (mConv && method === 'POST') { requireStaff(user); return convertDesign(env, decodeURIComponent(mConv[1]), user); }
+  if (mConv && method === 'POST') { requirePerm(user, 'designs.manage'); return convertDesign(env, decodeURIComponent(mConv[1]), user); }
   const mDes = path.match(/^\/api\/designs\/([^/]+)$/);
-  if (mDes && method === 'GET') { requireStaff(user); return { design: await getDesign(env, decodeURIComponent(mDes[1])) }; }
-  if (mDes && (method === 'PUT' || method === 'POST')) { requireStaff(user); return updateDesign(env, decodeURIComponent(mDes[1]), body); }
-  if (mDes && method === 'DELETE') { requireStaff(user); return deleteDesign(env, decodeURIComponent(mDes[1]), user); }
+  if (mDes && method === 'GET') { requirePerm(user, 'designs.manage'); return { design: await getDesign(env, decodeURIComponent(mDes[1])) }; }
+  if (mDes && (method === 'PUT' || method === 'POST')) { requirePerm(user, 'designs.manage'); return updateDesign(env, decodeURIComponent(mDes[1]), body); }
+  if (mDes && method === 'DELETE') { requirePerm(user, 'designs.manage'); return deleteDesign(env, decodeURIComponent(mDes[1]), user); }
+
+  // --- المصروفات ---
+  if (path === '/api/expenses' && method === 'GET') { requirePerm(user, 'expenses.view_own'); return listExpenses(env, user, new URL(request.url).searchParams); }
+  if (path === '/api/expenses' && method === 'POST') { requirePerm(user, 'expenses.add_own'); return saveExpense(env, user, body); }
+  const mExp = path.match(/^\/api\/expenses\/([^/]+)$/);
+  if (mExp && method === 'PUT') { requirePerm(user, 'expenses.edit_own'); return updateExpense(env, user, decodeURIComponent(mExp[1]), body); }
+  if (mExp && method === 'DELETE') { requirePerm(user, 'expenses.delete_own'); return deleteExpense(env, user, decodeURIComponent(mExp[1])); }
+  if (path === '/api/reports/expenses-summary' && method === 'GET') {
+    requirePerm(user, 'expenses.view_own');
+    return expensesSummary(env, user, new URL(request.url).searchParams);
+  }
+
+  // --- تقارير المناديب ---
+  if (path === '/api/reports/mandoubs' && method === 'GET') { requirePerm(user, 'reports.view_all'); return mandoubsReport(env, user, new URL(request.url).searchParams); }
+  // --- تقرير الطلبات والمدفوعات ---
+  if (path === '/api/reports/orders-summary' && method === 'GET') { requirePerm(user, 'reports.view_own'); return ordersSummary(env, user, new URL(request.url).searchParams); }
 
   throw new HttpError(404, 'المسار غير موجود');
 }
@@ -189,7 +391,7 @@ const UPDATE_FALLBACK_VERSION = '1.0.69';
 // بصمة asalh-najd-1.0.69.apk (إصدار GitHub v1.0.69، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل).
 const UPDATE_FALLBACK_SHA256 = '014339b59a0e7e4b7c97a7eed752b63916e4ed159aefd60b59c85e14aeeca8af';
 const UPDATE_FALLBACK_NOTES = [
-  'تلفاز وشباك في «العناصر المعمارية» بالواجهات الثلاث: التلفاز لا يوضع الكنب أمامه، والشباك يقبل الأثاث أمامه',
+  'تحسين صفحة ورقة التصميم: الكنب يكتمل في كل صفحة، والتواصل برقم موحد 0549955622',
   'ترقيم صفحات ورقة التصميم (صفحة N من M) بلا قصّ: كل الصفحات كاملة، عناوين الجدول تتكرر، والمناطق والملاحظات لا تنقص',
   'تطبيق الكمية مرة واحدة بلا تنبيه مكرر، وروابط التواصل في PDF تُقاس وهي على التخطيط، ورقم الجوال الموحد 0549955622',
 ];
@@ -327,6 +529,7 @@ async function portalSettings(env) {
       tiktok: safeUrl(s.tiktok),
       instagram: safeUrl(s.instagram),
       snapchat: safeUrl(s.snapchat),
+      aiDesign: { enabled: !!(env && env.AI_API_KEY && s.aiDesignEnabled !== false) },
     },
   };
 }
@@ -388,7 +591,7 @@ function checkDesign(d) {
     for (const o of d.openings) {
       if (!o || typeof o !== 'object' || !Number.isInteger(o.wall) || o.wall < 0 || o.wall > 39) bad();
       if (!isNum(o.t) || !isNum(o.w) || o.w <= 0 || o.w > 30) bad();
-      if (!['door', 'window', 'mashab'].includes(o.type)) bad();
+      if (!['door', 'window', 'mashab', 'tv'].includes(o.type)) bad();
     }
   }
   if (d.pieces !== undefined) {
@@ -480,10 +683,246 @@ async function portalView(env, number, request) {
   };
 }
 
+/* ------------------------------ مصمّم الذكاء الاصطناعي (AI) ------------------------------
+   بوابة العميل الذكي: POST /api/portal/ai-design — لا يكتب شيئاً في قاعدة البيانات إلا عدّاد المعدل:
+   - بحد أقصى 15 طلباً في الساعة لكل IP+توكن (يُخزَّن في login_fail)
+   - يعمل فقط عند توفّر المفتاح السري: AI_API_KEY / AI_BASE_URL / AI_MODEL
+   - يُقيَّد النص والرد بحدود قصوى ويمرّ عبر التحقق قبل الحفظ. */
+const AI_TEXT_MAX = 3000;
+const AI_HISTORY_MAX = 8;
+const AI_SPEC_MAX = 20000;
+const AI_CONTENT_MAX = 64000;
+const AI_RATE_LIMIT = 15;
+
+async function aiThrottle(env, request, token) {
+  const ip = (request && request.headers.get('CF-Connecting-IP')) || 'unknown';
+  const k = 'ai:' + ip + ':' + String(token || '').slice(0, 12);
+  const t = now();
+  const hourAgo = new Date(Date.now() - 3600000).toISOString();
+  const row = await env.DB.prepare('SELECT n, first_at FROM login_fail WHERE k = ?').bind(k).first();
+  const n = row && row.first_at > hourAgo ? Number(row.n) + 1 : 1;
+  const first = row && row.first_at > hourAgo ? row.first_at : t;
+  if (n > AI_RATE_LIMIT) throw new HttpError(429, 'عدد طلبات التصميم الذكي كثير. حاول لاحقاً.');
+  await env.DB.prepare('INSERT INTO login_fail (k, n, first_at, until) VALUES (?, ?, ?, ?) ON CONFLICT(k) DO UPDATE SET n = excluded.n, first_at = excluded.first_at, until = excluded.until')
+    .bind(k, n, first, null).run();
+}
+
+function aiNum(v, lo, hi, dflt) {
+  if (v == null || v === '') return dflt === undefined ? null : dflt;
+  if (typeof v === 'string') v = v.replace(/[\u0660-\u0669]/g, (c) => c.charCodeAt(0) - 0x0660).replace(/[\u06F0-\u06F9]/g, (c) => c.charCodeAt(0) - 0x06F0);
+  const n = typeof v === 'number' ? v : Number(String(v).trim().replace(/\u066B/g, '.'));
+  if (!Number.isFinite(n)) return dflt === undefined ? null : dflt;
+  return Math.min(hi, Math.max(lo, n));
+}
+
+function aiStr(v, max) { return String(v == null ? '' : v).trim().slice(0, max); }
+
+function aiSanitizeSpec(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const s = {};
+  const rw = aiNum(raw.roomW, 0.5, 30), rh = aiNum(raw.roomH, 0.5, 30);
+  if (rw != null) s.roomW = rw;
+  if (rh != null) s.roomH = rh;
+  if (['floor', 'sofa', 'arabic', 'raised'].includes(raw.seating)) s.seating = raw.seating;
+  const depth = aiNum(raw.depth, 0.3, 1.5);
+  if (depth != null) s.depth = depth;
+  const LIM = { door: [0.6, 2.5], window: [0.4, 4], tv: [0.8, 4], mashab: [0.6, 2.5] };
+  for (const type of Object.keys(LIM)) {
+    const o = raw[type];
+    if (!o || typeof o !== 'object' || !Number.isInteger(o.wall) || o.wall < 0 || o.wall > 3) continue;
+    const out = { wall: o.wall, w: aiNum(o.w, LIM[type][0], LIM[type][1], LIM[type][0]), side: o.side === 'end' ? 'end' : 'start' };
+    const d = aiNum(o.distFromCorner, 0, 30);
+    if (d != null && o.distFromCorner != null) out.distFromCorner = d;
+    if (type === 'door') { out.swing = o.swing === 'out' ? 'out' : 'in'; out.hinge = o.hinge === 'left' ? 'left' : 'right'; }
+    s[type] = out;
+  }
+  if (Array.isArray(raw.sofaWalls)) {
+    const ws = [];
+    for (const w of raw.sofaWalls) if (Number.isInteger(w) && w >= 0 && w <= 3 && ws.indexOf(w) < 0) ws.push(w);
+    s.sofaWalls = ws.slice(0, 4);
+  }
+  if (raw.fabric != null && raw.fabric !== '') s.fabric = aiStr(raw.fabric, 60);
+  if (raw.foam != null && raw.foam !== '') s.foam = aiStr(raw.foam, 60);
+  if (Array.isArray(raw.accessories)) {
+    const acc = [];
+    for (const a of raw.accessories) {
+      if (!a || typeof a !== 'object' || acc.length >= 12) continue;
+      const name = aiStr(a.name, 60);
+      if (!name) continue;
+      acc.push({ name, qty: aiNum(a.qty, 1, 99, 1) });
+    }
+    s.accessories = acc;
+  }
+  const notes = aiStr(raw.notes, 400);
+  if (notes) s.notes = notes;
+  return s;
+}
+
+function aiSanitizeModelOut(parsed) {
+  const out = { status: 'need_answers', note: '', questions: [], assumptions: [], issues: [], spec: null };
+  if (!parsed || typeof parsed !== 'object') return out;
+  out.status = ['ready', 'need_answers', 'invalid'].includes(parsed.status) ? parsed.status : 'need_answers';
+  out.note = aiStr(parsed.note, 240).replace(/[`{}\[\]]/g, '');
+  if (Array.isArray(parsed.questions)) {
+    for (const q of parsed.questions) {
+      if (out.questions.length >= 4) break;
+      if (!q || typeof q !== 'object') continue;
+      const text = aiStr(q.q, 300);
+      if (!text) continue;
+      const options = Array.isArray(q.options) ? q.options.slice(0, 4).map((x) => aiStr(x, 80)).filter(Boolean) : [];
+      out.questions.push({ id: aiStr(q.id, 24) || 'q' + (out.questions.length + 1), q: text, options });
+    }
+  }
+  if (Array.isArray(parsed.assumptions)) out.assumptions = parsed.assumptions.slice(0, 8).map((x) => aiStr(x, 200)).filter(Boolean);
+  if (Array.isArray(parsed.issues)) out.issues = parsed.issues.slice(0, 6).map((x) => aiStr(x, 200)).filter(Boolean);
+  out.spec = aiSanitizeSpec(parsed.spec);
+  if (out.status === 'ready' && !out.spec) out.status = 'need_answers';
+  return out;
+}
+
+async function aiCatalogBrief(env) {
+  const brief = { fabrics: [], foams: [], accessories: [] };
+  const specs = [
+    { cat: 'fabric', key: 'fabrics', limit: 30 },
+    { cat: 'foam', key: 'foams', limit: 10 },
+    { cat: 'acc', key: 'accessories', limit: 40 },
+  ];
+  for (const { cat, key, limit } of specs) {
+    const r = await env.DB.prepare(
+      "SELECT data FROM items " +
+      "WHERE (CASE WHEN json_valid(data) THEN json_extract(data, '$.category') END) = ? " +
+      "AND json_valid(data) = 1 " +
+      "AND (CASE WHEN json_valid(data) THEN json_type(data, '$.active') END) IS NOT 'false' " +
+      "AND (CASE WHEN json_valid(data) THEN json_type(data, '$.id') END) IS NOT NULL " +
+      "AND (CASE WHEN json_valid(data) THEN json_type(data, '$.id') END) != 'null' " +
+      "AND NOT ((CASE WHEN json_valid(data) THEN json_type(data, '$.id') END) = 'text' AND (CASE WHEN json_valid(data) THEN json_extract(data, '$.id') END) = '') " +
+      "AND NOT ((CASE WHEN json_valid(data) THEN json_type(data, '$.id') END) IN ('integer', 'real', 'false') AND (CASE WHEN json_valid(data) THEN json_extract(data, '$.id') END) = 0) " +
+      "AND (CASE WHEN json_valid(data) THEN json_type(data, '$.name') END) IS NOT NULL " +
+      "AND (CASE WHEN json_valid(data) THEN json_type(data, '$.name') END) != 'null' " +
+      "AND NOT ((CASE WHEN json_valid(data) THEN json_type(data, '$.name') END) = 'text' AND (CASE WHEN json_valid(data) THEN json_extract(data, '$.name') END) = '') " +
+      "AND NOT ((CASE WHEN json_valid(data) THEN json_type(data, '$.name') END) IN ('integer', 'real', 'false') AND (CASE WHEN json_valid(data) THEN json_extract(data, '$.name') END) = 0) " +
+      "ORDER BY updated_at DESC LIMIT ?"
+    ).bind(cat, limit).all();
+    for (const row of r.results) {
+      const i = safeParse(row.data);
+      if (!i || typeof i !== 'object' || !i.id || i.active === false || !i.name) continue;
+      const name = String(i.name).slice(0, 60);
+      if (brief[key].length < limit) brief[key].push(name);
+    }
+  }
+  return brief;
+}
+
+function aiSystemPrompt(brief) {
+  return [
+    'أنت مصمّم مجالس محترف تعمل لصالح أصالة نجد. أجب دائماً بصيغة JSON فقط وفق التعليمات التالية.',
+    'أعد JSON بالشكل التالي بالضبط: status ? note ? questions ? assumptions ? issues ? spec.',
+    'status: "ready" عندما تكون البيانات كافية، أو "need_answers" عند الحاجة لأسئلة، أو "invalid" إذا تعذّر تنفيذ الطلب.',
+    'note: ملخص قصير للعميل (200 حرف كحد أقصى) — لا تذكر فيه JSON أو تفاصيل تقنية.',
+    'questions: حتى 4 أسئلة فقط عند نقص المعلومات، بصيغة {id, q, options} مع خيارات مقترحة لكل سؤال.',
+    'assumptions: الافتراضات التي اعتمدتها عند نقص الطلب. issues: تعارضات أو ملاحظات تحتاج انتباه العميل.',
+    'المواصفات spec بالتفصيل (الأقسام التالية):',
+    '- roomW عرض الغرفة (0.5–30) و roomH طول الغرفة (0.5–30) بالمتر.',
+    '- seating: "floor" أرضي أو "sofa" كنب أو "arabic" جلسة عربية أو "raised" جلسة مرتفعة. depth عمق الجلسة (0.3–1.5، الافتراضي 0.8).',
+    '- الجدران (جميع القياسات بالمتر): door عرض (0.6–2.5)، window عرض (0.4–4)، tv عرض (0.8–4)، mashab عرض (0.6–2.5).',
+    '- كل عنصر {wall, w, distFromCorner, side}: wall 0 للحائط الأمامي، 1 الأيمن، 2 الخلفي، 3 الأيسر؛ side "start" أو "end"؛ distFromCorner المسافة من الزاوية بالمتر — وإن تعذّر تحديده ضعه في assumptions.',
+    '- حركة الباب: swing "in"/"out" و hinge "left"/"right" (الافتراضي in و right).',
+    '- sofaWalls: جدران الكنب كقائمة أرقام من 0 إلى 3 (مثل [0,2]) دون تكرار؛ اختر الجدران الأنسب لوضع الكنب.',
+    '- fabric و foam: اختر من مكتبة الأقمشة والإسفنج المعروضة؛ وإن لم يتوفر مطلوب العميل أضفه في note.',
+    '- accessories: مصفوفة {name, qty} من الإكسسوارات المطلوبة (qty من 1 إلى 99)؛ وإن تجاوز الطلب ذلك اذكره في issues.',
+    '- لا تتجاوز حدود spec المذكورة؛ وعند نقص البيانات اسأل في questions أو افترض وضعها في assumptions.',
+    'صيغة الرد: JSON صالح فقط؛ لا تكتب أي نص قبله أو بعده، ولا تستخدم أي صيغة أخرى غير JSON.',
+    'الأقمشة المتاحة: ' + (brief.fabrics.join('، ') || 'لا توجد أقمشة محددة') + '.',
+    'الإسفنج المتاح: ' + (brief.foams.join('، ') || 'لا يوجد إسفنج محدد') + '.',
+    'الإكسسوارات المتاحة: ' + (brief.accessories.join('، ') || 'لا توجد إكسسوارات محددة') + '.',
+  ].join('\n');
+}
+
+function aiUserMessage(text, spec, history) {
+  const parts = ['المواصفات الحالية: ' + (spec ? JSON.stringify(spec) : 'لا توجد')];
+  if (history.length) {
+    parts.push('سجل المحادثة:');
+    for (const h of history) parts.push((h.r === 'b' ? 'العميل: ' : 'المساعد: ') + h.t);
+  }
+  parts.push('طلب العميل الآن: ' + text);
+  return parts.join('\n');
+}
+
+async function aiCallModel(env, system, user) {
+  const base = String(env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const model = String(env.AI_MODEL || 'gpt-4o-mini');
+  const attempt = async (useFormat) => {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), 20000);
+    try {
+      const payload = { model, temperature: 0.2, max_tokens: 1600, messages: [{ role: 'system', content: system }, { role: 'user', content: user }] };
+      if (useFormat) payload.response_format = { type: 'json_object' };
+      const res = await fetch(base + '/chat/completions', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: 'Bearer ' + env.AI_API_KEY },
+        body: JSON.stringify(payload),
+        signal: ctrl.signal,
+      });
+      if (!res.ok) { const err = new Error('provider'); err.pStatus = res.status; throw err; }
+      const data = await res.json().catch(() => null);
+      const content = data && data.choices && data.choices[0] && data.choices[0].message && data.choices[0].message.content;
+      if (typeof content !== 'string' || !content.trim() || content.length > AI_CONTENT_MAX) { const err = new Error('provider content'); err.pStatus = 502; throw err; }
+      return content;
+    } finally { clearTimeout(timer); }
+  };
+  let err = null;
+  for (const useFormat of [true, false]) {
+    try { return await attempt(useFormat); }
+    catch (e) {
+      err = e;
+      const st = e && e.pStatus;
+      if (st && st >= 400 && st < 500 && st !== 400) break;
+      if (!useFormat) break;
+    }
+  }
+  console.warn('ai-design failed: ' + (err && err.name === 'AbortError' ? 'timeout' : err && err.pStatus ? 'status-' + err.pStatus : 'network'));
+  throw new HttpError(503, 'تعذّرت الاستجابة من خدمة التصميم حالياً. حاول مرة أخرى بعد قليل.');
+}
+
+async function portalAiDesign(env, request, body) {
+  const token = designTokenOf(request);
+  await portalRow(env, token);
+  await aiThrottle(env, request, token);
+  if (!env || !env.AI_API_KEY) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
+  const settings = await shopSettings(env);
+  if (settings.aiDesignEnabled === false) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
+  const rawText = body && body.text != null ? String(body.text) : '';
+  if (rawText.trim().length > AI_TEXT_MAX) throw new HttpError(400, 'النص أطول من الحد المسموح (3000 حرف).');
+  const text = aiStr(rawText, AI_TEXT_MAX);
+  if (!text) throw new HttpError(400, 'اكتب وصفًا للطلب.');
+  const history = [];
+  if (Array.isArray(body.history)) {
+    for (const h of body.history) {
+      if (history.length >= AI_HISTORY_MAX) break;
+      if (!h || typeof h !== 'object') continue;
+      const t = aiStr(h.t, 200);
+      if (t) history.push({ r: h.r === 'b' ? 'b' : 'u', t });
+    }
+  }
+  let spec = null;
+  if (body.spec && typeof body.spec === 'object' && JSON.stringify(body.spec).length <= AI_SPEC_MAX) spec = aiSanitizeSpec(body.spec);
+  const brief = await aiCatalogBrief(env);
+  const content = await aiCallModel(env, aiSystemPrompt(brief), aiUserMessage(text, spec, history));
+  let parsed = null;
+  try { parsed = JSON.parse(String(content).replace(/^\uFEFF/, '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch (e) { parsed = null; }
+  if (!parsed || typeof parsed !== 'object') {
+    console.warn('ai-design failed: bad-json');
+    throw new HttpError(503, 'تعذّرت الاستجابة من خدمة التصميم. حاول مرة أخرى.');
+  }
+  const out = aiSanitizeModelOut(parsed);
+  console.warn('ai-design ok status=' + out.status);
+  return { ok: true, status: out.status, note: out.note, questions: out.questions, assumptions: out.assumptions, issues: out.issues, spec: out.spec };
+}
+
 /* ------------------------------ التصميم الموسّع (نسخة تجريبية) ------------------------------
    نفس قواعد أمان البوابة، لكن على جدول customer_designs_exp وبادجة token 'x':
    - لا يختلط ببيانات العملاء الحقيقيين ولا يستهلك أرقام MJ
-   - لا يظهر في صفحة «تصاميم العملاء» (تقرأ customer_designs فقط)
+   - لا تختلط ببيانات العملاء الحقيقية (جدول customer_designs)
    - التوكن يبدأ بـ x فيرفضه جدول البوابة العادية والعكس
  لا تعرض أسعار من الخارج الداخلي — نفس مستوى حماية الحماية. */
 const EXP_TOKEN_PREFIX = 'x';
@@ -671,7 +1110,344 @@ async function convertDesign(env, id, user) {
   return { ok: true, orderId: rec.id, number };
 }
 
-/* ------------------------------ الجلسات ------------------------------ */
+/* ------------------------------ المصروفات ------------------------------ */
+
+async function listExpenses(env, user, query) {
+  const from = String(query.get('from') || '');
+  const to = String(query.get('to') || '');
+  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
+  const canViewOwn = hasPerm(user, 'expenses.view_own', user.permissions);
+  if (!canViewAll && !canViewOwn) throw new HttpError(403, 'غير مصرح');
+
+  let sql = 'SELECT id, name, amount, category, note, created_by, created_at, updated_at FROM expenses';
+  const binds = [];
+  const wh = [];
+  if (!canViewAll) {
+    wh.push('created_by = ?');
+    binds.push(user.id);
+  }
+  if (from) { wh.push('date(created_at) >= ?'); binds.push(from); }
+  if (to) { wh.push('date(created_at) <= ?'); binds.push(to); }
+  if (wh.length) sql += ' WHERE ' + wh.join(' AND ');
+  sql += ' ORDER BY created_at DESC';
+  const r = await env.DB.prepare(sql).bind(...binds).all();
+  return { ok: true, expenses: (r.results || []).map((e) => ({
+    id: e.id, name: e.name, amount: e.amount, category: e.category, note: e.note,
+    created_by: e.created_by, created_at: e.created_at, updated_at: e.updated_at,
+  })) };
+}
+
+async function saveExpense(env, user, body) {
+  const name = String(body.name || '').trim();
+  const amount = Number(body.amount || 0);
+  const category = String(body.category || '').trim() || null;
+  const note = String(body.note || '').trim() || null;
+  if (!name) throw new HttpError(400, 'الاسم مطلوب');
+  if (!Number.isFinite(amount) || amount < 0) throw new HttpError(400, 'مبلغ غير صحيح');
+  const id = uid();
+  const t = now();
+  await env.DB.prepare('INSERT INTO expenses (id, name, amount, category, note, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, name, amount, category, note, user.id, t, t).run();
+  return { ok: true, expense: { id, name, amount, category, note, created_by: user.id, created_at: t, updated_at: t } };
+}
+
+async function updateExpense(env, user, id, body) {
+  const row = await env.DB.prepare('SELECT * FROM expenses WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'المصروف غير موجود');
+  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
+  const canEditOwn = hasPerm(user, 'expenses.edit_own', user.permissions);
+  if (!canViewAll && row.created_by !== user.id) throw new HttpError(403, 'غير مصرح');
+  if (!canViewAll && !canEditOwn) throw new HttpError(403, 'غير مصرح');
+
+  const name = String(body.name || row.name).trim();
+  const amount = body.amount !== undefined ? Number(body.amount) : row.amount;
+  const category = body.category !== undefined ? String(body.category || '').trim() || null : row.category;
+  const note = body.note !== undefined ? String(body.note || '').trim() || null : row.note;
+  if (!name) throw new HttpError(400, 'الاسم مطلوب');
+  if (!Number.isFinite(amount) || amount < 0) throw new HttpError(400, 'مبلغ غير صحيح');
+  const t = now();
+  await env.DB.prepare('UPDATE expenses SET name = ?, amount = ?, category = ?, note = ?, updated_at = ? WHERE id = ?')
+    .bind(name, amount, category, note, t, id).run();
+  return { ok: true, expense: { id, name, amount, category, note, created_by: row.created_by, created_at: row.created_at, updated_at: t } };
+}
+
+async function deleteExpense(env, user, id) {
+  const row = await env.DB.prepare('SELECT * FROM expenses WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'المصروف غير موجود');
+  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
+  const canDeleteOwn = hasPerm(user, 'expenses.delete_own', user.permissions);
+  if (!canViewAll && row.created_by !== user.id) throw new HttpError(403, 'غير مصرح');
+  if (!canViewAll && !canDeleteOwn) throw new HttpError(403, 'غير مصرح');
+  await env.DB.prepare('DELETE FROM expenses WHERE id = ?').bind(id).run();
+  return { ok: true };
+}
+
+async function expensesSummary(env, user, query) {
+  const from = String(query.get('from') || '');
+  const to = String(query.get('to') || '');
+  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
+  const canViewOwn = hasPerm(user, 'expenses.view_own', user.permissions);
+  if (!canViewAll && !canViewOwn) throw new HttpError(403, 'غير مصرح');
+
+  let sql = 'SELECT id, amount, created_by, created_at FROM expenses';
+  const binds = [];
+  const wh = [];
+  if (!canViewAll) {
+    wh.push('created_by = ?');
+    binds.push(user.id);
+  }
+  if (from) { wh.push('date(created_at) >= ?'); binds.push(from); }
+  if (to) { wh.push('date(created_at) <= ?'); binds.push(to); }
+  if (wh.length) sql += ' WHERE ' + wh.join(' AND ');
+  sql += ' ORDER BY created_at DESC';
+  const r = await env.DB.prepare(sql).bind(...binds).all();
+  const rows = r.results || [];
+  let total = 0;
+  for (const e of rows) total += Number(e.amount || 0);
+  return { ok: true, total_amount: total, count: rows.length };
+}
+
+/* ------------------------------ دوال مساعدة لحساب التكاليف والإيرادات ------------------------------ */
+
+function computeOrderCost(d) {
+  let cost = 0;
+  if (d && d.costs && typeof d.costs === 'object') {
+    for (const k of Object.keys(d.costs)) {
+      const v = Number(d.costs[k] || 0);
+      if (Number.isFinite(v)) cost += v;
+    }
+  }
+  if (d && Array.isArray(d.extraCosts)) {
+    for (const e of d.extraCosts) {
+      const v = Number(e && e.amount || 0);
+      if (Number.isFinite(v)) cost += v;
+    }
+  }
+  if (d && Array.isArray(d.manualRows)) {
+    for (const m of d.manualRows) {
+      const v = Number(m && m.cost || 0);
+      if (Number.isFinite(v)) cost += v;
+    }
+  }
+  return cost;
+}
+
+function orderRevenueFromData(d) {
+  if (!d) return 0;
+  if (d.subtotal !== undefined && d.subtotal !== null) {
+    return Number(d.subtotal) - Number(d.discount || 0);
+  }
+  if (d.total !== undefined && d.total !== null) {
+    const rate = (d.vat && d.vat.enabled) ? Number(d.vat.rate || 0) : 0;
+    return Number(d.total) / (1 + rate / 100);
+  }
+  return 0;
+}
+
+function commRateForOrder(d, user) {
+  if (d && d.commRates && d.commRates.ownerRate !== undefined) return Number(d.commRates.ownerRate);
+  if (user && user.rate !== undefined) return Number(user.rate);
+  return 0;
+}
+
+function shareRateForOrder(d) {
+  if (d && d.commRates && d.commRates.shareRate !== undefined) return Number(d.commRates.shareRate);
+  return 0;
+}
+
+/* ------------------------------ تقرير المناديب ------------------------------ */
+
+async function mandoubsReport(env, user, query) {
+  const canViewAll = hasPerm(user, 'reports.view_all', user.permissions);
+  if (!canViewAll) throw new HttpError(403, 'غير مصرح');
+
+  const from = String(query.get('from') || '');
+  const to = String(query.get('to') || '');
+
+  // جميع المناديب (الدور mandoub)
+  const users = await env.DB.prepare('SELECT id, name, username, parent_id FROM users WHERE role = ? AND active = 1').bind('mandoub').all();
+  const mandoubs = (users.results || []).map((u) => ({
+    id: u.id, name: u.name, username: u.username, parent_id: u.parent_id,
+    count: 0, revenue: 0, cost: 0, profit: 0, commission: 0, share: 0,
+    directCount: 0, directRevenue: 0, directCost: 0, directProfit: 0,
+  }));
+
+  // بناء خريطة الآباء والأبناء للتسلسل الهرمي
+  const childrenMap = new Map(); // parent_id -> [childIds]
+  const mandoubMap = new Map();  // id -> mandoub entry
+  for (const m of mandoubs) {
+    mandoubMap.set(m.id, m);
+    if (!childrenMap.has(m.parent_id)) childrenMap.set(m.parent_id, []);
+    if (m.parent_id) childrenMap.get(m.parent_id).push(m.id);
+  }
+
+  // جلب الطلبات المصدّقة في الفترة (تُحسب لكل مندوب مرة واحدة فقط לפי المالك المباشر)
+  let sql = 'SELECT id, created_by, data FROM orders WHERE status = ?';
+  const binds = ['delivered'];
+  if (from) { sql += ' AND date(created_at) >= ?'; binds.push(from); }
+  if (to) { sql += ' AND date(created_at) <= ?'; binds.push(to); }
+  const rows = await env.DB.prepare(sql).bind(...binds).all();
+
+  const ordersByOwner = new Map(); // ownerId -> orders[]
+  for (const r of (rows.results || [])) {
+    let d;
+    try { d = JSON.parse(r.data); } catch { d = {}; }
+    const createdBy = r.created_by;
+    if (!ordersByOwner.has(createdBy)) ordersByOwner.set(createdBy, []);
+    const revenue = orderRevenueFromData(d);
+    const cost = computeOrderCost(d);
+    ordersByOwner.get(createdBy).push({
+      id: r.id, number: r.number, status: r.status,
+      revenue, cost,
+      profit: revenue - cost,
+      commission: revenue > 0 ? (revenue - cost) * commRateForOrder(d, { rate: 0 }) / 100 : 0,
+      share: revenue > 0 ? (revenue - cost) * shareRateForOrder(d) / 100 : 0,
+    });
+  }
+
+  // دالة تجميعentzia من الأسفل إلى الأعلى (post-order traversal)
+  function aggregateMandoub(mid) {
+    const m = mandoubMap.get(mid);
+    if (!m) return { count: 0, revenue: 0, cost: 0, profit: 0, commission: 0, share: 0 };
+    let rev = 0, cost = 0, profit = 0, commission = 0, share = 0, count = 0;
+
+    // طلبات هذا المندوب مباشرة
+    const ownOrders = ordersByOwner.get(mid) || [];
+    for (const o of ownOrders) {
+      rev += o.revenue; cost += o.cost; profit += o.profit;
+      commission += o.commission; share += o.share; count += 1;
+    }
+
+    // طلبات الأبناء (التسلسل الهرمي) - يُضاف للمندوب الحالي دون تكرار مع المندوب الابن نفسه
+    const children = childrenMap.get(m.id) || [];
+    for (const childId of children) {
+      const childAgg = aggregateMandoub(childId);
+      rev += childAgg.revenue; cost += childAgg.cost; profit += childAgg.profit;
+      commission += childAgg.commission; share += childAgg.share; count += childAgg.count;
+    }
+
+    m.count = count; m.revenue = rev; m.cost = cost; m.profit = profit;
+    m.commission = commission; m.share = share;
+    m.directCount = ownOrders.length;
+    m.directRevenue = ownOrders.reduce((s, o) => s + o.revenue, 0);
+    m.directCost = ownOrders.reduce((s, o) => s + o.cost, 0);
+    m.directProfit = ownOrders.reduce((s, o) => s + o.profit, 0);
+
+    return { count, revenue: rev, cost, profit, commission, share };
+  }
+
+  // 시작 من الجذور (المندوبون الذين ليس لهم أب)
+  const result = [];
+  for (const m of mandoubs) {
+    if (!m.parent_id || !mandoubMap.has(m.parent_id)) {
+      aggregateMandoub(m.id);
+      result.push({
+        id: m.id, name: m.name, username: m.username, parent_id: m.parent_id,
+        count: m.count, revenue: m.revenue, cost: m.cost, profit: m.profit,
+        commission: m.commission, share: m.share,
+        directCount: m.directCount, directRevenue: m.directRevenue,
+        directCost: m.directCost, directProfit: m.directProfit,
+      });
+    }
+  }
+
+  // أيضًا أضف المناديب الذين لديهم أب (كEntries فرعية)، لكن بعرض مستوياتهم
+  for (const m of mandoubs) {
+    if (m.parent_id && mandoubMap.has(m.parent_id)) {
+      //已 processed via aggregation above, but include in result for flat listing
+      const existing = result.find(r => r.id === m.id);
+      if (!existing) {
+        result.push({
+          id: m.id, name: m.name, username: m.username, parent_id: m.parent_id,
+          count: m.count, revenue: m.revenue, cost: m.cost, profit: m.profit,
+          commission: m.commission, share: m.share,
+          directCount: m.directCount, directRevenue: m.directRevenue,
+          directCost: m.directCost, directProfit: m.directProfit,
+        });
+      }
+    }
+  }
+
+  return { ok: true, mandoubs: result };
+}
+
+/* ------------------------------ تقرير الطلبات والمدفوعات ------------------------------ */
+
+async function ordersSummary(env, user, query) {
+  const canViewAll = hasPerm(user, 'reports.view_all', user.permissions);
+  const canViewOwn = hasPerm(user, 'reports.view_own', user.permissions);
+  if (!canViewAll && !canViewOwn) throw new HttpError(403, 'غير مصرح');
+
+  const from = String(query.get('from') || '');
+  const to = String(query.get('to') || '');
+  const statusFilter = String(query.get('status') || '');
+  const userFilter = String(query.get('userId') || '');
+  const dRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (from && !dRe.test(from)) throw new HttpError(400, 'صيغة التاريخ غير صحيحة (from)');
+  if (to && !dRe.test(to)) throw new HttpError(400, 'صيغة التاريخ غير صحيحة (to)');
+
+  let sql = 'SELECT id, number, status, customer_name, created_by, created_at, data, updated_at FROM orders';
+  const binds = [];
+  const wh = [];
+  if (!canViewAll) {
+    // مقيّد برؤية طلباته فقط
+    wh.push('created_by = ?');
+    binds.push(user.id);
+  } else if (userFilter) {
+    wh.push('created_by = ?');
+    binds.push(userFilter);
+  }
+  if (from) { wh.push('date(created_at) >= ?'); binds.push(from); }
+  if (to) { wh.push('date(created_at) <= ?'); binds.push(to); }
+  if (statusFilter) { wh.push('status = ?'); binds.push(statusFilter); }
+  if (wh.length) sql += ' WHERE ' + wh.join(' AND ');
+  sql += ' ORDER BY created_at DESC';
+  const rows = await env.DB.prepare(sql).bind(...binds).all();
+
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const out = [];
+  let totalRevenue = 0, totalPaid = 0, totalRemaining = 0, totalCost = 0;
+  const byStatus = {};
+  for (const r of (rows.results || [])) {
+    let d;
+    try { d = JSON.parse(r.data || '{}'); } catch { d = {}; }
+    const st = String(d.status || r.status || 'new');
+    const revenue = orderRevenueFromData(d);
+    const cost = computeOrderCost(d);
+    const paid = num(d.paid);
+    const remaining = num(d.remaining);
+    if (!byStatus[st]) byStatus[st] = { count: 0, revenue: 0, paid: 0, remaining: 0, cost: 0 };
+    byStatus[st].count++;
+    byStatus[st].revenue += revenue;
+    byStatus[st].paid += paid;
+    byStatus[st].remaining += remaining;
+    byStatus[st].cost += cost;
+    totalRevenue += revenue; totalPaid += paid; totalRemaining += remaining; totalCost += cost;
+    out.push({
+      id: r.id, number: r.number, status: st, customer: d.customer || {},
+      created_by: r.created_by, created_at: d.createdAt || r.created_at, updated_at: r.updated_at,
+      subtotal: num(d.subtotal), total: num(d.total), paid, remaining,
+      discount: num(d.discount), vatRate: num(d.vatRate), vatAmount: num(d.vatAmount),
+      cost, profit: revenue - cost,
+      payments: Array.isArray(d.payments) ? d.payments : [],
+    });
+  }
+
+  return {
+    ok: true,
+    from, to,
+    count: out.length,
+    totalRevenue, totalPaid, totalRemaining, totalCost,
+    netProfit: totalRevenue - totalCost,
+    byStatus,
+    orders: out,
+  };
+}
+
+/* ------------------------------ المصادقة والصلاحيات ------------------------------ */
 function tokenOf(request) {
   const h = request.headers.get('x-session-token');
   if (h) return h;
@@ -682,13 +1458,19 @@ function tokenOf(request) {
 async function currentUser(env, token) {
   if (!token) return null;
   const row = await env.DB.prepare(
-    'SELECT u.id, u.username, u.name, u.role, u.active FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.expires_at > ? AND u.active = 1'
+    'SELECT u.id, u.username, u.name, u.role, u.active, u.must_change_password FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token = ? AND s.expires_at > ? AND u.active = 1'
   ).bind(token, now()).first();
-  return row || null;
+  if (!row) return null;
+  const permissions = await loadUserPermissions(env, row.id);
+  return Object.assign({}, row, { permissions });
 }
 
 function requireAdmin(user) {
-  if (!user || user.role !== 'admin') throw new HttpError(403, 'هذه العملية للمدير فقط');
+  if (!user || !hasPerm(user, 'admin.core', user.permissions)) throw new HttpError(403, 'هذه العملية للمدير فقط');
+}
+
+function requirePerm(user, perm) {
+  if (!user || !hasPerm(user, perm, user.permissions)) throw new HttpError(403, 'غير مصرح');
 }
 
 const publicUser = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: !!u.active });
@@ -728,7 +1510,11 @@ async function login(env, body, request) {
   const mins = await loginLocked(env, keys);
   if (mins) return { ok: false, error: 'locked', minutes: mins };
   const u = await env.DB.prepare('SELECT * FROM users WHERE lower(username) = ?').bind(username).first();
-  if (!u || !(await verifyPassword(password, u.password_hash))) { await loginFailed(env, keys); return { ok: false, error: 'bad_credentials' }; }
+  if (!u) { await loginFailed(env, keys); return { ok: false, error: 'bad_credentials' }; }
+  const parts = String(u.password_hash || '').split('$');
+  const storedIter = parts.length === 4 && parts[0] === 'pbkdf2' ? Number(parts[1]) || DEFAULT_ITER : DEFAULT_ITER;
+  if (storedIter > 100000) { return { ok: false, error: 'password_needs_reset', minutes: 0 }; }
+  if (!(await verifyPassword(password, u.password_hash))) { await loginFailed(env, keys); return { ok: false, error: 'bad_credentials' }; }
   if (!u.active) return { ok: false, error: 'inactive' };
   // نجاح الدخول يمسح عدّاد اسم المستخدم **و** عدّاد العنوان معاً: فبدون ذلك يبقى
   // فشل مستخدمين آخرين على نفس الشبكة (wifi المكتب/الجوال) متراكماً ويُقفل دخول
@@ -741,34 +1527,48 @@ async function login(env, body, request) {
     env.DB.prepare('DELETE FROM sessions WHERE expires_at < ?').bind(created),
     env.DB.prepare('INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES (?, ?, ?, ?)').bind(token, u.id, created, expires),
   ]);
-  // كلمة المرور الافتراضية معروفة لكل من قرأ التوثيق: تُفرض تغييرها عند أول دخول
-  const mustChangePassword = username === 'admin' && password === 'admin';
+  // ترقية كلمة المرور تلقائياً عند الحاجة قبل إنشاء الجلسة
+  await maybeUpgradePassword(env, u.id, password, u.password_hash);
+  // تُنهى الجلسات الأخرى عند تغيير كلمة المرور أو إيقاف الحساب
+  const mustChangePassword = u.must_change_password === 1;
   return { ok: true, token, user: publicUser(u), mustChangePassword };
 }
 
 /* ------------------------------ البيانات ------------------------------ */
 async function bootstrap(env, user) {
-  const admin = user.role === 'admin';
+  const canViewAllOrders = hasPerm(user, "orders.view_all", user.permissions);
+  const canViewOwnOrders = hasPerm(user, "orders.view_own", user.permissions);
+  const canViewAllCosts = hasPerm(user, "costs.view_all", user.permissions);
+  const canViewOwnCosts = hasPerm(user, "costs.view_own", user.permissions);
+  const ordersQuery = (canViewAllOrders || canViewOwnOrders)
+    ? (canViewAllOrders
+        ? env.DB.prepare('SELECT data, created_by FROM orders ORDER BY created_at').all()
+        : env.DB.prepare('SELECT data, created_by FROM orders WHERE created_by = ? ORDER BY created_at').bind(user.id).all())
+    : Promise.resolve({ results: [] });
   const [settings, items, orders] = await Promise.all([
     env.DB.prepare('SELECT data FROM settings WHERE id = 1').first(),
     env.DB.prepare('SELECT data FROM items ORDER BY updated_at').all(),
-    // الطلب هو ملك منشئه الحالي (created_by)، سواء كان موظفاً أو مندوباً.
-    // التقييد في SQL نفسه يمنع تسرب الطلبات القديمة أو نتائج البحث/التقارير
-    // المبنية على bootstrap. الطلبات القديمة بلا مالك تبقى للمدير وحده.
-    admin
-      ? env.DB.prepare('SELECT data FROM orders ORDER BY created_at').all()
-      : env.DB.prepare('SELECT data FROM orders WHERE created_by = ? ORDER BY created_at').bind(user.id).all(),
+    ordersQuery,
   ]);
+  const admin = user.role === 'admin';
   const out = {
     // قدرات هذا الخادم: الواجهة الأحدث لا تعتمد على ميزة لم يُنشر خادمها بعد
     features: { serverNumbers: true, costsHidden: true },
     user: publicUser(user),
+    // صلاحيات المستخدم الحالي الفعّالة: للواجهة لإخفاء ما لا يملكه فقط (الفرض في الخادم دائماً)
+    permissions: [...effectivePermissions(user, user.permissions)],
     settings: settings ? safeParse(settings.data, {}) : {},
     items: items.results.map((r) => safeParse(r.data)),
     // الملكية مصفّاة أعلاه من عمود قاعدة البيانات الموثوق، لا من بيانات الطلب.
     // لا نعيد صفوفاً جزئية للغير؛ ذلك يمنع التسريب عبر التفاصيل أو التصدير.
-    orders: orders.results.map((r) => safeParse(r.data)).filter(Boolean),
-    activity: [],
+    // لا نعيد للغير إلا طلباته؛ والتكاليف لا تظهر إلا لمن يملك صلاحية رؤيتها.
+    orders: orders.results.map((r) => {
+      const o = safeParse(r.data, null);
+      if (!o) return null;
+      const owner = !!(r.created_by && r.created_by === user.id);
+      const canViewCosts = canViewAllCosts || (canViewOwnCosts && owner);
+      return canViewCosts ? o : stripCosts(o);
+    }).filter(Boolean),
     users: [],
   };
   if (admin) {
@@ -799,6 +1599,10 @@ function checkOrderFin(o) {
         (isFinNum(o.number) && Number.isInteger(o.number) && o.number >= 0))) finErr('order.number');
   for (const f of ['subtotal', 'vatAmount', 'total', 'paid', 'remaining', 'costTotal', 'vatRate']) {
     if (!isOptNum(o[f])) finErr('order.' + f);
+  }
+  // القيم غير السالبة في الطلبات (الخصم والنسب وغيرها لا تقبل أقل من صفر)
+  for (const f of ['subtotal', 'total', 'remaining', 'vatRate', 'vatAmount']) {
+    if (o[f] !== undefined && o[f] !== null && o[f] !== '' && !(isFinNum(o[f]) && o[f] >= 0)) finErr('order.' + f);
   }
   // الخصم والنسب: أرقام غير سالبة، والخصم لا يتجاوز المجموع عند توفره
   for (const f of ['sellerRate', 'shareRate', 'othersRate']) {
@@ -864,7 +1668,7 @@ function checkItemFin(i) {
 
 /* ذرية التدقيق (Phase 3.1): الطفرة الخاضعة للتدقيق وسجلها في نفس دفعة D1.
    استدعاء batch() واحد ذري (الكل أو لا شيء): فشل إدراج السجل يُسقط العملية
-   الأساسية معه، فلا يوجد أبداً «طلب محفوظ بلا سجل». عبر المقاطع (50 بياناً)
+   نفس المصير لأي فشل لاحق — التغيير كله أو لا شيء. عند تجاوز الحد (50 عملية)
    لا ضمان عابر — حفظ الطلب الواحد (~3-10 بيانات) دائماً داخل مقطع واحد. */
 async function sync(env, user, body) {
   const ts = now();
@@ -900,7 +1704,7 @@ async function sync(env, user, body) {
 
   const it = body.items || {};
   if ((it.upsert && it.upsert.length) || (it.delete && it.delete.length)) {
-    requireAdmin(user);
+    requirePerm(user, 'settings.manage');
     (it.upsert || []).forEach((i) => q('INSERT INTO items (id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', i.id, JSON.stringify(i), ts));
     (it.delete || []).forEach((id) => q('DELETE FROM items WHERE id = ?', id));
   }
@@ -971,6 +1775,36 @@ async function sync(env, user, body) {
     numbers[o.id] = Number(r.value);
   }
 
+  // D3 permission checks for order upserts.
+  const hasCostData = (x) => {
+    if (!x || typeof x !== "object") return false;
+    if (x.costs && Object.keys(x.costs).length) return true;
+    if (Array.isArray(x.extraCosts) && x.extraCosts.length) return true;
+    if (x.costTotal !== undefined && x.costTotal !== null && x.costTotal !== "") return true;
+    if (Array.isArray(x.manualRows) && x.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== "")) return true;
+    return false;
+  };
+  for (const o of (od.upsert || [])) {
+    const row = existing.get(o.id);
+    const owner = !row || row.owner === user.id;
+    if (!row) {
+      if (!hasPerm(user, "orders.create", user.permissions)) throw new HttpError(403, "غير مصرح");
+    } else if (owner) {
+      if (!hasPerm(user, "orders.edit_own", user.permissions)) throw new HttpError(403, "غير مصرح");
+    } else {
+      if (!hasPerm(user, "orders.edit_all", user.permissions)) throw new HttpError(403, "غير مصرح");
+    }
+    if (hasCostIntent(o)) {
+      const existingHadCosts = !!(row && hasCostData(row.data));
+      const newHasCosts = hasCostData(o);
+      const clearing = !newHasCosts;
+      const perm = clearing
+        ? (owner ? "costs.delete_own" : "costs.delete_all")
+        : (existingHadCosts ? (owner ? "costs.edit_own" : "costs.edit_all") : (owner ? "costs.add_own" : "costs.add_all"));
+      if (!hasPerm(user, perm, user.permissions)) throw new HttpError(403, "غير مصرح");
+    }
+  }
+
   (od.upsert || []).forEach((o) => {
     const rec = { ...o };
     delete rec._base;                              // حقل نقل لا يُخزَّن
@@ -989,23 +1823,37 @@ async function sync(env, user, body) {
       rec.id, rec.number ?? null, rec.status ?? null, (rec.customer && rec.customer.name) || '', rec.createdBy ?? null, rec.createdAt ?? ts, JSON.stringify(rec), ts
     );
   });
-  if (od.delete && od.delete.length) { requireAdmin(user); od.delete.forEach((id) => q('DELETE FROM orders WHERE id = ?', id)); }
+  if (od.delete && od.delete.length) { requirePerm(user, 'orders.delete_all'); od.delete.forEach((id) => q('DELETE FROM orders WHERE id = ?', id)); }
 
   const ac = body.activity || {};
   // سجل التحديثات سجل تدقيق: الموظف يضيف أحداثاً باسمه فقط ولا يعدّل حدثاً موجوداً.
   // المدير وحده يكتب فوقها (الاستيراد يعيد أحداث الجميع بأسمائهم الأصلية).
   const staff = !admin;
+  // D3 permission checks for activity upserts.
+  for (const a of (ac.upsert || [])) {
+    if (a && a.orderId) {
+      const own = await verifyOrderOwnership(env, user, a.orderId);
+      if (own.allowed) {
+        if (!hasPerm(user, "orders.edit_own", user.permissions)) throw new HttpError(403, "غير مصرح");
+      } else {
+        if (!hasPerm(user, "orders.edit_all", user.permissions)) throw new HttpError(403, "غير مصرح");
+      }
+    } else if (user.role !== "admin") {
+      if (!hasPerm(user, "orders.edit_own", user.permissions)) throw new HttpError(403, "غير مصرح");
+    }
+  }
+
   (ac.upsert || []).forEach((a) => {
     const rec = staff ? { ...a, userId: user.id, userName: user.name } : { ...a };
     // حدث إنشاء طلب جديد يُكتب قبل أن يُعرف رقمه
     if (rec.orderId && numbers[rec.orderId] !== undefined && !rec.orderNo) rec.orderNo = numbers[rec.orderId];
     q(`INSERT INTO activity (id, at, data) VALUES (?, ?, ?) ON CONFLICT(id) DO ${staff ? 'NOTHING' : 'UPDATE SET data = excluded.data'}`, rec.id, rec.at || ts, JSON.stringify(rec));
   });
-  if (ac.clear) { requireAdmin(user); q('DELETE FROM activity'); }
-  else if (ac.delete && ac.delete.length) { requireAdmin(user); ac.delete.forEach((id) => q('DELETE FROM activity WHERE id = ?', id)); }
+  if (ac.clear) { requirePerm(user, 'orders.delete_all'); q('DELETE FROM activity'); }
+  else if (ac.delete && ac.delete.length) { requirePerm(user, 'orders.delete_all'); ac.delete.forEach((id) => q('DELETE FROM activity WHERE id = ?', id)); }
 
   if (body.settings) {
-    requireAdmin(user);
+    requirePerm(user, 'settings.manage');
     q('INSERT INTO settings (id, data, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', JSON.stringify(body.settings), ts);
   }
 
@@ -1038,7 +1886,7 @@ function stripCosts(o) {
 
 /* هل ما أرسله الموظف يحمل نيةً واضحة لتعديل التكاليف؟
    - ختم التكاليف (costUpdatedAt / costUpdatedByName) لا يكتبه في الواجهة
-     إلا نافذة «تكاليف الطلب» عند الحفظ — فظهوره حفظ مقصود.
+      لا تكتبها الواجهة إطلاقاً — لا يمكن تزويرها من جانب الموظف.
    - أمّا محتوى غير فارغ (تكاليف أصناف، بنود إضافية، تكلفة صنف يدوي،
      إجمالي) فلا يأتِ إلا من نسخة رأت التكاليف — أي تعديل مقصود أيضاً.
    - وانعدام الأثر كله يعني نسخة لم ترَ التكاليف (كانت مخفية عن الموظف
@@ -1072,7 +1920,7 @@ function restoreCosts(rec, prev) {
 }
 
 /* ------------------------------ المستخدمون ------------------------------ */
-/* ---------------- إحصاءات زيارات روابط «عن التطبيق» ----------------
+/* ---------------- زوار الروابط العامة ----------------
    تُسجَّل الزيارات على الخادم عند تقديم صفحات الزوار العامة (بوابة العميل
    والتصميم الموسّع). تُستثنى واجهة الموظفين (تحتاج جلسة) والروبوتات.
    العدّ يومي مجمّع (day, link) — لا يُخزَّن أي IP ولا بيانات شخصية. */
@@ -1084,7 +1932,7 @@ const VISIT_LINKS = {
 const BOT_RE = /bot|crawler|spider|crawling|slurp|bingpreview|facebookexternalhit|whatsapp|telegrambot|discordbot|curl\/|wget|python-requests|headlesschrome|lighthouse|uptime|monitor|preview|scrapy|semrush|ahrefs|petalbot|applebot|ia_archiver|semrushbot/i;
 
 /* المنطقة الزمنية: يوم الرياض (UTC+3). كل حدود الفترات تُحسب بتوقيت المحل،
-   لا UTC — وإلا انزلق حدّ «اليوم» و«آخر ٧ أيام» بساعة أو ثلث يوم. */
+    لا UTC — أي يوم يبدأ من منتصف الليل بتوقيت المحل لا بتوقيت غرينتش. */
 function visitTzOffset(env) { return Number(env && env.VISIT_TZ_OFFSET_MIN) || 180; }
 
 function visitDayKey(env, ts) {
@@ -1112,7 +1960,7 @@ async function recordVisit(env, request, link) {
     if (!env.DB || !VISIT_LINKS[link]) return;
     // ضمان الجداول محلياً: لا نعتمد على ensureSeed لأنه قد يتوقف عند خطأ غير متعلق
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visits (day TEXT NOT NULL, link TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 0, PRIMARY KEY (day, link))').run().catch(ignoreExistsObject);
-  /* زوار فريدون: بصمة مجزّأة لكل (يوم، رابط) — تميّز «زائر واحد مرتين» عن «زيارتين».
+  /* بصمة الزائر اليومية: مشتقة من اليوم (لا من الرابط) — تُخزَّن كبصمة مُبهمة.
      لا تُخزَّن عناوين IP ولا مُعرّفات الأجهزة؛ البصمة مشتقة من اليوم فينتهي أثرها مع اليوم.
      يُحذف ما قبل ٤٠ يوماً عند كل تسجيل فلا ينمو الجدول بلا سقف. */
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS link_visitors (day TEXT NOT NULL, link TEXT NOT NULL, fp TEXT NOT NULL, PRIMARY KEY (day, link, fp))').run().catch(ignoreExistsObject);
@@ -1134,7 +1982,7 @@ async function recordVisit(env, request, link) {
 
 /** قراءة الإحصاءات للمدير: إجمالي لكل رابط + تفصيل آخر ٣٠ يوماً */
 /* ======================= تحليلات لوحة المالك =======================
-   مبدأ الخصوصية قبل كل شيء: ما يُخزَّن هو «عداد مجمّع» فقط:
+    لا نعرف هوية أي زائر: لا نخزّن أي شيء يدل على 'زائر فردي' إلا:
      day + اسم الحدث + بُعد اختياري + رقم.
    لا اسم عميل، ولا رقم جوال، ولا عنوان IP، ولا بصمة جهاز، ولا مُعرّف جلسة،
    ولا محتوى محادثة. لا يوجد في الجدول ما يصلح لربط أي حدث بهوية أحد.
@@ -1244,14 +2092,14 @@ async function analyticsAvgDurationMin(env, from, to) {
   if (to) { sql += ' AND date(created_at) <= ?'; binds.push(to); }
   const r = await env.DB.prepare(sql).bind(...binds).first();
   /* Number(null) = 0 — لوحوّلنا النقص إلى صفر لعرضنا مدةً مُختلقة. غياب البيانات
-     يجب أن يُقرأ «غير متاح» (null) لا «صفر دقيقة». */
+      فلا تُعرض 'لا بيانات' (null) ولا 'صفر'. */
   if (!r || r.m === null || r.m === undefined) return null;
   const m = Number(r.m);
   return Number.isFinite(m) && m >= 0 ? Math.round(m) : null;
 }
 
 /** مسار التحويل: زيارة ← بدء ← إكمال ← واتساب ← طلب مؤكد.
-    كل مقام صحيح ومكتوب صراحة. «واتساب» = ضغط الزر فقط، ليس رسالة مُرسلة ولا طلباً. */
+    لا نسبة لمن لم يبدأ. 'الزيارة' = من رأى الصفحة دون بدء تصميم. */
 async function analyticsFunnel(env, from, to) {
   const visits = await analyticsSum(env, from, to, 'design_visit');
   const started = await analyticsSum(env, from, to, 'design_start');
@@ -1272,12 +2120,12 @@ async function analyticsFunnel(env, from, to) {
       { key: 'start', label: 'بدء تصميم', n: started, rate: pct(started, visits) },
       { key: 'finish', label: 'إكمال التصميم', n: finished, rate: pct(finished, started) },
       /* واتساب والإرسال مقامُهما من بدأ التصميم لا من أكمله: من يضغط زر واتساب قد
-         لا يمرّ خطوة الإكمال، فقياسه على «من أكمل» يعطي نسبة فوق 100% وهمية. */
+          ولا تُحسب من أكمل فقط — من يضغط واتساب ثم يغلق الموقع لا يصل أبداً إلى 100%. */
       { key: 'whatsapp', label: 'ضغط واتساب', n: wa, rate: pct(wa, started) },
       { key: 'sent', label: 'إرسال التصميم', n: sent, rate: pct(sent, started) },
       { key: 'order', label: 'طلب مؤكد', n: orders, rate: pct(orders, started) },
     ],
-    note: 'كل النسب من «بدء التصميم» إلا بداية السلّم. «ضغط واتساب» ضغطة زر فقط، لا يعني إرسال رسالة ولا إتمام بيع.',
+    note: 'النسب مقامها "من بدأ التصميم" لا "من أكمله". "ضغط واتساب" لكل من بدأ لا لمن أكمل.',
   };
 }
 
@@ -1430,11 +2278,11 @@ function visitDayKeyOf(env, d) {
 
 /** إحصاءات الروابط للمدير — ثلاثة نطاقات زمنية واضحة، كلها بتوقيت المحل:
     اليوم / آخر ٧ أيام / آخر ٣٠ يوماً. لكل نطاق رقمان مستقلان:
-    «زيارات» (كل فتح للصفحة) و«زوار» (بصمة جهاز واحدة لا تُحتسب مرتين في اليوم).
+    'الزيارات' (مجموع مرات الفتح) و'الزوار' (عدد البصمات الفريدة في اليوم).
     لا أرقام وهمية: كل قيمة مجموع فعلي من السجلات، وغياب البيانات يعطي صفراً. */
 /** إحصاءات الروابط للمدير — ثلاثة نطاقات زمنية واضحة، كلها بتوقيت المحل:
     اليوم / آخر ٧ أيام / آخر ٣٠ يوماً. لكل نطاق رقمان مستقلان:
-    «زيارات» (كل فتح للصفحة) و«زوار» (بصمة جهاز واحدة لا تُحتسب مرتين في اليوم).
+    'الزيارات' (مجموع مرات الفتح) و'الزوار' (عدد البصمات الفريدة في اليوم).
     لا أرقام وهمية: كل قيمة مجموع فعلي من السجلات وغياب البيانات = صفر. */
 async function linkVisits(env) {
   const today = visitDayKey(env);
@@ -1525,15 +2373,15 @@ async function saveUser(env, me, body, myToken) {
   if (dup) throw new HttpError(400, 'اسم المستخدم مستخدم من قبل');
 
   if (!body.id) {
-    if (password.length < 4) throw new HttpError(400, 'كلمة المرور 4 أحرف فأكثر');
+    validatePassword(password, username);
     await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at, parent_id, rate, parent_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(uid(), username, name, await hashPassword(password), role, active ? 1 : 0, now(), parentId, rate, parentRate).run();
   } else {
     const admins = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").bind(body.id).first();
     if (Number(admins.n) === 0 && (role !== 'admin' || !active)) throw new HttpError(400, 'لا يمكن إزالة صلاحية آخر مدير أو إيقافه');
-    if (password && password.length < 4) throw new HttpError(400, 'كلمة المرور 4 أحرف فأكثر');
+    if (password) validatePassword(password, username);
     const stmts = [];
-    if (password) stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, password_hash = ?, parent_id = ?, rate = ?, parent_rate = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, await hashPassword(password), parentId, rate, parentRate, body.id));
+    if (password) stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, password_hash = ?, must_change_password = 0, parent_id = ?, rate = ?, parent_rate = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, await hashPassword(password), parentId, rate, parentRate, body.id));
     else stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, parent_id = ?, rate = ?, parent_rate = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, parentId, rate, parentRate, body.id));
     // إنهاء الجلسات الأخرى عند تغيير كلمة المرور أو الإيقاف
     if (password || !active) stmts.push(env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').bind(body.id, myToken || ''));
@@ -1553,6 +2401,97 @@ async function deleteUser(env, me, id) {
   return { ok: true, users: await listUsers(env) };
 }
 
+/* ------------------------------ صلاحيات المستخدم التفصيلية (admin) ------------------------------
+   تجاوزات لكل مستخدم فوق افتراضيات الدور، مخزّنة في user_permissions.
+   - Deny يتقدّم على السماح؛ admin.core لا يُمنح ولا يُسحب (دور فقط).
+   - fail-closed: تعذّر القراءة = لا صلاحيات (انظر loadUserPermissions).
+   - كل تعديل يُسجَّل في permission_audit (ذرّي مع التنفيذ عبر batch واحد).
+   - التغييرات تسري فوراً على الطلبات اللاحقة (تُقرأ الصلاحيات مع كل طلب). */
+
+/** قراءة صلاحيات مستخدم: الافتراضيات والتجاوزات والفعّالة */
+async function getUserPermissions(env, actor, targetId) {
+  requirePerm(actor, 'permissions.manage');
+  const row = await env.DB.prepare('SELECT id, username, name, role, active FROM users WHERE id = ?').bind(targetId).first();
+  if (!row) throw new HttpError(404, 'المستخدم غير موجود');
+  const load = await loadUserPermissions(env, targetId);
+  const loadFailed = !(load && load.ok);
+  const overrides = (load && load.ok && load.overrides) ? load.overrides : {};
+  const defaults = ROLE_PERMISSIONS[row.role] ? [...ROLE_PERMISSIONS[row.role]] : [];
+  return {
+    ok: true,
+    userId: row.id, name: row.name, role: row.role, active: !!row.active,
+    permissionsLoadFailed: loadFailed,
+    defaults,
+    // افتراضيات كل الأدوار: تعرض الواجهة أثر تغيير الدور قبل حفظه (عرض فقط؛ الفرض هنا في الخادم)
+    roleDefaults: Object.fromEntries(Object.keys(ROLE_PERMISSIONS).map((r) => [r, [...ROLE_PERMISSIONS[r]]])),
+    overrides,
+    protected: PROTECTED_ADMIN_PERMISSIONS.slice(),
+    catalog: Object.keys(PERMISSIONS),
+  };
+}
+
+/** استبدال تجاوزات المستخدم بالكامل (ما ليس في القائمة = افتراضي الدور) */
+async function saveUserPermissions(env, actor, targetId, body) {
+  requirePerm(actor, 'permissions.manage');
+  const row = await env.DB.prepare('SELECT id, username, name, role, active FROM users WHERE id = ?').bind(targetId).first();
+  if (!row) throw new HttpError(404, 'المستخدم غير موجود');
+
+  const raw = body && typeof body === 'object' && body.overrides && typeof body.overrides === 'object' ? body.overrides : null;
+  if (!raw) throw new HttpError(400, 'صيغة غير صالحة: overrides مطلوبة');
+
+  const clean = {};
+  for (const key of Object.keys(raw)) {
+    if (!Object.prototype.hasOwnProperty.call(PERMISSIONS, key)) throw new HttpError(400, 'صلاحية غير معروفة: ' + key);
+    if (PROTECTED_ADMIN_PERMISSIONS.includes(key)) throw new HttpError(400, 'صلاحية ' + key + ' لا تُمنح ولا تُسحب — تُعطى بالدور فقط');
+    const v = raw[key];
+    if (!(v === 0 || v === 1 || v === '0' || v === '1' || v === true || v === false)) throw new HttpError(400, 'قيمة غير صالحة للصلاحية: ' + key);
+    clean[key] = (v === true || v === 1 || v === '1') ? 1 : 0;
+  }
+  // قفل ذاتي ممنوع: لا يسحب أحدٌ إدارة الصلاحيات من نفسه
+  if (actor.id === targetId && clean['permissions.manage'] === 0) {
+    throw new HttpError(400, 'لا يمكنك سحب إدارة الصلاحيات من نفسك');
+  }
+
+  const before = await loadUserPermissions(env, targetId);
+  const beforeMap = (before && before.ok && before.overrides) ? before.overrides : {};
+  const t = now();
+  const reason = body && body.reason ? String(body.reason).slice(0, 200) : null;
+  const stmts = [env.DB.prepare('DELETE FROM user_permissions WHERE user_id = ?').bind(targetId)];
+  const changed = [];
+  for (const key of Object.keys(clean)) {
+    stmts.push(env.DB.prepare('INSERT INTO user_permissions (user_id, permission, value, updated_by, updated_at) VALUES (?, ?, ?, ?, ?)')
+      .bind(targetId, key, clean[key], actor.id, t));
+    const oldV = Object.prototype.hasOwnProperty.call(beforeMap, key) ? beforeMap[key] : null;
+    if (String(oldV) !== String(clean[key])) changed.push({ permission: key, oldValue: oldV, newValue: clean[key] });
+  }
+  // الصلاحيات التي كانت متجاوزة وأُزيلت = عادت إلى افتراضي الدور
+  for (const key of Object.keys(beforeMap)) {
+    if (!Object.prototype.hasOwnProperty.call(clean, key)) changed.push({ permission: key, oldValue: beforeMap[key], newValue: 'default' });
+  }
+  for (const c of changed) {
+    stmts.push(env.DB.prepare('INSERT INTO permission_audit (id, at, actor_user_id, actor_name, target_user_id, target_name, change_type, permission, old_value, new_value, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(uid(), t, actor.id, actor.name || '', targetId, row.name, 'permission', c.permission, c.oldValue == null ? null : String(c.oldValue), String(c.newValue), reason));
+  }
+  await env.DB.batch(stmts);
+  return { ok: true, saved: Object.keys(clean).length, changed: changed.length };
+}
+
+/** إعادة الصلاحيات إلى افتراضي الدور (مسح كل التجاوزات) */
+async function resetUserPermissions(env, actor, targetId, body) {
+  requirePerm(actor, 'permissions.manage');
+  const row = await env.DB.prepare('SELECT id, username, name, role, active FROM users WHERE id = ?').bind(targetId).first();
+  if (!row) throw new HttpError(404, 'المستخدم غير موجود');
+  const before = await loadUserPermissions(env, targetId);
+  const beforeMap = (before && before.ok && before.overrides) ? before.overrides : {};
+  const t = now();
+  const reason = body && body.reason ? String(body.reason).slice(0, 200) : null;
+  const stmts = [env.DB.prepare('DELETE FROM user_permissions WHERE user_id = ?').bind(targetId)];
+  stmts.push(env.DB.prepare('INSERT INTO permission_audit (id, at, actor_user_id, actor_name, target_user_id, target_name, change_type, permission, old_value, new_value, reason) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(uid(), t, actor.id, actor.name || '', targetId, row.name, 'defaults_restore', null, JSON.stringify(beforeMap), 'default', reason));
+  await env.DB.batch(stmts);
+  return { ok: true, restored: Object.keys(beforeMap).length };
+}
+
 /* ------------------------------ التهيئة الأولى ------------------------------ */
 // عند أول تشغيل: إنشاء المستخدم admin / admin إن لم يوجد مستخدمون
 /* خطأ "العمود موجود" متوقع عند التهيئة المتزامنة؛ أي خطأ آخر حقيقي ويُرمى */
@@ -1566,6 +2505,14 @@ function ignoreExistsObject(e) {
   throw e;
 }
 async function ensureSeed(env) {
+  // لا يُعاد إلا مرة واحدة (أول تشغيل فقط على قاعدة فارغة)
+  if (seeded) {
+    try {
+      const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
+      if (Number(c && c.n) > 0) return;
+    } catch (e) { /* fall through to re-seed */ }
+    seeded = false;
+  }
   if (seeded) return;
   /* جداول القياس تُنشأ أولاً لأنها لا تعتمد على أي جدول آخر: إن فشل أي تعديل
      أعمدة أدناه (قاعدة ناقصة/غير مهيّأة) لا يُسقط إنشاء جدول الزيارات. */
@@ -1573,7 +2520,7 @@ async function ensureSeed(env) {
   // جداول وأعمدة جديدة بعد النشر الأول: تُنشأ هنا حتى لا يحتاج صاحب المحل إعادة تشغيل schema.sql
   await env.DB.prepare('CREATE TABLE IF NOT EXISTS login_fail (k TEXT PRIMARY KEY, n INTEGER NOT NULL, first_at TEXT NOT NULL, until TEXT)').run();
   /* ===== تحليلات لوحة المالك =====
-     privacy-by-design: جدول «عداد» مجمّع فقط — لا اسم ولا جوال ولا عنوان IP ولا
+      لا نسجّل أي شيء يكشف الهوية — لا ربط بين الحدث وIP أو
      بصمة جهاز. المفتاح مركّب من (يوم، نوع الحدث، البُعد اختياري) والعداد رقم فقط.
      بهذا الشكل لا يمكن ربط أي حدث بهوية عميل من الجدول نفسه إطلاقاً، ولا يمكن
      استخدام البيانات للتسويق، ولا يتجاوز السجل عدداً ثابتاً من الصفوف. */
@@ -1582,6 +2529,8 @@ async function ensureSeed(env) {
   await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_id TEXT').run().catch(ignoreExistsColumn);
   await env.DB.prepare('ALTER TABLE users ADD COLUMN rate REAL').run().catch(ignoreExistsColumn);
   await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_rate REAL').run().catch(ignoreExistsColumn);
+  // إجبار تغيير كلمة المرور للحسابات الجديدة فقط: الافتراضي = 0
+  await env.DB.prepare('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0').run().catch(ignoreExistsColumn);
   // بوابة العميل: جدول مستقل تماماً عن الطلبات والمستخدمين (idempotent وآمن للتكرار)
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS customer_designs (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, order_id TEXT, order_number INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)").run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token)').run();
@@ -1597,15 +2546,37 @@ async function ensureSeed(env) {
   // إدراج مشروط لا متزامن آمن: طلبان باردان معاً لا ينتجان مديرين مكررين ولا خطأ
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {
-    await env.DB.prepare(`INSERT INTO users (id, username, name, password_hash, role, active, created_at)
-      SELECT ?, ?, ?, ?, ?, 1, ? WHERE NOT EXISTS (SELECT 1 FROM users)`)
-      .bind(uid(), 'admin', 'مدير النظام', await hashPassword('admin'), 'admin', now()).run();
+    // كلمة المرور المؤقتة: تُؤخذ من البيئة لا من الكود، وتُلزم بالتغيير عند أول دخول (ADMIN_INIT_PASSWORD).
+    // لا تُنشأ كلمة مرور افتراضية إطلاقاً؛ وغيابها يترك النظام بلا مدير حتى يضبطه المالك.
+    const initPassword = env && env.ADMIN_INIT_PASSWORD ? String(env.ADMIN_INIT_PASSWORD) : null;
+    if (initPassword) {
+      validatePassword(initPassword);
+      await env.DB.prepare(`INSERT INTO users (id, username, name, password_hash, role, active, created_at, must_change_password)
+        SELECT ?, ?, ?, ?, ?, 1, ?, 1 WHERE NOT EXISTS (SELECT 1 FROM users)`)
+        .bind(uid(), 'admin', 'مدير النظام', await hashPassword(initPassword), 'admin', now()).run();
+    }
   }
   seeded = true;
 }
 
 /* ------------------------------ كلمات المرور (PBKDF2) ------------------------------ */
-const DEFAULT_ITER = 20000;
+const DEFAULT_ITER = 100000; // Cloudflare Workers limit: crypto.subtle.deriveBits(PBKDF2) max 100000 iterations
+
+/* كلمات المرور الشائعة ممنوعة — قائمة الحظر تغطي الأشهر عالمياً. */
+const COMMON_PASSWORDS = new Set([
+  '123456','password','admin','12345678','qwerty','123456789','12345','1234567890','111111','123123',
+  'abc123','password1','iloveyou','welcome','monkey','dragon','football','shadow','master','michael',
+  'superman','qazwsx','trustno1','batman','letmein','000000','654321','7777777','987654321',
+  'qwertyuiop','asdfghjkl','zxcvbnm','pass','root','toor','administrator','guest','user','test','demo',
+  '1234','1234567','ali','ahmed','mohammed','saudi','riyadh','majlis','asalh','najd',
+]);
+
+function validatePassword(password, username) {
+  if (typeof password !== 'string' || password.length < 8) throw new HttpError(400, 'كلمة المرور يجب ألا تقل عن 8 أحرف');
+  const lower = password.toLowerCase();
+  if (COMMON_PASSWORDS.has(lower)) throw new HttpError(400, 'كلمة المرور شائعة جداً — اختر غيرها');
+  if (username && lower === String(username).toLowerCase()) throw new HttpError(400, 'لا يجوز أن تكون كلمة المرور هي اسم المستخدم');
+}
 
 async function pbkdf2(password, salt, iterations) {
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
@@ -1613,16 +2584,42 @@ async function pbkdf2(password, salt, iterations) {
   return new Uint8Array(bits);
 }
 async function hashPassword(password) {
-  const iter = DEFAULT_ITER;
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const hash = await pbkdf2(password, salt, iter);
-  return `pbkdf2$${iter}$${b64(salt)}$${b64(hash)}`;
+  const hash = await pbkdf2(password, salt, DEFAULT_ITER);
+  return `pbkdf2$${DEFAULT_ITER}$${b64(salt)}$${b64(hash)}`;
 }
 async function verifyPassword(password, stored) {
   const parts = String(stored || '').split('$');
   if (parts.length !== 4 || parts[0] !== 'pbkdf2') return false;
-  const hash = await pbkdf2(password, unb64(parts[2]), Number(parts[1]) || DEFAULT_ITER);
+  const iter = Number(parts[1]) || DEFAULT_ITER;
+  if (iter > 100000) return false; // Cloudflare Workers limit: cannot verify >100000 iterations
+  const hash = await pbkdf2(password, unb64(parts[2]), iter);
   return timingSafeEqual(b64(hash), parts[3]);
+}
+
+/* ترقية تجزئة كلمة المرور عند الدخول: تُحدَّث الخوارزمية دون تغيير كلمة المرور نفسها. */
+async function maybeUpgradePassword(env, userId, password, stored) {
+  const parts = String(stored || '').split('$');
+  const storedIter = parts.length === 4 && parts[0] === 'pbkdf2' ? Number(parts[1]) || DEFAULT_ITER : DEFAULT_ITER;
+  if (storedIter < DEFAULT_ITER && storedIter <= 100000) {
+    await env.DB.prepare('UPDATE users SET password_hash = ? WHERE id = ?').bind(await hashPassword(password), userId).run();
+  }
+}
+
+async function changePassword(env, user, myToken, body) {
+  const currentPassword = String(body.currentPassword || '');
+  const newPassword = String(body.newPassword || '');
+  if (!currentPassword || !newPassword) throw new HttpError(400, 'أدخل كلمة المرور الحالية والجديدة');
+  const u = await env.DB.prepare('SELECT id, username, password_hash FROM users WHERE id = ?').bind(user.id).first();
+  if (!u || !(await verifyPassword(currentPassword, u.password_hash))) throw new HttpError(401, 'كلمة المرور الحالية غير صحيحة');
+  validatePassword(newPassword, u.username);
+  const t = now();
+  await env.DB.batch([
+    env.DB.prepare('UPDATE users SET password_hash = ?, must_change_password = 0 WHERE id = ?').bind(await hashPassword(newPassword), u.id),
+    // إنهاء الجلسات الأخرى عند تغيير كلمة المرور؛ الجلسة الحالية تبقى
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').bind(u.id, myToken || ''),
+  ]);
+  return { ok: true };
 }
 function timingSafeEqual(a, b) {
   if (a.length !== b.length) return false;
@@ -1648,7 +2645,7 @@ function serveAsset(pathname) {
     status: 200,
     headers: {
       'Content-Type': a.ct,
-      'Cache-Control': key === '/index.html' ? 'no-cache' : 'public, max-age=300',
+      'Cache-Control': (key === '/index.html' || key === '/sw.js' || key.endsWith('.js')) ? 'no-cache' : 'public, max-age=300',
       'X-Content-Type-Options': 'nosniff',
     },
   });
@@ -1664,14 +2661,26 @@ function safeParse(text, fallback = null) { try { return JSON.parse(text); } cat
 function json(data, status, headers) {
   return new Response(JSON.stringify(data), { status, headers: Object.assign({ 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' }, headers) });
 }
+/* سياسة CORS صارمة: لا يُقبل إلا النطاقات المذكورة في ALLOWED_ORIGIN (بدونها لا شيء).
+    '*' لا يُقبل؛ النطاقات تُفصل بفواصل وكل نطاق مستقل — وتُعاد فقط الترويسة المطابقة للأمان.
+    (Authorization? x-session-token) مع نطاق مذكور فقط — فلا تتسرب الجلسة لنطاق غير مصرّح. */
+function parseAllowedOrigins(env) {
+  const raw = env && env.ALLOWED_ORIGIN ? String(env.ALLOWED_ORIGIN) : '';
+  const parts = raw.split(',').map((s) => s.trim()).filter(Boolean);
+  if (!parts.length || parts.includes('*')) return null;
+  return new Set(parts);
+}
 function corsHeaders(request, env) {
-  const origin = request.headers.get('Origin') || '*';
-  const allowed = env.ALLOWED_ORIGIN && env.ALLOWED_ORIGIN !== '*' ? env.ALLOWED_ORIGIN : origin;
-  return {
-    'Access-Control-Allow-Origin': allowed,
-    'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
+  const origin = request.headers.get('Origin');
+  const allowed = parseAllowedOrigins(env);
+  const headers = {
+    // PUT مطلوب: الواجهة تعدّل التصاميم والمصروفات بـ PUT، وتطبيق أندرويد (المصدر https://localhost) يمرّ بفحص مسبق
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization, x-session-token',
     'Access-Control-Max-Age': '86400',
     Vary: 'Origin',
   };
+  // fail-closed: لا تُعاد أي ترويسة سماح إلا لمطابقة النطاق المسموح
+  if (origin && allowed && allowed.has(origin)) headers['Access-Control-Allow-Origin'] = origin;
+  return headers;
 }
