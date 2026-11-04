@@ -405,14 +405,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.71';
-// بصمة asalh-najd-1.0.71.apk (إصدار GitHub v1.0.71، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.71 وversionCode 10071، ونفس شهادة توقيع 1.0.70).
-const UPDATE_FALLBACK_SHA256 = '03bc7b604d46fd0efbc0e1fcaa042a8d4eebc51b574091cc8236b38b1ad0a5c1';
+const UPDATE_FALLBACK_VERSION = '1.0.72';
+// بصمة asalh-najd-1.0.72.apk (إصدار GitHub v1.0.72، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.72 وversionCode 10072، ونفس شهادة توقيع 1.0.71).
+const UPDATE_FALLBACK_SHA256 = 'acab80fbb1a98997d94a2d30c4c8ff2459c312e8398d7415bd935638d5da1bb2';
 const UPDATE_FALLBACK_NOTES = [
-  'مالك نظام ثابت: إدارة المديرين والصلاحيات الإدارية والإعدادات للمالك وحده، والمدير العادي يدير التشغيل',
-  'صلاحيات التصاميم منفصلة: العرض والتعديل والتحويل إلى طلب والحذف، والموظف يعرض فقط افتراضياً',
-  'المصروفات بتاريخها وربط اختياري بطلب، وصلاحيات منفصلة لإضافة الدفعات وتعديلها وحذفها',
+  'قسم «التقارير» الجديد: ثمانية تقارير بفترة زمنية تختارها، وتصدير PDF وExcel وCSV',
+  'تفصيل الطلبات بالموظف أو المندوب والبيع والتكاليف وصافي الربح والعمولات، وعمولات كل موظف ومندوب',
+  'صافي الأرباح الشهري بعد العمولات والمصروفات، والتحصيل، والمتبقي على العملاء، والمبيعات حسب العميل',
 ];
 
 function versionCodeOfName(v) {
