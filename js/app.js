@@ -70,19 +70,34 @@
       ['commission.view_own', 'عرض عمولاته'],
       ['commission.view_all', 'عرض كل العمولات'],
     ]],
+    ['الدفعات', [
+      ['payments.add', 'تسجيل دفعة أو استرداد'],
+      ['payments.edit', 'تعديل دفعة مسجّلة'],
+      ['payments.delete', 'حذف دفعة'],
+    ]],
     ['التقارير', [
       ['reports.view_own', 'تقاريره فقط'],
       ['reports.view_all', 'كل التقارير'],
+      ['reports.export', 'تصدير التقارير (PDF وExcel)'],
     ]],
     ['المصروفات', [
       ['expenses.view_own', 'عرض مصروفاته'],
       ['expenses.view_all', 'عرض كل المصروفات'],
       ['expenses.add_own', 'إضافة مصروفاته'],
-      ['expenses.add_all', 'إضافة أي مصروف'],
+      ['expenses.add_all', 'تسجيل مصروف باسم موظف آخر'],
       ['expenses.edit_own', 'تعديل مصروفاته'],
       ['expenses.edit_all', 'تعديل أي مصروف'],
       ['expenses.delete_own', 'حذف مصروفاته'],
       ['expenses.delete_all', 'حذف أي مصروف'],
+    ]],
+    ['الأصناف والأسعار', [
+      ['items.manage', 'إدارة الأصناف والأسعار'],
+    ]],
+    ['تصاميم العملاء', [
+      ['designs.view', 'عرض تصاميم العملاء'],
+      ['designs.edit', 'تعديل التصاميم وحالتها'],
+      ['designs.convert', 'تحويل تصميم إلى طلب'],
+      ['designs.delete', 'حذف التصاميم'],
     ]],
     ['المستخدمون والصلاحيات', [
       ['users.view', 'عرض المستخدمين'],
@@ -94,14 +109,13 @@
     ['الإعدادات', [
       ['settings.manage', 'إدارة إعدادات المحل'],
     ]],
-    ['التصاميم', [
-      ['designs.manage', 'إدارة تصاميم العملاء'],
-    ]],
     ['الإدارة العامة', [
       ['admin.core', 'صلاحيات المدير العام'],
     ]],
   ];
   const PERM_PROTECTED = ['admin.core'];
+  /* الإدارة الكاملة للمدير وحده: تُعرض مقفلة لغير المدير (الخادم يرفض منحها ويتجاهل أي منح) */
+  const PERM_ADMIN_ONLY = ['admin.core', 'permissions.manage', 'users.create', 'users.edit', 'users.disable', 'settings.manage'];
   /** عرض السعر ليس بيعاً بعد، والملغي لم يعد بيعاً: كلاهما خارج كل مبلغ مبيعات */
   const isSale = (o) => !!o && o.status !== 'cancelled' && o.status !== 'quote';
   /** طلب مفتوح: بيع لم يُسلَّم بعد */
@@ -280,9 +294,45 @@
   const isAdmin = () => currentUser && currentUser.role === 'admin';
   const isStaff = () => currentUser && (currentUser.role === 'admin' || currentUser.role === 'staff');
 
+  /* ---------------- الصلاحيات في الواجهة (عرض فقط — الخادم يفرضها دائماً) ----------------
+     المصدر: صلاحيات المستخدم الفعّالة من الخادم (Store.can). الوضع المحلي بلا خادم:
+     المدير كل شيء، وغيره افتراضيات دوره (نفس افتراضيات الخادم). */
+  const LOCAL_ROLE_DEFAULTS = {
+    staff: ['orders.view_own', 'orders.create', 'orders.edit_own', 'costs.view_own', 'costs.add_own', 'costs.edit_own', 'profit.view_own', 'payments.add', 'designs.view'],
+    mandoub: ['orders.view_own', 'orders.create', 'orders.edit_own', 'costs.view_own', 'costs.add_own', 'costs.edit_own', 'commission.view_own', 'payments.add'],
+  };
+  const can = (p) => !!currentUser && (Store.isRemote ? Store.can(p) : (isAdmin() || (LOCAL_ROLE_DEFAULTS[currentUser.role] || []).includes(p)));
+  const canAny = (...ps) => ps.some(can);
+  const ownsOrder = (o) => !!(o && o.createdBy && currentUser && o.createdBy === currentUser.id);
+  /** صلاحية بنطاق الطلب: طلبك ‎_own (أو ‎_all)، وطلب غيرك أو بلا مالك ‎_all فقط */
+  const canFor = (o, base) => (ownsOrder(o) && can(base + '_own')) || can(base + '_all');
+  /** من يرى كل صفحة — نفس الصلاحية التي يفرضها الخادم على بياناتها */
+  const PAGE_PERMS = {
+    items: () => can('items.manage'),
+    users: () => can('users.view'),
+    activity: () => can('admin.core'),
+    mandoubs: () => can('admin.core'),
+    settings: () => can('settings.manage'),
+    bi: () => canAny('reports.view_own', 'reports.view_all'),
+    designs: () => can('designs.view'),
+    expenses: () => canAny('expenses.view_own', 'expenses.view_all'),
+  };
+  const canPage = (name) => !PAGE_PERMS[name] || PAGE_PERMS[name]();
+
   function applyPermissions() {
-    $$('[data-admin]').forEach((el) => (el.hidden = !isAdmin()));
-    $$('[data-designs]').forEach((el) => (el.hidden = !isStaff()));
+    $$('[data-admin]').forEach((el) => (el.hidden = !can('admin.core')));
+    $$('[data-designs]').forEach((el) => (el.hidden = !can('designs.view')));
+    // أزرار التنقل تتبع صلاحية صفحتها لا الدور
+    $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => { if (PAGE_PERMS[b.dataset.page]) b.hidden = !canPage(b.dataset.page); });
+    // عنوان قسم «الإدارة» يظهر فقط إن ظهرت تحته صفحة واحدة على الأقل
+    $$('.sb-group').forEach((g) => {
+      let n = g.nextElementSibling, any = false;
+      // تُحسب الصفحات المقيّدة بصلاحية فقط («عن التطبيق» ظاهرة للجميع ولا تجعل القسم إدارياً)
+      while (n && !n.classList.contains('sb-group')) { if (n.matches('button[data-page]') && PAGE_PERMS[n.dataset.page] && !n.hidden) any = true; n = n.nextElementSibling; }
+      g.hidden = !any;
+    });
+    $$('[data-perm-export]').forEach((el) => (el.hidden = !can('reports.export')));
+    $$('#ordersTable .c-comm').forEach((el) => (el.hidden = !canAny('commission.view_own', 'commission.view_all')));
     $('#currentUserName').textContent = currentUser.name || '';
     $('#currentUserRole').textContent = ROLES[currentUser.role] || currentUser.role || '';
     $('#userAvatar').textContent = (currentUser.name || '?').trim().charAt(0);
@@ -433,11 +483,8 @@
   });
 
   /* ---------------- التنقل ---------------- */
-  const ADMIN_PAGES = ['items', 'users', 'activity', 'bi', 'settings', 'mandoubs'];
-  const DESIGN_PAGES = ['designs'];
   function showPage(name) {
-    if (ADMIN_PAGES.includes(name) && !isAdmin()) name = 'order';
-    if (DESIGN_PAGES.includes(name) && !isStaff()) name = 'order';
+    if (!canPage(name)) name = 'order';
     $$('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
     $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => {
       b.classList.toggle('active', b.dataset.page === name);
@@ -459,6 +506,7 @@
     if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'mandoubs', 'designs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
+    if (name === 'expenses') renderExpenses();
     if (name === 'order') requestAnimationFrame(() => { designer.resize(); positionInspector(); });
     window.scrollTo({ top: 0 });
   }
@@ -556,11 +604,10 @@
   const ownVersion = (v) => { if (v) curVersions.add(v); };
   let readOnly = false;   // الطلب مملوك لموظف آخر: عرض فقط
 
-  /** الموظف يعدّل طلباته فقط، والمدير يعدّل الجميع */
+  /** تعديل الطلب: طلبك بـ orders.edit_own، وطلب غيرك أو بلا مالك بـ orders.edit_all (لا بالدور) */
 function canEditOrder(o) {
-  if (!o || !o.id) return true;   // طلب جديد لم يُحفظ: الإنشاء للجميع
-  if (!o.createdBy) return isAdmin();   // بلا مالك (قديم): المدير فقط، لا يُفتح لأي موظف
-  return isAdmin() || o.createdBy === currentUser.id;
+  if (!o || !o.id) return can('orders.create');   // طلب جديد لم يُحفظ
+  return canFor(o, 'orders.edit');
 }
 
   /** قفل/فتح كل عناصر تحرير الطلب حسب الملكية */
@@ -1828,7 +1875,13 @@ function canEditOrder(o) {
   /** من يرى التكاليف وصافي الربح ويعدّلهما: المدير يرى الجميع، والموظف
       والمندوب طلباتهم الخاصة فقط — نفس حدّ الملكية الذي يفرضه الخادم
       من العمود created_by، فالواجهة تخفي هنا ما يرفضه الخادم هناك. */
-  const canSeeCosts = (o) => isAdmin() || !!(o && o.createdBy && currentUser && o.createdBy === currentUser.id);
+  const canSeeCosts = (o) => canFor(o, 'costs.view');
+  /** الربح يتطلب رؤية التكلفة وصلاحية الربح معاً؛ والعمولة صلاحية مستقلة */
+  const canSeeProfit = (o) => canSeeCosts(o) && canFor(o, 'profit.view');
+  const canSeeComm = (o) => canFor(o, 'commission.view');
+  /** إضافة التكاليف أو تعديلها بحسب وجودها، وحذفها (تفريغها) صلاحية ثالثة */
+  const canWriteCosts = (o, hasCosts) => canFor(o, hasCosts ? 'costs.edit' : 'costs.add');
+  const canClearCosts = (o) => canFor(o, 'costs.delete');
 
   /** تكلفة الوحدة المحفوظة لسطر تسعير، أو null إن لم تُدخل بعد */
   function lineCost(order, l) {
@@ -2404,6 +2457,8 @@ function canEditOrder(o) {
   const remainingOf = (total, paid) => money(num(total) - num(paid));
 
   function renderPayment() {
+    // تسجيل دفعة أو استرداد: payments.add (الخادم يفرضها أيضاً)
+    { const addBox = $('.pay-add'); if (addBox) addBox.hidden = !can('payments.add'); }
     const total = cur.total || 0;
     const paid = paidOf(cur);
     cur.paid = paid;
@@ -2466,7 +2521,7 @@ function canEditOrder(o) {
         </span>
         <span class="pay-row-actions">
           <button type="button" class="btn small ghost" data-receipt="${esc(p.id)}" title="${refund ? 'سند صرف' : 'سند قبض'}">${icon('receipt')}<span>${refund ? 'سند صرف' : 'سند قبض'}</span></button>
-          <button type="button" class="icon-btn" data-paydel="${esc(p.id)}" title="حذف الدفعة">${icon('trash')}</button>
+          ${can('payments.delete') ? `<button type="button" class="icon-btn" data-paydel="${esc(p.id)}" title="حذف الدفعة">${icon('trash')}</button>` : ''}
         </span>
       </li>`;
     }).join('')}</ul>`;
@@ -2496,6 +2551,7 @@ function canEditOrder(o) {
   let paying = false;   // منع التسجيل المزدوج من الضغط المتكرر أو Enter مع الزر معاً
   async function addPayment(refund) {
     if (readOnly || paying) return;
+    if (!can('payments.add')) return;   // تسجيل الدفعات صلاحية مستقلة (الخادم يفرضها)
     paying = true;
     try {
     const el = $('#payAmount');
@@ -2546,7 +2602,7 @@ function canEditOrder(o) {
     const del = e.target.closest('[data-paydel]');
     const rc = e.target.closest('[data-receipt]');
     if (rc) { const p = (cur.payments || []).find((x) => x.id === rc.dataset.receipt); if (p) printReceipt(cur, p); return; }
-    if (!del || readOnly) return;
+    if (!del || readOnly || !can('payments.delete')) return;
     const p = (cur.payments || []).find((x) => x.id === del.dataset.paydel);
     if (!p) return;
     if (!(await confirmDlg('حذف دفعة', `حذف ${money(p.amount) < 0 ? 'استرداد' : 'دفعة'} بمبلغ ${fmt(Math.abs(money(p.amount)))} ${currency()} بتاريخ ${fmtDate(p.at)}؟ يُسجَّل الحذف في سجل التحديثات.`))) return;
@@ -3762,7 +3818,7 @@ function docTitle(order) {
   function renderOrdCols() {
     $('#ordersTable').setAttribute('data-hide', ordHidden.join(' '));
     const menu = $('#ordColsMenu');
-    menu.innerHTML = ORD_COLS.filter((c) => !c.admin || isAdmin()).map((c) => {
+    menu.innerHTML = ORD_COLS.filter((c) => !c.admin || canAny('commission.view_own', 'commission.view_all')).map((c) => {
       const on = !ordHidden.includes(c.k);
       return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" aria-pressed="${on}" data-col="${c.k}">${icon('check')}<span>${c.label}</span></button>`;
     }).join('');
@@ -3808,9 +3864,9 @@ function docTitle(order) {
       <div class="stat"><span>قيد التنفيذ</span><b>${list.filter((o) => o.status === 'progress').length}</b></div>
       <div class="stat"><span>اكتمال التنفيذ</span><b>${list.filter((o) => o.status === 'done').length}</b></div>
       <div class="stat"><span>عروض أسعار مفتوحة</span><b>${list.filter((o) => o.status === 'quote').length}</b><small>لا تدخل في المبيعات</small></div>
-      ${(isAdmin() || costed.length) ? `
+      ${(canAny('costs.view_own', 'costs.view_all') && (isAdmin() || costed.length)) ? `
       <div class="stat cost"><span>إجمالي التكاليف</span><b class="${costed.length ? '' : 'is-na'}">${costed.length ? fmt(costSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">بتكلفة: ${costed.length}${noCost ? ` • بلا تكلفة: ${noCost}` : ''}</small></div>
-      <div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : 'is-na'}">${costed.length ? fmt(profitSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">${costed.length ? `هامش ${fmtQty(marginPct)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>` : ''}`;
+      ${canAny('profit.view_own', 'profit.view_all') ? `<div class="stat profit"><span>إجمالي الربح <small>(قبل الضريبة)</small></span><b class="${costed.length ? (profitSum < 0 ? 'neg' : 'pos') : 'is-na'}">${costed.length ? fmt(profitSum) : '—'}</b><small class="${costed.length ? '' : 'na-note'}">${costed.length ? `هامش ${fmtQty(marginPct)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>` : ''}` : ''}`;
 
     const tb = $('#ordersTable tbody');
     $('#ordersEmpty').hidden = list.length > 0;
@@ -3838,12 +3894,11 @@ function docTitle(order) {
         <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? ` • ${esc(o.createdByName)}` : ''}</span></td>
         <td data-label="العميل" class="c-cust"><b title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
-        ${canSeeCosts(o) ? `
-        <td data-label="التكلفة" class="num c-money c-cost">${cost === null ? dash : fmt(cost)}</td>
+        <td data-label="التكلفة" class="num c-money c-cost">${canSeeCosts(o) && cost !== null ? fmt(cost) : dash}</td>
+        ${canSeeProfit(o) ? `
         <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? '' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : `
-        <td data-label="التكلفة" class="num c-money c-cost">${dash}</td>
         <td data-label="صافي الربح" class="num c-money c-cost c-profit">${dash}</td>`}
-        ${isAdmin() ? `<td data-label="العمولة" class="num c-money c-comm">${comm === null ? dash : fmt(comm)}</td>` : ''}
+        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm">${canSeeComm(o) && comm !== null ? fmt(comm) : dash}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
         <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
@@ -3852,10 +3907,10 @@ function docTitle(order) {
           <button class="btn small" data-open="${oid}">${canEditOrder(o) ? `${icon('pen')} فتح` : `${icon('lock')} عرض`}</button>
           ${rowMenu([
             menuItem(`data-print="${oid}"`, 'file', 'تصدير PDF ومشاركته'),
-            canSeeCosts(o) ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
-            isAdmin() ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
-            isAdmin() ? menuItem(`data-owner="${oid}"`, 'swap', 'نقل ملكية الطلب') : '',
-            isAdmin() ? '<hr>' + menuItem(`data-delo="${oid}"`, 'trash', 'حذف الطلب', true) : '',
+            (canSeeCosts(o) && canWriteCosts(o, cost !== null)) ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
+            can('admin.core') ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
+            can('admin.core') ? menuItem(`data-owner="${oid}"`, 'swap', 'نقل ملكية الطلب') : '',
+            canFor(o, 'orders.delete') ? '<hr>' + menuItem(`data-delo="${oid}"`, 'trash', 'حذف الطلب', true) : '',
           ], `إجراءات الطلب ${esc(o.number || '')}`)}
         </span></td>
       </tr>`;
@@ -3909,7 +3964,7 @@ function docTitle(order) {
   }
   /** نقل ملكية الطلب إلى موظف آخر (للمدير فقط) */
   function transferOwner(o) {
-    if (!o || !isAdmin()) return;
+    if (!o || !can('admin.core')) return;
     const users = db().users.filter((u) => u.active !== false);
     if (!users.length) { toast('لا يوجد مستخدمون', true); return; }
     openModal('نقل ملكية الطلب', `
@@ -3947,7 +4002,7 @@ function docTitle(order) {
 
   /** نافذة إدخال تكلفة كل صنف في الطلب مع حساب الربح مباشرة */
   function costForm(o) {
-    if (!o || !canSeeCosts(o)) return;
+    if (!o || !canSeeCosts(o) || !canWriteCosts(o, orderCost(o) !== null)) return;
     const info = computeCosts(o);
     const cur$ = esc(currency());
     // طلب بلا أصناف يبقى قابلاً لتسجيل التكاليف الإضافية (توصيل ونحوه)
@@ -4119,6 +4174,9 @@ function docTitle(order) {
           extras.push({ name: name || 'تكلفة إضافية', amount: money(v || 0) });
         });
         if (bad) { $('#costErr', b).textContent = 'تكلفة غير صالحة: أدخل رقماً لا يقل عن صفر'; return; }
+        // تفريغ كل التكاليف من طلب كانت عليه = حذف تكاليف: صلاحية مستقلة (الخادم يرفضه أيضاً)
+        const clearing = !Object.keys(costs).length && !Object.keys(manual).length && !extras.length && orderCost(o) !== null;
+        if (clearing && !canClearCosts(o)) { $('#costErr', b).textContent = 'لا تملك صلاحية حذف تكاليف هذا الطلب'; return; }
 
         const before = JSON.parse(JSON.stringify(o));
         const prevCost = orderCost(o);
@@ -4165,7 +4223,7 @@ function docTitle(order) {
   /** نافذة تعديل نسب عمولة الطلب (تحسب على صافي الربح) */
   function commissionForm(o) {
     /* نسب العمولة للمدير وحده — لا تُفتح بتغيّر رؤية التكاليف */
-    if (!o || !isAdmin()) return;
+    if (!o || !can('admin.core')) return;
     const profit = orderProfit(o);
     const cur$ = esc(currency());
     const seller = esc(o.createdByName || 'غير محدد');
@@ -4518,16 +4576,30 @@ function docTitle(order) {
   /* ---------------- صفحة المستخدمين ---------------- */
   function renderUsers() {
     const tb = $('#usersTable tbody');
+    // الصفحة لمن يملك users.view؛ الإضافة والتعديل والحذف للمدير وحده (صلاحيات لا تُمنح لغيره)
+    $('#btnAddUser').hidden = !can('users.create');
+    /* حسابات المديرين يعدّلها ويحذفها مالك النظام وحده، والمالك لا يُحذف (الخادم يفرض ذلك) */
+    const owner = can('admin.core');
+    const canEditU = (u) => can('users.edit') && (u.role !== 'admin' || owner);
+    const canDelU = (u) => can('users.disable') && u.id !== currentUser.id && !u.isOwner && (u.role !== 'admin' || owner);
+    const note = $('#ownerNote');
+    if (note) {
+      const notConfigured = isAdmin() && Store.ownerConfigured === false;
+      note.hidden = !(notConfigured || owner);
+      note.innerHTML = notConfigured
+        ? `لم يُحدَّد <b>مالك النظام</b> بعد: إدارة المديرين والصلاحيات المحمية معطّلة. يضبطه صاحب حساب Cloudflare بالمتغير <code>OWNER_USER_ID</code> = معرّف حسابه. معرّف حسابك: <code class="ltr">${esc(currentUser.id)}</code>`
+        : 'أنت <b>مالك النظام</b>: وحدك تنشئ المديرين وتعدّل حساباتهم وتمنح الصلاحيات المحمية.';
+    }
     tb.innerHTML = db().users.map((u) => `
       <tr class="${u.active === false ? 'is-off' : ''}">
-        <td data-label="الاسم"><b>${esc(u.name)}</b>${u.id === currentUser.id ? ' <span class="badge">أنت</span>' : ''}</td>
+        <td data-label="الاسم"><b>${esc(u.name)}</b>${u.isOwner ? ' <span class="badge st-delivered">مالك النظام</span>' : ''}${u.id === currentUser.id ? ' <span class="badge">أنت</span>' : ''}</td>
         <td data-label="اسم المستخدم" class="num">${esc(u.username)}</td>
         <td data-label="الدور">${ROLES[u.role] || u.role}</td>
         <td data-label="الحالة"><span class="badge ${u.active === false ? 'st-quote' : 'st-delivered'}">${u.active === false ? 'موقوف' : 'نشط'}</span></td>
         <td data-label="عدد الطلبات" class="num">${db().orders.filter((o) => o.createdBy === u.id).length}</td>
         <td class="row-actions"><span class="ra">
-          <button class="btn small" data-edit="${u.id}">${icon('pen')} تعديل</button>
-          ${u.id !== currentUser.id ? rowMenu([menuItem(`data-del="${u.id}"`, 'trash', 'حذف المستخدم', true)], `إجراءات المستخدم ${esc(u.name)}`) : ''}
+          ${canEditU(u) ? `<button class="btn small" data-edit="${u.id}">${icon('pen')} تعديل</button>` : ''}
+          ${canDelU(u) ? rowMenu([menuItem(`data-del="${u.id}"`, 'trash', 'حذف المستخدم', true)], `إجراءات المستخدم ${esc(u.name)}`) : ''}
         </span></td>
       </tr>`).join('');
     $$('[data-edit]', tb).forEach((b) => b.addEventListener('click', () => userForm(Store.getUser(b.dataset.edit))));
@@ -4580,9 +4652,16 @@ function docTitle(order) {
         + (inactive ? ' · الحساب موقوف: لا صلاحيات فعّالة' : '');
       const isFalse = (v) => v === false || v === 0 || v === '0' || v === 'false';
       const isTrue = (v) => v === true || v === 1 || v === '1' || v === 'true';
+      /* الإدارة الكاملة: لا تُمنح لغير المدير، ويمنحها لمدير عادي مالك النظام وحده (الخادم يفرض ذلك).
+         مالك النظام نفسه: كل الصلاحيات ثابتة لا تُعدَّل. */
+      const ownerTarget = data.targetIsOwner === true;
+      if (ownerTarget) hint.textContent += ' · مالك النظام: كل الصلاحيات كاملة وثابتة';
+      const adminLocked = (p) => PERM_ADMIN_ONLY.includes(p) && (viewRole !== 'admin' || data.actorIsOwner !== true);
       const effOf = (p) => {
+        if (ownerTarget) return true;
         if (inactive) return false; // الخادم يرفض كل شيء للموقوف
-        if (PERM_PROTECTED.includes(p)) return defaults.has(p); // الدور فقط
+        if (PERM_PROTECTED.includes(p)) return false; // admin.core للمالك وحده
+        if (adminLocked(p) && viewRole !== 'admin') return false; // الإدارة الكاملة لا تُمنح لغير المدير
         if (isFalse(overrides[p])) return false;
         if (isTrue(overrides[p])) return true;
         return defaults.has(p);
@@ -4591,12 +4670,16 @@ function docTitle(order) {
       $('#uPermList', b).innerHTML = PERM_UI.map(([cat, items]) => `
         <div class="perm-cat">${esc(cat)}</div>
         ${items.map(([p, label]) => {
-          const prot = PERM_PROTECTED.includes(p);
+          const prot = ownerTarget || PERM_PROTECTED.includes(p) || adminLocked(p);
           const eff = effOf(p);
           const cur = curOf(p);
           const defLabel = defaults.has(p) ? 'مسموح' : 'ممنوع';
+          const lock = (txt, tip) => `<span class="perm-lock" title="${tip}"><svg><use href="#i-lock"/></svg> ${txt}</span>`;
           const ctrls = prot
-            ? '<span class="perm-lock" title="لا تُمنح ولا تُسحب — بالدور فقط"><svg><use href="#i-lock"/></svg> بالدور فقط</span>'
+            ? (ownerTarget ? lock('ثابتة للمالك', 'صلاحيات مالك النظام كاملة ولا تُعدَّل')
+              : PERM_PROTECTED.includes(p) ? lock('للمالك وحده', 'admin.core لمالك النظام وحده — لا تُمنح لأحد')
+              : viewRole !== 'admin' ? lock('للمدير فقط', 'الإدارة الكاملة لا تُمنح لموظف أو مندوب')
+              : lock('يمنحها المالك', 'منح الإدارة الكاملة لمدير عادي وسحبها لمالك النظام وحده'))
             : `<div class="perm-tri" role="group" aria-label="${esc(label)}">
                  <button type="button" data-p="${esc(p)}" data-v="default" class="${cur === 'default' ? 'on' : ''}" title="افتراضي الدور: ${defLabel}">افتراضي</button>
                  <button type="button" data-p="${esc(p)}" data-v="1" class="${cur === '1' ? 'on perm-allow' : ''}">مسموح</button>
@@ -4629,7 +4712,7 @@ function docTitle(order) {
       }
       err.textContent = '';
       savedJson = ovJson();
-      setBusy(false);
+      setBusy(data.targetIsOwner === true); // صلاحيات المالك ثابتة: لا حفظ ولا إعادة
       render();
     };
     if (roleSel) roleSel.addEventListener('change', render);
@@ -4640,7 +4723,11 @@ function docTitle(order) {
       err.textContent = '';
       if (!data) return;
       try {
-        await Store.api('POST', '/api/users/' + encodeURIComponent(user.id) + '/permissions', { overrides: data.overrides || {} });
+        /* الصلاحيات الإدارية: يرسلها المالك وحده (الخادم يرفضها من غيره حتى للمنع)، ولا تُرسل
+           منحاً لغير مدير (منح قديم مخزّن يُسقط) */
+        const ov = Object.fromEntries(Object.entries(data.overrides || {}).filter(([k, v]) => !PERM_ADMIN_ONLY.includes(k)
+          || (data.actorIsOwner === true && !(data.role !== 'admin' && Number(v) === 1))));
+        await Store.api('POST', '/api/users/' + encodeURIComponent(user.id) + '/permissions', { overrides: ov });
         toast('تم حفظ الصلاحيات');
         await reload();
       } catch (e) { err.textContent = (e && e.message) || 'تعذر حفظ الصلاحيات'; }
@@ -4679,9 +4766,11 @@ function docTitle(order) {
         <label>${user ? 'كلمة مرور جديدة (اتركها فارغة للإبقاء)' : 'كلمة المرور'} <input id="uPass" type="password" autocomplete="new-password"></label>
       </div>
       <div class="row2">
-        <label>الدور <select id="uRole"><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>موظف</option><option value="mandoub" ${u.role === 'mandoub' ? 'selected' : ''}>مندوب</option><option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير</option></select></label>
-        <label>الحالة <select id="uActive"><option value="1" ${u.active !== false ? 'selected' : ''}>نشط</option><option value="0" ${u.active === false ? 'selected' : ''}>موقوف</option></select></label>
+        <label>الدور <select id="uRole"${u.isOwner ? ' disabled' : ''}><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>موظف</option><option value="mandoub" ${u.role === 'mandoub' ? 'selected' : ''}>مندوب</option>${(can('admin.core') || u.role === 'admin') ? `<option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير</option>` : ''}</select></label>
+        <label>الحالة <select id="uActive"${u.isOwner ? ' disabled' : ''}><option value="1" ${u.active !== false ? 'selected' : ''}>نشط</option><option value="0" ${u.active === false ? 'selected' : ''}>موقوف</option></select></label>
       </div>
+      ${u.isOwner ? '<p class="hint">حساب <b>مالك النظام</b>: دوره «مدير» ونشِط دائماً — لا يُخفَّض ولا يُعطَّل ولا يُحذف.</p>' : ''}
+      ${(!can('admin.core') && !u.isOwner) ? '<p class="hint">إنشاء المديرين وتعديل حساباتهم لمالك النظام وحده.</p>' : ''}
       ${canPerms ? `<div class="perm-section" id="uPermSection">
         <div class="perm-head"><b>الصلاحيات</b><span class="hint" id="uPermRoleHint"></span><span class="perm-dirty" id="uPermDirty" hidden>تعديلات غير محفوظة</span></div>
         <p class="hint" id="uPermNewHint"${user ? ' hidden' : ''}>احفظ المستخدم أولاً، ثم عدّل صلاحياته من نافذة التعديل.</p>
@@ -4731,6 +4820,156 @@ function docTitle(order) {
   }
   $('#btnAddUser').addEventListener('click', () => userForm(null));
 
+  /* ---------------- المصروفات ----------------
+     من الخادم مباشرة (/api/expenses) — لا نسخة محلية تُزامَن. الخادم يحدد ما يُرى ويُعدَّل
+     (‎_own لمصروفاتك و‎_all للجميع) ويعيد لكل صف can_edit/can_delete، والواجهة تتبعهما.
+     القائمة المحمّلة تُحفظ في db().expenses فيحسبها «ذكاء الأعمال» أيضاً. */
+  let expList = [];
+  let expLoadedAt = 0;
+  let expLoading = null;
+  const expDay = (e) => String(e.expense_date || e.created_at || '').slice(0, 10);
+
+  async function loadExpenses() {
+    if (!Store.isRemote || !canAny('expenses.view_own', 'expenses.view_all')) { expList = []; db().expenses = []; return expList; }
+    if (expLoading) return expLoading;
+    expLoading = (async () => {
+      try {
+        const r = await Store.api('GET', '/api/expenses');
+        expList = (r && Array.isArray(r.expenses)) ? r.expenses : [];
+        db().expenses = expList;
+        expLoadedAt = Date.now();
+        return expList;
+      } finally { expLoading = null; }
+    })();
+    return expLoading;
+  }
+
+  function expFiltered() {
+    const from = $('#expFrom').value, to = $('#expTo').value, cat = $('#expCat').value, uid = $('#expUser').value;
+    return expList.filter((e) => (!from || expDay(e) >= from) && (!to || expDay(e) <= to)
+      && (!cat || (e.category || '') === cat) && (!uid || e.created_by === uid));
+  }
+
+  function renderExpensesTable() {
+    const list = expFiltered();
+    const cu = currency();
+    const total = money(list.reduce((s, e) => s + num(e.amount), 0));
+    const byCat = {};
+    list.forEach((e) => { const c = e.category || 'بلا تصنيف'; byCat[c] = money((byCat[c] || 0) + num(e.amount)); });
+    const topCats = Object.entries(byCat).sort((a, b) => b[1] - a[1]).slice(0, 4);
+    $('#expStats').innerHTML = `
+      <div class="stat"><span>إجمالي المصروفات</span><b>${fmt(total)}</b><small>${esc(cu)}</small></div>
+      <div class="stat"><span>عدد المصروفات</span><b>${list.length}</b></div>
+      ${topCats.map(([c, v]) => `<div class="stat"><span>${esc(c)}</span><b>${fmt(v)}</b></div>`).join('')}`;
+    // قوائم التصفية من البيانات المحمّلة (تبقى الاختيارات الحالية)
+    const catSel = $('#expCat'), curCat = catSel.value;
+    const cats = [...new Set(expList.map((e) => e.category).filter(Boolean))].sort();
+    catSel.innerHTML = '<option value="">كل التصنيفات</option>' + cats.map((c) => `<option value="${esc(c)}"${c === curCat ? ' selected' : ''}>${esc(c)}</option>`).join('');
+    const userSel = $('#expUser'), curU = userSel.value;
+    const people = [...new Map(expList.map((e) => [e.created_by, e.created_by_name || '—'])).entries()];
+    userSel.hidden = !can('expenses.view_all') || people.length < 2;
+    userSel.innerHTML = '<option value="">كل الموظفين</option>' + people.map(([id, n]) => `<option value="${esc(id)}"${id === curU ? ' selected' : ''}>${esc(n)}</option>`).join('');
+
+    $('#expEmpty').hidden = list.length > 0;
+    $('#expensesTable tbody').innerHTML = list.map((e) => {
+      const eid = esc(e.id);
+      return `<tr>
+        <td data-label="التاريخ" class="num"><bdi>${esc(fmtDate(expDay(e)))}</bdi></td>
+        <td data-label="البيان"><b>${esc(e.name)}</b>${e.note ? `<span class="sub">${esc(e.note)}</span>` : ''}</td>
+        <td data-label="التصنيف">${e.category ? `<span class="badge">${esc(e.category)}</span>` : '<span class="hint">—</span>'}</td>
+        <td data-label="المبلغ" class="num c-money">${fmt(e.amount)}</td>
+        <td data-label="سجّله">${esc(e.created_by_name || '—')}</td>
+        <td data-label="الطلب" class="num">${e.order_number ? '#' + esc(e.order_number) : (e.order_id ? '<span class="hint">طلب محذوف</span>' : '<span class="hint">—</span>')}</td>
+        <td class="row-actions"><span class="ra">
+          ${e.can_edit ? `<button class="btn small" data-expedit="${eid}">${icon('pen')} تعديل</button>` : ''}
+          ${e.can_delete ? rowMenu([menuItem(`data-expdel="${eid}"`, 'trash', 'حذف المصروف', true)], `إجراءات المصروف ${esc(e.name)}`) : ''}
+        </span></td>
+      </tr>`;
+    }).join('');
+    const tb = $('#expensesTable tbody');
+    $$('[data-expedit]', tb).forEach((b) => b.addEventListener('click', () => expenseForm(expList.find((x) => x.id === b.dataset.expedit))));
+    $$('[data-expdel]', tb).forEach((b) => b.addEventListener('click', () => deleteExpenseFlow(expList.find((x) => x.id === b.dataset.expdel))));
+  }
+
+  async function renderExpenses() {
+    if (!canPage('expenses')) return;
+    $('#btnAddExpense').hidden = !canAny('expenses.add_own', 'expenses.add_all');
+    const err = $('#expErr');
+    err.hidden = true;
+    if (!expLoadedAt) { $('#expensesTable tbody').innerHTML = ''; $('#expEmpty').hidden = true; $('#expStats').innerHTML = '<p class="hint">جارٍ تحميل المصروفات…</p>'; }
+    try { await loadExpenses(); }
+    catch (e) { err.textContent = humanError(e && e.message, 'تعذّر تحميل المصروفات. تحقق من الاتصال.'); err.hidden = false; }
+    renderExpensesTable();
+  }
+
+  /** نافذة إضافة/تعديل مصروف: التاريخ والبيان والتصنيف والمبلغ والملاحظة وطلب مرتبط اختياري */
+  function expenseForm(e) {
+    const isNew = !e;
+    if (isNew ? !canAny('expenses.add_own', 'expenses.add_all') : !e.can_edit) return;
+    const x = e || { expense_date: today(), name: '', category: '', amount: '', note: '', order_id: null };
+    const cats = [...new Set(expList.map((r) => r.category).filter(Boolean))].sort();
+    // الطلبات المتاحة للربط هي ما يراه المستخدم أصلاً (الخادم يتحقق من حقه في الطلب أيضاً)
+    const orders = db().orders.filter((o) => o.number).slice().sort((a, b) => num(b.number) - num(a.number)).slice(0, 300);
+    const others = (isNew && can('expenses.add_all')) ? db().users.filter((u) => u.active !== false && u.id !== currentUser.id) : [];
+    openModal(isNew ? 'إضافة مصروف' : 'تعديل مصروف', `
+      <div class="row2">
+        <label>التاريخ <input id="exDate" type="date" value="${esc(expDay(x) || today())}" required></label>
+        <label>المبلغ (${esc(currency())}) <input id="exAmount" type="text" inputmode="decimal" class="num" value="${x.amount === '' ? '' : esc(x.amount)}" placeholder="0" autocomplete="off"></label>
+      </div>
+      <label>البيان <input id="exName" value="${esc(x.name)}" maxlength="200" placeholder="مثال: نقل وتركيب"></label>
+      <label>التصنيف <input id="exCat" value="${esc(x.category || '')}" maxlength="60" list="exCatList" placeholder="مثال: نقل، مشتريات، أجور عمال"><datalist id="exCatList">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label>ملاحظة <input id="exNote" value="${esc(x.note || '')}" maxlength="500"></label>
+      <label>ربط بطلب (اختياري)
+        <select id="exOrder"><option value="">بلا طلب</option>${orders.map((o) => `<option value="${esc(o.id)}"${o.id === x.order_id ? ' selected' : ''}>#${esc(o.number)} — ${esc(o.customer?.name || '')}</option>`).join('')}</select>
+      </label>
+      ${others.length ? `<label>سجّله باسم
+        <select id="exUser"><option value="">أنا (${esc(currentUser.name)})</option>${others.map((u) => `<option value="${esc(u.id)}">${esc(u.name)} — ${ROLES[u.role] || u.role}</option>`).join('')}</select>
+      </label>` : ''}
+      <p id="exErr" class="error"></p>
+      <div class="btn-row"><button class="btn" id="exCancel">إلغاء</button><button class="btn primary" id="exSave">${icon('save')} حفظ</button></div>`, (b) => {
+      $('#exCancel', b).onclick = closeModal;
+      $('#exSave', b).onclick = async () => {
+        const err = $('#exErr', b);
+        const amount = readAmount($('#exAmount', b).value);
+        const name = $('#exName', b).value.trim();
+        const date = $('#exDate', b).value;
+        if (!name) { err.textContent = 'البيان مطلوب'; return; }
+        if (amount === null || !(amount > 0)) { err.textContent = 'أدخل مبلغاً أكبر من صفر (أرقام فقط)'; return; }
+        if (!date) { err.textContent = 'التاريخ مطلوب'; return; }
+        const body = { expense_date: date, name, amount: money(amount), category: $('#exCat', b).value.trim(), note: $('#exNote', b).value.trim(), order_id: $('#exOrder', b).value || null };
+        const u = $('#exUser', b);
+        if (u && u.value) body.created_by = u.value;
+        const btn = $('#exSave', b);
+        btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+        try {
+          if (isNew) await Store.api('POST', '/api/expenses', body);
+          else await Store.api('PUT', '/api/expenses/' + encodeURIComponent(e.id), body);
+        } catch (ex) {
+          err.textContent = humanError(ex && ex.message, 'تعذّر حفظ المصروف. تحقق من الاتصال وحاول مرة أخرى.');
+          btn.disabled = false; btn.removeAttribute('aria-busy');
+          return;
+        }
+        closeModal();
+        expLoadedAt = 0;
+        await renderExpenses();
+        toast(isNew ? 'أُضيف المصروف' : 'حُفظ المصروف');
+      };
+    }, 'drawer');
+  }
+
+  async function deleteExpenseFlow(e) {
+    if (!e || !e.can_delete) return;
+    if (!(await confirmDlg('حذف مصروف', `حذف «${e.name}» بمبلغ ${fmt(e.amount)} ${currency()}؟ لا يمكن التراجع.`))) return;
+    try { await Store.api('DELETE', '/api/expenses/' + encodeURIComponent(e.id)); }
+    catch (ex) { toast(humanError(ex && ex.message, 'تعذّر حذف المصروف.'), true); return; }
+    expLoadedAt = 0;
+    await renderExpenses();
+    toast('حُذف المصروف');
+  }
+
+  $('#btnAddExpense').addEventListener('click', () => expenseForm(null));
+  ['#expFrom', '#expTo', '#expCat', '#expUser'].forEach((s) => $(s).addEventListener('change', renderExpensesTable));
+
   /* ---------------- إدارة المناديب (مدير) ---------------- */
   const mandoubUsers = () => db().users.filter((u) => u.role === 'mandoub');
   const mandoubName = (id) => { const u = Store.getUser(id); return u ? u.name : '—'; };
@@ -4769,7 +5008,7 @@ function docTitle(order) {
   }
 
   function renderMandoubs() {
-    if (!isAdmin()) return;
+    if (!can('admin.core')) return;
     const list = mandoubUsers();
     const level1 = list.filter((m) => !m.parentId).length;
     const unassigned = list.filter((m) => !m.active).length;
@@ -4829,7 +5068,7 @@ function docTitle(order) {
   }
 
   function mandoubForm(m) {
-    if (!m || !isAdmin()) return;
+    if (!m || !can('admin.core')) return;
     const others = mandoubUsers().filter((x) => x.id !== m.id);
     const excl = new Set([m.id, ...mandoubDescendants(m.id)]);
     const parentOpts = `<option value="">مباشر للمحل (المستوى الأول)</option>` + others
@@ -4862,7 +5101,7 @@ function docTitle(order) {
   }
 
   $('#btnMandoubDefaults').addEventListener('click', () => {
-    if (!isAdmin()) return;
+    if (!can('admin.core')) return;
     const s = settings();
     openModal('الإعدادات الافتراضية لعمولات المناديب', `
       <p class="hint">تُطبَّق كقيم افتراضية عند إنشاء مندوب جديد، ويمكن تجاوزها لكل مندوب من قائمة المناديب.</p>
@@ -4998,7 +5237,7 @@ function docTitle(order) {
         <td data-label="آخر تحديث"><bdi class="num">${esc(fmtDate(d.updatedAt))}</bdi></td>
         <td class="row-actions"><span class="ra">
           <button class="btn small" data-desopen="${oid}">${icon('pen')} فتح ومراجعة</button>
-          ${rowMenu([d.orderId ? null : menuItem(`data-desconv="${oid}"`, 'swap', 'تحويل إلى طلب'), menuItem(`data-desdel="${oid}"`, 'trash', 'حذف', true)], `إجراءات ${esc(d.number)}`)}
+          ${rowMenu([(d.orderId || !can('designs.convert')) ? null : menuItem(`data-desconv="${oid}"`, 'swap', 'تحويل إلى طلب'), can('designs.delete') ? menuItem(`data-desdel="${oid}"`, 'trash', 'حذف', true) : null], `إجراءات ${esc(d.number)}`)}
         </span></td>
       </tr>`;
     }).join('');
@@ -5016,7 +5255,8 @@ function docTitle(order) {
   }
 
   async function renderDesigns() {
-    if (!isStaff()) return;
+    if (!can('designs.view')) return;
+    { const eb = $('#desEditBtn'); if (eb) eb.hidden = !can('designs.delete'); }
     if (!desBound) {
       desBound = true;
       $('#desSearch').addEventListener('input', () => renderDesigns());
@@ -5073,14 +5313,15 @@ function docTitle(order) {
     openModal(`تصميم ${d.number || ''}`, `
       <div class="des-view">
         <div class="des-canvasbar">
-          <button type="button" class="btn small" id="dvUndo">تراجع</button>
+          ${can('designs.edit') ? '' : '<span class="hint">عرض فقط — التعديل يتطلب صلاحية «تعديل التصاميم»</span>'}
+          <button type="button" class="btn small" id="dvUndo"${can('designs.edit') ? '' : ' hidden'}>تراجع</button>
           <button type="button" class="btn small" id="dvFit">ملاءمة</button>
-          <button type="button" class="btn small danger" id="dvDel">حذف المحدد</button>
-          <button type="button" class="btn small primary" id="dvSaveGeo">حفظ التعديل</button>
+          <button type="button" class="btn small danger" id="dvDel"${can('designs.edit') ? '' : ' hidden'}>حذف المحدد</button>
+          <button type="button" class="btn small primary" id="dvSaveGeo"${can('designs.edit') ? '' : ' hidden'}>حفظ التعديل</button>
         </div>
         <div class="canvas-wrap des-canvas"><canvas id="dvCanvas"></canvas></div>
         <dl class="p-facts">
-          <div><dt>الحالة</dt><dd><select id="dvStatus" aria-label="حالة التصميم">${Object.entries(DESIGN_STATUS).map(([k, v]) => `<option value="${k}"${d.status === k ? ' selected' : ''}>${v}</option>`).join('')}</select></dd></div>
+          <div><dt>الحالة</dt><dd><select id="dvStatus" aria-label="حالة التصميم"${can('designs.edit') ? '' : ' disabled'}>${Object.entries(DESIGN_STATUS).map(([k, v]) => `<option value="${k}"${d.status === k ? ' selected' : ''}>${v}</option>`).join('')}</select></dd></div>
           <div><dt>العميل</dt><dd>${esc(d.name || '—')}${d.phone ? ` <span class="num">${esc(d.phone)}</span>` : ''}${d.contactRequested ? ' <span class="badge st-delivered">طلب التواصل</span>' : ''}</dd></div>
           <div><dt>الغرفة</dt><dd>${esc(f.walls)}</dd></div>
           <div><dt>أبواب / شبابيك / تلفاز</dt><dd>${f.doors} / ${f.wins} / ${f.tvs}</dd></div>
@@ -5090,7 +5331,7 @@ function docTitle(order) {
         <div class="btn-row">
           ${d.phone ? `<button type="button" class="btn" id="dvWa">${icon('whatsapp')} واتساب</button><button type="button" class="btn" id="dvCall">${icon('phone')} اتصال</button>` : ''}
           <button type="button" class="btn" id="dvPdf">${icon('file')} PDF التصميم</button>
-          ${d.orderId ? '' : `<button type="button" class="btn primary" id="dvConvert">تحويل إلى طلب</button>`}
+          ${(d.orderId || !can('designs.convert')) ? '' : `<button type="button" class="btn primary" id="dvConvert">تحويل إلى طلب</button>`}
         </div>
         <p class="error" id="dvErr" role="alert"></p>
       </div>`, (b) => {
@@ -5213,7 +5454,7 @@ function docTitle(order) {
   async function renderVisitStats() {
     const box = $('#visitStatsBox');
     if (!box) return;
-    if (!isAdmin()) { box.hidden = true; return; }
+    if (!can('admin.core')) { box.hidden = true; return; }
     box.hidden = false;
     const body = $('#visitStatsBody');
     const clicks = loadVisitClicks();
@@ -5500,7 +5741,7 @@ function docTitle(order) {
   const BACKUP_DAYS = 7;
   async function exportBackup() {
     downloadBlob(new Blob([Store.exportJSON()], { type: 'application/json' }), `majlis-backup-${today()}.json`);
-    if (!isAdmin()) return;
+    if (!can('admin.core')) return;
     settings().lastBackupAt = Store.now();
     if (!(await Store.save())) toast('نُزّلت النسخة، لكن تعذّر تسجيل وقتها على الخادم', true);
     else toast('نُزّلت النسخة الاحتياطية — احفظها في مكان آمن خارج هذا الجهاز');
@@ -5524,7 +5765,7 @@ function docTitle(order) {
   /* الإعدادات صفحة مستقلة لا نافذة: نموذج طويل بأقسام، والحفظ في مكان ثابت.
      الحقول وأسماؤها كما كانت (sName، sVatNo…)، ويُقرأ كائن الإعدادات عند الحفظ لا عند الفتح. */
   function renderSettings() {
-    if (!isAdmin()) return;
+    if (!can('settings.manage')) return;
     const s = settings();
     const b = $('#settingsBody');
     b.innerHTML = `
@@ -5799,7 +6040,7 @@ function docTitle(order) {
       }
     });
     // 5) تذكير المدير بالنسخة الاحتياطية إن مضى أسبوع (أو لم تُصدَّر قط)
-    if (isAdmin()) {
+    if (can('admin.core')) {
       const last = settings().lastBackupAt;
       const age = last ? Math.floor((Date.now() - new Date(last).getTime()) / DAY_MS) : null;
       if (age === null || age >= BACKUP_DAYS) {
@@ -5975,11 +6216,12 @@ function docTitle(order) {
     const costedRevenue = sum(costed, orderRevenue);
 
     // المصروفات من جدول المصروفات (مصروفات مستقلة عن تكاليف الطلبات)
-    let expList = db().expenses || [];
-    if (from) expList = expList.filter((e) => ordDate(e.created_at) >= from);
-    if (to) expList = expList.filter((e) => ordDate(e.created_at) <= to);
-    if (userId) expList = expList.filter((e) => e.created_by === userId);
-    const expenses = sum(expList, (e) => num(e.amount));
+    // (تُحمَّل من الخادم عند فتح الصفحة لمن يملك صلاحية رؤيتها؛ التاريخ = تاريخ المصروف نفسه)
+    let biExp = db().expenses || [];
+    if (from) biExp = biExp.filter((e) => expDay(e) >= from);
+    if (to) biExp = biExp.filter((e) => expDay(e) <= to);
+    if (userId) biExp = biExp.filter((e) => e.created_by === userId);
+    const expenses = sum(biExp, (e) => num(e.amount));
 
     return {
       list, live, costed,
@@ -6462,8 +6704,8 @@ function docTitle(order) {
     const host = $('#ownerPanel');
     if (!host) return;
     // الحماية في الخادم؛ هنا نخفي فقط عندما لا يكون المستخدم مديراً
-    host.hidden = !isAdmin();
-    if (!isAdmin()) return;
+    host.hidden = !can('admin.core');
+    if (!can('admin.core')) return;
     const kpis = $('#ownerKpis'), funnel = $('#ownerFunnel'), trend = $('#ownerTrend');
     const steps = $('#ownerSteps'), prefs = $('#ownerPrefs'), orders = $('#ownerOrders'), sources = $('#ownerSources');
     kpis.innerHTML = '<div class="stat"><span>جارٍ التحميل</span><b>…</b><small>لوحة تحليلات المالك</small></div>';
@@ -6618,7 +6860,11 @@ function docTitle(order) {
   }
 
   function renderBI() {
-    if (!isAdmin()) return;
+    if (!canPage('bi')) return;
+    // المصروفات لا تصل مع المزامنة: تُجلب (مرة كل دقيقة على الأكثر) ثم يُعاد الرسم بها
+    if (canAny('expenses.view_own', 'expenses.view_all') && Date.now() - expLoadedAt > 60000 && !expLoading) {
+      loadExpenses().then(() => { if (document.body.dataset.page === 'bi') renderBI(); }).catch(() => {});
+    }
     renderOwnerPanel();
     biMobileAt = isMobile();
 
@@ -7007,7 +7253,7 @@ async function exportExpensesXlsx() {
   }
 
   function renderOrdersReport() {
-    if (!isAdmin()) return;
+    if (!canPage('bi')) return;
     const c = ordersReportCalc();
     const userName = c.userId ? ((Store.getUser(c.userId) || {}).name || 'موظف') : 'كل الموظفين';
     $('#ordNote').textContent = `${BI_RANGES[biRange] || 'فترة'} • من ${c.p.from || 'أول طلب'} إلى ${c.p.to || 'اليوم'} • ${userName}`;

@@ -723,6 +723,13 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 .module-head { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 18px; flex-wrap: wrap; }
 .module-head h3 { font-size: 1.04rem; }
 .ord-filters { margin-bottom: 4px; }
+/* تنبيه مالك النظام في صفحة المستخدمين */
+.owner-note { margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--surface-2); }
+.owner-note code { direction: ltr; unicode-bidi: embed; }
+/* شاشة المصروفات: شريط تصفية يلتف في الجوال */
+.exp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; }
+.exp-filters select { min-height: 42px; margin: 0; width: auto; }
+@media (max-width: 560px) { .exp-filters .date-f, .exp-filters select { flex: 1 1 100%; } .exp-filters .date-f input { width: 100%; } }
 .ord-by-status { display: flex; flex-wrap: wrap; gap: 8px; margin: -2px 0 14px; }
 .ord-chip { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 13px; font-size: .8rem; color: var(--ink-2); background: var(--surface-2); }
 .ord-chip b { color: var(--ink); font-variant-numeric: tabular-nums; }

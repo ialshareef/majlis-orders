@@ -9,6 +9,9 @@ function t(name, ok, info = '') {
 }
 
 const admin = { role: 'admin', active: 1 };
+// مالك النظام: هويته من OWNER_USER_ID (currentUser يضع isOwner/ownerId)، لا من الدور
+const owner = { id: 'o1', role: 'admin', active: 1, isOwner: true, ownerId: 'o1' };
+const ADMIN_ONLY = ['admin.core', 'permissions.manage', 'users.create', 'users.edit', 'users.disable', 'settings.manage'];
 const staff = { role: 'staff', active: 1 };
 const mandoub = { role: 'mandoub', active: 1 };
 const inactive = { role: 'admin', active: 0 };
@@ -22,7 +25,9 @@ t('inactive user -> false', hasPerm(inactive, 'orders.view_own') === false);
 // allowed sets
 for (const p of ROLE_PERMISSIONS.staff) t('staff allows ' + p, hasPerm(staff, p) === true);
 for (const p of ROLE_PERMISSIONS.mandoub) t('mandoub allows ' + p, hasPerm(mandoub, p) === true);
-t('admin allows all', Object.keys(PERMISSIONS).every((p) => hasPerm(admin, p)));
+t('owner allows all', Object.keys(PERMISSIONS).every((p) => hasPerm(owner, p)));
+t('regular admin allows all operational perms', Object.keys(PERMISSIONS).filter((p) => !ADMIN_ONLY.includes(p)).every((p) => hasPerm(admin, p)));
+t('regular admin lacks the 6 admin-only perms by role', ADMIN_ONLY.every((p) => !hasPerm(admin, p)));
 
 // denied examples
 t('staff denies orders.view_all', hasPerm(staff, 'orders.view_all') === false);
@@ -34,14 +39,16 @@ t('mandoub denies reports.view_all', hasPerm(mandoub, 'reports.view_all') === fa
 t('orders.delete_own admin only', hasPerm(admin, 'orders.delete_own') && !hasPerm(staff, 'orders.delete_own') && !hasPerm(mandoub, 'orders.delete_own'));
 t('costs.delete_own admin only', hasPerm(admin, 'costs.delete_own') && !hasPerm(staff, 'costs.delete_own') && !hasPerm(mandoub, 'costs.delete_own'));
 
-// designs.manage admin only
-t('designs.manage admin only', hasPerm(admin, 'designs.manage') && !hasPerm(staff, 'designs.manage') && !hasPerm(mandoub, 'designs.manage'));
+// تصاميم العملاء: العرض للموظف افتراضياً، والتعديل والتحويل والحذف للمدير افتراضياً
+t('designs.view staff default, not mandoub', hasPerm(admin, 'designs.view') && hasPerm(staff, 'designs.view') && !hasPerm(mandoub, 'designs.view'));
+t('designs edit/convert/delete admin by default', ['designs.edit', 'designs.convert', 'designs.delete'].every((p) => hasPerm(admin, p) && !hasPerm(staff, p) && !hasPerm(mandoub, p)));
+t('designs.manage removed (unknown = deny)', hasPerm(admin, 'designs.manage') === false);
 
 // permissions.manage admin only
-t('permissions.manage admin only', hasPerm(admin, 'permissions.manage') && !hasPerm(staff, 'permissions.manage') && !hasPerm(mandoub, 'permissions.manage'));
+t('permissions.manage owner only by default', hasPerm(owner, 'permissions.manage') && !hasPerm(admin, 'permissions.manage') && !hasPerm(staff, 'permissions.manage') && !hasPerm(mandoub, 'permissions.manage'));
 
 // admin.core protected
-t('admin.core admin only', hasPerm(admin, 'admin.core') && !hasPerm(staff, 'admin.core') && !hasPerm(mandoub, 'admin.core'));
+t('admin.core owner only', hasPerm(owner, 'admin.core') && !hasPerm(admin, 'admin.core') && !hasPerm(staff, 'admin.core') && !hasPerm(mandoub, 'admin.core'));
 t('PROTECTED_ADMIN_PERMISSIONS contains admin.core', PROTECTED_ADMIN_PERMISSIONS.includes('admin.core'));
 
 // unknown perm default deny
@@ -79,7 +86,13 @@ t('load result failure denies role default', hasPerm({ role: 'admin', active: 1 
 t('load result failure denies all perms', hasPerm({ role: 'admin', active: 1 }, 'orders.view_all', { ok: false, overrides: {} }) === false);
 
 // admin.core protected even with structured deny/allow
-t('admin.core protected (structured deny)', hasPerm({ role: 'admin', active: 1 }, 'admin.core', { ok: true, overrides: { 'admin.core': false } }) === true);
+t('admin.core protected (structured deny): owner keeps it', hasPerm(owner, 'admin.core', { ok: true, overrides: { 'admin.core': false } }) === true);
+t('admin.core protected (structured allow): regular admin never gets it', hasPerm(admin, 'admin.core', { ok: true, overrides: { 'admin.core': true }, grantedBy: { 'admin.core': 'o1' } }) === false);
+t('owner-signed grant gives a regular admin permissions.manage', hasPerm({ ...admin, ownerId: 'o1' }, 'permissions.manage', { ok: true, overrides: { 'permissions.manage': true }, grantedBy: { 'permissions.manage': 'o1' } }) === true);
+t('unsigned/forged grant ignored for a regular admin', hasPerm({ ...admin, ownerId: 'o1' }, 'permissions.manage', { ok: true, overrides: { 'permissions.manage': true }, grantedBy: { 'permissions.manage': 'x9' } }) === false);
+t('owner-signed grant never reaches staff', hasPerm({ ...staff, ownerId: 'o1' }, 'users.edit', { ok: true, overrides: { 'users.edit': true }, grantedBy: { 'users.edit': 'o1' } }) === false);
+t('isOwner flag without admin role is ignored', hasPerm({ role: 'staff', active: 1, isOwner: true }, 'admin.core') === false);
+t('owner load failure still fail-closed', hasPerm(owner, 'orders.view_own', { ok: false, overrides: {} }) === false);
 t('admin.core protected (structured allow non-admin)', hasPerm({ role: 'staff', active: 1 }, 'admin.core', { ok: true, overrides: { 'admin.core': true } }) === false);
 
 // unknown override ignored

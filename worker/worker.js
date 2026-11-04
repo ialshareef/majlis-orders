@@ -66,32 +66,58 @@ const PERMISSIONS = Object.freeze({
   'expenses.edit_all': true,
   'expenses.delete_own': true,
   'expenses.delete_all': true,
+  'payments.add': true,
+  'payments.edit': true,
+  'payments.delete': true,
+  'reports.export': true,
+  'items.manage': true,
+  'designs.view': true,
+  'designs.edit': true,
+  'designs.convert': true,
+  'designs.delete': true,
   'users.view': true,
   'users.create': true,
   'users.edit': true,
   'users.disable': true,
   'permissions.manage': true,
   'settings.manage': true,
-  'designs.manage': true,
   'admin.core': true,
 });
 
+/* الإدارة الكاملة لمالك النظام وحده (لا لدور «مدير»):
+   - المالك مستخدم واحد ثابت: معرّفه في متغير Cloudflare ‏OWNER_USER_ID (لا في القاعدة ولا في
+     الدور)، فلا يغيّره API ولا مدير ولا مزامنة — تغييره يتطلب حساب Cloudflare نفسه.
+     غير مضبوط/غير صالح = لا مالك (فشل مُغلق: لا أحد يملك الصلاحيات المحمية).
+   - admin.core للمالك وحده ولا تُمنح لأحد.
+   - البقية تُمنح من المالك لمدير عادي فقط (لا لموظف أو مندوب)، ويُعتدّ بالمنح فقط إن سجّله
+     المالك نفسه (updated_by = المالك) — صف مزوَّر أو قديم لا يعطي شيئاً.
+   users.* هنا لأن تعديل المستخدمين يغيّر الأدوار — منحها بلا قيد = ترقية النفس أو الغير. */
+const ADMIN_ONLY_PERMISSIONS = Object.freeze(['admin.core', 'permissions.manage', 'users.create', 'users.edit', 'users.disable', 'settings.manage']);
+
+/** معرّف المالك من البيئة فقط (نص مقصوص)، أو null */
+function ownerIdOf(env) {
+  const v = env && env.OWNER_USER_ID != null ? String(env.OWNER_USER_ID).trim() : '';
+  return v || null;
+}
+
 // الدور يحدد صلاحياته الافتراضية؛ أي دور أو صلاحية غير معروفة => مرفوضة افتراضياً (default deny).
+// الافتراضيات تطابق ما يتيحه التطبيق فعلاً للدور — لا تُمنح شاشة أو عملية جديدة تلقائياً،
+// والمدير يضيف ما يريده لكل مستخدم من نافذة صلاحياته. المدير العادي: كل التشغيلي بلا الإدارة
+// الكاملة؛ المالك: كل شيء (يُحسم في hasPerm بهويته لا بهذه القائمة).
 const ROLE_PERMISSIONS = Object.freeze({
-  admin: new Set(Object.keys(PERMISSIONS)),
+  admin: new Set(Object.keys(PERMISSIONS).filter((p) => !ADMIN_ONLY_PERMISSIONS.includes(p))),
   staff: new Set([
     'orders.view_own', 'orders.create', 'orders.edit_own',
     'costs.view_own', 'costs.add_own', 'costs.edit_own',
     'profit.view_own',
-    'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own',
-    'reports.view_own',
+    'payments.add',
+    'designs.view',
   ]),
   mandoub: new Set([
     'orders.view_own', 'orders.create', 'orders.edit_own',
     'costs.view_own', 'costs.add_own', 'costs.edit_own',
     'commission.view_own',
-    'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own',
-    'reports.view_own',
+    'payments.add',
   ]),
 });
 // hasPerm: defaults + overrides; fail-closed on load failure.
@@ -103,30 +129,35 @@ function hasPerm(user, permission, overrides = null) {
   const active = (user.active === true || user.active === 1);
   if (!active) return false;
 
-  // admin.core is protected: role-only, never overridden.
-  if (permission === "admin.core") {
-    return user.role === "admin";
-  }
-
   let source = null;
+  let grantedBy = null;
   let loadFailed = false;
-  if (overrides && typeof overrides === "object") {
-    if (Object.prototype.hasOwnProperty.call(overrides, "ok") && Object.prototype.hasOwnProperty.call(overrides, "overrides")) {
-      if (overrides.ok !== true) loadFailed = true;
-      source = (overrides.overrides && typeof overrides.overrides === "object") ? overrides.overrides : {};
+  const holder = (overrides && typeof overrides === "object") ? overrides
+    : (user.permissions && typeof user.permissions === "object") ? user.permissions : null;
+  if (holder) {
+    if (Object.prototype.hasOwnProperty.call(holder, "ok") && Object.prototype.hasOwnProperty.call(holder, "overrides")) {
+      if (holder.ok !== true) loadFailed = true;
+      source = (holder.overrides && typeof holder.overrides === "object") ? holder.overrides : {};
+      grantedBy = (holder.grantedBy && typeof holder.grantedBy === "object") ? holder.grantedBy : null;
     } else {
-      source = overrides;
-    }
-  } else if (user.permissions && typeof user.permissions === "object") {
-    if (Object.prototype.hasOwnProperty.call(user.permissions, "ok") && Object.prototype.hasOwnProperty.call(user.permissions, "overrides")) {
-      if (user.permissions.ok !== true) loadFailed = true;
-      source = (user.permissions.overrides && typeof user.permissions.overrides === "object") ? user.permissions.overrides : {};
-    } else {
-      source = user.permissions;
+      source = holder;
     }
   }
 
   if (loadFailed) return false;
+
+  // المالك: كل الصلاحيات (هويته ثابتة من البيئة، ولا تقيّده تجاوزات قابلة للكتابة)
+  const isOwner = user.isOwner === true && user.role === "admin";
+  if (isOwner) return true;
+  // admin.core للمالك وحده — لا تُمنح بأي تجاوز
+  if (permission === "admin.core") return false;
+  // بقية الإدارة الكاملة: لغير المدير ممنوعة دائماً؛ وللمدير العادي فقط بمنح صريح سجّله المالك
+  if (ADMIN_ONLY_PERMISSIONS.includes(permission)) {
+    if (user.role !== "admin" || !source || !user.ownerId) return false;
+    const v = source[permission];
+    const granted = v === true || v === 1 || v === "1" || v === "true";
+    return granted && !!grantedBy && grantedBy[permission] === String(user.ownerId);
+  }
 
   if (source && Object.prototype.hasOwnProperty.call(source, permission)) {
     const v = source[permission];
@@ -140,26 +171,9 @@ function hasPerm(user, permission, overrides = null) {
 function effectivePermissions(user, overrides = null) {
   const out = new Set();
   if (!user || typeof user !== "object") return out;
-  let source = null;
-  let loadFailed = false;
-  if (overrides && typeof overrides === "object") {
-    if (Object.prototype.hasOwnProperty.call(overrides, "ok") && Object.prototype.hasOwnProperty.call(overrides, "overrides")) {
-      if (overrides.ok !== true) loadFailed = true;
-      source = (overrides.overrides && typeof overrides.overrides === "object") ? overrides.overrides : {};
-    } else {
-      source = overrides;
-    }
-  } else if (user.permissions && typeof user.permissions === "object") {
-    if (Object.prototype.hasOwnProperty.call(user.permissions, "ok") && Object.prototype.hasOwnProperty.call(user.permissions, "overrides")) {
-      if (user.permissions.ok !== true) loadFailed = true;
-      source = (user.permissions.overrides && typeof user.permissions.overrides === "object") ? user.permissions.overrides : {};
-    } else {
-      source = user.permissions;
-    }
-  }
-  if (loadFailed) return out;
+  // hasPerm يفسّر بنية التجاوزات (ومعها من سجّل كل منح) ويطبّق فشل التحميل المُغلق
   for (const p of Object.keys(PERMISSIONS)) {
-    if (hasPerm(user, p, source ? { ok: true, overrides: source } : null)) out.add(p);
+    if (hasPerm(user, p, overrides)) out.add(p);
   }
   return out;
 }
@@ -167,14 +181,16 @@ function effectivePermissions(user, overrides = null) {
 async function loadUserPermissions(env, userId) {
   if (!env || !env.DB || !userId) return { ok: false, overrides: {} };
   try {
-    const r = await env.DB.prepare("SELECT permission, value FROM user_permissions WHERE user_id = ?").bind(userId).all();
+    const r = await env.DB.prepare("SELECT permission, value, updated_by FROM user_permissions WHERE user_id = ?").bind(userId).all();
     const out = {};
+    const grantedBy = {}; // من سجّل كل تجاوز — منح الإدارة الكاملة لا يُعتدّ به إلا من المالك
     for (const row of (r && r.results) || []) {
       if (Object.prototype.hasOwnProperty.call(PERMISSIONS, row.permission)) {
         out[row.permission] = (row.value === 1 || row.value === true);
+        grantedBy[row.permission] = row.updated_by == null ? null : String(row.updated_by);
       }
     }
-    return { ok: true, overrides: out };
+    return { ok: true, overrides: out, grantedBy };
   } catch (e) {
     return { ok: false, overrides: {} };
   }
@@ -209,7 +225,7 @@ async function verifyOrderOwnership(env, user, orderId) {
 
 const PROTECTED_ADMIN_PERMISSIONS = Object.freeze(["admin.core"]);
 
-export { PERMISSIONS, ROLE_PERMISSIONS, hasPerm, effectivePermissions, loadUserPermissions, verifyOrderOwnership, PROTECTED_ADMIN_PERMISSIONS };
+export { PERMISSIONS, ROLE_PERMISSIONS, hasPerm, effectivePermissions, loadUserPermissions, verifyOrderOwnership, PROTECTED_ADMIN_PERMISSIONS, ADMIN_ONLY_PERMISSIONS, ownerIdOf };
 
 // ملفات الواجهة المضمّنة (يملؤها build-worker.ps1 عند بناء النسخة المنشورة)
 const ASSETS = null; /* __ASSETS__ */
@@ -270,6 +286,8 @@ async function route(request, env, url) {
   const body = (method === 'POST' || method === 'PUT') ? await request.json().catch(() => ({})) : {};
 
   if (path === '/api/login' && method === 'POST') return login(env, body, request);
+  // استرداد حساب المالك: مغلق ما لم يضبط صاحب حساب Cloudflare سراً مؤقتاً (انظر ownerRecover)
+  if (path === '/api/owner/recover' && method === 'POST') return ownerRecover(env, body, request);
 
   // بوابة العميل (عامة): كل مسار يتحقق من customer token ولا يرى إلا صفّه
   if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request);
@@ -342,32 +360,32 @@ async function route(request, env, url) {
   const mUser = path.match(/^\/api\/users\/([^/]+)$/);
   if (mUser && method === 'DELETE') { requirePerm(user, 'users.disable'); return deleteUser(env, user, decodeURIComponent(mUser[1])); }
 
-  // تصاميم العملاء (موظفون: مدير وموظف — بلا مندوب، وبلا كشف للتوكن أبداً)
-  if (path === '/api/designs' && method === 'GET') { requirePerm(user, 'designs.manage'); return { designs: await listDesigns(env) }; }
+  // تصاميم العملاء (بلا كشف للتوكن أبداً): العرض منفصل عن التعديل والتحويل والحذف
+  if (path === '/api/designs' && method === 'GET') { requirePerm(user, 'designs.view'); return { designs: await listDesigns(env) }; }
   // حذف جملة: ids مصفوفة معرّفات. التحقق من الشكل والحدّ قبل التنفيذ.
-  if (path === '/api/designs/bulk-delete' && method === 'POST') { requirePerm(user, 'designs.manage'); return bulkDeleteDesigns(env, body, user); }
+  if (path === '/api/designs/bulk-delete' && method === 'POST') { requirePerm(user, 'designs.delete'); return bulkDeleteDesigns(env, body, user); }
   const mConv = path.match(/^\/api\/designs\/([^/]+)\/convert$/);
-  if (mConv && method === 'POST') { requirePerm(user, 'designs.manage'); return convertDesign(env, decodeURIComponent(mConv[1]), user); }
+  if (mConv && method === 'POST') { requirePerm(user, 'designs.convert'); return convertDesign(env, decodeURIComponent(mConv[1]), user); }
   const mDes = path.match(/^\/api\/designs\/([^/]+)$/);
-  if (mDes && method === 'GET') { requirePerm(user, 'designs.manage'); return { design: await getDesign(env, decodeURIComponent(mDes[1])) }; }
-  if (mDes && (method === 'PUT' || method === 'POST')) { requirePerm(user, 'designs.manage'); return updateDesign(env, decodeURIComponent(mDes[1]), body); }
-  if (mDes && method === 'DELETE') { requirePerm(user, 'designs.manage'); return deleteDesign(env, decodeURIComponent(mDes[1]), user); }
+  if (mDes && method === 'GET') { requirePerm(user, 'designs.view'); return { design: await getDesign(env, decodeURIComponent(mDes[1])) }; }
+  if (mDes && (method === 'PUT' || method === 'POST')) { requirePerm(user, 'designs.edit'); return updateDesign(env, decodeURIComponent(mDes[1]), body); }
+  if (mDes && method === 'DELETE') { requirePerm(user, 'designs.delete'); return deleteDesign(env, decodeURIComponent(mDes[1]), user); }
 
-  // --- المصروفات ---
-  if (path === '/api/expenses' && method === 'GET') { requirePerm(user, 'expenses.view_own'); return listExpenses(env, user, new URL(request.url).searchParams); }
-  if (path === '/api/expenses' && method === 'POST') { requirePerm(user, 'expenses.add_own'); return saveExpense(env, user, body); }
+  // --- المصروفات: ‎_own لمصروفاتك، ‎_all لمصروفات الجميع (الفحص الدقيق للملكية داخل كل دالة) ---
+  if (path === '/api/expenses' && method === 'GET') { requireAnyPerm(user, ['expenses.view_own', 'expenses.view_all']); return listExpenses(env, user, new URL(request.url).searchParams); }
+  if (path === '/api/expenses' && method === 'POST') { requireAnyPerm(user, ['expenses.add_own', 'expenses.add_all']); return saveExpense(env, user, body); }
   const mExp = path.match(/^\/api\/expenses\/([^/]+)$/);
-  if (mExp && method === 'PUT') { requirePerm(user, 'expenses.edit_own'); return updateExpense(env, user, decodeURIComponent(mExp[1]), body); }
-  if (mExp && method === 'DELETE') { requirePerm(user, 'expenses.delete_own'); return deleteExpense(env, user, decodeURIComponent(mExp[1])); }
+  if (mExp && method === 'PUT') { requireAnyPerm(user, ['expenses.edit_own', 'expenses.edit_all']); return updateExpense(env, user, decodeURIComponent(mExp[1]), body); }
+  if (mExp && method === 'DELETE') { requireAnyPerm(user, ['expenses.delete_own', 'expenses.delete_all']); return deleteExpense(env, user, decodeURIComponent(mExp[1])); }
   if (path === '/api/reports/expenses-summary' && method === 'GET') {
-    requirePerm(user, 'expenses.view_own');
+    requireAnyPerm(user, ['expenses.view_own', 'expenses.view_all']);
     return expensesSummary(env, user, new URL(request.url).searchParams);
   }
 
   // --- تقارير المناديب ---
   if (path === '/api/reports/mandoubs' && method === 'GET') { requirePerm(user, 'reports.view_all'); return mandoubsReport(env, user, new URL(request.url).searchParams); }
   // --- تقرير الطلبات والمدفوعات ---
-  if (path === '/api/reports/orders-summary' && method === 'GET') { requirePerm(user, 'reports.view_own'); return ordersSummary(env, user, new URL(request.url).searchParams); }
+  if (path === '/api/reports/orders-summary' && method === 'GET') { requireAnyPerm(user, ['reports.view_own', 'reports.view_all']); return ordersSummary(env, user, new URL(request.url).searchParams); }
 
   throw new HttpError(404, 'المسار غير موجود');
 }
@@ -1113,99 +1131,126 @@ async function convertDesign(env, id, user) {
 
 /* ------------------------------ المصروفات ------------------------------ */
 
-async function listExpenses(env, user, query) {
+/* المصروف: البيان (name) والمبلغ والتاريخ (expense_date) والتصنيف والملاحظة، ومن سجّله
+   (created_by — دائماً المُسجِّل، أو موظف آخر لمن يملك expenses.add_all)، وطلب مرتبط اختياري.
+   ‎_own = مصروفاتك فقط، ‎_all = مصروفات الجميع — كل عملية بصلاحيتها (لا العرض بدل التعديل). */
+const EXPENSE_DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+const expenseDay = (e) => String(e.expense_date || e.created_at || '').slice(0, 10);
+const expPerm = (user, action, row) => hasPerm(user, 'expenses.' + action + (row && row.created_by === user.id ? '_own' : '_all'), user.permissions);
+
+/** قراءة الصفوف المرئية للمستخدم بعد تصفية الفترة (بتاريخ المصروف، وللقديم تاريخ إنشائه) */
+async function visibleExpenses(env, user, query) {
   const from = String(query.get('from') || '');
   const to = String(query.get('to') || '');
+  const userId = String(query.get('userId') || '');
   const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
   const canViewOwn = hasPerm(user, 'expenses.view_own', user.permissions);
   if (!canViewAll && !canViewOwn) throw new HttpError(403, 'غير مصرح');
+  const r = canViewAll
+    ? await env.DB.prepare('SELECT * FROM expenses ORDER BY created_at DESC').all()
+    : await env.DB.prepare('SELECT * FROM expenses WHERE created_by = ? ORDER BY created_at DESC').bind(user.id).all();
+  return (r.results || []).filter((e) => {
+    const d = expenseDay(e);
+    if (from && d < from) return false;
+    if (to && d > to) return false;
+    if (userId && e.created_by !== userId) return false;
+    return true;
+  }).sort((a, b) => expenseDay(b).localeCompare(expenseDay(a)) || String(b.created_at).localeCompare(String(a.created_at)));
+}
 
-  let sql = 'SELECT id, name, amount, category, note, created_by, created_at, updated_at FROM expenses';
-  const binds = [];
-  const wh = [];
-  if (!canViewAll) {
-    wh.push('created_by = ?');
-    binds.push(user.id);
+async function listExpenses(env, user, query) {
+  const rows = await visibleExpenses(env, user, query);
+  const users = new Map(((await env.DB.prepare('SELECT id, name FROM users').all()).results || []).map((u) => [u.id, u.name]));
+  const orderIds = [...new Set(rows.map((e) => e.order_id).filter(Boolean))];
+  const numbers = new Map();
+  for (let i = 0; i < orderIds.length; i += 50) {
+    const chunk = orderIds.slice(i, i + 50);
+    const o = await env.DB.prepare(`SELECT id, number FROM orders WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
+    for (const x of o.results || []) numbers.set(x.id, x.number);
   }
-  if (from) { wh.push('date(created_at) >= ?'); binds.push(from); }
-  if (to) { wh.push('date(created_at) <= ?'); binds.push(to); }
-  if (wh.length) sql += ' WHERE ' + wh.join(' AND ');
-  sql += ' ORDER BY created_at DESC';
-  const r = await env.DB.prepare(sql).bind(...binds).all();
-  return { ok: true, expenses: (r.results || []).map((e) => ({
-    id: e.id, name: e.name, amount: e.amount, category: e.category, note: e.note,
-    created_by: e.created_by, created_at: e.created_at, updated_at: e.updated_at,
+  return { ok: true, expenses: rows.map((e) => ({
+    id: e.id, name: e.name, amount: Number(e.amount) || 0, category: e.category, note: e.note,
+    expense_date: expenseDay(e), order_id: e.order_id || null, order_number: e.order_id ? (numbers.get(e.order_id) ?? null) : null,
+    created_by: e.created_by, created_by_name: users.get(e.created_by) || '',
+    created_at: e.created_at, updated_at: e.updated_at,
+    can_edit: expPerm(user, 'edit', e), can_delete: expPerm(user, 'delete', e),
   })) };
 }
 
+/** التحقق من حقول المصروف (جديد أو تعديل فوق صف قائم) */
+async function cleanExpense(env, user, body, row) {
+  const b = body && typeof body === 'object' ? body : {};
+  const pick = (k, fallback) => (b[k] !== undefined ? b[k] : fallback);
+  const name = String(pick('name', row ? row.name : '') || '').trim().slice(0, 200);
+  const amount = Number(pick('amount', row ? row.amount : NaN));
+  const category = String(pick('category', row ? row.category : '') || '').trim().slice(0, 60) || null;
+  const note = String(pick('note', row ? row.note : '') || '').trim().slice(0, 500) || null;
+  const expenseDate = String(pick('expense_date', row ? expenseDay(row) : now().slice(0, 10)) || '').trim();
+  let orderId = pick('order_id', row ? row.order_id : null);
+  orderId = orderId ? String(orderId) : null;
+  if (!name) throw new HttpError(400, 'البيان مطلوب');
+  if (!Number.isFinite(amount) || amount <= 0) throw new HttpError(400, 'مبلغ غير صحيح — أدخل مبلغاً أكبر من صفر');
+  if (!EXPENSE_DATE_RE.test(expenseDate) || isNaN(Date.parse(expenseDate))) throw new HttpError(400, 'تاريخ غير صالح');
+  if (orderId && (!row || orderId !== row.order_id)) {
+    const o = await env.DB.prepare('SELECT id, created_by FROM orders WHERE id = ?').bind(orderId).first();
+    if (!o) throw new HttpError(400, 'الطلب المرتبط غير موجود');
+    // الربط بطلب لا يكشف طلباً لا يحق للمستخدم رؤيته
+    const own = o.created_by === user.id;
+    if (!hasPerm(user, own ? 'orders.view_own' : 'orders.view_all', user.permissions)) throw new HttpError(403, 'لا يمكنك ربط المصروف بهذا الطلب');
+  }
+  return { name, amount, category, note, expenseDate, orderId };
+}
+
 async function saveExpense(env, user, body) {
-  const name = String(body.name || '').trim();
-  const amount = Number(body.amount || 0);
-  const category = String(body.category || '').trim() || null;
-  const note = String(body.note || '').trim() || null;
-  if (!name) throw new HttpError(400, 'الاسم مطلوب');
-  if (!Number.isFinite(amount) || amount < 0) throw new HttpError(400, 'مبلغ غير صحيح');
+  const f = await cleanExpense(env, user, body, null);
+  let createdBy = user.id;
+  if (body && body.created_by && body.created_by !== user.id) {
+    // التسجيل باسم موظف آخر: لمن يملك add_all فقط، والموظف يجب أن يكون موجوداً
+    if (!hasPerm(user, 'expenses.add_all', user.permissions)) throw new HttpError(403, 'غير مصرح');
+    const u = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(String(body.created_by)).first();
+    if (!u) throw new HttpError(400, 'الموظف غير موجود');
+    createdBy = u.id;
+  } else if (!hasPerm(user, 'expenses.add_own', user.permissions)) {
+    throw new HttpError(403, 'غير مصرح');
+  }
   const id = uid();
   const t = now();
-  await env.DB.prepare('INSERT INTO expenses (id, name, amount, category, note, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, name, amount, category, note, user.id, t, t).run();
-  return { ok: true, expense: { id, name, amount, category, note, created_by: user.id, created_at: t, updated_at: t } };
+  await env.DB.prepare('INSERT INTO expenses (id, name, amount, category, note, created_by, created_at, updated_at, expense_date, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, f.name, f.amount, f.category, f.note, createdBy, t, t, f.expenseDate, f.orderId).run();
+  return { ok: true, expense: { id, name: f.name, amount: f.amount, category: f.category, note: f.note, expense_date: f.expenseDate, order_id: f.orderId, created_by: createdBy, created_at: t, updated_at: t } };
 }
 
 async function updateExpense(env, user, id, body) {
   const row = await env.DB.prepare('SELECT * FROM expenses WHERE id = ?').bind(id).first();
   if (!row) throw new HttpError(404, 'المصروف غير موجود');
-  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
-  const canEditOwn = hasPerm(user, 'expenses.edit_own', user.permissions);
-  if (!canViewAll && row.created_by !== user.id) throw new HttpError(403, 'غير مصرح');
-  if (!canViewAll && !canEditOwn) throw new HttpError(403, 'غير مصرح');
-
-  const name = String(body.name || row.name).trim();
-  const amount = body.amount !== undefined ? Number(body.amount) : row.amount;
-  const category = body.category !== undefined ? String(body.category || '').trim() || null : row.category;
-  const note = body.note !== undefined ? String(body.note || '').trim() || null : row.note;
-  if (!name) throw new HttpError(400, 'الاسم مطلوب');
-  if (!Number.isFinite(amount) || amount < 0) throw new HttpError(400, 'مبلغ غير صحيح');
+  // مصروف غيرك: لا تعديل بلا edit_all (ولا يُكشف وجوده لمن لا يرى إلا مصروفاته)
+  if (!expPerm(user, 'edit', row)) throw new HttpError(403, 'غير مصرح');
+  const f = await cleanExpense(env, user, body, row);
   const t = now();
-  await env.DB.prepare('UPDATE expenses SET name = ?, amount = ?, category = ?, note = ?, updated_at = ? WHERE id = ?')
-    .bind(name, amount, category, note, t, id).run();
-  return { ok: true, expense: { id, name, amount, category, note, created_by: row.created_by, created_at: row.created_at, updated_at: t } };
+  await env.DB.prepare('UPDATE expenses SET name = ?, amount = ?, category = ?, note = ?, expense_date = ?, order_id = ?, updated_at = ? WHERE id = ?')
+    .bind(f.name, f.amount, f.category, f.note, f.expenseDate, f.orderId, t, id).run();
+  return { ok: true, expense: { id, name: f.name, amount: f.amount, category: f.category, note: f.note, expense_date: f.expenseDate, order_id: f.orderId, created_by: row.created_by, created_at: row.created_at, updated_at: t } };
 }
 
 async function deleteExpense(env, user, id) {
   const row = await env.DB.prepare('SELECT * FROM expenses WHERE id = ?').bind(id).first();
   if (!row) throw new HttpError(404, 'المصروف غير موجود');
-  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
-  const canDeleteOwn = hasPerm(user, 'expenses.delete_own', user.permissions);
-  if (!canViewAll && row.created_by !== user.id) throw new HttpError(403, 'غير مصرح');
-  if (!canViewAll && !canDeleteOwn) throw new HttpError(403, 'غير مصرح');
+  if (!expPerm(user, 'delete', row)) throw new HttpError(403, 'غير مصرح');
   await env.DB.prepare('DELETE FROM expenses WHERE id = ?').bind(id).run();
   return { ok: true };
 }
 
 async function expensesSummary(env, user, query) {
-  const from = String(query.get('from') || '');
-  const to = String(query.get('to') || '');
-  const canViewAll = hasPerm(user, 'expenses.view_all', user.permissions);
-  const canViewOwn = hasPerm(user, 'expenses.view_own', user.permissions);
-  if (!canViewAll && !canViewOwn) throw new HttpError(403, 'غير مصرح');
-
-  let sql = 'SELECT id, amount, created_by, created_at FROM expenses';
-  const binds = [];
-  const wh = [];
-  if (!canViewAll) {
-    wh.push('created_by = ?');
-    binds.push(user.id);
-  }
-  if (from) { wh.push('date(created_at) >= ?'); binds.push(from); }
-  if (to) { wh.push('date(created_at) <= ?'); binds.push(to); }
-  if (wh.length) sql += ' WHERE ' + wh.join(' AND ');
-  sql += ' ORDER BY created_at DESC';
-  const r = await env.DB.prepare(sql).bind(...binds).all();
-  const rows = r.results || [];
+  const rows = await visibleExpenses(env, user, query);
   let total = 0;
-  for (const e of rows) total += Number(e.amount || 0);
-  return { ok: true, total_amount: total, count: rows.length };
+  const byCategory = {};
+  for (const e of rows) {
+    const a = Number(e.amount || 0);
+    total += a;
+    const c = e.category || 'بلا تصنيف';
+    byCategory[c] = (byCategory[c] || 0) + a;
+  }
+  return { ok: true, total_amount: total, count: rows.length, by_category: byCategory };
 }
 
 /* ------------------------------ دوال مساعدة لحساب التكاليف والإيرادات ------------------------------ */
@@ -1369,7 +1414,19 @@ async function mandoubsReport(env, user, query) {
     }
   }
 
-  return { ok: true, mandoubs: result };
+  // التقرير لكل المناديب: الأرقام الحساسة تتبع صلاحيات «الكل» لمن يطلبه
+  return { ok: true, mandoubs: result.map((m) => redactMoney(user, m, false)) };
+}
+
+/** حجب التكلفة/الربح/العمولة عمّن لا يملك صلاحيتها — التقارير لا تتجاوز ما تحجبه المزامنة.
+    own = السجل يخص المستخدم نفسه (فتكفي ‎_own)، وإلا تلزم ‎_all. null = محجوب (لا صفر مضلِّل). */
+function redactMoney(user, rec, own) {
+  const can = (p) => hasPerm(user, p + (own ? '_own' : '_all'), user.permissions) || (own && hasPerm(user, p + '_all', user.permissions));
+  const out = { ...rec };
+  if (!can('costs.view')) for (const k of ['cost', 'directCost', 'totalCost']) if (k in out) out[k] = null;
+  if (!can('costs.view') || !can('profit.view')) for (const k of ['profit', 'directProfit', 'totalProfit']) if (k in out) out[k] = null;
+  if (!can('commission.view')) for (const k of ['commission', 'share']) if (k in out) out[k] = null;
+  return out;
 }
 
 /* ------------------------------ تقرير الطلبات والمدفوعات ------------------------------ */
@@ -1427,22 +1484,27 @@ async function ordersSummary(env, user, query) {
     byStatus[st].remaining += remaining;
     byStatus[st].cost += cost;
     totalRevenue += revenue; totalPaid += paid; totalRemaining += remaining; totalCost += cost;
-    out.push({
+    out.push(redactMoney(user, {
       id: r.id, number: r.number, status: st, customer: d.customer || {},
       created_by: r.created_by, created_at: d.createdAt || r.created_at, updated_at: r.updated_at,
       subtotal: num(d.subtotal), total: num(d.total), paid, remaining,
       discount: num(d.discount), vatRate: num(d.vatRate), vatAmount: num(d.vatAmount),
       cost, profit: revenue - cost,
       payments: Array.isArray(d.payments) ? d.payments : [],
-    });
+    }, r.created_by === user.id));
   }
+  // أي طلب حُجبت تكلفته/ربحه يحجب الإجمالي أيضاً — وإلا يُستنتج المحجوب بالطرح
+  const costHidden = out.some((o) => o.cost === null);
+  const profitHidden = out.some((o) => o.profit === null);
+  if (costHidden) for (const s of Object.values(byStatus)) s.cost = null;
 
   return {
     ok: true,
     from, to,
     count: out.length,
-    totalRevenue, totalPaid, totalRemaining, totalCost,
-    netProfit: totalRevenue - totalCost,
+    totalRevenue, totalPaid, totalRemaining,
+    totalCost: costHidden ? null : totalCost,
+    netProfit: (costHidden || profitHidden) ? null : totalRevenue - totalCost,
     byStatus,
     orders: out,
   };
@@ -1463,18 +1525,29 @@ async function currentUser(env, token) {
   ).bind(token, now()).first();
   if (!row) return null;
   const permissions = await loadUserPermissions(env, row.id);
-  return Object.assign({}, row, { permissions });
+  // هوية المالك من البيئة وحدها (لا من الطلب ولا من القاعدة)، وبدور مدير ونشِط
+  const ownerId = ownerIdOf(env);
+  const isOwner = !!ownerId && String(row.id) === ownerId && row.role === 'admin';
+  return Object.assign({}, row, { permissions, ownerId, isOwner });
 }
 
 function requireAdmin(user) {
-  if (!user || !hasPerm(user, 'admin.core', user.permissions)) throw new HttpError(403, 'هذه العملية للمدير فقط');
+  if (!user || !hasPerm(user, 'admin.core', user.permissions)) throw new HttpError(403, 'هذه العملية لمالك النظام فقط');
+}
+
+function requireOwner(user) {
+  if (!user || user.isOwner !== true) throw new HttpError(403, 'هذه العملية لمالك النظام فقط');
 }
 
 function requirePerm(user, perm) {
   if (!user || !hasPerm(user, perm, user.permissions)) throw new HttpError(403, 'غير مصرح');
 }
 
-const publicUser = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: !!u.active });
+function requireAnyPerm(user, perms) {
+  if (!user || !perms.some((p) => hasPerm(user, p, user.permissions))) throw new HttpError(403, 'غير مصرح');
+}
+
+const publicUser = (u) => ({ id: u.id, name: u.name, username: u.username, role: u.role, active: !!u.active, isOwner: u.isOwner === true });
 
 /* الحد من تخمين كلمات المرور: 5 محاولات فاشلة لاسم المستخدم أو 20 من نفس
    العنوان خلال 15 دقيقة تُقفل الدخول 15 دقيقة. */
@@ -1551,7 +1624,8 @@ async function bootstrap(env, user) {
     env.DB.prepare('SELECT data FROM items ORDER BY updated_at').all(),
     ordersQuery,
   ]);
-  const admin = user.role === 'admin';
+  // الإدارة الكاملة (السجل ونسب العمولة) للمالك وحده — لا لدور «مدير»
+  const admin = hasPerm(user, 'admin.core', user.permissions);
   const out = {
     // قدرات هذا الخادم: الواجهة الأحدث لا تعتمد على ميزة لم يُنشر خادمها بعد
     features: { serverNumbers: true, costsHidden: true },
@@ -1574,12 +1648,19 @@ async function bootstrap(env, user) {
   };
   if (admin) {
     // آخر 3000 حدث فقط: السجل ينمو بلا حد، وتحميله كاملاً مع كل مزامنة يُبطئها
-    const [act, users] = await Promise.all([
-      env.DB.prepare('SELECT data FROM (SELECT data, at FROM activity ORDER BY at DESC LIMIT 3000) ORDER BY at').all(),
-      listUsers(env),
-    ]);
+    const act = await env.DB.prepare('SELECT data FROM (SELECT data, at FROM activity ORDER BY at DESC LIMIT 3000) ORDER BY at').all();
     out.activity = act.results.map((r) => safeParse(r.data));
-    out.users = users;
+  }
+  // قائمة المستخدمين لمن يملك users.view (لا الدور). نسب العمولة للمدير وحده.
+  if (hasPerm(user, 'users.view', user.permissions)) {
+    const users = await listUsers(env);
+    out.users = admin ? users : users.map((u) => ({ ...u, rate: null, parentRate: null }));
+  }
+  // للمديرين: هل حُدِّد مالك النظام؟ (الواجهة تنبّه إن لم يُضبط OWNER_USER_ID أو كان غير صالح)
+  if (user.role === 'admin') {
+    const ownerId = ownerIdOf(env);
+    const ownerRow = ownerId ? await env.DB.prepare("SELECT id FROM users WHERE id = ? AND role = 'admin' AND active = 1").bind(ownerId).first() : null;
+    out.owner = { configured: !!ownerRow };
   }
   return out;
 }
@@ -1705,7 +1786,8 @@ async function sync(env, user, body) {
 
   const it = body.items || {};
   if ((it.upsert && it.upsert.length) || (it.delete && it.delete.length)) {
-    requirePerm(user, 'settings.manage');
+    // الأصناف والأسعار صلاحية مستقلة عن إعدادات المحل
+    requirePerm(user, 'items.manage');
     (it.upsert || []).forEach((i) => q('INSERT INTO items (id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', i.id, JSON.stringify(i), ts));
     (it.delete || []).forEach((id) => q('DELETE FROM items WHERE id = ?', id));
   }
@@ -1724,17 +1806,66 @@ async function sync(env, user, body) {
       });
     }
   }
-  const admin = user.role === 'admin';
+  // الإدارة الكاملة (نسب العمولة، ونسب الطلب لغيرك عند الإنشاء) للمالك وحده — لا لدور «مدير»
+  const admin = hasPerm(user, 'admin.core', user.permissions);
+  // نسب العمولة لغير المالك يحسبها الخادم من القاعدة (لا ما يرسله العميل): الإعدادات + صاحب الطلب
+  let commCtx = null;
+  if (!admin && (od.upsert || []).length) {
+    const srow = await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+    const ownerIds = [...new Set(od.upsert.map((o) => (existing.get(o.id) || {}).owner || user.id).filter(Boolean))];
+    const owners = new Map();
+    for (let i = 0; i < ownerIds.length; i += 50) {
+      const chunk = ownerIds.slice(i, i + 50);
+      const rows = await env.DB.prepare(`SELECT id, role, rate, parent_id, parent_rate FROM users WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
+      for (const r of rows.results || []) owners.set(r.id, r);
+    }
+    commCtx = { settings: (srow && safeParse(srow.data, {})) || {}, owners };
+  }
 
-  // ملكية الطلبات: الموظف يعدّل طلباته فقط، والمدير يعدّل الجميع وينقل الملكية
-  if (user.role !== 'admin' && (od.upsert || []).length) {
+  /* ملكية الطلبات: تعديل طلب غيرك (أو طلب قديم بلا مالك) يتطلب orders.edit_all — يفرضه فحص
+     الصلاحيات أدناه، لا الدور. نقل الملكية (تغيير createdBy) للمدير وحده. */
+  if (!hasPerm(user, 'admin.core', user.permissions) && (od.upsert || []).length) {
     for (const o of od.upsert) {
       const row = existing.get(o.id);
-      // طلب بلا مالك (قديم): المدير فقط — لا يصبح تلقائياً قابلاً للتعديل من أي موظف
-      // رسالة عامة: لا نكشف حتى رقم الطلب أو مالكه عند استهداف سجل غير مصرح به.
-      if (row && row.owner !== user.id) throw new HttpError(403, 'لا تملك صلاحية تنفيذ هذه العملية');
-      if (o.createdBy && o.createdBy !== user.id) throw new HttpError(403, 'لا يمكن نسب الطلب إلى موظف آخر');
+      const expected = row ? row.owner : user.id;
+      if (o.createdBy && o.createdBy !== expected) throw new HttpError(403, 'لا يمكن نسب الطلب إلى موظف آخر');
     }
+  }
+
+  // فحص الصلاحيات أولاً: قبل أي تحقق يكشف معلومة (أرقام، تعارض) عن طلب لا يحق للمستخدم تعديله
+  // D3 permission checks for order upserts.
+  const hasCostData = (x) => {
+    if (!x || typeof x !== "object") return false;
+    if (x.costs && Object.keys(x.costs).length) return true;
+    if (Array.isArray(x.extraCosts) && x.extraCosts.length) return true;
+    if (x.costTotal !== undefined && x.costTotal !== null && x.costTotal !== "") return true;
+    if (Array.isArray(x.manualRows) && x.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== "")) return true;
+    return false;
+  };
+  for (const o of (od.upsert || [])) {
+    const row = existing.get(o.id);
+    const owner = !row || row.owner === user.id;
+    if (!row) {
+      if (!hasPerm(user, "orders.create", user.permissions)) throw new HttpError(403, "غير مصرح");
+    } else if (owner) {
+      if (!hasPerm(user, "orders.edit_own", user.permissions)) throw new HttpError(403, "غير مصرح");
+    } else {
+      if (!hasPerm(user, "orders.edit_all", user.permissions)) throw new HttpError(403, "غير مصرح");
+    }
+    if (hasCostIntent(o)) {
+      const existingHadCosts = !!(row && hasCostData(row.data));
+      const newHasCosts = hasCostData(o);
+      const clearing = !newHasCosts;
+      const perm = clearing
+        ? (owner ? "costs.delete_own" : "costs.delete_all")
+        : (existingHadCosts ? (owner ? "costs.edit_own" : "costs.edit_all") : (owner ? "costs.add_own" : "costs.add_all"));
+      if (!hasPerm(user, perm, user.permissions)) throw new HttpError(403, "غير مصرح");
+    }
+    // الدفعات مال مستلَم: الإضافة والتعديل والحذف صلاحيات مستقلة (داخل حدود ملكية الطلب أعلاه)
+    const pc = paymentChanges(row ? row.data : null, o);
+    if (pc.added && !hasPerm(user, 'payments.add', user.permissions)) throw new HttpError(403, 'لا تملك صلاحية إضافة دفعة');
+    if (pc.edited && !hasPerm(user, 'payments.edit', user.permissions)) throw new HttpError(403, 'لا تملك صلاحية تعديل الدفعات');
+    if (pc.removed && !hasPerm(user, 'payments.delete', user.permissions)) throw new HttpError(403, 'لا تملك صلاحية حذف الدفعات');
   }
 
   // أرقام صريحة (طلبات قائمة): لا رقمين متماثلين لطلبين مختلفين — لا في الدفعة ولا في المخزّن
@@ -1776,36 +1907,6 @@ async function sync(env, user, body) {
     numbers[o.id] = Number(r.value);
   }
 
-  // D3 permission checks for order upserts.
-  const hasCostData = (x) => {
-    if (!x || typeof x !== "object") return false;
-    if (x.costs && Object.keys(x.costs).length) return true;
-    if (Array.isArray(x.extraCosts) && x.extraCosts.length) return true;
-    if (x.costTotal !== undefined && x.costTotal !== null && x.costTotal !== "") return true;
-    if (Array.isArray(x.manualRows) && x.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== "")) return true;
-    return false;
-  };
-  for (const o of (od.upsert || [])) {
-    const row = existing.get(o.id);
-    const owner = !row || row.owner === user.id;
-    if (!row) {
-      if (!hasPerm(user, "orders.create", user.permissions)) throw new HttpError(403, "غير مصرح");
-    } else if (owner) {
-      if (!hasPerm(user, "orders.edit_own", user.permissions)) throw new HttpError(403, "غير مصرح");
-    } else {
-      if (!hasPerm(user, "orders.edit_all", user.permissions)) throw new HttpError(403, "غير مصرح");
-    }
-    if (hasCostIntent(o)) {
-      const existingHadCosts = !!(row && hasCostData(row.data));
-      const newHasCosts = hasCostData(o);
-      const clearing = !newHasCosts;
-      const perm = clearing
-        ? (owner ? "costs.delete_own" : "costs.delete_all")
-        : (existingHadCosts ? (owner ? "costs.edit_own" : "costs.edit_all") : (owner ? "costs.add_own" : "costs.add_all"));
-      if (!hasPerm(user, perm, user.permissions)) throw new HttpError(403, "غير مصرح");
-    }
-  }
-
   (od.upsert || []).forEach((o) => {
     const rec = { ...o };
     delete rec._base;                              // حقل نقل لا يُخزَّن
@@ -1817,6 +1918,9 @@ async function sync(env, user, body) {
     // ما يرسله بلا أي أثر تكلفة ليس حذفاً: نسخه المحلية قد لم ترَ التكاليف
     // أصلاً (كانت مخفية عن الموظفين قديماً)، فتُستعاد من المخزّن لا تُمحى.
     if (!admin && !hasCostIntent(rec)) restoreCosts(rec, existing.has(rec.id) ? existing.get(rec.id).data : {});
+    // نسب العمولة: غير المالك لا يغيّرها — تُستعاد من المخزّن، أو يحسبها الخادم لطلب بلا لقطة
+    if (!admin) lockCommission(rec, existing.has(rec.id) ? existing.get(rec.id).data : null,
+      commCtx.owners.get((existing.get(rec.id) || {}).owner || user.id) || null, commCtx.settings);
     // created_by يُحدَّث أيضاً: بدونه يبقى نقل الملكية في JSON فقط، ويرفض فحص الملكية
     // (المبني على العمود) تعديلات المالك الجديد. COALESCE تحمي الطلبات القديمة بلا مالك.
     q(
@@ -1824,7 +1928,18 @@ async function sync(env, user, body) {
       rec.id, rec.number ?? null, rec.status ?? null, (rec.customer && rec.customer.name) || '', rec.createdBy ?? null, rec.createdAt ?? ts, JSON.stringify(rec), ts
     );
   });
-  if (od.delete && od.delete.length) { requirePerm(user, 'orders.delete_all'); od.delete.forEach((id) => q('DELETE FROM orders WHERE id = ?', id)); }
+  if (od.delete && od.delete.length) {
+    // حذف طلبك: orders.delete_own، وطلب غيرك (أو بلا مالك): orders.delete_all
+    if (!hasPerm(user, 'orders.delete_all', user.permissions)) {
+      if (!hasPerm(user, 'orders.delete_own', user.permissions)) throw new HttpError(403, 'غير مصرح');
+      for (let i = 0; i < od.delete.length; i += 50) {
+        const chunk = od.delete.slice(i, i + 50);
+        const rows = await env.DB.prepare(`SELECT id, created_by FROM orders WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
+        if (rows.results.some((r) => r.created_by !== user.id)) throw new HttpError(403, 'غير مصرح');
+      }
+    }
+    od.delete.forEach((id) => q('DELETE FROM orders WHERE id = ?', id));
+  }
 
   const ac = body.activity || {};
   // سجل التحديثات سجل تدقيق: الموظف يضيف أحداثاً باسمه فقط ولا يعدّل حدثاً موجوداً.
@@ -1900,6 +2015,45 @@ function hasCostIntent(o) {
   if (o.costTotal !== undefined && o.costTotal !== null && o.costTotal !== '') return true;
   if (Array.isArray(o.manualRows) && o.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== '')) return true;
   return false;
+}
+
+/* نسب العمولة في الطلب (لقطة commRates ونسب البائع/المندوب/المشاركة): يحددها المالك وحده.
+   لغيره: تُستعاد القيم المخزّنة كما هي (ما يرسله العميل يُهمل)، وطلب بلا لقطة تُحسب لقطته هنا من
+   القاعدة بنفس معادلات الواجهة (sellerRateOf/mandoubOwnerRateOf/mandoubParentRateOf/shareRateOf). */
+const COMMISSION_FIELDS = ['commRates', 'sellerRate', 'mandoubRate', 'shareRate', 'othersRate'];
+const rateOrNull = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+function serverCommSnapshot(o, owner, s) {
+  const isMan = !!(owner && owner.role === 'mandoub');
+  const parentId = isMan && owner.parent_id ? String(owner.parent_id) : null;
+  return {
+    ownerRate: isMan ? (rateOrNull(owner.rate) ?? rateOrNull(s.mandoubRate) ?? 0) : (rateOrNull(o.sellerRate) ?? rateOrNull(s.sellerRate) ?? 0),
+    parentId,
+    parentRate: parentId ? (rateOrNull(owner.parent_rate) ?? rateOrNull(s.mandoubParentRate) ?? 0) : null,
+    shareRate: rateOrNull(o.shareRate !== undefined ? o.shareRate : o.othersRate) ?? rateOrNull(s.shareRate) ?? 0,
+  };
+}
+function lockCommission(rec, prev, owner, s) {
+  for (const k of COMMISSION_FIELDS) { if (prev && prev[k] !== undefined) rec[k] = prev[k]; else delete rec[k]; }
+  if (!rec.commRates) rec.commRates = serverCommSnapshot(rec, owner, s || {});
+}
+
+/** الفرق بين دفعات النسخة المخزّنة والمرسلة (بالمعرّف): ما أُضيف، وما عُدِّل، وما حُذف.
+    الدفعة «legacy» يولّدها العميل من المبلغ المدفوع لطلب قديم بلا سجل دفعات — ليست إضافة. */
+function paymentChanges(prev, next) {
+  const oldList = (prev && Array.isArray(prev.payments)) ? prev.payments.filter((p) => p && p.id) : [];
+  const newList = (next && Array.isArray(next.payments)) ? next.payments.filter((p) => p && p.id) : [];
+  const oldById = new Map(oldList.map((p) => [String(p.id), p]));
+  const newIds = new Set(newList.map((p) => String(p.id)));
+  const same = (a, b) => Number(a.amount) === Number(b.amount) && String(a.method || '') === String(b.method || '')
+    && String(a.at || '') === String(b.at || '') && String(a.note || '') === String(b.note || '');
+  let added = false, edited = false;
+  for (const p of newList) {
+    const o = oldById.get(String(p.id));
+    if (!o) { if (!(p.id === 'legacy' && !oldList.length)) added = true; }
+    else if (!same(o, p)) edited = true;
+  }
+  const removed = oldList.some((p) => !newIds.has(String(p.id)));
+  return { added, edited, removed };
 }
 
 /** إعادة تكاليف النسخة المخزّنة إلى ما أرسله الموظف (وإسقاط أي تكلفة ادّعاها) */
@@ -2335,8 +2489,10 @@ async function linkVisits(env) {
 
 async function listUsers(env) {
   const r = await env.DB.prepare('SELECT id, username, name, role, active, created_at, parent_id, rate, parent_rate FROM users ORDER BY created_at').all();
+  const ownerId = ownerIdOf(env);
   return r.results.map((u) => ({
     id: u.id, username: u.username, name: u.name, role: u.role, active: !!u.active, createdAt: u.created_at,
+    isOwner: !!ownerId && String(u.id) === ownerId && u.role === 'admin',
     parentId: u.parent_id || null,
     rate: u.rate == null ? null : Number(u.rate),
     parentRate: u.parent_rate == null ? null : Number(u.parent_rate),
@@ -2349,11 +2505,36 @@ async function saveUser(env, me, body, myToken) {
   const role = body.role === 'admin' ? 'admin' : body.role === 'staff' ? 'staff' : body.role === 'mandoub' ? 'mandoub' : null;
   const active = body.active !== false;
   const password = body.password ? String(body.password) : '';
-  const parentId = body.parentId || null;
-  const rate = body.rate == null || body.rate === '' ? null : Math.max(0, Math.min(100, Number(body.rate)));
-  const parentRate = body.parentRate == null || body.parentRate === '' ? null : Math.max(0, Math.min(100, Number(body.parentRate)));
+  let parentId = body.parentId || null;
+  let rate = body.rate == null || body.rate === '' ? null : Math.max(0, Math.min(100, Number(body.rate)));
+  let parentRate = body.parentRate == null || body.parentRate === '' ? null : Math.max(0, Math.min(100, Number(body.parentRate)));
   if (!name || !username) throw new HttpError(400, 'الاسم واسم المستخدم مطلوبان');
   if (!role) throw new HttpError(400, 'دور غير صالح');
+
+  /* حماية المالك والمديرين (في الخادم، لا الواجهة):
+     - دور «مدير» (إنشاءً أو ترقيةً) وأي تعديل على حساب مدير قائم — كلمة مرور أو تفعيل أو دور
+       أو اسم — للمالك وحده؛ فلا يصنع مدير عادي مديراً بديلاً ولا يستولي على حساب مدير.
+     - المالك نفسه لا يُخفَّض دوره ولا يُعطَّل عبر العمليات العادية (حتى بطلب منه).
+     - نسب العمولة وشجرة المناديب للمالك وحده: غيره يحتفظ بالقيم المخزّنة. */
+  const ownerId = ownerIdOf(env);
+  const actorIsOwner = me && me.isOwner === true;
+  let existing = null;
+  if (body.id) {
+    existing = await env.DB.prepare('SELECT id, role, active, parent_id, rate, parent_rate FROM users WHERE id = ?').bind(body.id).first();
+    if (!existing) throw new HttpError(404, 'المستخدم غير موجود');
+  }
+  if (existing && ownerId && String(existing.id) === ownerId) {
+    if (!actorIsOwner) throw new HttpError(403, 'حساب مالك النظام لا يعدّله غيره');
+    if (role !== 'admin' || !active) throw new HttpError(400, 'مالك النظام لا يُخفَّض دوره ولا يُعطَّل');
+  }
+  if (!actorIsOwner && (role === 'admin' || (existing && existing.role === 'admin'))) {
+    throw new HttpError(403, 'إنشاء المديرين وتعديل حساباتهم لمالك النظام وحده');
+  }
+  if (!actorIsOwner) {
+    parentId = existing ? (existing.parent_id || null) : null;
+    rate = existing ? (existing.rate == null ? null : Number(existing.rate)) : null;
+    parentRate = existing ? (existing.parent_rate == null ? null : Number(existing.parent_rate)) : null;
+  }
   // سلامة شجرة المناديب (server-side ولا يعتمد على الواجهة): لا أب ذاتي، لا دورة، لا أب مجهول
   if (parentId) {
     if (body.id && parentId === body.id) throw new HttpError(400, 'لا يمكن أن يكون المستخدم أباً لنفسه');
@@ -2393,6 +2574,11 @@ async function saveUser(env, me, body, myToken) {
 
 async function deleteUser(env, me, id) {
   if (id === me.id) throw new HttpError(400, 'لا يمكنك حذف حسابك الحالي');
+  const ownerId = ownerIdOf(env);
+  if (ownerId && String(id) === ownerId) throw new HttpError(400, 'لا يمكن حذف مالك النظام');
+  const target = await env.DB.prepare('SELECT id, role FROM users WHERE id = ?').bind(id).first();
+  // حذف أي مدير للمالك وحده
+  if (target && target.role === 'admin' && !(me && me.isOwner === true)) throw new HttpError(403, 'حذف المديرين لمالك النظام وحده');
   const admins = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").bind(id).first();
   if (Number(admins.n) === 0) throw new HttpError(400, 'لا يمكن حذف آخر مدير في النظام');
   await env.DB.batch([
@@ -2409,11 +2595,23 @@ async function deleteUser(env, me, id) {
    - كل تعديل يُسجَّل في permission_audit (ذرّي مع التنفيذ عبر batch واحد).
    - التغييرات تسري فوراً على الطلبات اللاحقة (تُقرأ الصلاحيات مع كل طلب). */
 
+/** حدود إدارة الصلاحيات: صلاحيات المالك ثابتة (كاملة) لا تُعدَّل، وصلاحيات أي مدير يديرها
+    المالك وحده — مدير عادي ممنوح permissions.manage يدير الموظفين والمناديب فقط. */
+function assertPermTarget(env, actor, row, writing) {
+  const ownerId = ownerIdOf(env);
+  if (ownerId && String(row.id) === ownerId) {
+    if (writing) throw new HttpError(400, 'صلاحيات مالك النظام كاملة وثابتة — لا تُعدَّل');
+    return;
+  }
+  if (row.role === 'admin' && !(actor && actor.isOwner === true)) throw new HttpError(403, 'صلاحيات المديرين يديرها مالك النظام وحده');
+}
+
 /** قراءة صلاحيات مستخدم: الافتراضيات والتجاوزات والفعّالة */
 async function getUserPermissions(env, actor, targetId) {
   requirePerm(actor, 'permissions.manage');
   const row = await env.DB.prepare('SELECT id, username, name, role, active FROM users WHERE id = ?').bind(targetId).first();
   if (!row) throw new HttpError(404, 'المستخدم غير موجود');
+  assertPermTarget(env, actor, row, false);
   const load = await loadUserPermissions(env, targetId);
   const loadFailed = !(load && load.ok);
   const overrides = (load && load.ok && load.overrides) ? load.overrides : {};
@@ -2427,7 +2625,11 @@ async function getUserPermissions(env, actor, targetId) {
     roleDefaults: Object.fromEntries(Object.keys(ROLE_PERMISSIONS).map((r) => [r, [...ROLE_PERMISSIONS[r]]])),
     overrides,
     protected: PROTECTED_ADMIN_PERMISSIONS.slice(),
+    adminOnly: ADMIN_ONLY_PERMISSIONS.slice(),
     catalog: Object.keys(PERMISSIONS),
+    // للعرض فقط: المالك بصلاحيات كاملة ثابتة، ومن يطلب هل هو المالك (يقرر قفل الإدارية في النافذة)
+    targetIsOwner: !!ownerIdOf(env) && String(row.id) === ownerIdOf(env),
+    actorIsOwner: actor && actor.isOwner === true,
   };
 }
 
@@ -2436,6 +2638,7 @@ async function saveUserPermissions(env, actor, targetId, body) {
   requirePerm(actor, 'permissions.manage');
   const row = await env.DB.prepare('SELECT id, username, name, role, active FROM users WHERE id = ?').bind(targetId).first();
   if (!row) throw new HttpError(404, 'المستخدم غير موجود');
+  assertPermTarget(env, actor, row, true);
 
   const raw = body && typeof body === 'object' && body.overrides && typeof body.overrides === 'object' ? body.overrides : null;
   if (!raw) throw new HttpError(400, 'صيغة غير صالحة: overrides مطلوبة');
@@ -2447,6 +2650,11 @@ async function saveUserPermissions(env, actor, targetId, body) {
     const v = raw[key];
     if (!(v === 0 || v === 1 || v === '0' || v === '1' || v === true || v === false)) throw new HttpError(400, 'قيمة غير صالحة للصلاحية: ' + key);
     clean[key] = (v === true || v === 1 || v === '1') ? 1 : 0;
+    if (ADMIN_ONLY_PERMISSIONS.includes(key)) {
+      // منح الإدارة الكاملة وسحبها لمالك النظام وحده، ومنحها لمدير عادي فقط
+      if (!(actor && actor.isOwner === true)) throw new HttpError(403, 'صلاحية ' + key + ' يديرها مالك النظام وحده');
+      if (clean[key] === 1 && row.role !== 'admin') throw new HttpError(400, 'صلاحية ' + key + ' للمدير فقط — لا تُمنح لموظف أو مندوب');
+    }
   }
   // قفل ذاتي ممنوع: لا يسحب أحدٌ إدارة الصلاحيات من نفسه
   if (actor.id === targetId && clean['permissions.manage'] === 0) {
@@ -2482,6 +2690,7 @@ async function resetUserPermissions(env, actor, targetId, body) {
   requirePerm(actor, 'permissions.manage');
   const row = await env.DB.prepare('SELECT id, username, name, role, active FROM users WHERE id = ?').bind(targetId).first();
   if (!row) throw new HttpError(404, 'المستخدم غير موجود');
+  assertPermTarget(env, actor, row, true);
   const before = await loadUserPermissions(env, targetId);
   const beforeMap = (before && before.ok && before.overrides) ? before.overrides : {};
   const t = now();
@@ -2627,6 +2836,44 @@ function timingSafeEqual(a, b) {
   let r = 0;
   for (let i = 0; i < a.length; i++) r |= a.charCodeAt(i) ^ b.charCodeAt(i);
   return r === 0;
+}
+
+async function sha256Hex(s) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(String(s)));
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+/* استرداد حساب مالك النظام عند فقدان الوصول — بلا أي سر في الكود:
+   1) صاحب حساب Cloudflare يضبط Secret مؤقتاً OWNER_RECOVERY_CODE (16 حرفاً فأكثر يختارها).
+   2) POST /api/owner/recover { code, newPassword }: يعيد كلمة مرور المالك وحده (المعرّف من
+      OWNER_USER_ID)، ويعيد تفعيله ودوره مديراً، وينهي كل جلساته.
+   3) كل رمز يُقبل مرة واحدة (تُحفظ بصمته في counters)، والمحاولات محدودة كالدخول.
+   4) يُحذف الـ Secret بعد الاستخدام. بلا السرّين معاً المسار غير موجود (404). */
+async function ownerRecover(env, body, request) {
+  const ownerId = ownerIdOf(env);
+  const secret = env && env.OWNER_RECOVERY_CODE != null ? String(env.OWNER_RECOVERY_CODE) : '';
+  if (!ownerId || secret.length < 16) throw new HttpError(404, 'المسار غير موجود');
+  const ip = (request && request.headers.get('CF-Connecting-IP')) || '';
+  const keys = ['recover:owner'].concat(ip ? ['recover:ip:' + ip] : []);
+  const mins = await loginLocked(env, keys);
+  if (mins) throw new HttpError(429, `محاولات كثيرة — أعد المحاولة بعد ${mins} دقيقة`);
+  const given = await sha256Hex(String((body && body.code) || ''));
+  const expected = await sha256Hex(secret);
+  if (!timingSafeEqual(given, expected)) { await loginFailed(env, keys); throw new HttpError(403, 'رمز الاسترداد غير صحيح'); }
+  const usedKey = 'owner_recovery:' + expected;
+  const used = await env.DB.prepare('SELECT value FROM counters WHERE key = ?').bind(usedKey).first();
+  if (used) throw new HttpError(410, 'هذا الرمز استُخدم من قبل — اضبط رمزاً جديداً في Cloudflare');
+  const owner = await env.DB.prepare('SELECT id, username FROM users WHERE id = ?').bind(ownerId).first();
+  if (!owner) throw new HttpError(400, 'حساب المالك المحدد في OWNER_USER_ID غير موجود');
+  const newPassword = String((body && body.newPassword) || '');
+  validatePassword(newPassword, owner.username);
+  await env.DB.batch([
+    env.DB.prepare("UPDATE users SET password_hash = ?, must_change_password = 0, active = 1, role = 'admin' WHERE id = ?").bind(await hashPassword(newPassword), ownerId),
+    env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(ownerId),
+    env.DB.prepare('INSERT INTO counters (key, value) VALUES (?, 1)').bind(usedKey),
+    ...keys.map((k) => env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind(k)),
+  ]);
+  return { ok: true, username: owner.username };
 }
 
 /* ------------------------------ خدمة ملفات الواجهة ------------------------------ */

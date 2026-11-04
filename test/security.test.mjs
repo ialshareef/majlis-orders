@@ -50,7 +50,8 @@ const call = async (env, path, token, body, method) => {
   try { data = await res.json(); } catch { /* ليست JSON */ }
   return { status: res.status, headers: Object.fromEntries(res.headers.entries()), data };
 };
-const makeEnv = (origin = ALLOWED) => { const e = envWith(); if (origin) e.ALLOWED_ORIGIN = origin; return e; };
+/* مالك النظام: معرّف ثابت من البيئة (OWNER_USER_ID). المدير رقم 1 هنا هو المالك؛ أي مدير آخر مدير عادي. */
+const makeEnv = (origin = ALLOWED) => { const e = envWith(); if (origin) e.ALLOWED_ORIGIN = origin; e.OWNER_USER_ID = '1'; return e; };
 const future = () => new Date(Date.now() + 86400000).toISOString();
 const past = () => new Date(Date.now() - 86400000).toISOString();
 

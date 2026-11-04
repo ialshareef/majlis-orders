@@ -196,9 +196,10 @@ CREATE TABLE IF NOT EXISTS expenses (
   note          TEXT,
   created_by    TEXT NOT NULL,
   created_at    TEXT NOT NULL,
-  updated_at    TEXT NOT NULL
+  updated_at    TEXT NOT NULL, expense_date TEXT, order_id TEXT
   -- created_by بلا مفتاح أجنبي (مثل orders.created_by): المصروف يبقى منسوباً لصاحبه بعد حذفه.
   -- (NOT NULL مع ON DELETE SET NULL كان يُفشل حذف أي مستخدم له مصروفات)
+  -- expense_date (YYYY-MM-DD) تاريخ المصروف نفسه، وorder_id ربط اختياري بطلب (الهجرة 004)
 );
 
 CREATE INDEX IF NOT EXISTS expenses_created_at_idx ON expenses(created_at);

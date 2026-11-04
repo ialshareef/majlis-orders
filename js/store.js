@@ -234,6 +234,8 @@
           db: this.db,
           snap: { items: serMap(this.snap.items), orders: serMap(this.snap.orders), activity: serMap(this.snap.activity), settings: this.snap.settings },
           features: this.features || {}, user: this.user,
+          // آخر صلاحيات معروفة لنفس المستخدم: تُبقي الواجهة كما هي دون اتصال (الفرض في الخادم دائماً)
+          perms: { userId: this.user ? this.user.id : null, list: Array.isArray(this.myPermissions) ? this.myPermissions : [] },
         }));
       } catch (_) { /* مساحة التخزين ممتلئة */ }
     },
@@ -255,6 +257,8 @@
         this.snap = { items: deMap(cs.items), orders: deMap(cs.orders), activity: deMap(cs.activity), settings: (typeof cs.settings === 'string' ? cs.settings : null) };
         this.features = c.features || {};
         if (c.user) this.user = c.user;
+        // صلاحيات مخزّنة لمستخدم آخر على نفس الجهاز لا تُستعمل أبداً
+        this.myPermissions = (c.perms && c.user && c.perms.userId === c.user.id && Array.isArray(c.perms.list)) ? c.perms.list : [];
         return true;
       } catch (_) { return false; }
     },
@@ -320,6 +324,8 @@
       this.db.users = Array.isArray(b.users) ? b.users : [];
       if (b.user) this.user = b.user;
       this.features = b.features || {};
+      // للمديرين: هل حُدِّد مالك النظام (OWNER_USER_ID)؟ null = غير معروف (خادم أقدم أو غير مدير)
+      this.ownerConfigured = b.owner ? !!b.owner.configured : null;
       // صلاحياتي الفعّالة من الخادم؛ غيابها (خادم أقدم/فشل) = لا شيء (فشل مُغلق)
       this.myPermissions = Array.isArray(b.permissions) ? b.permissions : [];
       this.snapshot();
@@ -565,6 +571,11 @@
     get serverNumbers() { return remote && !!(Remote.features && Remote.features.serverNumbers); },
     /** هل أملك هذه الصلاحية؟ للعرض فقط — الخادم يفرضها. الوضع المحلي أو قبل التحميل: لا. */
     can: (p) => remote && Array.isArray(Remote.myPermissions) && Remote.myPermissions.includes(p),
+    /** هل حُدِّد مالك النظام؟ (للتنبيه فقط — الفرض في الخادم) */
+    get ownerConfigured() { return remote ? (Remote.ownerConfigured === undefined ? null : Remote.ownerConfigured) : null; },
+    /** رمز الجلسة ومفتاح تخزينه: تحتاجهما خطوة تغيير كلمة المرور الإجبارية لحفظ الجلسة بعد نجاحها */
+    get token() { return remote ? (Remote.token || null) : null; },
+    get TOKEN_KEY() { return Remote.TOKEN_KEY; },
     get db() { return backend.db; },
     get lastError() { return backend.lastError || ''; },
     get lastStatus() { return backend.lastStatus || 0; },

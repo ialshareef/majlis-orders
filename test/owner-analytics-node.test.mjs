@@ -333,6 +333,7 @@ function envWith(seed = {}) {
     TZ_OFFSET: 0,
     VISIT_TZ: 'Asia/Riyadh',
     ALLOWED_ORIGIN: '*',
+    OWNER_USER_ID: '1', // المستخدم 1 (المالك) — لوحة التحليلات لمالك النظام وحده
     fetch: async () => new Response('{}'),
     cron: async () => {},
     caches: { default: { match: async () => null, put: async () => {} } },

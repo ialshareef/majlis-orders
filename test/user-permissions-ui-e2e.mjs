@@ -56,6 +56,7 @@ for (const t of ['customer_designs', 'permission_audit', 'expenses', 'activity']
 // المدير الثاني: Deny override على permissions.manage (والدور مدير)
 env.DB.tables.set('user_permissions', [{ user_id: '4', permission: 'permissions.manage', value: 0, updated_by: '1', updated_at: past }]);
 env.ADMIN_INIT_PASSWORD = '';
+env.OWNER_USER_ID = '1'; // المدير 1 مالك النظام؛ المدير الآخر مدير عادي
 /* D1 الوهمية لا تدعم lower(col) ولا IS NOT فتتجاهل الشرط (الدخول يعيد المدير دائماً،
    وفحص تكرار الاسم يجد المستخدم نفسه). أسماء المستخدمين هنا بأحرف صغيرة والتعديل دائماً
    بمعرّف، فالصيغة المبسّطة مكافئة — داخل هذا الاختبار فقط. */
@@ -133,7 +134,8 @@ const same = (a, b) => JSON.stringify([...a].sort()) === JSON.stringify([...b].s
 ok(same(await bootPerms('staff1'), ROLE_PERMISSIONS.staff), 'bootstrap: صلاحيات الموظف الفعّالة = افتراضي دوره');
 ok(same(await bootPerms('mand1'), ROLE_PERMISSIONS.mandoub), 'bootstrap: صلاحيات المندوب الفعّالة = افتراضي دوره');
 ok((await bootPerms('admin')).includes('permissions.manage'), 'bootstrap: المدير يملك permissions.manage');
-ok(!(await bootPerms('admin2')).includes('permissions.manage') && (await bootPerms('admin2')).includes('users.edit'), 'bootstrap: Deny override يسحب permissions.manage من المدير الثاني فقط');
+// المدير الثاني مدير عادي: بلا الإدارة الكاملة أصلاً (للمالك)، ويبقى له التشغيلي
+ok(!(await bootPerms('admin2')).includes('permissions.manage') && !(await bootPerms('admin2')).includes('users.edit') && (await bootPerms('admin2')).includes('orders.view_all'), 'bootstrap: المدير العادي بلا الإدارة الكاملة ومعه التشغيلي');
 
 /* ---------------- 2) الواجهة ---------------- */
 const CHROME = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
@@ -216,7 +218,7 @@ try {
   r = await row(page, 'reports.view_own');
   ok(r && r.cur === '0' && r.eff === 'ممنوع', 'ui: Deny override يغلب افتراضي المدير المسموح', r);
   r = await row(page, 'admin.core');
-  ok(r && r.eff === 'مسموح', 'ui: admin.core تتبع الدور المختار (مدير)', r);
+  ok(r && r.eff === 'ممنوع' && r.locked, 'ui: admin.core لا تتبع دور «مدير» — لمالك النظام وحده', r);
   await setSelect(page, '#uRole', 'staff');
   ok(!/غير محفوظ/.test(await text(page, '#uPermRoleHint')), 'ui: العودة للدور المحفوظ تزيل «غير محفوظ»');
   await setSelect(page, '#uActive', '0');
@@ -263,7 +265,8 @@ try {
   await page.waitForFunction(() => [...document.querySelectorAll('#uPermList .perm-tri')].every((t) => (t.querySelector('button.on') || {}).dataset?.v === 'default'), { timeout: 15000 });
   ok(await visible(page, '#uPermList'), 'ui: النافذة باقية مفتوحة بعد الإعادة');
   r = await row(page, 'orders.view_all');
-  ok(r && r.eff === 'ممنوع' && (await row(page, 'reports.view_own')).eff === 'مسموح', 'ui: القيم بعد الإعادة = افتراضي الموظف', r);
+  // reports.view_own لم يعد افتراضياً للموظف (لا شاشة تُمنح تلقائياً): يعود «ممنوع»، وorders.view_own «مسموح»
+  ok(r && r.eff === 'ممنوع' && (await row(page, 'reports.view_own')).eff === 'ممنوع' && (await row(page, 'orders.view_own')).eff === 'مسموح', 'ui: القيم بعد الإعادة = افتراضي الموظف', r);
   ok(env.DB.tables.get('user_permissions').filter((x) => x.user_id === '2').length === 0, 'd1: الإعادة مسحت كل تجاوزات المستخدم');
   await closeModal(page);
   await openUser(page, '2');
@@ -291,8 +294,10 @@ try {
 
   /* ----- المدير المسحوبة منه permissions.manage ----- */
   const a2 = await loginPage('admin2');
-  await openUser(a2.page, '2');
-  ok(!(await a2.page.$('#uPermSection')), 'ui/admin2: قسم الصلاحيات غير موجود لمن لا يملك permissions.manage');
+  // المدير العادي: لا تعديل للمستخدمين أصلاً (users.edit للمالك أو بمنحه) فلا نافذة صلاحيات تُفتح
+  await a2.page.evaluate(() => document.querySelector('[data-page="users"]').click());
+  await a2.page.waitForSelector('#usersTable tbody tr', { visible: true });
+  ok(!(await a2.page.$('#usersTable [data-edit]')) && !(await a2.page.$('#uPermSection')), 'ui/admin2: لا أزرار تعديل ولا قسم صلاحيات للمدير العادي');
   ok(await a2.page.evaluate(() => Store.can('permissions.manage') === false), 'ui/admin2: Store.can يرفض');
 
   /* ----- الموظف والمندوب ----- */

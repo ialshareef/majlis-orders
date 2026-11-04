@@ -197,6 +197,14 @@ if ($old.Count -gt 0) {
     Back up the database, apply worker\migrations\003_fix_user_delete_fks.sql once, then rerun.
     Nothing was uploaded.")
 }
+# The expenses screen needs expense_date and order_id (migration 004). CREATE TABLE IF NOT EXISTS
+# cannot add columns to an existing table, so stop before upload when they are missing.
+$exp = $defs | Where-Object { $_.name -eq 'expenses' } | Select-Object -First 1
+if (-not ($exp.sql -match '\bexpense_date\b' -and $exp.sql -match '\border_id\b')) {
+  Fail "The expenses table lacks expense_date/order_id.
+    Back up the database, apply worker\migrations\004_expense_fields.sql once, then rerun.
+    Nothing was uploaded."
+}
 OK 'permission_audit and expenses definitions are current'
 
 # --------------------------------------------------- 4) build + upload worker

@@ -56,6 +56,17 @@ function seeded() {
   ]);
   env.DB.tables.set('user_permissions', []);
   env.DB.tables.set('expenses', []);
+  /* مالك النظام: معرّف ثابت من البيئة (OWNER_USER_ID). المدير رقم 1 هنا هو المالك؛ أي مدير آخر مدير عادي. */
+  env.OWNER_USER_ID = '1';
+  return env;
+}
+
+/* الموظف لم يعد يملك المصروفات وتقاريره افتراضياً (لا شاشة تُمنح تلقائياً):
+   اختبارات المصروفات تمنحها صراحةً كما يفعل المدير من نافذة الصلاحيات. */
+function seededGrants() {
+  const env = seeded();
+  env.DB.tables.set('user_permissions', ['expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own', 'reports.view_own']
+    .map((permission) => ({ user_id: '2', permission, value: 1, updated_at: past() })));
   return env;
 }
 
@@ -75,10 +86,10 @@ await ta('D3.1 designs: admin allowed', async () => {
   const r = await call(env, '/api/designs', 'tok-admin');
   assert.strictEqual(r.status, 200);
 });
-await ta('D3.1 designs: staff denied 403', async () => {
+await ta('D3.1 designs: staff allowed to view by default (designs.view)', async () => {
   const env = seeded();
   const r = await call(env, '/api/designs', 'tok-staff');
-  assert.strictEqual(r.status, 403);
+  assert.strictEqual(r.status, 200);
 });
 await ta('D3.1 designs: mandoub denied 403', async () => {
   const env = seeded();
@@ -92,7 +103,8 @@ await ta('D3.1 designs: unauth 401', async () => {
 });
 await ta('D3.1 designs: deny override 403', async () => {
   const env = seeded();
-  env.DB.tables.set('user_permissions', [{ user_id: '1', permission: 'designs.manage', value: 0 }]);
+  env.OWNER_USER_ID = null; // المدير 1 هنا مدير عادي: المنع يسري عليه (صلاحيات المالك لا تُقيَّد)
+  env.DB.tables.set('user_permissions', [{ user_id: '1', permission: 'designs.view', value: 0 }]);
   const r = await call(env, '/api/designs', 'tok-admin');
   assert.strictEqual(r.status, 403);
 });
@@ -125,6 +137,7 @@ await ta('D3.1 bootstrap: staff with orders.view_all sees all', async () => {
 });
 await ta('D3.1 bootstrap: deny orders.view_all prevents others', async () => {
   const env = seeded();
+  env.OWNER_USER_ID = null; // المدير 1 هنا مدير عادي: المنع يسري عليه (صلاحيات المالك لا تُقيَّد)
   env.DB.tables.set('user_permissions', [
     { user_id: '1', permission: 'orders.view_all', value: 0 },
     { user_id: '1', permission: 'orders.view_own', value: 1 },
@@ -193,6 +206,7 @@ await ta('D3.1 bootstrap: no cost perms hides all costs', async () => {
 });
 await ta('D3.1 bootstrap: admin deny all cost perms no costs', async () => {
   const env = seeded();
+  env.OWNER_USER_ID = null; // المدير 1 هنا مدير عادي: المنع يسري عليه (صلاحيات المالك لا تُقيَّد)
   env.DB.tables.set('user_permissions', [
     { user_id: '1', permission: 'costs.view_own', value: 0 },
     { user_id: '1', permission: 'costs.view_all', value: 0 },
@@ -206,10 +220,10 @@ await ta('D3.1 bootstrap: admin deny all cost perms no costs', async () => {
 });
 
 // ---------- Design sub-paths ----------
-await ta('D3.1 designs: GET /api/designs/:id staff denied 403', async () => {
+await ta('D3.1 designs: GET /api/designs/:id staff allowed 200 (designs.view)', async () => {
   const env = seeded();
   const r = await call(env, '/api/designs/d1', 'tok-staff');
-  assert.strictEqual(r.status, 403);
+  assert.strictEqual(r.status, 200);
 });
 await ta('D3.1 designs: GET /api/designs/:id mandoub denied 403', async () => {
   const env = seeded();
@@ -278,7 +292,7 @@ await ta('D3.1 sync: staff clear costs on another order denied 403', async () =>
 
 // ---------- Expenses API ----------
 await ta('D3.1 expenses: staff add own expense', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/expenses', 'tok-staff', { name: 'كهرباء', amount: 150, category: 'مرافق', note: 'فاتورة شهرية' });
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.data.expense.name, 'كهرباء');
@@ -286,7 +300,7 @@ await ta('D3.1 expenses: staff add own expense', async () => {
   assert.strictEqual(r.data.expense.created_by, '2');
 });
 await ta('D3.1 expenses: staff view own expenses', async () => {
-  const env = seeded();
+  const env = seededGrants();
   await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار', note: 'مكتب' });
   const r = await call(env, '/api/expenses', 'tok-staff');
   assert.strictEqual(r.status, 200);
@@ -294,28 +308,28 @@ await ta('D3.1 expenses: staff view own expenses', async () => {
   assert.strictEqual(r.data.expenses[0].name, 'إيجار');
 });
 await ta('D3.1 expenses: staff cannot view other staff expenses', async () => {
-  const env = seeded();
+  const env = seededGrants();
   await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   const env2 = seeded(); // fresh env with different staff
   // Use same env but different token scenario - staff2 cannot see staff's expense
   const r = await call(env, '/api/expenses', 'tok-staff');
   assert.strictEqual(r.status, 200);
   // All expenses in seeded env belong to staff (user_id=2), staff2 (id=4) should see none
-  const env3 = seeded();
+  const env3 = seededGrants();
   await call(env3, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   const r2 = await call(env3, '/api/expenses', 'tok-staff');
   assert.strictEqual(r2.status, 200);
   assert.strictEqual(r2.data.expenses.length, 1);
 });
 await ta('D3.1 expenses: admin view all expenses', async () => {
-  const env = seeded();
+  const env = seededGrants();
   await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   const r = await call(env, '/api/expenses', 'tok-admin');
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.data.expenses.length, 1);
 });
 await ta('D3.1 expenses: staff edit own expense', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const add = await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   const id = add.data.expense.id;
   const r = await call(env, `/api/expenses/${id}`, 'tok-staff', { amount: 600 }, 'PUT');
@@ -323,7 +337,7 @@ await ta('D3.1 expenses: staff edit own expense', async () => {
   assert.strictEqual(r.data.expense.amount, 600);
 });
 await ta('D3.1 expenses: staff delete own expense', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const add = await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   const id = add.data.expense.id;
   const r = await call(env, `/api/expenses/${id}`, 'tok-staff', null, 'DELETE');
@@ -332,7 +346,7 @@ await ta('D3.1 expenses: staff delete own expense', async () => {
   assert.strictEqual(get.data.expenses.length, 0);
 });
 await ta('D3.1 expenses: staff cannot edit other expense', async () => {
-  const env = seeded();
+  const env = seededGrants();
   // Add expense as admin
   const addAdmin = await call(env, '/api/expenses', 'tok-admin', { name: 'إدارة', amount: 1000, category: 'إدارة' });
   const adminExpenseId = addAdmin.data.expense.id;
@@ -379,7 +393,7 @@ await ta('D3.1 mandoubs report: load failure fail-closed', async () => {
 
 // ---------- Expenses summary ----------
 await ta('D3.1 expenses summary: staff sees own expenses', async () => {
-  const env = seeded();
+  const env = seededGrants();
   await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   const r = await call(env, '/api/reports/expenses-summary', 'tok-staff');
   assert.strictEqual(r.status, 200);
@@ -387,7 +401,7 @@ await ta('D3.1 expenses summary: staff sees own expenses', async () => {
   assert.strictEqual(r.data.count, 1);
 });
 await ta('D3.1 expenses summary: admin sees all', async () => {
-  const env = seeded();
+  const env = seededGrants();
   await call(env, '/api/expenses', 'tok-staff', { name: 'إيجار', amount: 500, category: 'إيجار' });
   await call(env, '/api/expenses', 'tok-admin', { name: 'كهرباء', amount: 300, category: 'مرافق' });
   const r = await call(env, '/api/reports/expenses-summary', 'tok-admin');
@@ -396,7 +410,7 @@ await ta('D3.1 expenses summary: admin sees all', async () => {
   assert.strictEqual(r.data.count, 2);
 });
 await ta('D3.1 expenses summary: deny override', async () => {
-  const env = seeded();
+  const env = seededGrants();
   env.DB.tables.set('user_permissions', [
     { user_id: '2', permission: 'expenses.view_own', value: 0 },
   ]);
@@ -406,7 +420,7 @@ await ta('D3.1 expenses summary: deny override', async () => {
 
 // ---------- Orders summary ----------
 await ta('D3.1 orders summary: staff sees own orders only', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary', 'tok-staff');
   assert.strictEqual(r.status, 200);
   const ids = r.data.orders.map((o) => o.id);
@@ -417,7 +431,7 @@ await ta('D3.1 orders summary: staff sees own orders only', async () => {
 });
 
 await ta('D3.1 orders summary: admin sees all orders', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary', 'tok-admin');
   assert.strictEqual(r.status, 200);
   const ids = r.data.orders.map((o) => o.id);
@@ -427,7 +441,7 @@ await ta('D3.1 orders summary: admin sees all orders', async () => {
 });
 
 await ta('D3.1 orders summary: staff userId filter is fail-closed', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary?userId=4', 'tok-staff');
   assert.strictEqual(r.status, 200);
   const ids = r.data.orders.map((o) => o.id);
@@ -435,7 +449,7 @@ await ta('D3.1 orders summary: staff userId filter is fail-closed', async () => 
 });
 
 await ta('D3.1 orders summary: admin userId filter narrows results', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary?userId=4', 'tok-admin');
   assert.strictEqual(r.status, 200);
   const ids = r.data.orders.map((o) => o.id);
@@ -443,7 +457,7 @@ await ta('D3.1 orders summary: admin userId filter narrows results', async () =>
 });
 
 await ta('D3.1 orders summary: staff denied reports.view_own -> 403', async () => {
-  const env = seeded();
+  const env = seededGrants();
   env.DB.tables.set('user_permissions', [
     { user_id: '2', permission: 'reports.view_own', value: 0 },
   ]);
@@ -452,7 +466,7 @@ await ta('D3.1 orders summary: staff denied reports.view_own -> 403', async () =
 });
 
 await ta('D3.1 orders summary: status filter works', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary?status=new', 'tok-admin');
   assert.strictEqual(r.status, 200);
   assert.ok(r.data.orders.length > 0);
@@ -463,20 +477,20 @@ await ta('D3.1 orders summary: status filter works', async () => {
 });
 
 await ta('D3.1 orders summary: invalid date -> 400', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary?from=01-01-2026', 'tok-admin');
   assert.strictEqual(r.status, 400);
 });
 
 await ta('D3.1 orders summary: date range excludes everything when from is in the future', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary?from=2999-01-01', 'tok-admin');
   assert.strictEqual(r.status, 200);
   assert.strictEqual(r.data.count, 0);
 });
 
 await ta('D3.1 orders summary: byStatus grouping and numeric totals', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const r = await call(env, '/api/reports/orders-summary', 'tok-staff');
   assert.strictEqual(r.status, 200);
   assert.ok(r.data.byStatus.new, 'new bucket exists');
@@ -490,7 +504,7 @@ await ta('D3.1 orders summary: byStatus grouping and numeric totals', async () =
 });
 
 await ta('D3.1 orders summary: payments returned with totals', async () => {
-  const env = seeded();
+  const env = seededGrants();
   const sync = await call(env, '/api/sync', 'tok-staff', {
     orders: { upsert: [
       { id: 'o-pay', number: 4001, status: 'new', customer: { name: 'Pay Cust' }, created_at: '2026-01-15T10:00:00Z', updated_at: '2026-01-15T10:00:00Z', subtotal: 1000, total: 1100, paid: 400, remaining: 700, costs: {}, costTotal: 0, extraCosts: [], manualRows: [], payments: [{ id: 'p1', amount: 400, method: 'cash', date: '2026-01-15' }] },
@@ -540,17 +554,17 @@ await ta('perms: unknown user -> 404', async () => {
   assert.strictEqual(r.status, 404);
 });
 
-await ta('perms: admin denies staff reports.view_own -> enforcement applies immediately', async () => {
+await ta('perms: admin denies staff designs.view -> enforcement applies immediately', async () => {
   const env = seeded();
-  const before = await call(env, '/api/reports/orders-summary', 'tok-staff');
+  const before = await call(env, '/api/designs', 'tok-staff');
   assert.strictEqual(before.status, 200);
-  const put = await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: { 'reports.view_own': 0 } }, 'POST');
+  const put = await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: { 'designs.view': 0 } }, 'POST');
   assert.strictEqual(put.status, 200);
   assert.strictEqual(put.data.saved, 1);
-  const after = await call(env, '/api/reports/orders-summary', 'tok-staff');
+  const after = await call(env, '/api/designs', 'tok-staff');
   assert.strictEqual(after.status, 403, 'deny override must apply on the very next request');
   const again = await call(env, '/api/users/2/permissions', 'tok-admin');
-  assert.strictEqual(again.data.overrides['reports.view_own'], false);
+  assert.strictEqual(again.data.overrides['designs.view'], false);
 });
 
 await ta('perms: admin re-allows a denied permission (persists)', async () => {
@@ -588,24 +602,24 @@ await ta('perms: admin cannot strip own permissions.manage (400)', async () => {
 
 await ta('perms: replacing overrides with {} restores role defaults', async () => {
   const env = seeded();
-  await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: { 'reports.view_own': 0 } }, 'POST');
-  const denied = await call(env, '/api/reports/orders-summary', 'tok-staff');
+  await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: { 'designs.view': 0 } }, 'POST');
+  const denied = await call(env, '/api/designs', 'tok-staff');
   assert.strictEqual(denied.status, 403);
   const put = await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: {} }, 'POST');
   assert.strictEqual(put.status, 200);
-  const allowed = await call(env, '/api/reports/orders-summary', 'tok-staff');
+  const allowed = await call(env, '/api/designs', 'tok-staff');
   assert.strictEqual(allowed.status, 200);
 });
 
 await ta('perms: DELETE resets overrides to role defaults (audit written)', async () => {
   const env = seeded();
-  await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: { 'reports.view_own': 0, 'orders.edit_own': 0 } }, 'POST');
+  await call(env, '/api/users/2/permissions', 'tok-admin', { overrides: { 'designs.view': 0, 'orders.edit_own': 0 } }, 'POST');
   const del = await call(env, '/api/users/2/permissions', 'tok-admin', {}, 'DELETE');
   assert.strictEqual(del.status, 200);
   assert.ok(del.data.restored >= 2);
   const r = await call(env, '/api/users/2/permissions', 'tok-admin');
   assert.deepStrictEqual(r.data.overrides, {});
-  const allowed = await call(env, '/api/reports/orders-summary', 'tok-staff');
+  const allowed = await call(env, '/api/designs', 'tok-staff');
   assert.strictEqual(allowed.status, 200);
   const audit = env.DB.tables.get('permission_audit') || [];
   assert.ok(audit.some((a) => a.change_type === 'defaults_restore' && a.target_user_id === '2' && a.actor_user_id === '1'), 'defaults_restore audit row written');

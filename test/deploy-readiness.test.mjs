@@ -79,6 +79,9 @@ ok(ps.indexOf("worker\\schema.sql") > 0 && ps.indexOf("worker\\schema.sql") < ps
 const guardAt = ps.indexOf("Step 'Checking table definitions'");
 ok(guardAt > ps.indexOf("worker\\schema.sql") && guardAt < ps.indexOf("Step 'Uploading worker'") && /REFERENCES\\s\+users/.test(ps) && /003_fix_user_delete_fks\.sql/.test(ps),
   'deploy: حارس التعريفات القديمة بعد schema.sql وقبل الرفع، ويدلّ على الهجرة 003');
+const guard004 = ps.indexOf('004_expense_fields.sql');
+ok(guard004 > guardAt && guard004 < ps.indexOf("Step 'Uploading worker'") && /expense_date/.test(ps.slice(guardAt, guard004)) && /order_id/.test(ps.slice(guardAt, guard004)),
+  'deploy: حارس حقول المصروفات (004) بعد schema.sql وقبل الرفع');
 
 /* ---------------- 3) AGENTS.md ---------------- */
 const ag = read('AGENTS.md');
@@ -120,22 +123,25 @@ if (!sqlite) {
   const fresh = () => { const d = new DatabaseSync(':memory:'); d.exec('PRAGMA foreign_keys = ON'); return d; };
   const tryExec = (d, sql) => { try { d.exec(sql); return null; } catch (e) { return e.message; } };
   const objs = (d) => d.prepare("SELECT type, name, sql FROM sqlite_master WHERE name NOT LIKE 'sqlite_%' ORDER BY type, name").all()
-    .map((o) => o.type + ':' + o.name + ':' + String(o.sql || '').replace(/--[^\n]*/g, '').replace(/IF NOT EXISTS /gi, '').replace(/"/g, '').replace(/\s+/g, ' ').trim());
+    .map((o) => o.type + ':' + o.name + ':' + String(o.sql || '').replace(/--[^\n]*/g, '').replace(/IF NOT EXISTS /gi, '').replace(/"/g, '').replace(/\s+/g, ' ').replace(/\s*([(),])\s*/g, '$1').trim());
   const userDefs = (d) => d.prepare("SELECT name, sql FROM sqlite_master WHERE type = 'table' AND name IN ('permission_audit', 'expenses')").all();
   const hasBlockingFk = (d) => userDefs(d).some((r) => /REFERENCES\s+users/i.test(r.sql)); // نفس فحص سكربت النشر
+  const hasExpenseCols = (d) => userDefs(d).some((r) => r.name === 'expenses' && /\bexpense_date\b/.test(r.sql) && /\border_id\b/.test(r.sql)); // فحص 004 في السكربت
 
-  // الهجرات بالترتيب (001 ثم 002 ثم 003) تنتهي بالتعريفات نفسها التي ينشئها schema.sql مباشرة
-  ok(migs.join(',') === '001_permission_tables.sql,002_expenses.sql,003_fix_user_delete_fks.sql', 'schema: الهجرات 001 و002 كما هي، والتصحيح في 003 جديدة', migs);
+  // الهجرات بالترتيب (001 ← 004) تنتهي بالتعريفات نفسها التي ينشئها schema.sql مباشرة
+  ok(migs.join(',') === '001_permission_tables.sql,002_expenses.sql,003_fix_user_delete_fks.sql,004_expense_fields.sql', 'schema: الهجرات 001 و002 كما هي، والتصحيح في 003، وحقول المصروفات في 004', migs);
   const viaSchema = fresh(); viaSchema.exec(schema);
   const viaMigs = fresh();
   viaMigs.exec(schema.split('-- Permission Manager tables')[0]); // الجداول الأساسية فقط
   for (const m of migs) ok(tryExec(viaMigs, read('worker/migrations/' + m)) === null, 'schema: الهجرة ' + m + ' تُطبَّق على قاعدة قائمة');
   const sObjs = new Set(objs(viaSchema));
   const missing = objs(viaMigs).filter((o) => !sObjs.has(o));
-  ok(missing.length === 0, 'schema: 001+002+003 = تعريفات schema.sql حرفياً', missing);
+  ok(missing.length === 0, 'schema: 001+002+003+004 = تعريفات schema.sql حرفياً', missing);
   ok(objs(viaSchema).length === objs(viaMigs).length, 'schema: لا كائنات زائدة أو ناقصة بين المسارين');
   ok(!hasBlockingFk(viaSchema), 'fresh: التثبيت الجديد (schema.sql) بلا مفاتيح أجنبية معطِّلة — حارس النشر يمر');
-  ok(tryExec(viaSchema, read('worker/migrations/003_fix_user_delete_fks.sql')) === null && objs(viaSchema).join() === [...sObjs].join(), 'fresh: تشغيل 003 على تثبيت جديد آمن ولا يغيّر شيئاً');
+  ok(hasExpenseCols(viaSchema), 'fresh: التثبيت الجديد فيه حقول المصروفات — لا يحتاج 003 ولا 004 (الحارس يمر)');
+  const m004 = read('worker/migrations/004_expense_fields.sql');
+  ok(/NOT re-runnable/.test(m004) && /Do not run 003 after this file/.test(m004), '004: موثَّق أنها لا تُعاد، ولا تُشغَّل 003 بعدها');
 
   /* مسار الترقية: قاعدة طُبِّقت عليها 001/002 القديمة وفيها بيانات ← schema.sql (النشر) ← 003 */
   const upgraded = () => {
@@ -156,11 +162,13 @@ if (!sqlite) {
   ok(tryExec(u, read('worker/migrations/003_fix_user_delete_fks.sql')) === null, 'upgrade: 003 تُطبَّق على القاعدة المرقّاة بلا خطأ');
   ok(JSON.stringify(u.prepare('SELECT * FROM permission_audit ORDER BY id').all()) === JSON.stringify(before.audit), 'upgrade: صفوف سجل التدقيق محفوظة كما هي بكل أعمدتها');
   ok(JSON.stringify(u.prepare('SELECT * FROM expenses ORDER BY id').all()) === JSON.stringify(before.exp), 'upgrade: صفوف المصروفات محفوظة كما هي بكل أعمدتها');
-  ok(!hasBlockingFk(u) && objs(u).join() === [...sObjs].join(), 'upgrade: بعد 003 التعريفات = schema.sql حرفياً (فهارس ومشغّلات) — حارس النشر يمر');
   ok(!u.prepare("SELECT name FROM sqlite_master WHERE name LIKE '%__old003%'").all().length, 'upgrade: لا جداول مؤقتة متبقية');
   ok(/append-only/.test(tryExec(u, "UPDATE permission_audit SET reason = 'x'") || '') && /append-only/.test(tryExec(u, 'DELETE FROM permission_audit') || ''), 'upgrade: سجل التدقيق ما زال للإلحاق فقط بعد 003');
+  ok(tryExec(u, read('worker/migrations/003_fix_user_delete_fks.sql')) === null && u.prepare('SELECT COUNT(*) n FROM permission_audit').get().n === 2, 'upgrade: إعادة تشغيل 003 قبل 004 آمنة (لا فقد ولا تكرار)');
+  ok(!hasExpenseCols(u) && tryExec(u, m004) === null && hasExpenseCols(u), 'upgrade: 004 تضيف حقول المصروفات (الحارس كان سيتوقف قبلها)');
+  ok(u.prepare("SELECT expense_date FROM expenses WHERE id='e1'").get().expense_date === '2026-11-01' && u.prepare("SELECT amount FROM expenses WHERE id='e1'").get().amount === 120.5, 'upgrade: 004 تملأ تاريخ المصروف من created_at ولا تغيّر البيانات');
+  ok(!hasBlockingFk(u) && objs(u).join() === [...sObjs].join(), 'upgrade: بعد 003+004 التعريفات = schema.sql حرفياً (فهارس ومشغّلات) — حارس النشر يمر');
   ok(tryExec(u, "DELETE FROM users WHERE id = 's'") === null && u.prepare('SELECT COUNT(*) n FROM permission_audit').get().n === 2 && u.prepare("SELECT created_by FROM expenses WHERE id='e1'").get().created_by === 's' && u.prepare('SELECT COUNT(*) n FROM user_permissions').get().n === 0, 'upgrade: حذف المستخدم ينجح بعد 003 والسجل والمصروف يبقيان');
-  ok(tryExec(u, read('worker/migrations/003_fix_user_delete_fks.sql')) === null && u.prepare('SELECT COUNT(*) n FROM permission_audit').get().n === 2, 'upgrade: إعادة تشغيل 003 آمنة (لا فقد ولا تكرار)');
   ok(u.prepare('PRAGMA foreign_key_check').all().length === 0 && u.prepare('PRAGMA integrity_check').get().integrity_check === 'ok', 'upgrade: سلامة القاعدة والمفاتيح بعد 003');
 
   // مسار النشر: schema.sql على قاعدة الإنتاج الحالية (نسخة HEAD) ثم إعادة تشغيله
@@ -174,6 +182,13 @@ if (!sqlite) {
     const t = d.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name IN ('user_permissions','permission_audit','expenses')").all();
     ok(t.length === 3, 'schema: الجداول الجديدة موجودة بعد النشر وقبل أن يحتاجها الكود');
     ok(d.prepare('SELECT COUNT(*) n FROM users').get().n === 1, 'schema: البيانات القائمة لم تُمس');
+    // قاعدة HEAD التي جدول مصروفاتها بلا الحقول الجديدة: الحارس يتوقف، ثم 004 تكمل المخطط
+    if (!hasExpenseCols(d)) {
+      d.exec("INSERT INTO expenses (id, name, amount, created_by, created_at, updated_at) VALUES ('h1','قديم',10,'old','2026-11-03T10:00:00.000Z','2026-11-03T10:00:00.000Z')");
+      ok(!hasBlockingFk(d) && !hasExpenseCols(d), 'prod-path: بعد schema.sql الحارس يتوقف لنقص حقول المصروفات (لا رفع للكود)');
+      ok(tryExec(d, m004) === null && hasExpenseCols(d) && d.prepare("SELECT expense_date FROM expenses WHERE id='h1'").get().expense_date === '2026-11-03', 'prod-path: 004 تكمل الحقول وتملأ التاريخ');
+      ok(objs(d).join() === [...sObjs].join(), 'prod-path: بعد 004 المخطط = schema.sql حرفياً — الحارس يمر');
+    } else console.log('NOTE  قاعدة HEAD فيها حقول المصروفات مسبقاً — مسار 004 غير مطلوب');
   } else console.log('SKIP  git غير متوفر — تخطّي فحص قاعدة HEAD');
 
   // حذف المستخدم مع المفاتيح الأجنبية مفعّلة (كما في D1)

@@ -187,6 +187,7 @@
         <button type="button" data-page="users" data-admin title="المستخدمون"><svg><use href="#i-users"/></svg><span>المستخدمون</span></button>
         <button type="button" data-page="activity" data-admin title="سجل التحديثات"><svg><use href="#i-clock"/></svg><span>سجل التحديثات</span></button>
         <button type="button" data-page="bi" data-admin title="ذكاء الأعمال"><svg><use href="#i-chart"/></svg><span>ذكاء الأعمال</span></button>
+        <button type="button" data-page="expenses" title="المصروفات" hidden><svg><use href="#i-wallet"/></svg><span>المصروفات</span></button>
         <button type="button" data-page="mandoubs" data-admin title="إدارة المناديب"><svg><use href="#i-users"/></svg><span>إدارة المناديب</span></button>
         <button type="button" data-page="settings" id="btnSettings" data-admin title="الإعدادات والنسخ الاحتياطي"><svg><use href="#i-settings"/></svg><span>الإعدادات والنسخ الاحتياطي</span></button>
         <button type="button" data-page="about" title="عن التطبيق"><svg><use href="#i-info"/></svg><span>عن التطبيق</span></button>
@@ -767,6 +768,7 @@
         <div class="ph-title"><h2>المستخدمون</h2><p>المدير يدير الأصناف والمستخدمين والتقارير، والموظف ينشئ الطلبات ويتابعها.</p></div>
         <div class="actions"><button id="btnAddUser" class="btn primary"><svg><use href="#i-plus"/></svg> مستخدم جديد</button></div>
       </header>
+      <p class="hint owner-note" id="ownerNote" hidden></p>
       <div class="card table-card">
         <div class="table-wrap">
           <table class="table responsive" id="usersTable">
@@ -774,6 +776,31 @@
             <tbody></tbody>
           </table>
         </div>
+      </div>
+    </section>
+
+    <!-- ============ المصروفات (بصلاحيات expenses.*) ============ -->
+    <section id="page-expenses" class="page">
+      <header class="page-head">
+        <div class="ph-title"><h2>المصروفات</h2><p>مصروفات المحل التشغيلية (نقل، مشتريات، أجور…)، مستقلة عن تكاليف أصناف الطلبات.</p></div>
+        <div class="actions"><button id="btnAddExpense" class="btn primary" hidden><svg><use href="#i-plus"/></svg> إضافة مصروف</button></div>
+      </header>
+      <div class="card exp-filters">
+        <label class="date-f">من <input id="expFrom" type="date" aria-label="من تاريخ"></label>
+        <label class="date-f">إلى <input id="expTo" type="date" aria-label="إلى تاريخ"></label>
+        <select id="expCat" aria-label="تصفية حسب التصنيف"><option value="">كل التصنيفات</option></select>
+        <select id="expUser" aria-label="تصفية حسب الموظف" hidden><option value="">كل الموظفين</option></select>
+      </div>
+      <div class="stats-row" id="expStats"></div>
+      <div class="card table-card">
+        <div class="table-wrap">
+          <table class="table responsive" id="expensesTable">
+            <thead><tr><th>التاريخ</th><th>البيان</th><th>التصنيف</th><th class="ta-end">المبلغ</th><th>سجّله</th><th>الطلب</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="expEmpty" hidden>لا توجد مصروفات في هذه الفترة.</p>
+        <p class="error" id="expErr" role="alert" hidden></p>
       </div>
     </section>
 
@@ -823,9 +850,9 @@
       <header class="page-head">
         <div class="ph-title"><h2>ذكاء الأعمال</h2><p>الأرقام قبل الضريبة، والطلبات الملغية وعروض الأسعار خارج المبيعات.</p></div>
         <div class="actions">
-          <button id="btnBiCsv" class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير CSV</button>
-          <button id="btnBiPdf" class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير PDF</button>
-          <button id="btnBiXlsx" class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير Excel</button>
+          <button id="btnBiCsv" data-perm-export class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير CSV</button>
+          <button id="btnBiPdf" data-perm-export class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير PDF</button>
+          <button id="btnBiXlsx" data-perm-export class="btn"><svg><use href="#i-download"/></svg> تصدير التقرير Excel</button>
         </div>
       </header>
       <div class="toolbar bi-filters">
@@ -981,8 +1008,8 @@
         <div class="module-head">
           <h3>تقرير الطلبات والتحصيل</h3>
           <div class="chip-group seg-chips" role="group" aria-label="تصدير التقرير">
-            <button type="button" class="btn small" id="btnOrdersPdf"><svg><use href="#i-download"/></svg> PDF</button>
-            <button type="button" class="btn small" id="btnOrdersXlsx"><svg><use href="#i-download"/></svg> Excel</button>
+            <button type="button" class="btn small" id="btnOrdersPdf" data-perm-export><svg><use href="#i-download"/></svg> PDF</button>
+            <button type="button" class="btn small" id="btnOrdersXlsx" data-perm-export><svg><use href="#i-download"/></svg> Excel</button>
           </div>
         </div>
         <div class="toolbar bi-filters ord-filters">
@@ -1009,10 +1036,10 @@
         <p class="hint" id="ordCountNote"></p>
         <div class="ord-exports">
           <span class="hint">تقارير جاهزة:</span>
-          <button type="button" class="btn small" id="btnMandoubsPdf"><svg><use href="#i-download"/></svg> المناديب PDF</button>
-          <button type="button" class="btn small" id="btnMandoubsXlsx"><svg><use href="#i-download"/></svg> المناديب Excel</button>
-          <button type="button" class="btn small" id="btnExpensesPdf"><svg><use href="#i-download"/></svg> المصروفات PDF</button>
-          <button type="button" class="btn small" id="btnExpensesXlsx"><svg><use href="#i-download"/></svg> المصروفات Excel</button>
+          <button type="button" class="btn small" id="btnMandoubsPdf" data-perm-export><svg><use href="#i-download"/></svg> المناديب PDF</button>
+          <button type="button" class="btn small" id="btnMandoubsXlsx" data-perm-export><svg><use href="#i-download"/></svg> المناديب Excel</button>
+          <button type="button" class="btn small" id="btnExpensesPdf" data-perm-export><svg><use href="#i-download"/></svg> المصروفات PDF</button>
+          <button type="button" class="btn small" id="btnExpensesXlsx" data-perm-export><svg><use href="#i-download"/></svg> المصروفات Excel</button>
         </div>
       </section>
     </section>

@@ -24,7 +24,7 @@ function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FA
     t('visitStatsBox has hidden attr in HTML', /id="visitStatsBox"[^>]*hidden/.test(html));
 
     /* ---- 2) منطق المدير ---- */
-    t('hidden for non-admin (isAdmin gate)', /if \(!isAdmin\(\)\) \{ box\.hidden = true; return; \}/.test(app));
+    t('hidden for non-owner (admin.core gate — الخادم: requireAdmin = المالك)', /if \(!can\('admin\.core'\)\) \{ box\.hidden = true; return; \}/.test(app));
     t('shown for admin', /box\.hidden = false;/.test(app));
 
     /* ---- 3) الجدول وأعمدته ---- */
