@@ -98,7 +98,7 @@ function wallLenOf(design, i) {
   dz.setState(JSON.parse(JSON.stringify(design)));
   return dz.geometry().walls[i].len;
 }
-/** يبني مصمماً في الذاكرة ويصدّره تماماً كما يفعل مسار PDF، ثم يع��د
+/** يبني مصمماً في الذاكرة ويصدّره تماماً كما يفعل مسار PDF، ثم يعيد
     النصوص التي رُسمت فعلاً على اللوحة المصدَّرة. */
 function exportTexts(design, opts = {}) {
   lastCtx = null;
