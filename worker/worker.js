@@ -405,13 +405,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.75';
-// بصمة asalh-najd-1.0.75.apk (إصدار GitHub v1.0.75، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.75 وversionCode 10075، ونفس شهادة توقيع 1.0.74).
-const UPDATE_FALLBACK_SHA256 = '173ca70ca28c108ca864af6abde9e4e59b1dab504f69898364c74b0ca84f4e2b';
+const UPDATE_FALLBACK_VERSION = '1.0.76';
+// بصمة asalh-najd-1.0.76.apk (إصدار GitHub v1.0.76، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.76 وversionCode 10076، ونفس شهادة توقيع 1.0.75).
+const UPDATE_FALLBACK_SHA256 = '859c4e9f07ae69dabf4624f0f8572bc2fd4ea14eca01d9b8e9473a687c1727d4';
 const UPDATE_FALLBACK_NOTES = [
-  'أول دخول بعد تغيير كلمة المرور يحمّل البيانات والصلاحيات مباشرة دون الحاجة لإعادة فتح التطبيق',
-  'الدفعة الزائدة عن قيمة الطلب تُحفظ الآن، ويظهر سبب واضح إن تعذّر حفظ الطلب بعد تسجيل دفعة',
+  'ملف PDF للطلب صفحة واحدة دائماً: التصميم وجدول الأثاث مع التسعير في الصفحة نفسها، والخط بحجمه الطبيعي',
+  'المقاس يكبر تلقائياً (A4 ثم A3) حين يكثر المحتوى بدل تصغير النص، والملف أوضح عند التكبير والطباعة',
+  'معاينة ملف PDF نفسه في صفحة تصميم العميل قبل الإنهاء',
 ];
 
 function versionCodeOfName(v) {
