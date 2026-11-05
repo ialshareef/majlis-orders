@@ -201,9 +201,10 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     await wait(700);
     t('doorMoved tick appears', !document.querySelector('.hj-done-tick').hidden);
     // السابق يعيد الإضاءة للزر
-    document.querySelector('[data-hj="prev"]').click(); await wait(120);
+    // انتقال الإضاءة يتحرّك 250ms (help.css): يُقرأ الموضع بعد انتهاء الحركة لا في منتصفها
+    document.querySelector('[data-hj="prev"]').click(); await wait(420);
     const rr3 = document.querySelector('.hj-tour .hj-ring').getBoundingClientRect();
-    t('prev moves hole back', Math.abs(rr3.left - (br.left - 8)) < 3);
+    t('prev moves hole back', Math.abs(rr3.left - (br.left - 8)) < 3 && Math.abs(rr3.top - (br.top - 8)) < 3, 'ring=' + Math.round(rr3.left) + ',' + Math.round(rr3.top) + ' want=' + Math.round(br.left - 8) + ',' + Math.round(br.top - 8));
     // لوحة المفاتيح: السهم الأيسر = التالي (RTL)، والهروب يغلق
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowLeft', bubbles: true })); await wait(80);
     t('ArrowLeft = next', document.querySelector('.hj-count').textContent.indexOf('2 من') === 0, document.querySelector('.hj-count').textContent);

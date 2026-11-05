@@ -478,6 +478,7 @@
       if (!r || !r.ok) return { ok: false, error: (r && r.error) || 'bad_credentials', minutes: r && r.minutes };
       this.token = r.token;
       this.user = r.user;
+      this.pendingPasswordChange = !!r.mustChangePassword;
       if (r.mustChangePassword) {
         // Don't persist token until password is changed — prevents Ctrl+F5 bypass
         return { ok: true, user: r.user, mustChangePassword: true };
@@ -490,6 +491,15 @@
     async changePassword(currentPassword, newPassword) {
       const r = await this.api('POST', '/api/change-password', { currentPassword, newPassword });
       if (!r || !r.ok) throw new Error((r && r.error) || 'تعذر تغيير كلمة المرور');
+      // دخول كان معلّقاً على تغيير الكلمة الأولية: لم تُحمَّل البيانات ولا الصلاحيات بعد،
+      // فبدون هذا يدخل المستخدم تطبيقاً فارغاً تُرفض فيه كل العمليات بصمت حتى يعيد تحميل الصفحة.
+      // (تغيير الكلمة العادي من الإعدادات لا يعيد التحميل حتى لا يُكتب فوق تعديلات غير محفوظة)
+      if (this.pendingPasswordChange) {
+        this.pendingPasswordChange = false;
+        if (this.token) localStorage.setItem(this.TOKEN_KEY, this.token);
+        // الكلمة تغيّرت فعلاً: فشل التحميل هنا لا يعيد المستخدم للنافذة (المزامنة الدورية تكمله)
+        try { await this.loadAll(); } catch (e) { console.error(e); this.lastError = e.message; }
+      }
       return r;
     },
 

@@ -53,7 +53,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
         batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
       };
       var mod = await import('../worker/worker.js');
-      var env = { DB: DB };
+      // المالك يُحدَّد من البيئة فقط (كالإنتاج): الإعدادات وإدارة المستخدمين له أو لمدير منحه هو صراحةً
+      var env = { DB: DB, OWNER_USER_ID: 'u-admin' };
       var call = async function (method, path, opt) {
         opt = opt || {};
         var headers = {};
@@ -161,6 +162,12 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var desId = gA.body.id;
       var gd = await call('GET', '/api/designs/' + desId, { auth: 'tok-staff' });
       t('S13-get', gd.status === 200 && gd.body.design && JSON.stringify(gd.body).indexOf('token') < 0, gd.status);
+      // الموظف افتراضياً يرى التصاميم فقط؛ التعديل والتحويل بمنح صريح من المدير (user_permissions)
+      var upDeny = await call('PUT', '/api/designs/' + desId, { auth: 'tok-staff', body: { status: 'reviewing' } });
+      var cvDeny = await call('POST', '/api/designs/' + desId + '/convert', { auth: 'tok-staff', body: {} });
+      t('S13-default-denied', upDeny.status === 403 && cvDeny.status === 403, upDeny.status + '/' + cvDeny.status);
+      sqlite.run("INSERT INTO user_permissions (user_id, permission, value, updated_by, updated_at) VALUES " +
+        "('u-staff','designs.edit',1,'u-admin','2026-01-01'),('u-staff','designs.convert',1,'u-admin','2026-01-01')");
       var upBad = await call('PUT', '/api/designs/' + desId, { auth: 'tok-staff', body: { status: 'bogus' } });
       t('S13-bad-status', upBad.status === 400, upBad.status);
       var upBad2 = await call('PUT', '/api/designs/' + desId, { auth: 'tok-staff', body: { design: { walls: [{ len: -5, angle: 0 }] } } });
@@ -218,6 +225,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var seedHash = 'pbkdf2$100$' + b64(seedSalt) + '$' + b64(seedBits);
       sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-login-admin','loginadmin','مدير اختبار','" + seedHash + "','admin',1,'2026-01-01')");
       sqlite.run("INSERT INTO sessions (token, user_id, created_at, expires_at) VALUES ('tok-login-admin','u-login-admin','2026-01-01','" + future + "')");
+      var noGrant = await call('POST', '/api/users', { auth: 'tok-login-admin', body: { name: 'بلا منح', username: 'NoGrant1', password: 'Secret123', role: 'staff', active: true } });
+      t('S17-admin-needs-owner-grant', noGrant.status === 403, noGrant.status);
+      sqlite.run("INSERT INTO user_permissions (user_id, permission, value, updated_by, updated_at) VALUES ('u-login-admin','users.create',1,'u-admin','2026-01-01')");
       var created = await call('POST', '/api/users', { auth: 'tok-login-admin', body: { name: 'موظف اختبار', username: 'LoginUser1', password: 'Secret123', role: 'staff', active: true } });
       t('S17-user-create', created.status === 200 && created.body.ok === true, created.status);
       sqlite.run("INSERT INTO users (id, username, name, password_hash, role, active, created_at) VALUES ('u-login-old','loginold','موظف قديم','" + seedHash + "','staff',1,'2026-01-01')");

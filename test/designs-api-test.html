@@ -85,6 +85,13 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     var r6c = await call('/api/designs/d-1', 'GET', 'tok-mand');
     t('mandoub-open-denied', r6c.status === 403, r6c.status);
     // G7: تعديل الحالة + رفض القيمة الفاسدة + رفض المندوب
+    // الموظف افتراضياً يرى التصاميم فقط (designs.view)؛ التعديل والحذف بمنح صريح من المدير
+    var r7d = await call('/api/designs/d-1', 'PUT', 'tok-staff', { status: 'reviewing' });
+    t('staff-edit-default-denied', r7d.status === 403, r7d.status);
+    var r7dd = await call('/api/designs/d-1', 'DELETE', 'tok-staff');
+    t('staff-delete-default-denied', r7dd.status === 403, r7dd.status);
+    sqlite.run("INSERT INTO user_permissions (user_id, permission, value, updated_by, updated_at) VALUES " +
+      "('u-s','designs.edit',1,'u-a','2026-01-01'),('u-s','designs.delete',1,'u-a','2026-01-01')");
     var r7 = await call('/api/designs/d-1', 'PUT', 'tok-staff', { status: 'reviewing' });
     t('staff-status', r7.status === 200, r7.status);
     var r7b = await call('/api/designs/d-1', 'PUT', 'tok-admin', { status: 'bogus' });
@@ -127,8 +134,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       after.body.designs[0].id === 'd-1',
       rBulk.status + ' del=' + (rBulk.body && rBulk.body.deleted) + ' left=' + after.body.designs.length);
     // G12: سجل التحديثات يسجّل الحذف (تدقيق)
-    var actRow = await call('/api/bootstrap', 'GET', 'tok-admin');
-    var hasDel = (actRow.body.activity || []).some(function (a) { return a.action === 'design-delete'; });
+    // السجل يُعرض للمالك وحده (admin.core)، فيُفحص الحدث المسجَّل في جدول activity مباشرة
+    var actRes = sqlite.exec("SELECT data FROM activity");
+    var hasDel = ((actRes[0] && actRes[0].values) || []).some(function (r) { try { return JSON.parse(r[0]).action === 'design-delete'; } catch (_) { return false; } });
     t('delete-audited', hasDel, 'activity design-delete');
   }
   main()

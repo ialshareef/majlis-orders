@@ -240,7 +240,7 @@ try {
     const st = freshState();
     setProvider(() => ok(READY_TXT));
     const noKey = await ai({ DB: makeDb(st) }, { text: 'مجلس 6×4' });
-    t('بلا AI_API_KEY ← 503 برسالة عربية لطيفة', noKey.status === 503 && /غير مجهّزة/.test(noKey.body.error), noKey.text);
+    t('بلا AI_API_KEY ← 503 برسالة عربية لطيفة', noKey.status === 503 && /غير مفعّلة حالياً/.test(noKey.body.error), noKey.text);
     t('لا نداء مزوّد بلا مفتاح', calls.length === 0, String(calls.length));
 
     st.settings.aiDesignEnabled = false;
@@ -320,7 +320,7 @@ try {
 
     setProvider(() => ok('ليس JSON أبداً'));
     const bad = await ai(env, { text: 'اختبار' });
-    t('رد غير JSON ← 503 برسالة عربية', bad.status === 503 && /تعذّر فهم رد التصميم/.test(bad.body.error), bad.text);
+    t('رد غير JSON ← 503 برسالة عربية', bad.status === 503 && /تعذّرت الاستجابة من خدمة التصميم/.test(bad.body.error), bad.text);
     t('لا تسريب تفاصيل تقنية', !/SyntaxError|JSON\.parse|Unexpected/.test(bad.text), bad.text);
 
     let n = 0;
@@ -330,7 +330,7 @@ try {
 
     setProvider(() => new Response('no', { status: 401 }));
     const denied = await ai(env, { text: 'مفتاح مرفوض' });
-    t('401 من المزوّد ← بلا إعادة، 503', denied.status === 503 && calls.length === 1 && /تعذّر الوصول/.test(denied.body.error), JSON.stringify({ s: denied.status, c: calls.length }));
+    t('401 من المزوّد ← بلا إعادة، 503', denied.status === 503 && calls.length === 1 && /تعذّرت الاستجابة من خدمة التصميم/.test(denied.body.error) && !/401|status|key/i.test(denied.body.error), JSON.stringify({ s: denied.status, c: calls.length }));
 
     let m = 0;
     setProvider(() => { m++; return m === 1 ? new Response('bad request', { status: 400 }) : ok(READY_TXT); });
@@ -339,7 +339,7 @@ try {
 
     setProvider(() => { throw new TypeError('network down'); });
     const net = await ai(env, { text: 'انقطاع' });
-    t('فشل شبكة ← محاولتان ثم 503 عربية', net.status === 503 && calls.length === 2 && /تعذّر الوصول/.test(net.body.error), JSON.stringify({ s: net.status, c: calls.length }));
+    t('فشل شبكة ← محاولتان ثم 503 عربية', net.status === 503 && calls.length === 2 && /تعذّرت الاستجابة من خدمة التصميم/.test(net.body.error) && !/network/i.test(net.body.error), JSON.stringify({ s: net.status, c: calls.length }));
   }
 
   console.log('== 7) التاريخ والنص والمواصفات ==');

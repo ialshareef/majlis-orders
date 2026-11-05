@@ -449,14 +449,14 @@
     lockModal(true);
     openModal('إنشاء كلمة مرور جديدة', `
       <p>هذا الحساب ما زال يستخدم كلمة المرور الأولية. اختر كلمة مرور جديدة قبل المتابعة — لن تتمكن من استخدام النظام قبل ذلك.</p>
-      <label>كلمة المرور الجديدة <input id="fpNew" type="password" autocomplete="new-password" minlength="6"></label>
+      <label>كلمة المرور الجديدة <input id="fpNew" type="password" autocomplete="new-password" minlength="8"></label>
       <label>تأكيد كلمة المرور <input id="fpNew2" type="password" autocomplete="new-password"></label>
       <p id="fpErr" class="error" role="alert"></p>
       <div class="btn-row"><button class="btn primary" id="fpOk">${icon('lock')} حفظ والدخول</button></div>`, (b) => {
       $('#fpOk', b).onclick = async () => {
         const p1 = $('#fpNew', b).value, p2 = $('#fpNew2', b).value;
         const err = $('#fpErr', b);
-        if (p1.length < 6) { err.textContent = 'كلمة المرور 6 أحرف فأكثر'; return; }
+        if (p1.length < 8) { err.textContent = 'كلمة المرور 8 أحرف فأكثر'; return; }
         if (p1 !== p2) { err.textContent = 'كلمتا المرور غير متطابقتين'; return; }
         // المقارنة في الكود فقط: تمنع إعادة استخدام الكلمة الأولية المعروفة دون كشفها في أي رسالة
         if (p1 === 'admin') { err.textContent = 'اختر كلمة مرور مختلفة'; return; }
@@ -2580,6 +2580,12 @@ function canEditOrder(o) {
       toast(refund ? `سُجّل استرداد ${fmt(amt)} ${currency()}` : `سُجّلت دفعة ${fmt(amt)} ${currency()} وحُفظ الطلب`);
     } else if (!cur.customer.name.trim()) {
       toast('سُجّلت الدفعة محلياً — أدخل اسم العميل ثم احفظ الطلب', true);
+    } else {
+      // الحفظ الصامت فشل (رقم جوال غير صالح، تعارض في التصميم، انقطاع…): الدفعة ظاهرة محلياً
+      // لكنها لم تصل للخادم — يجب أن يعرف الموظف ذلك وسببه بدل أن يظنها حُفظت
+      const fe = $$('#m-customer .fld-err, #m-pay .fld-err').map((e) => e.textContent.trim()).find(Boolean);
+      const why = fe || (Store.lastError ? humanError(Store.lastError) : '') || (designBlockReason().err || '');
+      toast('سُجّلت الدفعة محلياً ولم يُحفظ الطلب بعد' + (why ? ': ' + why : ' — احفظ الطلب'), true);
     }
     } finally { paying = false; }
   }
@@ -2881,7 +2887,9 @@ function canEditOrder(o) {
     cur.extraCosts = extraCosts(cur);
     syncCostTotal(cur);
     cur.total = total;
-    cur.remaining = remainingOf(total, cur.paid);
+    // المخزَّن = ما زال مستحقاً على العميل (لا سالب): الخادم يرفض remaining السالب (سياسة مالية)،
+    // والدفع الزائد يبقى مسموحاً ويُعرض من (الإجمالي − المدفوع) مباشرة في الواجهة كـ«زائد عن المطلوب».
+    cur.remaining = Math.max(0, remainingOf(total, cur.paid));
     const nowIso = Store.now();
     if (!cur.id) {
       // سحابياً يمنح الخادم الرقم عند أول حفظ ناجح، فلا يضيع رقم بحفظ فاشل

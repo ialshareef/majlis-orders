@@ -75,7 +75,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // C3: بطاقات بلا تكاليف
     t('C3-no-cost', css.indexOf('#ordersTable td.c-cost') >= 0 && css.indexOf('display: none') >= 0, 'hidden');
     // C4: مصطلحات
-    t('C4-terms', html.indexOf('>جدار<') >= 0 && html.indexOf('فرش الكل') >= 0 && html.indexOf('>كنبة<') >= 0 && html.indexOf('كنبة حرة') >= 0 && html.indexOf('إضافة كنبة') >= 0 && html.indexOf('إضافة أثاث') < 0 && app.indexOf('مساحة أرضية') >= 0 && html.indexOf('>زاوية<') < 0, 'terms');
+    // زر «إضافة جدار» أُزيل عمداً من صفحة البائع (v1.0.61): لا btnAddWall/tbAddWall، والمصطلح «الجدار» باقٍ في اختيار الجدار
+    t('C4-terms', html.indexOf('id="btnAddWall"') < 0 && html.indexOf('id="tbAddWall"') < 0 && html.indexOf('>الجدار <select') >= 0 && html.indexOf('فرش الكل') >= 0 && html.indexOf('>كنبة<') >= 0 && html.indexOf('كنبة حرة') >= 0 && html.indexOf('إضافة كنبة') >= 0 && html.indexOf('إضافة أثاث') < 0 && app.indexOf('مساحة أرضية') >= 0 && html.indexOf('>زاوية<') < 0, 'terms');
     // C5: شبكة نصية
     t('C5-net', css.indexOf('.net-chip #netLabel') >= 0, 'label');
     // B5: مشاركة لاصقة
@@ -85,7 +86,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // B5/C6: تنبيه عدم الاتصال
     t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
     // الإصدار
-    t('ver-1-0-50', app.indexOf("APP_VERSION = '1.0.52'") >= 0, 'version');
+    // الإصدار يُحقن من وسم git عند البناء (configure-version.js)؛ المصدر يبقى قيمة تطوير واضحة
+    t('ver-1-0-50', /APP_VERSION = '(0\.0\.0-dev|\d+\.\d+\.\d+)'/.test(app), 'version');
     // في الجوال: لوحة الأدوات/المقاسات قبل الرسم (كما في صفحة العميل)
     t('panel-above-canvas-mobile', (function () {
       var dl = css.indexOf('.designer-layout { display: flex');
@@ -127,7 +129,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       batch: async function (stmts) { var out = []; for (var s of stmts) out.push(await s.run()); return out; },
     };
     var mod = await import('../worker/worker.js');
-    var env = { DB: DB };
+    // أول مدير يُنشأ بكلمة مؤقتة من سر ADMIN_INIT_PASSWORD (لا كلمة افتراضية في الكود) ويُلزم بتغييرها
+    var INIT_PW = 'InitPw-ux-2026';
+    var env = { DB: DB, ADMIN_INIT_PASSWORD: INIT_PW };
     var ORIGIN = 'https://majlis.test';
     var call = function (url, init) { return mod.default.fetch(new Request(url, init), env); };
     window.fetch = async function (input, init) {
@@ -156,8 +160,11 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     await waitFor(function () { return window.MajlisApp && document.querySelector('#loginForm'); }, 120000);
     log('partB: app booted');
     try {
-      var lr0 = await window.fetch(ORIGIN + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: 'admin' }) }).then(function (r) { return r.json(); });
+      var lr0 = await window.fetch(ORIGIN + '/api/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ username: 'admin', password: INIT_PW }) }).then(function (r) { return r.json(); });
       var bs0 = await window.fetch(ORIGIN + '/api/bootstrap', { headers: { 'x-session-token': lr0.token } }).then(function (r) { return r.json(); });
+      // المالك يُحدَّد من البيئة (OWNER_USER_ID) كالإنتاج: هو المدير الأول نفسه
+      var adm = sqlite.exec("SELECT id FROM users WHERE username = 'admin'");
+      if (adm[0]) env.OWNER_USER_ID = adm[0].values[0][0];
       log('partB: bs items=' + (bs0.items || []).length + ' users=' + (bs0.users || []).length + ' feat=' + !!bs0.features);
     } catch (e) { log('partB: bs-err=' + (e && e.message)); }
     // C1: إظهار كلمة المرور يبدّل النوع والنص
@@ -167,11 +174,11 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     document.querySelector('#passToggle').click();
     // دخول محلي
     document.querySelector('#loginUser').value = 'admin';
-    document.querySelector('#loginPass').value = 'admin';
+    document.querySelector('#loginPass').value = INIT_PW;
     document.querySelector('#loginForm button[type=submit]').click();
     await new Promise(function (r) { setTimeout(r, 8000); });
     log('partB: t8 btn=' + document.querySelector('#loginForm button[type=submit]').textContent + ' err=' + document.querySelector('#loginError').textContent.slice(0, 100) + ' fp=' + !!document.querySelector('#fpNew'));
-    // admin/admin كلمة أولية → بوابة تغيير إجبارية: نغيّرها ثم ندخل
+    // كلمة أولية مؤقتة → بوابة تغيير إجبارية: نغيّرها ثم ندخل
     await waitFor(function () { return document.querySelector('#fpNew'); }, 240000);
     log('partB: fp-shown');
     document.querySelector('#fpNew').value = 'test1234';
@@ -180,6 +187,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     await waitFor(function () { return !document.querySelector('#app').hidden; }, 240000);
     log('partB: app-visible');
     t('B-login-ok', true);
+    // بعد تغيير الكلمة الأولية تُحمَّل البيانات والصلاحيات فوراً (لا تطبيق فارغ يرفض العمليات بصمت حتى إعادة التحميل)
+    await waitFor(function () { return window.Store.can('payments.add'); }, 15000).catch(function () {});
+    t('B-fp-loads-perms', window.Store.can('payments.add') && window.Store.can('orders.create') && !!localStorage.getItem(window.Store.TOKEN_KEY || 'majlis_token'), 'perms after first password change');
     log('partB: MARK login-ok');
     // زر إظهار كلمة المرور (قبل الدخول كان ظاهراً — نتحقق من وجوده وسلوكه على نسخة جديدة؟ نكتفي بالوجود هنا)
     // صفحة الطلب: الشريط السفلي مخفي على الجوال
@@ -194,11 +204,15 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // مبلغ فارغ → خطأ حقلي بلا تسجيل
     document.querySelector('#payAmount').value = '';
     document.querySelector('#btnAddPay').click();
-    await waitFor(function () {
-      var err = document.querySelector('#payAmountErr');
-      return err && err.textContent.indexOf('مبلغ غير صالح') >= 0;
-    });
-    t('B-A2-empty', true);
+    // الفارغ وغير الرقمي: «مبلغ غير صالح» (الصفر وحده «أكبر من صفر») — بلا تسجيل دفعة
+    await waitFor(function () { var err = document.querySelector('#payAmountErr'); return err && err.textContent.trim(); }, 8000).catch(function () {});
+    var payErr = (document.querySelector('#payAmountErr') || {}).textContent || '';
+    t('B-A2-empty', payErr.indexOf('مبلغ غير صالح') >= 0, 'err=' + payErr);
+    document.querySelector('#payAmount').value = 'abc';
+    document.querySelector('#btnAddPay').click();
+    await waitFor(function () { return ((document.querySelector('#payAmountErr') || {}).textContent || '').indexOf('مبلغ غير صالح') >= 0; }, 8000).catch(function () {});
+    t('B-A2-nonnumeric', ((document.querySelector('#payAmountErr') || {}).textContent || '').indexOf('مبلغ غير صالح') >= 0, (document.querySelector('#payAmountErr') || {}).textContent);
+    document.querySelector('#payAmount').value = '';
     // humanError: تعيين مباشر
     var H = window.MajlisApp.humanError;
     t('B-B8-offline', H('Network request failed') === 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.', H('Network request failed'));
@@ -244,12 +258,16 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     var paidTxt = function () { return digits(document.querySelector('#payPaidSum').textContent); };
     var toastTxt = function () { return document.querySelector('#toast').textContent; };
     // النقر أثناء عملية حفظ جارية يُتجاهَل بالتصميم (منع المزدوج): نعيد النقر حتى يظهر إثبات الإنجاز
+    // لكن لا يُعاد النقر بعد أن أُضيفت الدفعة فعلاً (وإلا تتكرر الدفعة) — يُنتظر إثبات الحفظ فقط
+    var payCount = function () { return ((window.MajlisApp.order || {}).payments || []).length; };
     var clickPay = async function (btnSel, amount, expectToast) {
       setVal('#payAmount', amount);
+      var n0 = payCount();
       for (var a = 0; a < 8; a++) {
-        document.querySelector(btnSel).click();
-        try { await waitFor(function () { return toastTxt().indexOf(expectToast) >= 0; }, 45000); return true; }
+        if (payCount() === n0) document.querySelector(btnSel).click();
+        try { await waitFor(function () { return toastTxt().indexOf(expectToast) >= 0; }, 45000); return payCount() === n0 + 1; }
         catch (e) { /* مشغول — إعادة المحاولة */ }
+        if (payCount() > n0) { log('clickPay: payment added but no confirm toast: ' + toastTxt().slice(0, 120) + ' raw=' + window.Store.lastError + ' st=' + window.Store.lastStatus); return false; }
       }
       return false;
     };

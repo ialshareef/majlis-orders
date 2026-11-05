@@ -58,7 +58,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
 var verM = app.match(/APP_VERSION = '([^']+)'/);
 var pkgVer = '';
 try { pkgVer = JSON.parse(parts[8]).version || ''; } catch (e) { pkgVer = ''; }
-t('version-matches-package', !!verM && !!pkgVer && verM[1] === pkgVer, 'app=' + (verM ? verM[1] : 'none') + ' package=' + (pkgVer || 'none'));
+// الإصدار يُحقن من وسم git عند البناء (configure-version.js)؛ المصدر يبقى 0.0.0-dev أو يساوي package.json
+t('version-matches-package', !!verM && !!pkgVer && (verM[1] === '0.0.0-dev' || verM[1] === pkgVer), 'app=' + (verM ? verM[1] : 'none') + ' package=' + (pkgVer || 'none'));
 t('version-is-a-real-semver', /^\d+\.\d+\.\d+$/.test(pkgVer || ''), pkgVer || 'none');
 
       // اسم التطبيق الظاهر بالعربية — والمعرفات التقنية ثابتة

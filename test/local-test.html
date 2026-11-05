@@ -15,6 +15,16 @@
    داخل المتصفح، مع واجهة التطبيق من ملفات المشروع مباشرة — لا اتصال بأي خادم حقيقي.
    شغّلها على منفذ غير منفذ التطبيق (مثلاً 8091) حتى لا تشارك جلسة الدخول المحفوظة. */
 window.TEST = { log: [] };
+  // تقرير فحص دخان آلي لمُشغّل اختبارات HTML (run-html-tests.mjs): الصفحة تبقى للاستخدام اليدوي كما هي،
+  // وتعلن بعد الإقلاع نتيجة فحوص بسيطة في #testLog و#testResult بدل الانتظار حتى المهلة.
+  const report = (checks) => {
+    const pre = document.createElement('pre'); pre.id = 'testLog'; pre.style.cssText = 'position:fixed;top:24px;left:0;z-index:9999;max-height:40vh;overflow:auto;background:#fff;color:#111;font:11px monospace;direction:ltr;margin:0;padding:4px 6px';
+    let bad = 0;
+    pre.textContent = checks.map(([name, ok, why]) => { if (!ok) bad++; return (ok ? 'PASS ' : 'FAIL ') + name + (ok || !why ? '' : ' :: ' + why); }).join('\n');
+    const res = document.createElement('div'); res.id = 'testResult'; res.hidden = true;
+    res.textContent = bad ? 'FAIL' : 'PASS ' + checks.length + '/' + checks.length;
+    document.body.appendChild(pre); document.body.appendChild(res);
+  };
 (async function boot() {
   const status = (m) => { document.getElementById('testStatus').textContent = m; window.TEST.log.push(m); };
   const realFetch = window.fetch.bind(window);
@@ -67,10 +77,18 @@ window.TEST = { log: [] };
     await new Promise((r) => setTimeout(r, 400));
     status('READY');
     window.TEST.ready = true;
+    const noTok = await window.TEST.api('GET', '/api/bootstrap');
+    report([
+      ['boot: worker.js + SQLite + واجهة المشروع', true],
+      ['app: شاشة الدخول ظاهرة', !!document.getElementById('loginForm') && !document.getElementById('loginScreen').hidden],
+      ['app: MajlisApp مُحمَّل', !!window.MajlisApp],
+      ['api: bootstrap بلا جلسة = 401', noTok.status === 401, String(noTok.status)],
+    ]);
   } catch (e) {
     console.error(e);
     status('ERROR: ' + e.message);
     window.TEST.error = e.message;
+    report([['boot', false, e.message]]);
   }
 })();
 </script>

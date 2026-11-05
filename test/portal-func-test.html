@@ -73,7 +73,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var wrap = document.createElement('div');
       wrap.innerHTML = doc.body.innerHTML;
       document.body.appendChild(wrap);
-      for (var p of ['../js/designer.js', '../js/portal.js']) {
+      // نفس ترتيب portal.html: design-sheet.js قبل portal.js (PDF العميل يعتمد عليه)
+      for (var p of ['../js/designer.js', '../js/design-sheet.js', '../js/portal.js']) {
         var s = document.createElement('script');
         s.textContent = await (await realFetch(p)).text();
         document.body.appendChild(s);
@@ -586,8 +587,12 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
       t('G6-canvas-room', getComputedStyle(q('.p-canvas')).display !== 'none', 'canvas in room');
       step(3);
       await waitFor(function () { return q('#pPanel button[data-acc]') || q('#pPanel .hint'); }, 60000);
-      // [سابقة معروفة قبل هذا الإصدار] كان المخطط مخفياً في خطوة الأثاث؛ تغيّر السلوك لغير هذا.
-      t('G6-canvas-furn', getComputedStyle(q('.p-canvas')).display === 'none', 'canvas hidden in furn (known-fail)');
+      // الأثاث: الرسم يبقى ظاهراً بارتفاع أصغر ليرى العميل مكان الإكسسوار (style.css [data-step="furn"])
+      var cvF = q('.p-canvas');
+      t('G6-canvas-furn', getComputedStyle(cvF).display !== 'none' && cvF.getBoundingClientRect().height <= 281, 'furn canvas h=' + Math.round(cvF.getBoundingClientRect().height));
+      step(4);
+      await waitFor(function () { return q('#pActPdf'); }, 60000);
+      t('G6-canvas-review-hidden', getComputedStyle(q('.p-canvas')).display === 'none', 'review hides canvas');
 
       // K: لا زر «عامود» في واجهة العميل إطلاقًا (يبقى في تطبيق الموظفين)
       step(1);
@@ -623,40 +628,32 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
       await waitFor(function () { return stepTitle() === 'المراجعة'; }, 60000);
       t('N7-kept-on-back', P.state().walls.length === keptWalls, 'choices kept');
 
-      // O: شاشة واحدة بلا نزول طويل — الخيارات والرسم وزر التالي داخل الشاشة عند 360px
+      // O: صفحة المرحلة بتمرير طبيعي (لا صندوق مقفل بارتفاع الشاشة — style.css «مرحلة واحدة = صفحة واحدة»)
+      // العقد: لا تجاوز أفقي، وشريط «التالي» ملتصق داخل النافذة الظاهرة، وخيارات كل مرحلة موجودة
       qAll('#pSteps button')[0].click();
       await waitFor(function () { return stepTitle() === 'الغرفة'; }, 60000);
       var oneScreen = function () {
-        var navEl = q('.p-footbar');
-        var nav = navEl.getBoundingClientRect();
-        var de = q('#pDesign').getBoundingClientRect();
-        var cv = q('#pCanvas').getBoundingClientRect();
-        // نقيس داخل #pDesign (.height = نافذة العميل الحقيقية)، لا ضد صفحة الاختبار
-        var dTop = de.top, dBottom = de.bottom;
+        var nav = q('.p-footbar').getBoundingClientRect();
+        var next = q('#pNextStep').getBoundingClientRect();
         var ttl = stepTitle();
         var map = { 'الغرفة': ['#pfW', '#pfH'], 'العناصر المعمارية': ['#pfOWall', '[data-add="door"]'],
           'المجلس': ['#pfMajLen', '#pfFillMajlis'], 'الأثاث والإكسسوارات': ['[data-acc]'],
           'المراجعة': ['#pActPdf', '#pSubmitDesign'] };
-        var below = (map[ttl] || []).filter(function (sel) {
-          var el = q(sel);
-          if (!el) return false;
-          var r = el.getBoundingClientRect();
-          return r.bottom > nav.top + 1 || r.top < dTop - 1;
-        });
+        var missing = (map[ttl] || []).filter(function (sel) { return !q(sel); });
         return {
-          fits: de.height <= window.innerHeight + 1,
-          navOk: nav.bottom <= dBottom + 1 && nav.top >= dTop - 1 && nav.bottom <= dBottom + 2,
-          below: below.join(','),
+          navOk: nav.top >= -1 && nav.bottom <= window.innerHeight + 1 && next.height >= 44,
+          missing: missing.join(','),
           ovfX: (q('#pDesign').scrollWidth > q('#pDesign').clientWidth + 1),
-          canvas: Math.round(cv.height),
-          dbg: 'design=' + Math.round(de.height) + ',nav=' + Math.round(nav.top - dTop) + '..' + Math.round(nav.bottom - dTop) + ',win=' + Math.round(dBottom - dTop),
+          dbg: 'nav=' + Math.round(nav.top) + '..' + Math.round(nav.bottom) + ',vh=' + window.innerHeight + ',next=' + Math.round(next.height),
         };
       };
       var osBad = [], osInfo = [];
       for (var oi = 0; oi < 5; oi++) {
+        // في صفحة الاختبار تسبق #pDesign سجلاتُ الاختبار؛ في البوابة الحقيقية هو الصفحة نفسها
+        q('#pDesign').scrollIntoView({ block: 'start' }); await new Promise(function (r) { setTimeout(r, 60); });
         var r = oneScreen();
-        osInfo.push(stepTitle() + ':design=' + Math.round(q('#pDesign').getBoundingClientRect().height) + '/vh=' + window.innerHeight + ',nav=' + Math.round(q('.p-footbar').getBoundingClientRect().bottom));
-        if (!r.fits || !r.navOk || r.below || r.ovfX) osBad.push(stepTitle() + '(' + r.dbg + ')');
+        osInfo.push(stepTitle() + ':' + r.dbg);
+        if (!r.navOk || r.missing || r.ovfX) osBad.push(stepTitle() + '(' + r.dbg + (r.missing ? ',missing=' + r.missing : '') + (r.ovfX ? ',ovfX' : '') + ')');
         if (oi < 4) {
           var bT = stepTitle();
           q('#pNextStep').click();
@@ -686,8 +683,19 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
       } else {
         t('M-pdf-links', false, 'no blob');
       }
+      // مشاركة النظام (الجوال): ملف PDF يُمرَّر لـ navigator.share. في Chrome بلا واجهة على ويندوز
+      // canShare تقبل الملفات وتفتح نافذة نظام لا تُغلق أبداً، فتُستبدل بدالة تسجّل ما مُرِّر لها.
+      var _cs = navigator.canShare, _sh = navigator.share, shared = [];
+      navigator.canShare = function () { return true; };
+      navigator.share = function (d) { shared.push(d); return Promise.resolve(); };
+      q('#pActWa').click();
+      await waitFor(function () { return shared.length > 0; }, 120000);
+      t('M-share-file', shared[0].files && shared[0].files[0] && shared[0].files[0].type === 'application/pdf' && /رقم التصميم|مسودة/.test(shared[0].text || ''), JSON.stringify({ n: shared[0].files && shared[0].files.length, text: (shared[0].text || '').slice(0, 40) }));
+      // بلا مشاركة ملفات (الحاسوب): تنزيل PDF ثم فتح واتساب برقم المحل
+      navigator.canShare = function () { return false; };
       q('#pActWa').click();
       await waitFor(function () { return openedUrls.length > 0 || q('#pToast').textContent.indexOf('PDF') >= 0; }, 120000);
+      navigator.canShare = _cs; navigator.share = _sh;
       t('M-wa', openedUrls.some(function (u) { return u.indexOf('wa.me/966512345678') >= 0; }) || q('#pToast').textContent.length > 0, (openedUrls[0] || 'toast-fallback').slice(0, 60));
       t('M-phone-format', P.saudiIntl('0549955622') === '966549955622'
         && P.formatSaudiIntl('966549955622') === '+966 54 995 5622'

@@ -100,7 +100,7 @@ var aVer = app.match(/APP_VERSION = '([^']+)'/);
     // إصدار التطبيق: المصدر المعتمد package.json — لا رقم مثبّت يتقادم مع كل إصدار.
     var aPkg = '';
     try { aPkg = JSON.parse(parts[4]).version || ''; } catch (e) { aPkg = ''; }
-    t('A-ver', !!aVer && !!aPkg && aVer[1] === aPkg, 'app=' + (aVer ? aVer[1] : 'none') + ' package=' + (aPkg || 'none'));
+    t('A-ver', !!aVer && !!aPkg && (aVer[1] === '0.0.0-dev' || aVer[1] === aPkg), 'app=' + (aVer ? aVer[1] : 'none') + ' package=' + (aPkg || 'none'));
     t('A-ver-semver', /^\d+\.\d+\.\d+$/.test(aPkg || ''), aPkg || 'none');
     // 1) لا زر «تطبيق كغرفة مستطيلة»: المقاسات تُطبَّق مباشرة أثناء الكتابة
     t('A-live-dims', app.indexOf('btnApplyRect') < 0 && app.indexOf('applyRoomDims') >= 0

@@ -120,13 +120,14 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('review-step', pjs0.indexOf('renderReviewPanel') >= 0 && pjs0.indexOf('pActPdf') >= 0 && pjs0.indexOf('pActWa') >= 0, 'review actions');
       t('done-dom', !!q('#pDesignNo') && !!q('#pPdf') && !!q('#pShareWa') && !!q('#pContactBtn'), 'done');
       t('look-dom', !!q('#pLookNo') && !!q('#pLookImg'), 'look');
-      // ترويسة PDF: أيقونة التطبيق صورة حقيقية (لا SVG يُرسم أسود عند التصدير)
-      t('pdf-app-icon', pjs0.indexOf('inv-mark') >= 0 && pjs0.indexOf('/icons/icon-512.png') >= 0, 'pdf uses app icon image');
-      // رقم التصميم مرة واحدة فقط: في خانة التاريخ المجاورة، لا في الترويسة ولا مكرّرًا
-      var infoBlock = (pjs0.match(/<div class="inv-info">[\s\S]*?inv-foot/) || [''])[0];
-      t('pdf-no-once', (pjs0.match(/class="inv-no"/g) || []).length === 0
-        && pjs0.indexOf('<small>تصميم مجلس — ') < 0
-        && (infoBlock.match(/<span>رقم التصميم<\/span>/g) || []).length === 1, 'design number appears once');
+      // ورقة PDF العميل تُبنى الآن من الورقة المشتركة design-sheet.js (DesignSheet) لا من قالب inv-* القديم.
+      // لا SVG في الورقة (html2canvas يرسمه أسود عند التصدير)، والترويسة عناوين نصية + خانات بيانات.
+      var dsJs = await get('/js/design-sheet.js');
+      t('pdf-app-icon', dsJs.indexOf('<svg') < 0 && dsJs.indexOf('class="ds-head"') >= 0 && pjs0.indexOf('DesignSheet.pdfBlob(') >= 0, 'sheet without svg, shared DesignSheet');
+      // رقم التصميم مرة واحدة فقط: خانة واحدة في بيانات الترويسة، ولا يكرّره قالب الورقة
+      var optsBlock = (pjs0.match(/function designSheetOpts[\s\S]*?\n  \}/) || [''])[0];
+      t('pdf-no-once', (optsBlock.match(/رقم التصميم/g) || []).length === 1 && dsJs.indexOf('رقم التصميم') < 0
+        && pjs0.indexOf('class="inv-no"') < 0, 'design number appears once');
       // تواصل معنا: بطاقات أيقونة + باركود لكل قناة، لا سطور نص عشوائية
       t('pdf-contact-cards', pjs0.indexOf('inv-chans') >= 0 && pjs0.indexOf('inv-chan-qr') >= 0
         && pjs0.indexOf('contactLines') < 0 && pjs0.indexOf('wa.me/') >= 0, 'contact channel cards');
