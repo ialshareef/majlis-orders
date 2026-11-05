@@ -437,13 +437,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.80';
-// بصمة asalh-najd-1.0.80.apk (إصدار GitHub v1.0.80، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.80 وversionCode 10080، ونفس شهادة توقيع 1.0.79).
-const UPDATE_FALLBACK_SHA256 = 'dcb1120e1378b1e581b489124fc8e148d2604ce53949ea1a27bd7578e38da6e6';
+const UPDATE_FALLBACK_VERSION = '1.0.81';
+// بصمة asalh-najd-1.0.81.apk (إصدار GitHub v1.0.81، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.81 وversionCode 10081، ونفس شهادة توقيع 1.0.80).
+const UPDATE_FALLBACK_SHA256 = '7b84443f2e917040552f5f933babb1a019c54dcaedf353f3ab9b33c9272684c8';
 const UPDATE_FALLBACK_NOTES = [
-  'مساعد التصميم الذكي في صفحة تصميم العميل صار يعمل مجاناً (Cloudflare Workers AI)',
-  'نافذة تصدير الملف وملفات PDF بعرض أوضح على الجوال',
+  'إشعارات واتساب: تنبيهات مجانية للطلبات والدفعات والمصروفات وتغيير الحالة، بإرسال يدوي من واتساب',
+  'تقرير «زيارات الموقع» في التقارير، ومعرفة مصدر الزوار (إنستغرام، واتساب، تيك توك…)',
+  'قسم حركة الزوار في «عن التطبيق» بتنسيق أوضح',
 ];
 
 function versionCodeOfName(v) {
