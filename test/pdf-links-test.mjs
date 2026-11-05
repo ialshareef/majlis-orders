@@ -32,21 +32,22 @@ const addPageSlice = ds.slice(ds.indexOf('function addPage('), ds.indexOf('var a
 const afterH2c = shootSlice.slice(shootSlice.indexOf('html2canvas('));
 /* الورقة قد صارت أكثر من صفحة: shoot يبنيها كلها داخل الموضع ويصوّرها واحداً
    واحداً، وكل لقطة تُختم ثم يتحرّر الموضع بعد آخر ختم (روابط حيّة لكل صفحة). */
-t('shoot: ترجع اللقطات مع release', /return \{\s*shots: shots,\s*release: release\s*\}/.test(shootSlice));
-t('shoot: تبني كل الصفحات داخل الموضع الموصول (قياس حقيقي)', /buildPages\(opts, area\)/.test(shootSlice));
+/* الورقة صفحة واحدة دائماً: shoot يبنيها داخل الموضع الموصول ويصوّرها، ثم تُختم
+   ويتحرّر الموضع بعد الختم (قياس الروابط والعنصر ما يزال موصولاً). */
+t('shoot: ترجع لقطة الورقة الواحدة مع release', /return \{ shots: \[\{ canvas: canvas, el: el \}\], release: release \}/.test(shootSlice));
+t('shoot: تبني الورقة داخل الموضع الموصول (قياس حقيقي)', /buildPages\(opts, area\)\[0\]/.test(shootSlice));
 t('shoot: بعد html2canvas لا استدعاء restore() مباشر', !afterH2c.includes('restore()'), afterH2c.match(/restore\(\)/) ? 'restore() بعد html2canvas' : '');
 t('shoot: فشل الالتقاط يحرّر بـ release()', /function \(e\) \{ release\(\); throw e; \}/.test(shootSlice));
-t('pdfBlob: ختم كل اللقطات قبل release', pdfBlobSlice.indexOf('stamp(pdf, s.shots[i], opts)') > -1
-  && pdfBlobSlice.indexOf('s.release()') > pdfBlobSlice.indexOf('stamp(pdf, s.shots[i], opts)'));
+t('pdfBlob: ختم اللقطة قبل release', pdfBlobSlice.indexOf('stamp(pdf, s.shots[0], opts)') > -1
+  && pdfBlobSlice.indexOf('s.release()') > pdfBlobSlice.indexOf('stamp(pdf, s.shots[0], opts)'));
 t('pdfBlob: تحرير مضمون في finally', /finally \{\s*s\.release\(\);?\s*\}/.test(pdfBlobSlice));
-t('pdfBlob: الصفحة الأولى أصلية والباقي بـ addPage أفقي',
-  /if \(i > 0\) pdf\.addPage\('a4', 'landscape'\)/.test(pdfBlobSlice));
-t('addPage: ختم كل اللقطات قبل release', addPageSlice.indexOf('stamp(pdf, s.shots[i], opts)') > -1
-  && addPageSlice.indexOf('s.release()') > addPageSlice.indexOf('stamp(pdf, s.shots[i], opts)'));
+t('pdfBlob: صفحة واحدة بمقاس الورقة (لا addPage)', /format: \[pg\.w, pg\.h\]/.test(pdfBlobSlice) && !/addPage/.test(pdfBlobSlice));
+t('addPage: ختم اللقطة قبل release', addPageSlice.indexOf('stamp(pdf, s.shots[0], opts)') > -1
+  && addPageSlice.indexOf('s.release()') > addPageSlice.indexOf('stamp(pdf, s.shots[0], opts)'));
 t('addPage: تحرير مضمون في finally', /finally \{\s*s\.release\(\);?\s*\}/.test(addPageSlice));
-t('addPage: كل لقطة تفتح صفحة أفقية', /pdf\.addPage\('a4', 'landscape'\)/.test(addPageSlice));
+t('addPage: صفحة بمقاس الورقة', /pdf\.addPage\(\[pg\.w, pg\.h\], pg\.orientation\)/.test(addPageSlice));
 const stampSlice = ds.slice(ds.indexOf('function stamp('), ds.indexOf('function pdfBlob('));
-t('stamp: تستدعي addLinks بالورقة الحية', /opts\.addLinks\(pdf, shot\.el, 10, 10, SHEET_W\)/.test(stampSlice));
+t('stamp: تستدعي addLinks بالورقة الحية وبمقاسها', /opts\.addLinks\(pdf, shot\.el, MARGIN, MARGIN, sz\.w, sz\.h\)/.test(stampSlice));
 t('release: idempotent ويجري مرة واحدة', /var released = false;\s*function release\(\) \{ if \(released\) return; released = true; restore\(\); \}/.test(shootSlice));
 t('shoot: release معرّف قبل الإعداد المتصلاً', shootSlice.indexOf('function release()') > -1
   && shootSlice.indexOf('function release()') < shootSlice.indexOf("area.innerHTML = ''"));
@@ -54,32 +55,22 @@ t('shoot: release معرّف قبل الإعداد المتصلاً', shootSlice
     /catch \(e\) \{[\s\S]{0,200}?try \{ release\(\); \} catch \(_\) \{[\s\S]{0,80}?\}[\s\S]{0,80}?return Promise\.reject\(e\);/.test(shootSlice)
     && shootSlice.indexOf('return Promise.reject(e)') < shootSlice.indexOf('return Promise.resolve()'));
 
-/* ============ 1ب) أمر الشراء: قياس صفحة الفاتورة قبل الاستعادة ============ */
-console.log('== 1ب) makePdfBlob: قياس الصفحة الأولى على تخطيط الصورة ==');
+/* ============ 1ب) أمر الشراء: صفحة واحدة تُقاس روابطها على المستند نفسه ============ */
+console.log('== 1ب) makePdfBlob: صفحة واحدة بمقاس الورقة المختارة ==');
 const orderSlice = app.slice(app.indexOf('async function makePdfBlob('), app.indexOf('function browserDownload('));
-const shotSlice2 = orderSlice.slice(orderSlice.indexOf('window.html2canvas('), orderSlice.indexOf('if (needSheet'));
-const idxMeasure = shotSlice2.indexOf('addPdfLinksToDoc(pdf, inv');
-const idxRestore = shotSlice2.indexOf('showHidden()');
 t('makePdfBlob موجود', orderSlice.length > 400, 'len=' + orderSlice.length);
-t('makePdfBlob: قياس روابط الفاتورة قبل استعادة التصميم',
-  idxMeasure > -1 && idxRestore > idxMeasure,
-  idxMeasure < 0 ? 'لا استدعاء addPdfLinksToDoc' : 'showHidden عند ' + idxRestore + ' والقياس عند ' + idxMeasure);
-t('makePdfBlob: الاستعادة تقع قبل DesignSheet.addPage (لا فصل قبل القياس)',
-  orderSlice.indexOf('showHidden()') > -1
-  && orderSlice.indexOf('showHidden()') < orderSlice.indexOf('DesignSheet.addPage('));
-t('makePdfBlob: showHidden() مضمون في finally', /finally \{\s*showHidden\(\);/.test(orderSlice));
-t('makePdfBlob: قياس الصفحة الأولى على عنصر الفاتورة نفسه inv',
-  /addPdfLinksToDoc\(pdf, inv, 10, 10, 190, h\)/.test(orderSlice));
+t('makePdfBlob: صفحة واحدة بمقاس الورقة', /format: \[paper\.w, paper\.h\]/.test(orderSlice) && !/addPage/.test(orderSlice));
+t('makePdfBlob: قياس الروابط على عنصر الفاتورة نفسه inv بعد التصوير',
+  orderSlice.indexOf('addPdfLinksToDoc(pdf, inv, DOC_MARGIN, DOC_MARGIN, wMm, hMm)') > orderSlice.indexOf('window.html2canvas('));
+t('makePdfBlob: إعادة موضع الطباعة مضمونة في finally', /finally \{\s*area\.style\.cssText = '';/.test(orderSlice));
 
 
 /* ============ 2) توصيل المسارات ومصادر الروابط ============ */
 console.log('== 2) مساري التصدير ومصادر الروابط ==');
-t('app: مسار الموظف makeDesignSheetBlob يمرّر addLinks',
-  /return DesignSheet\.pdfBlob\(\{[\s\S]{0,700}?addLinks: \(pdf, el, x0, y0, wMm\) => addPdfLinksToDoc\(pdf, el, x0, y0, wMm, DesignSheet\.SHEET_H\)/.test(app));
-t('app: صفحة ورقة التصميم في أمر الشراء تمرّر addLinks',
-  /addLinks: \(p2, el, x0, y0, wMm\) => addPdfLinksToDoc\(p2, el, x0, y0, wMm, DesignSheet\.SHEET_H\)/.test(app));
-t('app: كلا المسارين يمرّران footHtml الشريط',
-  (app.match(/footHtml: await sheetFootHtml\(\)/g) || []).length === 2);
+t('app: مسار الموظف makeDesignSheetBlob يمرّر addLinks بمقاس الورقة',
+  /return DesignSheet\.pdfBlob\(\{[\s\S]{0,800}?addLinks: \(pdf, el, x0, y0, wMm, hMm\) => addPdfLinksToDoc\(pdf, el, x0, y0, wMm, hMm\)/.test(app));
+t('app: ورقة التصميم (PDF التصميم) تمرّر footHtml الشريط',
+  (app.match(/footHtml: await sheetFootHtml\(\)/g) || []).length === 1);
 t('portal: مسار العميل يمرّر addLinks ثم pdfBlob',
   /o\.addLinks = function \(pdf, el, x0, y0, wMm\) \{ addPdfLinks\(pdf, el, x0, y0, wMm\); \}/.test(portal)
   && /return DesignSheet\.pdfBlob\(o\)/.test(portal));

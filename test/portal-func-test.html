@@ -675,6 +675,22 @@ var movedSofa = P.state().pieces.filter(function (x) { return x.id === dSofa.id;
       q('#pActPdf').click();
       await waitFor(function () { return openedBlobs.length > 0 || q('#pToast').textContent.length > 0; }, 240000);
       t('M-pdf', openedBlobs.length > 0 && openedBlobs[0] instanceof Blob, openedBlobs.length + ' blob toast=' + q('#pToast').textContent.slice(0, 100));
+      // معاينة المراجعة = الملف نفسه: صفحة واحدة بالمقاس نفسه، والورقة داخل إطارها بلا تجاوز
+      await waitFor(function () { return /صفحة واحدة/.test((q('#pPrevMeta') || {}).textContent || ''); }, 60000).catch(function () {});
+      var prevSheet = q('#pPrevPaper .dsheet');
+      var prevPaper = prevSheet && prevSheet.__paper;
+      var pdfTxt0 = openedBlobs.length ? await openedBlobs[0].text() : '';
+      var mb0 = /\/MediaBox \[([\d.\s]+)\]/.exec(pdfTxt0);
+      var mbMm = mb0 ? mb0[1].trim().split(/\s+/).slice(2).map(function (v) { return Math.round(v / 72 * 25.4); }) : [];
+      t('R-preview-sheet', !!prevSheet && (pdfTxt0.match(/\/Type \/Page(?!s)/g) || []).length === 1, 'pages=' + (pdfTxt0.match(/\/Type \/Page(?!s)/g) || []).length);
+      t('R-preview-same-paper', !!prevPaper && mbMm[0] === prevPaper.w && mbMm[1] === prevPaper.h, JSON.stringify({ prev: prevPaper && [prevPaper.w, prevPaper.h], pdf: mbMm }));
+      var fr = q('#pPrevFrame').getBoundingClientRect(), pr = q('#pPrevPaper').getBoundingClientRect();
+      t('R-preview-fits-frame', pr.width <= fr.width + 1 && pr.left >= fr.left - 1 && pr.right <= fr.right + 1, JSON.stringify({ fr: [fr.left, fr.width], pr: [pr.left, pr.width] }));
+      t('R-preview-meta', /A4|A3|A2|مخصص/.test(q('#pPrevMeta').textContent) && /مم/.test(q('#pPrevMeta').textContent), q('#pPrevMeta').textContent);
+      t('R-preview-edit-links', qAll('#pPanel [data-goto]').length === 4 && /لا يحتوي الملف أي أسعار/.test(q('.p-pdfprev-what').textContent), qAll('#pPanel [data-goto]').length);
+      q('#pActPreview').click(); await new Promise(function (r) { setTimeout(r, 200); });
+      t('R-preview-zoom', q('#pPrevFrame').classList.contains('zoom') && q('#pActPreview').getAttribute('aria-pressed') === 'true');
+      q('#pActPreview').click();
       // الروابط قابلة للنقر: ملف PDF يحتوي تعليقات /URI (الأيقونات والباركود)
       if (openedBlobs.length && openedBlobs[0] instanceof Blob) {
         var pdfTxt = await openedBlobs[0].text();

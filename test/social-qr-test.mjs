@@ -110,10 +110,11 @@ console.log('== 4) التوصيل في مسار التصدير ==');
 {
   t('build يستدعي socialQrList', /build: async \(o\) => buildPrintDoc\(o, await zatcaQr\(o\), await socialQrList\(\)\)/.test(src));
   t('buildPrintDoc يستقبل الكتلة', /function buildPrintDoc\(order, qrSrc = '', socialHtml = ''\)/.test(src));
-  t('الكتلة قبل التوقيعات', src.indexOf('${socialHtml}') > 0 && src.indexOf('${socialHtml}') < src.indexOf('inv-foot'));
+  // شريط التواصل داخل صف التوقيعات (وسطه) — صفحة واحدة مضغوطة الارتفاع
+  t('الكتلة في صف التوقيعات', /<div class="inv-foot-mid">\$\{String\(socialHtml \|\| ''\)/.test(src));
   t('أصناف سناب في CSS', /inv-chan-ic\.sn/.test(fs.readFileSync(path.join(here, '..', 'css', 'style.css'), 'utf8')));
   t('الروابط قابلة للنقر (وسم a)', /<a class="inv-chan" href=/.test(src));
-  t('تراكب روابط حقيقي في makePdfBlob', /addPdfLinksToDoc\(pdf, inv, 10, 10, 190, h\)/.test(src));
+  t('تراكب روابط حقيقي في makePdfBlob', /addPdfLinksToDoc\(pdf, inv, DOC_MARGIN, DOC_MARGIN, wMm, hMm\)/.test(src));
   t('دالة التراكب تقرأ data-url وتستدعي pdf.link', /querySelectorAll\('\[data-url\]'\)/.test(src) && /pdf\.link\(x, y, w, hh, \{ url/.test(src));
   t('أيقونات wa/tel/map موجودة', /const WA_ICON =/.test(src) && /const TEL_ICON =/.test(src) && /key: 'mapsUrl'/.test(src));
 }

@@ -81,9 +81,11 @@ function assign(target, src, name) {
 function installApp(src) {
   var missing = [];
   var fns = ['loadScript', 'sheetFootHtml', 'shopSocialList', 'shopSocialHtml', 'socialQrList',
-    'validSocialUrl', 'waPhone', 'fmtIntl', 'addPdfLinksToDoc', 'makeDesignSheetBlob', 'makePdfBlob'];
+    'validSocialUrl', 'waPhone', 'fmtIntl', 'addPdfLinksToDoc', 'makeDesignSheetBlob', 'makePdfBlob',
+    'layoutDoc', 'setPrintPage'];
   var asgs = ['$', 'esc', 'getItem', 'latinDigits', 'STATUS', 'DESIGN_STATUS',
-    'H2C_URL', 'JSPDF_URL', 'QR_URL', 'SOCIAL_CHANS', 'WA_ICON', 'TEL_ICON'];
+    'H2C_URL', 'JSPDF_URL', 'QR_URL', 'SOCIAL_CHANS', 'WA_ICON', 'TEL_ICON', 'DOC_PAPERS', 'DOC_MARGIN'];
+  window.docPlan = null;   // مخطط المستند (يضبطه buildPrintDoc في الإنتاج) — الفاتورة الاختبارية بلا مخطط
   var e;
   for (var i = 0; i < fns.length; i++) { e = assign(window, src, fns[i]); if (e) missing.push(e); }
   for (var j = 0; j < asgs.length; j++) { e = assign(window, src, asgs[j]); if (e) missing.push(e); }
@@ -107,8 +109,8 @@ function installPortal(src) {
 function capInto(o, into) {
   if (!o || typeof o.addLinks !== 'function') { into.push({ n: -1, dom: -1 }); return; }
   var inner = o.addLinks;
-  o.addLinks = function (pdf, el, x0, y0, wMm) {
-    var n = inner.call(o, pdf, el, x0, y0, wMm);
+  o.addLinks = function (pdf, el) {
+    var n = inner.apply(o, arguments);   // كل المعاملات (العرض والارتفاع بمقاس الورقة المختارة)
     var dom = -2;
     try { dom = el.querySelectorAll('[data-url]').length; } catch (_) {}
     into.push({ n: n, dom: dom });
@@ -188,13 +190,12 @@ async function runOrder(cfg, src) {
       + '<div class="inv-head"><div class="inv-brand"><h1>أصالة نجد</h1>'
       + '<small>0549955622</small></div><div class="inv-title-box">'
       + '<div class="inv-title">أمر شراء</div><div class="inv-no">#1042</div></div></div>'
-      + '<div class="inv-visuals"><div class="inv-design">مخطط التصميم (يُخفي من التصوير)</div></div>'
+      + '<section class="inv-dsec"><h2>التصميم</h2><div class="inv-dgrid"><div class="inv-dmain"><div class="ds-plan inv-dplan"></div></div></div></section>'
       + '<div class="inv-tbl"><div class="inv-row"><span>كنب 3.2م</span><span>3,200 ر.س</span></div></div>'
       + contact
       + '</div>';
     if (document.fonts && document.fonts.ready) { try { await document.fonts.ready; } catch (_) {} }
-    /* مِسبار حالة القياس: مواضع بطاقات الشريط في الحالتين — «مخفية» (كما صُوّرت
-       الصورة) و«مستعادة» (كما كان يقيس الإنتاج قبل هذا الإصلاح). */
+    /* مِسبار مواضع البطاقات بعد اختيار الورقة (layoutDoc) — هو التخطيط نفسه الذي يُصوَّر */
     var snapOn = function (root) {
       var ir = root.getBoundingClientRect();
       var out = [];
@@ -205,18 +206,10 @@ async function runOrder(cfg, src) {
       }
       return { w: ir.width, h: ir.height, cards: out };
     };
-    var pickTarget = function (root) {
-      var vs = root.querySelector('.inv-visuals');
-      var db = vs ? root.querySelector('.inv-design') : null;
-      return (vs && !root.querySelector('.inv-atts')) ? vs : db;
-    };
     var invEl = area.querySelector('.inv');
-    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
-    var tgA = pickTarget(invEl), cssA = tgA ? tgA.style.cssText : null;
-    if (tgA) tgA.style.display = 'none';
+    window.layoutDoc(area);
+    area.style.cssText = 'display:block;position:fixed;top:0;left:-20000px;background:#fff;z-index:-1';
     var snapShot = snapOn(invEl);
-    if (tgA) tgA.style.cssText = cssA;
-    var snapShow = snapOn(invEl);
     area.style.cssText = '';
     // راصد لحظة القياس داخل makePdfBlob نفسها (الصفحة الأولى فقط: عنصر .inv)
     origAdd = window.addPdfLinksToDoc;
@@ -225,8 +218,7 @@ async function runOrder(cfg, src) {
       var n = origAdd.apply(window, arguments);
       try {
         if (el && el.classList && el.classList.contains('inv')) {
-          var tg = pickTarget(el);
-          p1 = { n: n, display: tg ? window.getComputedStyle(tg).display : null, m: snapOn(el) };
+          p1 = { n: n, paper: el.__paper ? { w: el.__paper.w, h: el.__paper.h } : null, m: snapOn(el) };
         }
       } catch (_) { /* noop */ }
       return n;
@@ -242,7 +234,7 @@ async function runOrder(cfg, src) {
     } finally { window.addPdfLinksToDoc = origAdd; }
     var caps = inst.take();
     return { b64: await toB64(blob), caps: caps, missing: missing, err: null,
-      p1: p1, snapShot: snapShot, snapShow: snapShow };
+      p1: p1, snapShot: snapShot };
   } catch (e) {
     if (origAdd) window.addPdfLinksToDoc = origAdd;
     if (inst) inst.take();

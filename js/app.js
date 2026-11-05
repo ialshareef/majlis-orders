@@ -3195,7 +3195,7 @@ function docTitle(order) {
       <div class="inv-head">
         <div class="inv-brand">
           ${INV_MARK}
-          <div><h1>${esc(s.shopName || 'أصالة نجد')}</h1><small>${esc([s.phone, s.address].filter(Boolean).join(' • ')) || '&nbsp;'}</small>${s.vatNumber ? `<small>الرقم الضريبي: <span class="num">${esc(s.vatNumber)}</span></small>` : ''}</div>
+          <div><h1>${esc(s.shopName || 'أصالة نجد')}</h1><small>${esc([s.phone, s.address].filter(Boolean).join(' • ')) || '&nbsp;'}${s.vatNumber ? ` • الرقم الضريبي: <bdi class="num">${esc(s.vatNumber)}</bdi>` : ''}</small></div>
         </div>
         <div class="inv-title-box"><div class="inv-title">${esc(title)}</div><div class="inv-no">${esc(no)}</div></div>
       </div>`;
@@ -3208,9 +3208,35 @@ function docTitle(order) {
   }
   const orderEmployee = (order) => order.createdByName || (Store.getUser(order.createdBy) || {}).name || (currentUser && currentUser.name) || '';
 
-  /** أمر شراء العميل (أو عرض السعر) */
+  /* ---------- مخطط المستند: صورة + جدول أثاث من ورقة التصميم المشتركة ----------
+     docPlan يحمل صورة آخر مستند مبني (أبعادها بالبكسل) حتى يضبط layoutDoc
+     مقاسها على صندوقها الفعلي بعد اختيار الورقة — بنسبتها نفسها بلا تشويه. */
+  let docPlan = null;
+  function sheetPlan(order) {
+    if (!window.DesignSheet || !order.design) return null;
+    try { return DesignSheet.plan(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) }, 2800); }
+    catch (_) { return null; }
+  }
+  function designSection(order, title) {
+    const pl = sheetPlan(order);
+    docPlan = pl;
+    if (!window.DesignSheet) return '';
+    const f = DesignSheet.facts(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) });
+    return `
+      <section class="inv-dsec">
+        <h2>${esc(title)}</h2>
+        <div class="inv-dgrid">
+          <div class="inv-dmain">
+            <div class="ds-plan inv-dplan">${DesignSheet.planHtml(pl)}</div>
+            <div class="inv-dmeta"><div class="inv-dleg">${DesignSheet.legendHtml(f)}</div></div>
+          </div>
+          <aside class="inv-dside">${DesignSheet.sideHtml(f, 1)}</aside>
+        </div>
+      </section>`;
+  }
+
+  /** أمر شراء العميل (أو عرض السعر): صفحة واحدة دائماً — المقاس يُختار في layoutDoc */
   function buildPrintDoc(order, qrSrc = '', socialHtml = '') {
-    const img = designImage(order);
     const { lines, total, subtotal, vatEnabled, vatRate, vatAmount, discount } = computeLines(order);
     const paid = paidOf(order);
     const s = settings();
@@ -3218,37 +3244,42 @@ function docTitle(order) {
     const emp = orderEmployee(order);
     const c = order.customer || {};
     const atts = filledAttachments(order);
-    const dense = lines.length > 12;
     const quote = order.status === 'quote';
     const nPays = (order.payments || []).filter((p) => money(p.amount) > 0).length;
+    const notes = String(order.notes || '').trim();
+    // النص المختلط (عربي + إنجليزي بأقواس) يُعزل اتجاهياً فلا تنقلب الأقواس عند الالتفاف
+    const mx = (v) => (window.DesignSheet && DesignSheet.mixed ? DesignSheet.mixed(v) : esc(v));
     return `
-    <div class="inv ${dense ? 'dense' : ''}">
+    <div class="inv inv-order">
       ${invHead(docTitle(order), order.number ? '#' + order.number : 'مسودة')}
       <div class="inv-info">
-        <div><span>العميل</span><b>${esc(c.name) || '—'}</b></div>
+        <div class="span2"><span>العميل</span><b dir="auto">${mx(c.name) || '—'}</b></div>
         <div><span>الجوال</span><b class="num">${esc(c.phone) || '—'}</b></div>
-        <div class="span2"><span>مكان التوصيل</span><b>${esc(c.address) || '—'}</b></div>
         <div><span>${quote ? 'تاريخ العرض' : 'تاريخ الإصدار'}</span><b class="num">${fmtDate(order.createdAt || Store.now())}</b></div>
+        <div class="span2"><span>مكان التوصيل</span><b dir="auto">${mx(c.address) || '—'}</b></div>
         ${quote
           ? `<div><span>العرض صالح حتى</span><b class="num">${order.validUntil ? esc(fmtDate(order.validUntil)) : '—'}</b></div>`
-          : `<div><span>تاريخ التوصيل المتوقع</span><b class="num">${order.deliveryDate ? esc(fmtDate(order.deliveryDate)) : 'غير محدد'}</b></div>`}
-        <div><span>الموظف</span><b>${esc(emp)}</b></div>
+          : `<div><span>التوصيل المتوقع</span><b class="num">${order.deliveryDate ? esc(fmtDate(order.deliveryDate)) : 'غير محدد'}</b></div>`}
+        <div><span>الموظف</span><b dir="auto">${mx(emp) || '—'}</b></div>
         <div><span>مقاس الغرفة (داخلي)</span><b>${roomSummary(order.design)}</b></div>
+        <div><span>الحالة</span><b>${esc(quote ? 'عرض سعر' : (STATUS[order.status] || order.status || '—'))}</b></div>
+        <div><span>طريقة القياس</span><b>${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>
       </div>
-      <div class="inv-visuals">
-        <div class="inv-design"><h2>التصميم</h2><div class="imgbox"><img src="${img}" alt="التصميم"></div></div>
-        ${atts.length ? `<div class="inv-atts"><h2>المرفقات</h2><div class="att-col">${atts.map((a, i) => `
-          <figure><div class="imgbox"><img src="${a.src}" alt="مرفق ${i + 1}"></div><figcaption>${esc(a.name) || `مرفق ${i + 1}`}</figcaption></figure>`).join('')}</div></div>` : ''}
-      </div>
-      <div class="inv-items">
+      ${designSection(order, 'التصميم والمقاسات')}
+      ${atts.length ? `<section class="inv-atts"><h2>المرفقات</h2><div class="att-row">${atts.map((a, i) => `
+          <figure><div class="imgbox"><img src="${a.src}" alt="مرفق ${i + 1}"></div><figcaption dir="auto">${mx(a.name) || `مرفق ${i + 1}`}</figcaption></figure>`).join('')}</div></section>` : ''}
+      <section class="inv-items">
         <h2>التسعير</h2>
         <table>
           <thead><tr><th class="c-idx">#</th><th>الصنف</th><th class="c-unit">الوحدة</th><th class="c-qty">الكمية</th><th class="c-price">السعر (${cur$})</th><th class="c-total">الإجمالي (${cur$})</th></tr></thead>
-          <tbody>${lines.map((l, i) => `<tr><td>${i + 1}</td><td>${esc(l.name)}${l.sub ? ` <small>— ${esc(l.sub)}</small>` : ''}</td><td>${esc(l.unit)}</td><td class="num">${l.kind === 'sofa' ? fmtQty(l.qty) : esc(l.qty)}</td><td class="num">${fmt(l.price)}</td><td class="num">${fmt(l.total)}</td></tr>`).join('') || '<tr><td colspan="6">لا توجد أصناف</td></tr>'}</tbody>
+          <tbody>${lines.map((l, i) => `<tr><td class="num">${i + 1}</td><td dir="auto">${mx(l.name)}${l.sub ? ` <small>— ${mx(l.sub)}</small>` : ''}</td><td>${esc(l.unit)}</td><td class="num">${l.kind === 'sofa' ? fmtQty(l.qty) : esc(l.qty)}</td><td class="num">${fmt(l.price)}</td><td class="num">${fmt(l.total)}</td></tr>`).join('') || '<tr><td colspan="6">لا توجد أصناف</td></tr>'}</tbody>
         </table>
-      </div>
+      </section>
       <div class="inv-bottom">
-        <div class="inv-notes">${order.notes ? `<b>ملاحظات:</b> ${esc(order.notes).replace(/\n/g, '<br>')}` : ''}${s.invoiceNote ? `${order.notes ? '<br>' : ''}<b>شروط:</b> ${esc(s.invoiceNote)}` : ''}${!order.notes && !s.invoiceNote ? '<b>ملاحظات:</b> —' : ''}</div>
+        <div class="inv-notes">
+          <p><b>ملاحظات:</b> ${notes ? mx(notes).replace(/\n/g, '<br>') : '—'}</p>
+          ${s.invoiceNote ? `<p><b>شروط:</b> ${mx(s.invoiceNote).replace(/\n/g, '<br>')}</p>` : ''}
+        </div>
         ${qrSrc ? `<div class="inv-qr"><img src="${qrSrc}" alt="رمز الفاتورة الضريبية"><small>رمز الفاتورة الضريبية</small></div>` : ''}
         <div class="inv-totals">
           <div><span>المجموع قبل الخصم</span><span class="num">${fmt(subtotal)} ${cur$}</span></div>
@@ -3259,18 +3290,21 @@ function docTitle(order) {
           <div class="rem"><span>المتبقي</span><span class="num">${fmt(remainingOf(total, paid))} ${cur$}</span></div>`}
         </div>
       </div>
-      ${socialHtml}
       <div class="inv-foot">
         <div class="inv-sign"><i></i><span>توقيع العميل</span></div>
-        <div>${quote ? 'هذا عرض سعر وليس أمر شراء' : `الحالة: ${esc(STATUS[order.status] || order.status)}`} • طريقة القياس: ${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</div>
-        <div class="inv-sign"><i></i><span>الموظف: ${esc(emp)}</span></div>
+        <div class="inv-foot-mid">${String(socialHtml || '').replace(/^\s*<div class="inv-bottom">/, '').replace(/<\/div>\s*$/, '')}${quote ? '<p class="inv-foot-note">هذا عرض سعر وليس أمر شراء</p>' : (socialHtml ? '' : '<p class="inv-foot-note">أمر شراء معتمد بعد التوقيع</p>')}</div>
+        <div class="inv-sign"><i></i><span dir="auto">الموظف: ${mx(emp)}</span></div>
       </div>
     </div>`;
   }
 
   /** أمر التصنيع للورشة: المقاسات والمواصفات والقيود، بلا أي سعر */
   function buildWorkshopDoc(order) {
-    const img = designImage(order);
+    const W = 2800;
+    const img = designImage(order, W);
+    const aspect = printDesigner.aspect();
+    const H = Math.round(Math.min(1500, Math.max(650, W / aspect)));   // نفس حساب designImage
+    docPlan = { img, W, H, relabel: (k) => { printDesigner.setState(order.design); return printDesigner.toImage(W, H, { labelScale: k }); } };
     const d = order.design || {};
     const pieces = d.pieces || [];
     const c = order.customer || {};
@@ -3295,7 +3329,7 @@ function docTitle(order) {
     const meters = Designer.util.round(sofas.reduce((s, p) => s + num(p.w), 0), 2);
     const openings = (d.openings || []).map((o) => `${o.type === 'door' ? 'باب' : o.type === 'mashab' ? 'مشب' : o.type === 'tv' ? 'تلفاز' : 'شباك'} ${Designer.util.round(o.w, 2)} م على جدار ${o.wall + 1}`).join('، ');
     return `
-    <div class="inv work ${sofas.length > 12 ? 'dense' : ''}">
+    <div class="inv work">
       ${invHead('أمر تصنيع', order.number ? '#' + order.number : 'مسودة')}
       <div class="inv-info">
         <div><span>العميل</span><b>${esc(c.name) || '—'}</b></div>
@@ -3306,7 +3340,7 @@ function docTitle(order) {
         <div><span>الموظف</span><b>${esc(orderEmployee(order))}</b></div>
         <div><span>طريقة القياس</span><b>${d.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>
       </div>
-      <div class="inv-visuals"><div class="inv-design"><h2>المخطط</h2><div class="imgbox"><img src="${img}" alt="المخطط"></div></div></div>
+      <section class="inv-dsec"><h2>المخطط</h2><div class="ds-plan inv-dplan"><span class="ds-img"><img src="${img}" alt="المخطط"></span></div></section>
       <div class="inv-items">
         <h2>قطع الكنب</h2>
         <table>
@@ -3365,31 +3399,63 @@ function docTitle(order) {
     </div>`;
   }
 
-  /* ارتفاع ‎.inv‎ ثابت و overflow مخفي، فطلب بأصناف كثيرة كان تُقصّ أسطره الأخيرة
-     بلا إنذار. نضيّق جدول التسعير ثم مربّع التصميم درجة درجة حتى تدخل الصفحة.
-     تُعيد true إن بقي شيء لا يتسع بعد أقصى تضييق — فيُنبَّه المستخدم. */
-  function fitOnePage(area) {
+  /* ---------- مقاس المستند: صفحة واحدة دائماً، بلا تصغير خطوط ----------
+     الخطوط والمسافات ثابتة. يُقاس الارتفاع الطبيعي للمستند على عرض A4 (190مم)
+     فإن جاوز ارتفاع الصفحة يُعاد على A3 ثم A2 (أعرض وأطول، فيتّسع المحتوى
+     بحجمه نفسه)، وما بعد A2 مقاس مخصص بعرض A2 وارتفاع يكفي. بعدها يثبت
+     ارتفاع الصفحة فيأخذ قسم التصميم ما بقي من المساحة (لا فراغ ميت).
+     السند قصير بطبيعته: A4 بارتفاع محتواه. */
+  const DOC_PAPERS = [
+    { id: 'a4', label: 'A4', w: 210, h: 297 },
+    { id: 'a3', label: 'A3', w: 297, h: 420 },
+    { id: 'a2', label: 'A2', w: 420, h: 594 },
+  ];
+  const DOC_MARGIN = 10;
+  function setPrintPage(p) {
+    let st = document.getElementById('printPageSize');
+    if (!st) { st = document.createElement('style'); st.id = 'printPageSize'; document.head.appendChild(st); }
+    // الطباعة بالمقاس نفسه والهامش نفسه: صفحة واحدة متجهية (نص حقيقي) لا صورة
+    st.textContent = `@media print { @page { size: ${p.w}mm ${p.h}mm; margin: ${DOC_MARGIN}mm; } }`;
+  }
+  function layoutDoc(area) {
     const inv = $('.inv', area);
-    if (!inv) return false;
+    if (!inv) return null;
     const keep = area.style.cssText;
-    // القياس يحتاج عنصراً معروضاً: نعرضه خارج الشاشة لا أمام المستخدم
-    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff';
-    const dense = inv.classList.contains('dense');
-    let fs = dense ? 8.5 : 9.5, pad = dense ? 0.8 : 1.4, vis = 40;
-    for (let i = 0; i < 24 && inv.scrollHeight > inv.clientHeight + 1; i++) {
-      fs = Math.max(5.8, fs - 0.28);
-      pad = Math.max(0.2, pad - 0.1);
-      if (fs <= 7.6) vis = Math.max(20, vis - 2);   // مربّع التصميم آخر ما يُضغط
-      inv.style.setProperty('--row-fs', fs.toFixed(2) + 'pt');
-      inv.style.setProperty('--row-pad', pad.toFixed(2) + 'mm');
-      inv.style.setProperty('--vis-min', vis + 'mm');
+    area.style.cssText = 'display:block;position:fixed;top:0;left:-20000px;background:#fff';
+    try {
+      const receipt = inv.classList.contains('receipt');
+      const natural = (p) => {
+        const wMm = p.w - 2 * DOC_MARGIN;
+        inv.style.width = wMm + 'mm';
+        inv.style.height = 'auto';
+        const k = inv.getBoundingClientRect().width / wMm;
+        return k > 0 ? inv.scrollHeight / k : 0;
+      };
+      let paper = null, need = 0;
+      for (const p of (receipt ? DOC_PAPERS.slice(0, 1) : DOC_PAPERS)) {
+        need = natural(p);
+        if (receipt || need <= p.h - 2 * DOC_MARGIN + 0.3) { paper = p; break; }
+      }
+      if (!paper) {
+        const base = DOC_PAPERS[DOC_PAPERS.length - 1];
+        const h = Math.ceil((need + 2 * DOC_MARGIN + 2) / 5) * 5;
+        const LRI = String.fromCharCode(0x2066), PDI = String.fromCharCode(0x2069);   // الأبعاد لا تنقلب داخل الجملة العربية
+        paper = { id: 'custom', label: `مقاس مخصص ${LRI}${base.w}×${h}${PDI} مم`, w: base.w, h };
+        natural(paper);
+      }
+      inv.style.width = (paper.w - 2 * DOC_MARGIN) + 'mm';
+      inv.style.height = receipt ? 'auto' : (paper.h - 2 * DOC_MARGIN) + 'mm';
+      if (docPlan && window.DesignSheet && $('.inv-dplan', inv)) DesignSheet.fitPlan(inv, docPlan, paper.w - 2 * DOC_MARGIN);
+      inv.__paper = paper;
+      inv.dataset.paper = paper.id;
+      setPrintPage(paper);
+      return paper;
+    } finally {
+      area.style.cssText = keep;
     }
-    const overflow = inv.scrollHeight > inv.clientHeight + 1;
-    area.style.cssText = keep;
-    return overflow;
   }
 
-  /** بناء المستند في منطقة الطباعة وانتظار الصور والخط. تُعيد true إن لم يتسع كاملاً */
+  /** بناء المستند في منطقة الطباعة وانتظار الصور والخط، ثم اختيار مقاس الصفحة الواحدة */
   async function renderPrintArea(html) {
     const area = $('#printArea');
     area.innerHTML = html;
@@ -3406,7 +3472,7 @@ function docTitle(order) {
         setTimeout(fin, 1500);
       });
     }
-    return fitOnePage(area);
+    return layoutDoc(area);
   }
 
   /* لا تُصدَّر أمر شراء من طلب غير محفوظ: الورقة التي تصل العميل يجب أن تطابق
@@ -3489,68 +3555,30 @@ function docTitle(order) {
     return n;
   }
 
-  /** تحويل مستند الصفحة الواحدة إلى ملف PDF حقيقي (صورة عالية الدقة تحفظ العربية كما تُعرض).
-      إن كان للطلب مخطط تصميم تُلحق ورقة التصميم المشتركة كصفحة أفقية ثانية —
-      نفس صفحة العميل تماماً (المقياس والجدول والألوان وملخص المساحات وشريط
-      التواصل)، بينما تُخفى صورة المخطط من التصوير فقط ليبقى أمر الشراء
-      صفحة واحدة، والطباعة تُطبع الفاتورة كاملة كما كانت. */
+  /** تحويل المستند إلى ملف PDF من صفحة واحدة بالضبط، بمقاس الورقة التي اختارها
+      layoutDoc (A4/A3/A2/مخصص). الصفحة تُصوَّر بدقة ~300 نقطة/بوصة (نفس مقياس ورقة
+      التصميم) فتبقى حادة عند التكبير، والروابط حقيقية فوق الصورة. التصميم وجدول
+      الأثاث جزء من الصفحة نفسها — لا صفحة ثانية. */
   async function makePdfBlob(order) {
     await loadScript(H2C_URL);
     await loadScript(JSPDF_URL);
     const area = $('#printArea');
     const inv = $('.inv', area);
     if (!inv) throw new Error('تعذّر تجهيز المستند');
-    // إظهار مؤقت خارج الشاشة حتى يتمكّن html2canvas من قياسها
-    area.style.cssText = 'display:block;position:fixed;top:0;left:-10000px;background:#fff;z-index:-1';
-    const hidden = [];
-    const showHidden = () => {
-      for (const [el, css] of hidden) el.style.cssText = css;
-      hidden.length = 0;
-      inv.classList.remove('no-design');
-    };
+    area.style.cssText = 'display:block;position:fixed;top:0;left:-20000px;background:#fff;z-index:-1';
     try {
-      // إخفاء التصميم من التصوير: المرفقات وحدها (إن وُجدت) تبقى في الفاتورة
-      const visuals = $('.inv-visuals', inv);
-      const designBox = visuals ? $('.inv-design', inv) : null;
-      const target = (visuals && !$('.inv-atts', inv)) ? visuals : designBox;
-      if (target) {
-        hidden.push([target, target.style.cssText]);
-        target.style.display = 'none';
-        inv.classList.add('no-design');
-      }
-      const needSheet = hidden.length > 0;
-      const canvas = await window.html2canvas(inv, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
-      const img = canvas.toDataURL('image/jpeg', 0.94);
+      const paper = inv.__paper || layoutDoc(area) || DOC_PAPERS[0];
+      const scale = window.DesignSheet && DesignSheet.shotScale ? DesignSheet.shotScale(inv) : 3;
+      const canvas = await window.html2canvas(inv, { scale, backgroundColor: '#ffffff', useCORS: true, logging: false });
+      const img = canvas.toDataURL('image/jpeg', 0.95);
       const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
-      // الصورة تُوضع بنسبة أبعاد المستند نفسه (السند أقصر من أمر الشراء)
-      const h = Math.min(276, 190 * (canvas.height / canvas.width));
-      pdf.addImage(img, 'JPEG', 10, 10, 190, h, undefined, 'FAST');
-      // روابط حقيقية فوق الصورة (قنوات التواصل): النقر يفتح الوجهة الصحيحة —
-      // تُقاس وهي على التخطيط نفسه الذي صُوّرت به الصورة (والتصميم ما يزال مخفياً)
-      addPdfLinksToDoc(pdf, inv, 10, 10, 190, h);
-      showHidden();   // الفاتورة تعود كاملة قبل بناء الصفحة الثانية (وتبقى جاهزة للطباعة)
-      if (needSheet && order && order.design && window.DesignSheet) {
-        try {
-          await DesignSheet.addPage(pdf, {
-            design: order.design,
-            getItem,
-            pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined),
-            meta: [
-              { label: 'رقم الطلب', value: order.number ? '#' + order.number : 'مسودة' },
-              { label: 'العميل', value: (order.customer && order.customer.name) || '—' },
-              { label: 'الجوال', value: (order.customer && order.customer.phone) || '—' },
-              { label: 'الحالة', value: STATUS[order.status] || '—' },
-            ],
-            footHtml: await sheetFootHtml(),
-            mount: area,
-            addLinks: (p2, el, x0, y0, wMm) => addPdfLinksToDoc(p2, el, x0, y0, wMm, DesignSheet.SHEET_H),
-          });
-        } catch (_) { /* فشل ورقة التصميم لا يُبطل الفاتورة */ }
-      }
+      const pdf = new jsPDF({ unit: 'mm', format: [paper.w, paper.h], orientation: paper.w > paper.h ? 'landscape' : 'portrait' });
+      const wMm = paper.w - 2 * DOC_MARGIN;
+      const hMm = Math.min(paper.h - 2 * DOC_MARGIN, wMm * (canvas.height / canvas.width));
+      pdf.addImage(img, 'JPEG', DOC_MARGIN, DOC_MARGIN, wMm, hMm, undefined, 'FAST');
+      addPdfLinksToDoc(pdf, inv, DOC_MARGIN, DOC_MARGIN, wMm, hMm);
       return pdf.output('blob');
     } finally {
-      showHidden();
       area.style.cssText = '';
     }
   }
@@ -3718,7 +3746,7 @@ function docTitle(order) {
         try {
           const html = isReceipt ? buildReceiptDoc(order, payment) : await ORDER_DOCS[curKind].build(order);
           if (my !== run) return;
-          const overflow = await renderPrintArea(html);
+          const paper = await renderPrintArea(html);
           if (my !== run) return;
           btnPrint.disabled = false;
           const blob = await makePdfBlob(order);
@@ -3726,8 +3754,8 @@ function docTitle(order) {
           const kb = Math.round(blob.size / 1024);
           const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
           state.className = 'pdf-state ready';
-          state.innerHTML = `${icon('check')} الملف جاهز: <b>${esc(fileName)}</b> (${kb} كيلوبايت)`;
-          if (overflow) note.innerHTML = `<span class="warn-text">${icon('alert')} المحتوى كثير على صفحة واحدة وقد يُقصّ آخر الجدول. راجع الملف قبل إرساله، أو قسّم الأصناف الإضافية.</span>`;
+          state.innerHTML = `${icon('check')} الملف جاهز: <b>${esc(fileName)}</b> (${kb} كيلوبايت) · صفحة واحدة <bdi>${esc((paper && paper.label) || 'A4')}</bdi>`;
+          if (paper && paper.id !== 'a4') note.innerHTML = `${esc(defaultNote())}<br>${icon('alert')} المحتوى أكبر من A4 فاختير مقاس <bdi>${esc(paper.label)}</bdi> ليبقى النص بحجمه الطبيعي. للطباعة على ورق A4 اختر «ملاءمة للصفحة» (Fit to page) في نافذة الطباعة.`;
           btnWa.disabled = false; btnSave.disabled = false;
           btnSave.onclick = async () => {
             if (await savePdfNative(blob, fileName)) { toast(`تم حفظ ${fileName} في مستندات الجهاز`); return; }
@@ -5405,7 +5433,8 @@ function docTitle(order) {
       meta,
       footHtml: await sheetFootHtml(),
       mount: $('#printArea'),
-      addLinks: (pdf, el, x0, y0, wMm) => addPdfLinksToDoc(pdf, el, x0, y0, wMm, DesignSheet.SHEET_H),
+      // الورقة بمقاسها المختار: العرض والارتفاع يصلان من stamp (لا ثابت A4)
+      addLinks: (pdf, el, x0, y0, wMm, hMm) => addPdfLinksToDoc(pdf, el, x0, y0, wMm, hMm),
     });
   }
 

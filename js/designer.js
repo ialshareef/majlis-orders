@@ -1946,12 +1946,14 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
     }
 
     /** صورة التصميم للتصدير */
-    toImage(W = 1600, H = 1000) {
+    /** extra.labelScale (اختياري): تكبير التسميات والمقاسات المرسومة حين تُعرض الصورة
+        في صندوق صغير على الورق — حتى تبقى مقروءة؛ الافتراضي 1 (بلا تغيير) */
+    toImage(W = 1600, H = 1000, extra = null) {
       const off = document.createElement('canvas');
       off.width = W; off.height = H;
       const ctx = off.getContext('2d');
       const v = this._fitView(W, H);
-      this._draw(ctx, v, W, H, { export: true });
+      this._draw(ctx, v, W, H, Object.assign({ export: true }, extra && extra.labelScale > 0 ? { labelScale: extra.labelScale } : null));
       return off.toDataURL('image/png');
     }
 
@@ -2031,7 +2033,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const g = this.geometry();
       const S = v.scale;
       const P = (x, y) => this.toScreen(x, y, v);
-      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const k = opt.export ? Math.max(1.8, W / 720) * ((opt && opt.labelScale) || 1) : 1;
       const fs = Math.max(9 * k, Math.min(13 * k, S * 0.34));
       ctx.save();
       for (const w of g.walls) {
@@ -2061,7 +2063,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
   _topLabelCovers(p, S, W, opt) {
     if (!(this.opts.pieceLabelsOnTop || opt.export)) return false;
     if (p.kind !== 'sofa') return false;
-    const k = opt.export ? Math.max(1.8, W / 720) : 1;
+    const k = opt.export ? Math.max(1.8, W / 720) * ((opt && opt.labelScale) || 1) : 1;
     const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
     const span = this._visualSpan(p, this.geometry(), this.state.pieces.indexOf(p));
     const pw = Math.max(0, (span.lx1 - span.lx0) * S);
@@ -2070,7 +2072,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
   }
   _drawPieceLabelsTop(ctx, v, W, opt) {
       const S = v.scale;
-      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const k = opt.export ? Math.max(1.8, W / 720) * ((opt && opt.labelScale) || 1) : 1;
       const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
       ctx.save();
       ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -2118,7 +2120,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       _drawOpeningDimsTop — لا اختبار يختلف عن الواقع. */
   _dimOffsetPlan(ctx, g, v, W, opt) {
       const S = v.scale || 1;
-      const k = opt && opt.export ? Math.max(1.8, W / 720) : 1;
+      const k = opt && opt.export ? Math.max(1.8, W / 720) * ((opt && opt.labelScale) || 1) : 1;
       const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
       const bhW = (fs * 1.7) / S;                 // ارتفاع الشارة بالمتر
       const sIn = 0.34;                           // الممر الاعتيادي داخل الغرفة
@@ -2252,7 +2254,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const S = v.scale;
       const H = opt.H || 0;
       const P = (x, y) => this.toScreen(x, y, v);
-      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const k = opt.export ? Math.max(1.8, W / 720) * ((opt && opt.labelScale) || 1) : 1;
       const fs = Math.max(9 * k, Math.min(13 * k, S * 0.2));
       const sel = this.sel && this.sel.type === 'opening' ? this.sel.id : null;
       const cm = (x) => Math.round(x * 100) + ' سم';
@@ -2349,7 +2351,7 @@ setWallLength(i, len, anchor = 'second', markFixed = true) {
       const S = v.scale;
       const P = (x, y) => this.toScreen(x, y, v);
       // معامل تكبير النصوص في صورة التصدير (الصورة عالية الدقة تُطبع بحجم صغير)
-      const k = opt.export ? Math.max(1.8, W / 720) : 1;
+      const k = opt.export ? Math.max(1.8, W / 720) * ((opt && opt.labelScale) || 1) : 1;
       // مخطط مواضع قياسات الفتحات: يُحسب مرة واحدة فيتّجه الرسم والاختبار معاً
       const dimPlan = this._dimOffsetPlan(ctx, g, v, W, opt);
 

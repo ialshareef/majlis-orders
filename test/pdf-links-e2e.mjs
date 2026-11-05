@@ -98,7 +98,7 @@ const MM = 72 / 25.4;
 const PAGE_H = 595.28;          // A4 أفقي (210مم): ورقة التصميم وتصميم العميل
 const PAGE_H_PORT = 841.89;     // A4 عمودي (297مم): صفحة الفاتورة — بها تُحسب إحداثيات y
 const SHEET_BOX = { x0: 10, y0: 10, w: 277, h: 190 };   // ورقة التصميم A4 أفقي
-const INV_BOX = { x0: 10, y0: 10, w: 190, h: 276 };     // الفاتورة A4 عمودي
+const INV_BOX = { x0: 10, y0: 10, w: 190, h: 277 };     // الفاتورة A4 عمودي (صفحة واحدة)
 
 function parseLinks(text) {
   const out = [];
@@ -166,29 +166,19 @@ function save(name, b64) {
   fs.writeFileSync(path.join(outDir, name), buf);
   return buf;
 }
-/* حالة قياس صفحة الفاتورة: روابطها يجب أن تُقاس على التخطيط نفسه الذي صُوّرت به
-   الصورة (والتصميم مخفي) — لا على التخطيط بعد الاستعادة، وإلا وقعت أسفل الأيقونات. */
-const relMm = (c, base) => ({ x: c.dx * 190 / base.w, y: c.dy * 276 / base.h });
+/* قياس صفحة الفاتورة: المستند صفحة واحدة (لا إخفاء للتصميم ولا صفحة ثانية)، فتُقاس
+   الروابط على التخطيط نفسه الذي صُوّر — بعد اختيار الورقة — وبمقاس تلك الورقة */
 function checkInvoiceMeasure(tag, r, exp) {
-  const p1 = r.p1, shot = r.snapShot, show = r.snapShow;
-  if (!p1) { t(tag + ': رصد قياس صفحة الفاتورة', false, 'لم يُستدعَق addPdfLinksToDoc على .inv'); return; }
-  t(tag + ': لحظة قياس الفاتورة يكون التصميم مخفياً = حالة الصورة', p1.display === 'none', 'display=' + p1.display);
+  const p1 = r.p1, shot = r.snapShot;
+  if (!p1) { t(tag + ': رصد قياس صفحة الفاتورة', false, 'لم يُستدعَ addPdfLinksToDoc على .inv'); return; }
   t(tag + ': عدد روابط الفاتورة المقاسة = القنوات', p1.n === exp.length, 'n=' + p1.n + ' exp=' + exp.length);
-  if (!shot || !show || !p1.m || !p1.m.cards.length) { t(tag + ': مواضع البطاقات مرصودة', false); return; }
-  let spread = 0;
-  const n = Math.min(shot.cards.length, show.cards.length);
-  for (let i = 0; i < n; i++) {
-    spread = Math.max(spread, Math.abs(relMm(shot.cards[i], shot).y - relMm(show.cards[i], show).y));
-  }
-  t(tag + ': حالتا الصورة والقياس مختلفتان فعلاً (للاختبار دلالة >5مم)', spread > 5, spread.toFixed(1) + 'مم');
-  let matchShot = true;
-  const bad = [];
-  if (p1.m.cards.length !== shot.cards.length) matchShot = false;
+  t(tag + ': الفاتورة بمقاس ورقة مختارة (A4 لمستند قصير)', !!p1.paper && p1.paper.w === 210 && p1.paper.h === 297, JSON.stringify(p1.paper));
+  if (!shot || !p1.m || !p1.m.cards.length) { t(tag + ': مواضع البطاقات مرصودة', false); return; }
+  let same = p1.m.cards.length === shot.cards.length;
   for (let i = 0; i < Math.min(p1.m.cards.length, shot.cards.length); i++) {
-    const a = relMm(p1.m.cards[i], p1.m), b = relMm(shot.cards[i], shot);
-    if (Math.abs(a.x - b.x) > 2 || Math.abs(a.y - b.y) > 2) { matchShot = false; bad.push(p1.m.cards[i].u); }
+    if (Math.abs(p1.m.cards[i].dx - shot.cards[i].dx) > 1 || Math.abs(p1.m.cards[i].dy - shot.cards[i].dy) > 1) same = false;
   }
-  t(tag + ': القياس = الحالة المخفية (مواضع الأيقونات في الصورة)', matchShot, bad.join(' | '));
+  t(tag + ': القياس على التخطيط نفسه الذي يُصوَّر', same);
 }
 
 function checkScenario(name, tag, r, exp, boxes) {
@@ -199,7 +189,8 @@ function checkScenario(name, tag, r, exp, boxes) {
   const c0 = r.caps && r.caps[0];
   // مسار العميل: غلاف addLinks الإنتاجي لا يُرجع العدد (addPdfLinks تحديداً) —
   // الدليل النهائي على العدد هو /URI داخل الملف أدناه، وdom لحظة القياس واجب.
-  t(tag + ': قياس addLinks لحظة الاتصال = dom = المتوقع',
+  // أمر الشراء لا يمر بـ DesignSheet (صفحته واحدة يقيسها addPdfLinksToDoc مباشرة — r.p1)
+  if (!r.p1) t(tag + ': قياس addLinks لحظة الاتصال = dom = المتوقع',
     !!c0 && (c0.n === exp.length || c0.n === undefined) && c0.dom === exp.length,
     c0 ? 'n=' + c0.n + ' dom=' + c0.dom : 'لا قياس');
   const buf = save(name + '.pdf', r.b64);
@@ -229,7 +220,8 @@ try {
   t('المِسبار اكتمل بلا أخطاء متصفح (مرحلة 1)', pageErrs.length === 0, pageErrs[0] || '');
 
   const sheetBoxes = [{ ...SHEET_BOX, ph: PAGE_H }];
-  const orderBoxes = [{ ...INV_BOX, ph: PAGE_H_PORT }, { ...SHEET_BOX, ph: PAGE_H }];
+  // أمر الشراء صفحة واحدة: الفاتورة مع التصميم في الصفحة نفسها (لا صفحة ورقة ثانية)
+  const orderBoxes = [{ ...INV_BOX, ph: PAGE_H_PORT }];
   checkScenario('staff-live', 'الموظف-حي', res1.live.staff, expLive, sheetBoxes);
   checkScenario('client-live', 'العميل-حي', res1.live.client, expLive, sheetBoxes);
   checkScenario('order-live', 'أمر-حي', res1.live.order, expLive, orderBoxes);

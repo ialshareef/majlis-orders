@@ -1356,8 +1356,7 @@ async function buildExpandedDoc(number) {
     var sheetMeta = [{ label: 'الرقم المرجعي', value: noTxt }];
     if (cust.name) sheetMeta.push({ label: 'اسم العميل', value: cust.name });
     if (phoneRow) sheetMeta.push({ label: 'رقم الجوال', value: cust.phone });
-    /* ورقة التصميم قد تمتد على أكثر من صفحة — كل الصفحات تُلحق بالوثيقة
-       بالترتيب (حلقة التصدير تعالج كل ابن كصفحة أفقية) */
+    /* ورقة التصميم صفحة واحدة دائماً (بمقاس يتسع لمحتواها) تُلحق بالوثيقة */
     DesignSheet.buildPages({
       design: st,
       getItem: getCatItem,
@@ -1404,15 +1403,18 @@ async function buildExpandedDoc(number) {
       var pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait' });
       for (var i = 0; i < pages.length; i++) {
         var page = pages[i];
-        // ورقة التصميم المشتركة أفقي 277×190مم، وباقي الصفحات عمودي 190×276مم
+        // ورقة التصميم صفحة واحدة بمقاسها المختار (أفقي)، وباقي الصفحات عمودي 190×276مم
         var isSheet = page.classList && page.classList.contains('dsheet');
-        var canvas = await window.html2canvas(page, { scale: 2, backgroundColor: '#ffffff', useCORS: true, logging: false });
+        var canvas = await window.html2canvas(page, { scale: (DesignSheet.shotScale ? DesignSheet.shotScale(page) : 2), backgroundColor: '#ffffff', useCORS: true, logging: false });
         var jpg = canvas.toDataURL('image/jpeg', 0.94);
-        if (i > 0) { if (isSheet) pdf.addPage('a4', 'landscape'); else pdf.addPage('a4', 'portrait'); }
+        /* ورقة التصميم صفحة واحدة بمقاسها المختار (A4/A3/A2/مخصص) — لا ثابت 277×190 */
+        var pg = isSheet ? DesignSheet.pageOf(page) : null;
+        var sz = isSheet ? DesignSheet.sizeOf(page.__paper) : null;
+        if (i > 0) { if (isSheet) pdf.addPage([pg.w, pg.h], pg.orientation); else pdf.addPage('a4', 'portrait'); }
         if (isSheet) {
-          pdf.addImage(jpg, 'JPEG', 10, 10, DesignSheet.SHEET_W, DesignSheet.SHEET_H, undefined, 'FAST');
+          pdf.addImage(jpg, 'JPEG', 10, 10, sz.w, sz.h, undefined, 'FAST');
           // روابط قابلة للنقر: حوّل مواضع data-url إلى مم
-          addLinks(pdf, page, canvas, 10, 10, DesignSheet.SHEET_W, DesignSheet.SHEET_H);
+          addLinks(pdf, page, canvas, 10, 10, sz.w, sz.h);
         } else {
           pdf.addImage(jpg, 'JPEG', 10, 10, 190, 276, undefined, 'FAST');
           addLinks(pdf, page, canvas, 10, 10, 190, 276);

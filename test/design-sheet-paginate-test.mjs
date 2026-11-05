@@ -1,21 +1,19 @@
-/* فحص تقسيم ورقة التصميم على أكثر من صفحة (تعديل ٦) — متصفح حقيقي Chrome headless
-   يشغّل test/design-sheet-paginate-harness.html ويبني أربعة سيناريوهات:
-     few (قليل) / medium (متوسط) / large (كبير ← صفحات عديدة) / long (جدول طويل
-     + دليل وحاشية ومساحات طويلة) ثم يتحقق من محتوى كل صفحة فعلياً (DOM قبل
-     التصوير، لأن التصوير مصوّر) ومن عدّ صفحات PDF الناتجة فعلياً:
-       - صفر تجاوز أسفل أي عمود (بلا overflow:hidden وبلا قصّ) — الحد 0.5مم
-       - لا تداخل بين محتوى العمود وشريط التواصل
-       - كل صفوف الجدول موجودة بالضبط مرة واحدة عبر الصفحات (لا فقدان ولا تكرار)
-       - لا يُقسَّم صف: كل صف كامل الخلايا في صفحة واحدة
-       - رأس الجدول (thead + «جداول الأثاث») يتكرر على كل صفحة تحمل صفوفاً
-       - السعة/الدليل/الحاشية/المساحات: كل منها موجود بالضبط مرة واحدة، وبالنص نفسه
-       - الترتيب نفسه: الصفحة الأولى بالمخطط وبخانات الترويسة، وبعدها صفحات متابعة
-       - شارة «صفحة N من M» على كل صفحة إن تعدّدت، وM ثابتة
-       - عدد صفحات PDF يتبع المحتوى: العميل pdfBlob ومسار الموظف addPage
-       - قياس الورقة 277×190مم على كل صفحة (المقاس لا يتغيّر)
+/* ورقة التصميم = صفحة واحدة دائماً — متصفح حقيقي Chrome headless
+   يشغّل test/design-sheet-paginate-harness.html ويبني ثمانية سيناريوهات
+   (فارغ، قليل، متوسط، كبير، طويل، ضخم 120 صفاً، دليل ألوان طويل، ترويسة
+   باسم عربي/إنجليزي طويل) ثم يتحقق من الورقة المبنية فعلياً ومن ملف PDF:
+     - عنصر واحد وصفحة PDF واحدة بالضبط، بمقاس الورقة المختارة (MediaBox)
+     - المقاس يكبر مع المحتوى (A4 ← A3 ← A2 ← مخصص) ولا تُصغَّر الخطوط:
+       أصغر خط في الورقة ≥ 7.5pt في كل السيناريوهات
+     - لا تجاوز أسفل العمود ولا تداخل مع شريط التواصل ولا عنصر خارج الورقة
+     - كل الصفوف والدليل والحاشية والسعة والمساحات موجودة كاملة مرة واحدة
+     - الترويسة لا تقصّ القيم الطويلة (تلتف)
+     - المخطط لا يضيق دون حدّ مقروء (PLAN_MIN)
+     - دقة الصورة في PDF ≥ 250 نقطة/بوصة (حادة عند التكبير)
+     - المعاينة (build) تختار المقاس نفسه الذي يختاره الملف
 
    يعتمد: node_modules/puppeteer-core + node_modules/html2canvas + jspdf (محلياً)
-   node test/design-sheet-paginate-test.mjs                                        */
+   node test/design-sheet-paginate-test.mjs [--save <مجلد>]                       */
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -51,19 +49,19 @@ for (const rel of ['node_modules/html2canvas/dist/html2canvas.min.js', 'node_mod
   if (!fs.existsSync(path.join(root, rel))) skip('الملف الناقص: ' + rel);
 }
 
-/* ---------- 1) مصدر CSS/الواجهة: بلا إخفاء ولا قصّ ---------- */
+/* ---------- 1) المصدر: لا تقسيم ولا تصغير ولا قصّ ---------- */
 {
   const css = fs.readFileSync(path.join(root, 'css/style.css'), 'utf8');
   const rule = (/\.dsheet\s*\{[\s\S]*?\}/.exec(css) || [''])[0];
-  t('style.css: لا اعتماد على overflow:hidden في الورقة', !!rule && !/overflow:\s*hidden/.test(rule), rule.slice(0, 160));
-  t('style.css: .dsheet position:relative لشارة الصفحة والتحذير', !!rule && /position:\s*relative/.test(rule), rule.slice(0, 160));
-  t('style.css: قاعدة صفحات المتابعة .ds-cont (عمود بعرض الصفحة)', /\.dsheet\.ds-cont\s*\.ds-body\s*\{[^}]*gap:\s*0/.test(css) && /\.dsheet\.ds-cont\s*\.ds-side\s*\{[^}]*width:\s*100%/.test(css));
-  t('style.css: شارة الترقيم .ds-pageof', /\.ds-pageof\s*\{[^}]*position:\s*absolute/.test(css));
-  t('style.css: لوحة التجاوز الظاهرة .ds-over', /\.ds-over\s*\{[^}]*position:\s*absolute/.test(css));
+  t('style.css: الورقة بلا overflow:hidden', !!rule && !/overflow:\s*hidden/.test(rule), rule.slice(0, 160));
+  t('style.css: مقاس الورقة من متغيرات المقاس المختار', /width:\s*var\(--ds-w/.test(rule) && /height:\s*var\(--ds-h/.test(rule));
+  t('style.css: لا قواعد صفحات متابعة أو ترقيم', !/\.ds-cont|\.ds-pageof/.test(css));
+  t('style.css: قيم الترويسة تلتف ولا تُقصّ', /\.ds-meta dd\s*\{[^}]*overflow-wrap:\s*anywhere/.test(css) && !/\.ds-meta dd\s*\{[^}]*text-overflow/.test(css));
   const dsjs = fs.readFileSync(path.join(root, 'js/design-sheet.js'), 'utf8');
-  t('js: تصدير buildPages للواجهات', /buildPages:\s*buildPages/.test(dsjs));
-  t('js: قياس الصفحة قبل القبول (measureSheet)', /function measureSheet\(/.test(dsjs) && /function shrinkAlloc\(/.test(dsjs));
-  t('js: لا وظيفة قصّ أو إخفاء (scroll/crop/hide على المحتوى)', !/overflow\s*:\s*hidden/.test((/\.dsheet\s*\{[\s\S]*?\}/.exec(fs.readFileSync(path.join(root, 'css/style.css'), 'utf8')) || [''])[0]));
+  t('js: مقاسات مرشّحة A4 ← A3 ← A2 ثم مخصص', /id: 'a4'[\s\S]*id: 'a3'[\s\S]*id: 'a2'/.test(dsjs) && /function customPaper\(/.test(dsjs));
+  t('js: لا تقسيم صفحات (لا shrinkAlloc ولا tunePage)', !/function shrinkAlloc|function tunePage/.test(dsjs));
+  t('js: pdfBlob صفحة واحدة بمقاس الورقة', /format: \[pg\.w, pg\.h\]/.test(dsjs) && !/pdf\.addPage\('a4'/.test(dsjs));
+  t('js: دقة تصوير ~300 نقطة/بوصة (shotScale)', /var DPMM = 11\.8/.test(dsjs) && /scale: shotScale\(el\)/.test(dsjs));
 }
 
 const browser = await puppeteer.launch({ downloadBehavior: TEST_DL,
@@ -74,142 +72,85 @@ const browser = await puppeteer.launch({ downloadBehavior: TEST_DL,
 });
 routeDownloads(browser); // تنزيلات الاختبار إلى Documents/majlis-test-downloads لا مجلد التنزيلات
 
-const pdfPages = (buf) => (buf.toString('latin1').match(/\/Type \/Page(?!s)/g) || []).length;
-
-function checkCompleteness(tag, r, allowOver = false) {
-  const got = [];
-  r.data.forEach((p) => p.rows.forEach((x) => got.push(x)));
-  const exp = r.rowsExpected;
-  const sameSeq = got.length === exp.length && got.every((x, i) => x === exp[i]);
-  t(tag + ': كل صفوف الجدول موجودة بالترتيب وبلا فقدان أو تكرار', sameSeq, 'got=' + got.length + ' exp=' + exp.length + (sameSeq ? '' : ' | ' + JSON.stringify(got.slice(0, 3))));
-  const seen = new Set();
-  let dup = null;
-  got.forEach((x) => { if (seen.has(x) && !dup) dup = x; seen.add(x); });
-  t(tag + ': لا صف يظهر في صفحتين (لا تكرار)', !dup, dup || '');
-
-  r.data.forEach((p, i) => {
-    const pn = 'الصفحة ' + (i + 1) + '/' + r.n;
-    /* بلا تجاوز… وإلا لو كان التجاوز معروضاً ومعلّماً بوضوح (سيناريو tall) */
-    const overOk = p.over
-      ? (allowOver && p.overflowMm > 0.5)
-      : (p.overflowMm <= 0.5 && !p.footOverlap);
-    t(tag + ': ' + pn + ' بلا تجاوز مخفي (≤0.5مم) أو معلّم بوضوح', overOk,
-      'overflow=' + p.overflowMm + 'مم over=' + p.over + ' footOverlap=' + p.footOverlap);
-    t(tag + ': ' + pn + ' لا تداخل مخفي مع شريط التواصل', p.over || !p.footOverlap);
-    t(tag + ': ' + pn + ' مقاسها 277×190مم', Math.abs(p.widthMm - 277) < 0.6 && Math.abs(p.heightMm - 190) < 0.6, p.widthMm + '×' + p.heightMm);
-    if (p.rows.length > 0) {
-      t(tag + ': ' + pn + ' رأس الجدول مكرر (thead + عنوان القسم)', p.thead && /جداول الأثاث/.test(p.headTitle));
-    }
-    if (!allowOver) t(tag + ': ' + pn + ' لا تحذير تجاوز ظاهر', !p.over);
-  });
-
-  if (r.n > 1) {
-    r.data.forEach((p, i) => {
-      t(tag + ': شارة الصفحة ' + (i + 1) + ' = «صفحة ' + (i + 1) + ' من ' + r.n + '»', p.pageof === 'صفحة ' + (i + 1) + ' من ' + r.n, JSON.stringify(p.pageof));
-    });
-    t(tag + ': الصفحة الأولى بالمخطط وبعدها صفحات متابعة بلا مخطط',
-      r.data[0].plan && r.data.slice(1).every((p) => p.cont === true && p.plan === false),
-      r.data.map((p) => (p.plan ? 'P' : '-') + (p.cont ? 'c' : '-')).join(' '));
-  } else {
-    t(tag + ': صفحة واحدة بلا شارة ترقيم ولا فئة متابعة', !r.data[0].pageof && !r.data[0].cont);
-    t(tag + ': الصفحة الوحيدة بها المخطط', r.data[0].plan);
-  }
-
-  const areasPages = r.data.map((p, i) => (p.areas ? i : -1)).filter((i) => i >= 0);
-  if (r.hasAreas) t(tag + ': ملخص المساحات موجود بالضبط في صفحة واحدة', areasPages.length === 1, JSON.stringify(areasPages));
-  else t(tag + ': بلا ملخص مساحات (بيانات غير مكتملة) فلا يُختلق', areasPages.length === 0);
-
-  const notes = r.data.map((p) => p.note).filter((x) => x);
-  t(tag + ': الحاشية موجودة مرة واحدة وبالنص كاملاً (بلا قصّ)',
-    notes.length === 1 && notes[0] === r.noteExpected, 'pages=' + notes.length + ' len=' + notes[0].length + '/' + r.noteExpected.length);
-
-  const caps = r.data.map((p) => p.cap).filter((x) => x);
-  if (r.capExpected) t(tag + ': شارة السعة مرة واحدة بالقيمة نفسها', caps.length === 1 && caps[0] === r.capExpected, JSON.stringify(caps));
-  else t(tag + ': بلا شارة سعة', caps.length === 0);
-
-  const legendGot = [];
-  r.data.forEach((p) => p.legend.forEach((x) => legendGot.push(x)));
-  const legExp = r.legendExpected;
-  const legSame = legendGot.length === legExp.length && legExp.every((x, i) => legendGot[i] === x);
-  t(tag + ': دليل الألوان مكتمل عبر الصفحات وبالترتيب', legSame, 'got=' + legendGot.length + ' exp=' + legExp.length);
-
-  /* الترتيب نفسه عبر كل الصفحات: الجدول ← السعة ← الدليل ← الحاشية ← المساحات */
-  const flat = [];
-  r.data.forEach((p) => p.sideOrder.forEach((c) => flat.push(c)));
-  const seq = ['ds-h-tbl', 'ds-tbl', 'ds-cap', 'ds-h-leg', 'ds-legend', 'ds-note', 'ds-areas-wrap']
-    .map((c) => [c, flat.indexOf(c)]).filter(([, i]) => i >= 0);
-  let orderOk = true;
-  for (let i = 1; i < seq.length; i++) if (seq[i][1] <= seq[i - 1][1]) orderOk = false;
-  t(tag + ': ترتيب المحتوى محفوظ (جدول ← سعة ← دليل ← حاشية ← مساحات)',
-    orderOk, JSON.stringify(seq.map(([c, i]) => c + '@' + i)));
+/** صفحات PDF، ومقاس الصفحة (MediaBox بالنقاط)، وأبعاد أكبر صورة */
+function pdfInfo(buf) {
+  const s = buf.toString('latin1');
+  const pages = (s.match(/\/Type \/Page(?!s)/g) || []).length;
+  const mb = /\/MediaBox \[([\d.\s]+)\]/.exec(s);
+  const box = mb ? mb[1].trim().split(/\s+/).map(Number) : [];
+  let imgW = 0, imgH = 0;
+  const re = /\/Width (\d+)[\s\S]{0,200}?\/Height (\d+)/g;
+  let m;
+  while ((m = re.exec(s))) { if (+m[1] > imgW) { imgW = +m[1]; imgH = +m[2]; } }
+  return { pages, wMm: box.length ? +(box[2] / 72 * 25.4).toFixed(1) : 0, hMm: box.length ? +(box[3] / 72 * 25.4).toFixed(1) : 0, imgW, imgH };
 }
+
+const EXPECT_PAPER = { empty: 'a4', few: 'a4', medium: 'a4', tall: null, large: null, long: null, huge: null, longmeta: null };
 
 try {
   const page = await browser.newPage();
+  await page.setViewport({ width: 1400, height: 1000 });
   const errs = [];
-  page.on('pageerror', (e) => errs.push(String(e)));
-  page.on('console', (m) => { if (m.type() === 'error') errs.push('console: ' + m.text()); });
+  page.on('pageerror', (e) => errs.push(String(e.message)));
   const fileUrl = 'file:///' + path.join(here, 'design-sheet-paginate-harness.html').split(path.sep).join('/');
   await page.goto(fileUrl, { waitUntil: 'load', timeout: 60000 });
 
-  const run = (k) => page.evaluate((kk) => window.__build(kk), k);
-  const few = await run('few');
-  const medium = await run('medium');
-  const large = await run('large');
-  const long = await run('long');
-  const tall = await run('tall');
-  t('المِسبار اكتمل بلا أخطاء متصفح', errs.length === 0, errs[0] || '');
+  const papers = {};
+  for (const kind of Object.keys(EXPECT_PAPER)) {
+    const r = await page.evaluate((k) => window.__build(k), kind);
+    const m = r.m;
+    const tag = kind;
+    t(tag + ': عنصر ورقة واحد بالضبط', r.n === 1, 'n=' + r.n);
+    if (!m) continue;
+    papers[kind] = m.paper;
+    if (EXPECT_PAPER[kind]) t(tag + ': المقاس ' + EXPECT_PAPER[kind], m.paper === EXPECT_PAPER[kind], m.paper);
+    t(tag + ': مقاس الورقة = الصفحة − هامشين (' + m.paperW + '×' + m.paperH + ')',
+      Math.abs(m.widthMm - (m.paperW - 20)) < 0.6 && Math.abs(m.heightMm - (m.paperH - 20)) < 0.6, m.widthMm + '×' + m.heightMm);
+    t(tag + ': بلا تجاوز أسفل العمود (≤0.5مم)', m.overflowMm <= 0.5, 'overflow=' + m.overflowMm + ' paper=' + m.paper);
+    t(tag + ': شريط التواصل داخل الورقة', m.footInside);
+    t(tag + ': لا عنصر خارج حدود الورقة', m.outside.length === 0, JSON.stringify(m.outside));
+    t(tag + ': لا نص مقصوص داخل صندوقه', m.clipped.length === 0, JSON.stringify(m.clipped));
+    t(tag + ': أصغر خط ≥ 7.5pt (لا تصغير لملاءمة الصفحة)', m.minPt >= 7.45, m.minPt + 'pt ' + m.minPtEl);
+    if (kind !== 'empty') t(tag + ': المخطط بحجم مقروء ≥ 120×90مم', m.planW >= 119 || m.planH >= 89, m.planW + '×' + m.planH);
+    const same = m.rows.length === r.rowsExpected.length && m.rows.every((x, i) => x === r.rowsExpected[i]);
+    t(tag + ': كل صفوف الجدول (' + r.rowsExpected.length + ') بالترتيب', same, 'got=' + m.rows.length);
+    t(tag + ': دليل الألوان كاملاً', m.legend.length === r.legendExpected.length && r.legendExpected.every((x, i) => m.legend[i] === x), m.legend.length + '/' + r.legendExpected.length);
+    t(tag + ': الحاشية كاملة', m.note === r.noteExpected, m.note.length + '/' + r.noteExpected.length);
+    t(tag + ': السعة', m.cap === r.capExpected, JSON.stringify([m.cap, r.capExpected]));
+    t(tag + ': ملخص المساحات عند اكتمال البيانات فقط', m.areas === r.hasAreas);
+    t(tag + ': الترويسة تعرض القيم كاملة بلا قصّ', !m.metaClipped && r.metaExpected.every((v) => m.meta.indexOf(v) >= 0), JSON.stringify(m.meta));
+    t(tag + ': بلا شارة «صفحة N من M»', !m.pageof);
+    const prev = await page.evaluate((k) => window.__previewPaper(k), kind);
+    t(tag + ': المعاينة على الشاشة تختار المقاس نفسه', prev.startsWith(m.paper + ':'), prev + ' vs ' + m.paper);
+  }
+  /* المقاس يكبر مع المحتوى: ما لا يتسع على A4 يُنقل لمقاس أكبر لا يُضغط */
+  const rank = (p) => ({ a4: 0, a3: 1, a2: 2, custom: 3 }[p] ?? -1);
+  t('المقاس يتدرّج مع حجم المحتوى (few ≤ large ≤ long ≤ huge)',
+    rank(papers.few) <= rank(papers.large) && rank(papers.large) <= rank(papers.long) && rank(papers.long) <= rank(papers.huge),
+    JSON.stringify(papers));
+  t('120 صفاً لا تتسع على A4 فتُبنى على مقاس أكبر', rank(papers.huge) >= 1, papers.huge);
 
-  lines.push('== 1) سيناريو قليل ==');
-  t('few: صفحاً واحداً', few.n === 1, 'n=' + few.n);
-  checkCompleteness('few', few);
-
-  lines.push('== 2) سيناريو متوسط ==');
-  t('medium: عدد صفحاته بين القليل والكبير (يتبع المحتوى)',
-    medium.n >= few.n && medium.n < large.n, medium.n + ' ضمن [' + few.n + ',' + large.n + ']');
-  t('medium: صفوفه أكثر من القليل', medium.totalRows > few.totalRows, medium.totalRows + ' مقابل ' + few.totalRows);
-  checkCompleteness('medium', medium);
-
-  lines.push('== 3) سيناريو كبير (جدول طويل) ==');
-  t('large: على صفحتين فأكثر', large.n >= 2, 'n=' + large.n);
-  t('large: عدد الصفحات يتبع المحتوى (أكبر من القليل والمتوسط)', large.n > few.n && large.n > medium.n, large.n + ' vs ' + few.n + '/' + medium.n);
-  t('large: صفوفه فعلاً كثيرة (' + large.totalRows + ')', large.totalRows >= 40, large.totalRows);
-  checkCompleteness('large', large);
-
-  lines.push('== 4) سيناريو جدول طويل + ملخص طويل ==');
-  t('long: على صفحتين فأكثر', long.n >= 2, 'n=' + long.n);
-  t('long: عدد صفحاته ≥ صفحات الكبير (محتوى أطول)', long.n >= large.n, long.n + ' مقابل ' + large.n);
-  checkCompleteness('long', long);
-  const longAreas = long.data.map((p, i) => (p.areas ? i : -1)).filter((i) => i >= 0);
-  t('long: ملخص المساحات على آخر صفحة بعد اكتمال كل الصفوف',
-    longAreas.length === 1 && longAreas[0] === long.data.length - 1,
-    JSON.stringify(longAreas) + ' of ' + long.n);
-  t('long: الحاشية الطويلة كاملة بلا قصّ', long.data.some((p) => p.note === long.noteExpected) && long.noteExpected.length > 200,
-    long.noteExpected.length);
-
-  lines.push('== 5) سيناريو دليل ألوان أطول من الصفحة (45 عنصراً) ==');
-  t('tall: على صفحتين فأكثر', tall.n >= 2, 'n=' + tall.n);
-  checkCompleteness('tall', tall);
-  const legPages = tall.data.map((p, i) => (p.legend.length ? i : -1)).filter((i) => i >= 0);
-  t('tall: الدليل الطويل مُجزّأ على أكثر من صفحة متتابعة (بلا قصّ ولا إخفاء)',
-    legPages.length >= 2, JSON.stringify(legPages));
-  t('tall: بلا أي تحذير تجاوز — كل كتلة وُضعت في مكان يتّسعها',
-    tall.data.every((p) => !p.over), JSON.stringify(tall.data.map((p) => p.over)));
-  t('tall: صفحات الجدول الأولى لا تحمل الدليل (ترتيب محفوظ)', tall.data.slice(0, 3).every((p) => p.legend.length === 0));
-
-  lines.push('== 6) عدّ صفحات PDF فعلي (العميل + الموظف) ==');
-  const b64few = await page.evaluate(() => window.__pdfClient('few'));
-  const b64large = await page.evaluate(() => window.__pdfClient('large'));
-  const b64order = await page.evaluate(() => window.__pdfOrder('large'));
-  t('المِسبار بعد PDF بلا أخطاء متصفح', errs.length === 0, errs[0] || '');
-  t('العميل: PDF للقليل = صفحة واحدة', pdfPages(Buffer.from(b64few, 'base64')) === 1, 'pages=' + pdfPages(Buffer.from(b64few, 'base64')));
-  t('العميل: PDF للكبير = عدد الصفحات المبنية (' + large.n + ')', pdfPages(Buffer.from(b64large, 'base64')) === large.n,
-    'pages=' + pdfPages(Buffer.from(b64large, 'base64')));
-  t('الموظف (أمر الشراء): فاتورة + صفحات الورقة = ' + (large.n + 1), pdfPages(Buffer.from(b64order, 'base64')) === large.n + 1,
-    'pages=' + pdfPages(Buffer.from(b64order, 'base64')));
-  t('عدّاد الصفحات يتبع المحتوى فعلياً (قليل < كبير)', pdfPages(Buffer.from(b64large, 'base64')) > pdfPages(Buffer.from(b64few, 'base64')));
+  /* ---------- PDF فعلي: صفحة واحدة بمقاس الورقة وبدقة عالية ---------- */
+  for (const kind of ['few', 'large', 'huge', 'longmeta']) {
+    const b64 = await page.evaluate((k) => window.__pdfClient(k), kind);
+    const buf = Buffer.from(b64, 'base64');
+    const info = pdfInfo(buf);
+    const r = await page.evaluate((k) => window.__build(k), kind);
+    t('PDF ' + kind + ': صفحة واحدة بالضبط', info.pages === 1, 'pages=' + info.pages);
+    t('PDF ' + kind + ': مقاس الصفحة = المقاس المختار (' + r.m.paperW + '×' + r.m.paperH + ')',
+      Math.abs(info.wMm - r.m.paperW) < 1 && Math.abs(info.hMm - r.m.paperH) < 1, info.wMm + '×' + info.hMm);
+    const dpi = info.imgW / ((r.m.paperW - 20) / 25.4);
+    t('PDF ' + kind + ': دقة الصورة ≥ 250 نقطة/بوصة', dpi >= 250, Math.round(dpi) + 'dpi (' + info.imgW + '×' + info.imgH + ')');
+    if (process.argv.includes('--save')) {
+      const dir = process.argv[process.argv.indexOf('--save') + 1];
+      fs.mkdirSync(dir, { recursive: true });
+      fs.writeFileSync(path.join(dir, 'sheet-' + kind + '.pdf'), buf);
+    }
+  }
+  t('لا أخطاء JavaScript في الصفحة', errs.length === 0, errs.slice(0, 2).join(' | '));
+} catch (e) {
+  t('تشغيل', false, String(e && e.stack || e).slice(0, 400));
 } finally {
   await browser.close();
 }
-
 finish();

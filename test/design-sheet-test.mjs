@@ -95,7 +95,8 @@ console.log('== 4) HTML الورقة ==');
   const css = read('css/style.css');
   const footRule = (/\.ds-foot\s*\{[^}]*\}/s.exec(css) || [''])[0];
   t('style.css: شريط تواصل بارتفاع مرن (min-height بلا قصّ)', /min-height:\s*16mm/.test(footRule) && /height:\s*auto/.test(footRule) && !/[^-]height:\s*16mm/.test(footRule), footRule);
-  t('js/design-sheet.js: قياس ارتفاع الشريط وضبط صندوق المخطط', /function fitFoot\(/.test(read('js/design-sheet.js')) && /planBoxStyle\(pl, opts, footMm\)/.test(read('js/design-sheet.js')));
+  // صندوق المخطط يُقاس فعلياً بعد بناء الورقة (شريط التواصل والترويسة الطويلة يُطرحان تلقائياً)
+  t('js/design-sheet.js: قياس صندوق المخطط وضبط الصورة عليه (fitPlan)', /function fitPlan\(/.test(read('js/design-sheet.js')) && /fitPlan\(el, pl, el\.__size\.w\)/.test(read('js/design-sheet.js')));
 }
 
 /* ---------- 5) المسارات الثلاثة تستخدم الوحدة نفسها ---------- */
@@ -106,15 +107,15 @@ console.log('== 5) الربط ==');
   const expanded = read('js/portal-expanded.js');
   t('portal.js: DesignSheet.build + pdfBlob', /DesignSheet\.build\(/.test(portal) && /DesignSheet\.pdfBlob\(/.test(portal));
   t('app.js: makeDesignSheetBlob تستخدم DesignSheet.pdfBlob', /DesignSheet\.pdfBlob\(/.test(app));
-  t('portal-expanded.js: وصفحة الغلاف والختام تبقيان عموديتين', /DesignSheet\.buildPages\(/.test(expanded) && /addPage\('a4', 'landscape'\)/.test(expanded));
+  t('portal-expanded.js: الغلاف والختام عموديان والورقة بمقاسها المختار', /DesignSheet\.buildPages\(/.test(expanded) && /pdf\.addPage\(\[pg\.w, pg\.h\], pg\.orientation\)/.test(expanded) && /addPage\('a4', 'portrait'\)/.test(expanded));
   for (const f of ['index.html', 'portal.html', 'portal-expanded.html']) {
     t(f + ' يحمّل design-sheet.js', /js\/design-sheet\.js/.test(read(f)));
   }
   t('sw.js يضع design-sheet.js في الكاش', /\/js\/design-sheet\.js/.test(read('sw.js')));
   t('build-worker.ps1 يضمّنه في الحزمة', /design-sheet\.js/.test(read('build-worker.ps1')));
   const css = read('css/style.css');
-  t('style.css: ورقة 277×190مم', /\.dsheet\s*\{[^}]*width:\s*277mm[^}]*height:\s*190mm/s.test(css));
-  t('style.css: صندوق المخطط 178مم', /\.ds-side\s*\{[^}]*width:\s*72mm/s.test(css) && /\.ds-body\s*\{[^}]*gap:\s*7mm/s.test(css));
+  t('style.css: الورقة بمقاسها المختار (الافتراضي A4 277×190مم)', /\.dsheet\s*\{[^}]*width:\s*var\(--ds-w, 277mm\)[^}]*height:\s*var\(--ds-h, 190mm\)/s.test(css));
+  t('style.css: عمود الجدول 72مم على A4 وفاصل 7مم', /\.ds-side\s*\{[^}]*width:\s*var\(--ds-side, 72mm\)/s.test(css) && /\.ds-body\s*\{[^}]*gap:\s*7mm/s.test(css));
 }
 
 /* ---------- 6) ملخص المساحات: غرفة المثال 500×400 ---------- */
@@ -171,16 +172,17 @@ console.log('== 7) ورقة الموظف الأفقية ==');
   const portal = read('js/portal.js');
   t('design-sheet.js: واجهة addPage', typeof DS.addPage === 'function');
   t('design-sheet.js: internals مشتركة shoot/stamp', /function shoot\(/.test(dsjs) && /function stamp\(/.test(dsjs));
-  t('design-sheet.js: addPage تفتح صفحة أفقية', /pdf\.addPage\('a4', 'landscape'\)/.test(dsjs));
+  t('design-sheet.js: addPage تفتح صفحة بمقاس الورقة', /pdf\.addPage\(\[pg\.w, pg\.h\], pg\.orientation\)/.test(dsjs));
   t('app.js: makePdfBlob(order)', /async function makePdfBlob\(order\)/.test(app));
   t('app.js: الاستدعاء يمرّر الطلب', /await makePdfBlob\(order\)/.test(app));
-  t('app.js: DesignSheet.addPage في الفاتورة', /DesignSheet\.addPage\(pdf/.test(app));
+  // أمر الشراء صفحة واحدة: التصميم وجدول الأثاث داخل الصفحة نفسها لا صفحة ثانية
+  t('app.js: التصميم داخل صفحة الفاتورة (بلا DesignSheet.addPage)', /DesignSheet\.planHtml\(pl\)/.test(app) && /DesignSheet\.sideHtml\(f, 1\)/.test(app) && !/DesignSheet\.addPage\(/.test(app));
   t('app.js: sheetFootHtml معرّفة', /async function sheetFootHtml\(/.test(app));
   t('app.js: الورقة تمرّر footHtml', /footHtml: await sheetFootHtml\(\)/.test(app));
-  t('app.js: إخفاء صور التصميم وقت التصوير', /\.inv-visuals/.test(app) && /display = 'none'/.test(app));
-  t('app.js: استعادة الصور في finally', /finally\s*\{\s*showHidden\(\)/.test(app));
-  t('app.js: روابط الصفحة الأفقية بارتفاع الورقة', /addPdfLinksToDoc\(p2, el, x0, y0, wMm, DesignSheet\.SHEET_H\)/.test(app));
-  t('app.js: حالة الطلب من STATUS', /STATUS\[order\.status\] \|\| '—'/.test(app));
+  t('app.js: اختيار الورقة بدل تصغير الخطوط (layoutDoc، بلا fitOnePage)', /function layoutDoc\(/.test(app) && !/function fitOnePage\(/.test(app) && !/--row-fs/.test(app));
+  t('app.js: PDF صفحة واحدة بمقاس الورقة', /format: \[paper\.w, paper\.h\]/.test(app) && /setPrintPage\(paper\)/.test(app));
+  t('app.js: روابط ورقة التصميم بعرضها وارتفاعها الفعليين', /addLinks: \(pdf, el, x0, y0, wMm, hMm\) => addPdfLinksToDoc\(pdf, el, x0, y0, wMm, hMm\)/.test(app));
+  t('app.js: حالة الطلب من STATUS', /STATUS\[order\.status\] \|\| order\.status \|\| '—'/.test(app));
   t('بنية الشريط متطابقة portal/app', /class="inv-contact"><b>تواصل معنا<\/b>/.test(portal) && /class="inv-contact"><b>تواصل معنا<\/b>/.test(app));
   t('ملاحظة التذكرة في الاثنين', /احتفظ برقم التصميم لمراجعته مع المحل/.test(portal) && /احتفظ برقم التصميم لمراجعته مع المحل/.test(app));
   t('app: بطاقات data-url لروابط PDF', /class="inv-chan" data-url=/.test(app));
@@ -205,7 +207,7 @@ console.log('== 8) ألوان البستيل ==');
   t('style.css: عنوان المساحات بنفسجي أغمق داخل الصندوق', /\.ds-areas-h\s*\{[\s\S]*?background: var\(--ds-h-areas-bg\)/.test(css));
   t('style.css: عناصر صندوق المساحات بشبكة عمودين', /\.ds-areas\s*\{[^}]*grid-template-columns:\s*1fr 1fr/.test(css)
     && /\.ds-areas-i\b/.test(css) && /\.ds-areas-i\.hl\s*\{[^}]*grid-column:\s*1 \/ -1/.test(css));
-  t('style.css: .inv.no-design يثبت التوقيعات أسفل الصفحة', /\.inv\.no-design \.inv-foot\s*\{\s*margin-top:\s*auto/.test(css));
+  t('style.css: التوقيعات أسفل الصفحة دائماً', /\.inv-foot\s*\{[^}]*margin-top:\s*auto/.test(css));
   t('style.css: شارة السعة بالأخضر الفاتح', /\.ds-cap\s*\{[\s\S]*?background: var\(--ds-tbl-bg\)/.test(css));
   const f = DS.facts(design, { getItem });
   const html = DS.render(f, { img: 'data:image/png;base64,x', W: 1200, H: 800, scale: 10, room: null }, {});

@@ -1112,7 +1112,19 @@ function portalAddAcc(itemId) {
     /* المرحلة ٥ مبسّطة: معاينة + بيانات العميل + صف أزرار واحد (معاينة/تصدير/مشاركة/إنهاء)
        وسطر شرح واحد يوضّح وظيفة كل زر — بلا قائمة حقائق طويلة. */
     box.innerHTML = ''
-      + '<img id="pReviewImg" class="p-preview" alt="معاينة المخطط">'
+      /* معاينة ملف PDF نفسه: الورقة تُبنى بالدالة نفسها التي تصدر الملف (DesignSheet.build)
+         ثم تُصغَّر بصرياً لعرض الشاشة — المقاس والاتجاه والهوامش والتوزيع كما في الملف */
+      + '<section class="p-pdfprev" aria-label="معاينة ملف PDF">'
+      + '<div class="p-pdfprev-head"><b>معاينة ملف PDF</b><span id="pPrevMeta" role="status">جارٍ تجهيز المعاينة…</span></div>'
+      + '<div class="p-pdfprev-frame" id="pPrevFrame" tabindex="0" aria-label="معاينة الصفحة — اضغط للتكبير"><div class="p-pdfprev-sizer" id="pPrevSizer"><div class="p-pdfprev-paper" id="pPrevPaper"></div></div></div>'
+      + '<p class="p-pdfprev-what"><b>يظهر في الملف:</b> المخطط بالمقاسات ومقياس الرسم، جدول الأثاث وسعة الجلوس، دليل الألوان، ملخص المساحات، '
+      + 'رقم التصميم (بعد الإنهاء) وقنوات التواصل مع المحل. <b>لا يحتوي الملف أي أسعار.</b></p>'
+      + '<div class="p-pdfprev-edit"><span>لتعديل التصميم ارجع إلى:</span>'
+      + STEPS.filter(function (x) { return x.id !== 'review'; }).map(function (x) {
+          return '<button type="button" class="btn small" data-goto="' + esc(x.id) + '">' + esc(x.label) + '</button>';
+        }).join('')
+      + '</div>'
+      + '</section>'
       + '<div class="fields">'
       + '<div class="row2">'
       + '<label>الاسم (اختياري)<input id="pName" maxlength="60" placeholder="اسمك" autocomplete="name" value="' + esc(cust.name) + '"></label>'
@@ -1120,26 +1132,32 @@ function portalAddAcc(itemId) {
       + '</div>'
       + '</div>'
       + '<div class="p-actrow">'
-      + '<button type="button" class="btn" id="pActPreview">معاينة</button>'
+      + '<button type="button" class="btn" id="pActPreview" aria-pressed="false">معاينة مكبّرة</button>'
       + '<button type="button" class="btn" id="pActPdf">تصدير PDF</button>'
       + '<button type="button" class="btn" id="pActWa">واتساب</button>'
       + '<button type="button" class="btn primary" id="pSubmitDesign">إنهاء التصميم</button>'
       + '</div>'
-      + '<p class="p-review-note">معاينة: شاهد التصميم قبل الإنهاء · تصدير PDF: احفظه كملف على جهازك · '
+      + '<p class="p-review-note">معاينة: شاهد التصميم قبل الإنهاء بحجم أكبر · تصدير PDF: احفظه كملف على جهازك · '
       + 'واتساب: أرسل التصميم عبر واتساب · إنهاء التصميم: يُنهي الطلب ويحفظ التصميم لدى المحل.</p>'
       + '<p class="error" id="pReviewErr" role="alert"></p>';
-    var refreshPreview = function () {
-      try {
-        var st = dz.getState();
-        var img = $('#pReviewImg', box);
-        if (img) img.src = designImage(st, 1000);
-      } catch (e) { /* noop */ }
-    };
+    var refreshPreview = function () { return renderPdfPreview(box); };
     refreshPreview();
+    $$('[data-goto]', box).forEach(function (b) { b.onclick = function () { gotoStep(b.dataset.goto); }; });
+    var frame = $('#pPrevFrame', box);
+    var toggleZoom = function () {
+      var on = !frame.classList.contains('zoom');
+      frame.classList.toggle('zoom', on);
+      $('#pActPreview', box).setAttribute('aria-pressed', String(on));
+      $('#pActPreview', box).textContent = on ? 'تصغير المعاينة' : 'معاينة مكبّرة';
+      fitPdfPreview(box);
+      if (on) frame.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    };
+    frame.onclick = toggleZoom;
+    frame.onkeydown = function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleZoom(); } };
     var keepCust = function () {
       S.cust = { name: ($('#pName', box) || {}).value || '', phone: ($('#pPhone', box) || {}).value || '' };
     };
-    $('#pActPreview', box).onclick = function () { keepCust(); refreshPreview(); toast('حُدّثت المعاينة'); };
+    $('#pActPreview', box).onclick = function () { keepCust(); toggleZoom(); };
     $('#pActPdf', box).onclick = function () { keepCust(); reviewPdf(); };
     $('#pActWa', box).onclick = function () { keepCust(); reviewShare(); };
     $('#pSubmitDesign', box).onclick = finishDesign;
@@ -1148,6 +1166,53 @@ function portalAddAcc(itemId) {
       if (el) el.addEventListener('input', keepCust);
     });
   }
+
+  /* ---------- معاينة PDF في صفحة المراجعة ----------
+     الورقة الحقيقية (نفس عنصر الملف) داخل «ورقة» بمقاس الصفحة وهامشها 10مم،
+     مُصغَّرة بـ transform لعرض الإطار؛ «معاينة مكبّرة» تعرضها بحجمها الطبيعي مع تمرير. */
+  var previewRun = 0;
+  async function renderPdfPreview(box) {
+    var meta = $('#pPrevMeta', box), paper = $('#pPrevPaper', box);
+    if (!meta || !paper || !window.DesignSheet || !S.designer) return;
+    var my = ++previewRun;
+    meta.textContent = 'جارٍ تجهيز المعاينة…';
+    meta.className = '';
+    try {
+      var o = designSheetOpts(S.meta && S.meta.number);
+      o.footHtml = await designContactHtml();
+      if (my !== previewRun || !paper.isConnected) return;
+      var el = DesignSheet.build(o);
+      var pg = DesignSheet.pageOf(el);
+      paper.innerHTML = '';
+      paper.style.width = pg.w + 'mm';
+      paper.style.height = pg.h + 'mm';
+      paper.appendChild(el);
+      meta.innerHTML = 'صفحة واحدة · <bdi>' + esc(pg.label) + '</bdi> · <bdi dir="ltr" class="num">' + pg.w + '×' + pg.h + '</bdi> مم';
+      fitPdfPreview(box);
+    } catch (e) {
+      if (my !== previewRun) return;
+      meta.textContent = 'تعذّر تجهيز المعاينة — يمكنك تصدير الملف مباشرة.';
+      meta.className = 'err';
+    }
+  }
+  function fitPdfPreview(box) {
+    var frame = $('#pPrevFrame', box), paper = $('#pPrevPaper', box), sizer = $('#pPrevSizer', box);
+    if (!frame || !paper || !sizer || !paper.firstChild) return;
+    var pw = paper.offsetWidth, ph = paper.offsetHeight;
+    if (!(pw > 0)) return;
+    var avail = frame.clientWidth - 2;
+    var k = frame.classList.contains('zoom') ? Math.max(avail / pw, Math.min(1, 900 / pw)) : avail / pw;
+    /* الحاوية بمقاس الصفحة بعد التصغير/التكبير فعلاً (transform لا يغيّر مساحة التخطيط) —
+       فلا فراغ ميت في التمرير عند التكبير */
+    paper.style.transform = 'scale(' + k + ')';
+    sizer.style.width = Math.round(pw * k) + 'px';
+    sizer.style.height = Math.round(ph * k) + 'px';
+    frame.style.height = frame.classList.contains('zoom') ? '' : Math.round(ph * k + 2) + 'px';
+  }
+  window.addEventListener('resize', function () {
+    var box = $('#pPanel');
+    if (box && $('#pPrevFrame', box)) fitPdfPreview(box);
+  });
 
   async function reviewPdf() {
     try {
