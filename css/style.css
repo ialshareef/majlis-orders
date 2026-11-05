@@ -917,6 +917,29 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
   /* زر القائمة في الصف أيقونة فقط (الاسم في title و aria-label) فيضيق العمود الثابت */
   .table td.row-actions .rmenu-btn > span { display: none; }
 }
+/* جدول الطلبات على سطح المكتب: أحد عشر عموداً يجب أن تتسع لعرض 1366 دون تمرير أفقي —
+   حشوة أضيق، والرقم/العميل بحد أقصى، والمبالغ بخط أصغر قليلاً، وزر «فتح» أيقونة حين يضيق */
+@media (min-width: 961px) and (max-width: 1679px) {
+  #ordersTable th, #ordersTable td { padding-inline: 6px; }
+  .table-card #ordersTable th:first-child, .table-card #ordersTable td:first-child { padding-inline-start: 14px; }
+  .table-card #ordersTable th:last-child, .table-card #ordersTable td:last-child { padding-inline-end: 10px; }
+  #ordersTable td.c-no { max-width: 15ch; }
+  #ordersTable td.c-cust { max-width: 17ch; }
+  #ordersTable td.c-money { font-size: .85rem; }
+  #ordersTable td.c-deliv .num { font-size: .85rem; }
+  #ordersTable .status-chip.sm { padding: 0 6px 0 8px; gap: 5px; }
+  #ordersTable .status-chip.sm select { font-size: .79rem; max-width: 12ch; }
+}
+@media (min-width: 961px) and (max-width: 1365px) {
+  #ordersTable td.c-no { max-width: 12ch; }
+  #ordersTable td.c-cust { max-width: 14ch; }
+  #ordersTable td.c-money, #ordersTable td.c-deliv .num { font-size: .8rem; }
+  #ordersTable th { font-size: .74rem; }
+}
+@media (min-width: 961px) and (max-width: 1499px) {
+  #ordersTable td.row-actions [data-open] { font-size: 0; gap: 0; padding-inline: 9px; }
+  #ordersTable td.row-actions [data-open] svg { font-size: .9rem; }
+}
 .ra { display: inline-flex; align-items: center; gap: 6px; }
 .rmenu { position: relative; display: inline-flex; }
 .rmenu-btn[aria-expanded="true"] { background: var(--sand); color: var(--ink); }

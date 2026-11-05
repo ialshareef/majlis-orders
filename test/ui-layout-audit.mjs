@@ -267,8 +267,13 @@ try {
     }
     const shot = async (n) => { if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.tag}-${n}.png`) }); };
     const goPage = async (p) => { await page.evaluate((n) => document.querySelector(`#mainNav button[data-page="${n}"]`).click(), p); await sleep(700); };
-    // مراحل الطلب الحالي لطلب فيه بيانات طويلة
+    // جدول الطلبات على سطح المكتب: كل الأعمدة تتسع دون تمرير أفقي (1366 وما فوق)
     await goPage('orders');
+    if (vp.width >= 1280) {
+      const fit = await page.evaluate(() => { const t = document.getElementById('ordersTable'); const w = t.closest('.table-wrap'); return { table: t.scrollWidth, wrap: w.clientWidth, cols: [...t.querySelectorAll('thead th')].filter((x) => x.offsetParent).length }; });
+      summary[vp.tag + ':orders-table-fit'] = fit.table <= fit.wrap + 1 && fit.cols >= 11 ? [] : [{ k: 'table-hscroll', el: '#ordersTable', ...fit }];
+    }
+    // مراحل الطلب الحالي لطلب فيه بيانات طويلة
     await page.evaluate(() => document.querySelector('#ordersTable [data-open]').click()); await sleep(1200);
     for (const st of ['design', 'price', 'customer', 'pay', 'export']) {
       await page.evaluate((s) => document.querySelector(`#stepNav a[data-stage="${s}"]`).click(), st); await sleep(600);

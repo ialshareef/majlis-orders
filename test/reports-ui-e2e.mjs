@@ -193,6 +193,23 @@ try {
   pagesN = (pdfTxt.match(/\/Type \/Page\b(?!s)/g) || []).length;
   ok(pagesN >= 3, 'export/pdf: 72 طلباً تُقسَّم على عدة صفحات', { pagesN, size: f.buf.length });
   ok(!(await page.evaluate(() => !!document.querySelector('.rep-print'))), 'export/pdf: لا بقايا صفحات مؤقتة في الصفحة');
+
+  /* ----- «ذكاء الأعمال»: أزرار PDF القديمة تمرّ بمحرّك الصفحات المصوَّرة (عربية متصلة)
+     لا بنص jsPDF المباشر (حروف منفصلة)، وأزرار Excel تحمّل مكتبتها بنفسها ----- */
+  await go(page, 'bi');
+  await page.evaluate(() => { const b = document.querySelector('#biRangeChips [data-rg="all"]'); if (b) b.click(); });
+  await sleep(600);
+  for (const b of ['btnBiPdf', 'btnOrdersPdf', 'btnMandoubsPdf', 'btnExpensesPdf']) {
+    f = await download(page, b);
+    const t = f.buf.toString('latin1');
+    ok(f.name.endsWith('.pdf') && t.startsWith('%PDF') && /\/Subtype\s*\/Image/.test(t) && !/\)\s*Tj/.test(t), `bi/${b}: PDF مصوَّر بالعربية المتصلة (بلا نص jsPDF مباشر)`, { name: f.name, size: f.buf.length });
+  }
+  ok(!(await page.evaluate(() => !!document.querySelector('.rep-print'))), 'bi/pdf: لا بقايا صفحات مؤقتة');
+  await page.evaluate(() => { try { delete window.XLSX; } catch (_) { window.XLSX = undefined; } });
+  for (const b of ['btnBiXlsx', 'btnOrdersXlsx', 'btnMandoubsXlsx', 'btnExpensesXlsx']) {
+    f = await download(page, b);
+    ok(f.name.endsWith('.xlsx') && f.buf.slice(0, 2).toString() === 'PK', `bi/${b}: ملف Excel صالح حتى دون تحميل المكتبة مسبقاً`, { name: f.name, size: f.buf.length });
+  }
   await page.browserContext().close();
 
   /* ----- موظف بـ reports.view_own + export: طلباته فقط، بلا عمولات ----- */

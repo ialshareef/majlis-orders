@@ -7040,32 +7040,55 @@ function docTitle(order) {
   }
 
 /* ---------------- تصدير تقرير الذكاء التجاري إلى PDF ---------------- */
+/* تقارير PDF في «ذكاء الأعمال» تمرّ بمحرّك التقارير نفسه (صفحات HTML تُصوَّر)،
+   بدل كتابة النص مباشرة في jsPDF التي تُخرج العربية حروفاً منفصلة ومعكوسة. */
+function biPdfMeta(p, userId) {
+  return [['المتجر', settings().shopName || 'أصالة نجد'], ['الموظف', userId ? ((Store.getUser(userId) || {}).name || '') : 'كل الموظفين'], ['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']];
+}
+const biPdfFile = (base, p) => base + '-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf';
+async function biFetchReport(path, p, userId) {
+  const qs = new URLSearchParams();
+  if (p.from) qs.set('from', p.from);
+  if (p.to) qs.set('to', p.to);
+  if (userId) qs.set('userId', userId);
+  const res = await fetch((Store.apiBase || '') + path + (qs.toString() ? '?' + qs.toString() : ''), { headers: { 'x-session-token': Store.token || '' } });
+  if (!res.ok) return null;
+  return res.json().catch(() => null);
+}
+
 async function biExportPdf() {
   const p = biPeriod();
   const userId = $('#biUser').value;
   const a = biAgg(p.from, p.to, userId);
   if (!a.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
-  await loadScript(H2C_URL);
-  await loadScript(JSPDF_URL);
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-  pdf.setFont('arial', 'normal');
-  pdf.setFontSize(14);
-  pdf.text('تقرير ذكاء الأعمال', 10, 10);
-  pdf.setFontSize(10);
-  pdf.text('الفترة: ' + (p.from || 'من أول طلب') + ' إلى ' + (p.to || 'اليوم'), 10, 17);
-  pdf.text('الموظف: ' + (userId ? (Store.getUser(userId) || {}).name || '' : 'كل الموظفين'), 10, 24);
-  pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 31);
-  pdf.text('المبيعات قبل الضريبة: ' + fmt(a.revenue), 10, 41);
-  pdf.text('المحصّل: ' + fmt(a.paid), 10, 48);
-  pdf.text('المتبقي على العملاء: ' + fmt(a.remaining), 10, 55);
-  pdf.text('عدد الطلبات: ' + a.count, 10, 62);
-  pdf.text('إجمالي التكاليف: ' + fmt(a.cost), 10, 69);
-  pdf.text('صافي الربح: ' + fmt(a.profit), 10, 76);
-  pdf.text('إجمالي العمولات: ' + money(a.commission + a.share), 10, 83);
-  pdf.text('صافي النتيجة بعد المصروفات: ' + fmt(a.net), 10, 90);
-  pdf.text('إجمالي المصروفات: ' + fmt(a.expenses), 10, 97);
-  pdf.save('bi-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf');
+  const has = a.costed.length > 0;
+  const rep = {
+    id: 'bi', title: 'تقرير ذكاء الأعمال', from: p.from || '', to: p.to || today(),
+    summary: [
+      { label: 'المبيعات قبل الضريبة', value: a.revenue, kind: 'money' },
+      { label: 'المحصّل', value: a.paid, kind: 'money' },
+      { label: 'المتبقي على العملاء', value: a.remaining, kind: 'money' },
+      { label: 'عدد الطلبات', value: a.count, kind: 'num' },
+      { label: 'إجمالي التكاليف', value: has ? a.cost : null, kind: 'money' },
+      { label: 'صافي الربح', value: has ? a.profit : null, kind: 'money' },
+      { label: 'إجمالي العمولات', value: has ? money(a.commission + a.share) : null, kind: 'money' },
+      { label: 'إجمالي المصروفات', value: a.expenses, kind: 'money' },
+      { label: 'صافي النتيجة بعد المصروفات', value: a.net, kind: 'money' },
+    ],
+    tables: [
+      { title: 'أداء الموظفين', columns: [
+        { key: 'name', label: 'الموظف' }, { key: 'count', label: 'الطلبات', kind: 'num' }, { key: 'revenue', label: 'المبيعات', kind: 'money' },
+        { key: 'profit', label: 'صافي الربح', kind: 'money' }, { key: 'commission', label: 'العمولة', kind: 'money' }, { key: 'share', label: 'المشاركة', kind: 'money' },
+        { key: 'margin', label: 'الهامش', kind: 'pct' }, { key: 'avg', label: 'متوسط الطلب', kind: 'money' }, { key: 'remaining', label: 'المتبقي', kind: 'money' }],
+        rows: biStaffRows(a).map((e) => ({ name: e.name, count: e.count, revenue: money(e.revenue), profit: e.costed ? money(e.profit) : null, commission: e.commission ? money(e.commission) : null, share: e.share ? money(e.share) : null, margin: e.costed && e.costedRev ? r2((e.profit / e.costedRev) * 100) : null, avg: money(e.revenue / e.count), remaining: money(e.remaining) })) },
+      { title: 'العملاء', columns: [
+        { key: 'name', label: 'العميل' }, { key: 'phone', label: 'الجوال', kind: 'num' }, { key: 'count', label: 'الطلبات', kind: 'num' },
+        { key: 'revenue', label: 'المبيعات', kind: 'money' }, { key: 'remaining', label: 'المتبقي', kind: 'money' }, { key: 'last', label: 'آخر طلب', kind: 'date' }],
+        rows: biCustRows(a).map((e) => ({ name: e.name, phone: e.phone, count: e.count, revenue: money(e.revenue), remaining: money(e.remaining), last: e.last })) },
+    ],
+    notes: has ? [] : ['لم تُسجَّل تكاليف لطلبات هذه الفترة، فلا يُحسب الربح والعمولات.'],
+  };
+  await repPdfRender(rep, biPdfMeta(p, userId), biPdfFile('bi-report', p), $('#btnBiPdf'));
 }
 
 /* ---------------- تصدير تقرير الذكاء التجاري إلى Excel ---------------- */
@@ -7074,6 +7097,7 @@ async function biExportXlsx() {
   const userId = $('#biUser').value;
   const a = biAgg(p.from, p.to, userId);
   if (!a.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
+  if (!window.XLSX) { try { await loadScript(XLSX_URL); } catch (_) { toast('تعذّر تحميل مكتبة Excel. تحقق من الاتصال.', true); return; } }
   const { XLSX } = window;
   const wb = XLSX.utils.book_new();
   // Sheet 1: KPIs
@@ -7108,38 +7132,27 @@ async function biExportXlsx() {
 async function exportMandoubsPdf() {
   const p = biPeriod();
   const userId = $('#biUser').value;
-  const qs = new URLSearchParams();
-  if (p.from) qs.set('from', p.from);
-  if (p.to) qs.set('to', p.to);
-  if (userId) qs.set('userId', userId);
-  const url = (Store.apiBase || '') + '/api/reports/mandoubs' + (qs.toString() ? '?' + qs.toString() : '');
-  const res = await fetch(url, { headers: { 'x-session-token': Store.token || '' } });
-  if (!res.ok) { toast('فشل تحميل تقرير المناديب', true); return; }
-  const data = await res.json();
+  const data = await biFetchReport('/api/reports/mandoubs', p, userId);
+  if (!data) { toast('فشل تحميل تقرير المناديب', true); return; }
   if (!data.ok || !data.mandoubs || !data.mandoubs.length) { toast('لا توجد بيانات للتصدير', true); return; }
-  await loadScript(JSPDF_URL);
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-  pdf.setFont('arial', 'normal');
-  pdf.setFontSize(14);
-  pdf.text('تقرير المناديب', 10, 10);
-  pdf.setFontSize(10);
-  pdf.text('الفترة: ' + (p.from || 'من أول طلب') + ' إلى ' + (p.to || 'اليوم'), 10, 17);
-  pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 24);
-  let y = 40;
-  pdf.text('المندوب', 10, y); pdf.text('الطلبات', 40, y); pdf.text('الإيرادات', 70, y); pdf.text('التكاليف', 110, y); pdf.text('صافي الربح', 150, y); pdf.text('العمولات', 190, y); pdf.text('المشاركة', 230, y);
-  y += 7;
-  for (const m of data.mandoubs) {
-    pdf.text(m.name || 'مندوب غير محدد', 10, y);
-    pdf.text(String(m.count), 40, y);
-    pdf.text(fmt(m.revenue), 70, y);
-    pdf.text(fmt(m.cost), 110, y);
-    pdf.text(fmt(m.profit), 150, y);
-    pdf.text(fmt(m.commission), 190, y);
-    pdf.text(fmt(m.share), 230, y);
-    y += 6;
-  }
-  pdf.save('mandoubs-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf');
+  const sum = (k) => money(data.mandoubs.reduce((t, m) => t + (Number(m[k]) || 0), 0));
+  const cnt = data.mandoubs.reduce((t, m) => t + (Number(m.count) || 0), 0);
+  const rep = {
+    id: 'mandoubs', title: 'تقرير المناديب', from: p.from || '', to: p.to || today(),
+    summary: [
+      { label: 'عدد المناديب', value: data.mandoubs.length, kind: 'num' },
+      { label: 'الطلبات', value: cnt, kind: 'num' },
+      { label: 'الإيرادات', value: sum('revenue'), kind: 'money' },
+      { label: 'صافي الربح', value: sum('profit'), kind: 'money' },
+    ],
+    tables: [{ title: 'المناديب', columns: [
+      { key: 'name', label: 'المندوب' }, { key: 'count', label: 'الطلبات', kind: 'num' }, { key: 'revenue', label: 'الإيرادات', kind: 'money' },
+      { key: 'cost', label: 'التكاليف', kind: 'money' }, { key: 'profit', label: 'صافي الربح', kind: 'money' }, { key: 'commission', label: 'العمولات', kind: 'money' }, { key: 'share', label: 'المشاركة', kind: 'money' }],
+      rows: data.mandoubs.map((m) => ({ name: m.name || 'مندوب غير محدد', count: m.count, revenue: money(m.revenue), cost: money(m.cost), profit: money(m.profit), commission: money(m.commission), share: money(m.share) })),
+      totals: { name: 'الإجمالي', count: cnt, revenue: sum('revenue'), cost: sum('cost'), profit: sum('profit'), commission: sum('commission'), share: sum('share') } }],
+    notes: [],
+  };
+  await repPdfRender(rep, biPdfMeta(p, userId), biPdfFile('mandoubs-report', p), $('#btnMandoubsPdf'));
 }
 
 /* ---------------- تصدير تقرير المناديب إلى Excel ---------------- */
@@ -7155,6 +7168,7 @@ async function exportMandoubsXlsx() {
   if (!res.ok) { toast('فشل تحميل تقرير المناديب', true); return; }
   const data = await res.json();
   if (!data.ok || !data.mandoubs || !data.mandoubs.length) { toast('لا توجد بيانات للتصدير', true); return; }
+  if (!window.XLSX) { try { await loadScript(XLSX_URL); } catch (_) { toast('تعذّر تحميل مكتبة Excel. تحقق من الاتصال.', true); return; } }
   const { XLSX } = window;
   const wb = XLSX.utils.book_new();
   const rows = [['المندوب', 'الطلبات', 'الإيرادات', 'التكاليف', 'صافي الربح', 'العمولات', 'المشاركة']];
@@ -7168,26 +7182,15 @@ async function exportMandoubsXlsx() {
 async function exportExpensesPdf() {
   const p = biPeriod();
   const userId = $('#biUser').value;
-  const qs = new URLSearchParams();
-  if (p.from) qs.set('from', p.from);
-  if (p.to) qs.set('to', p.to);
-  if (userId) qs.set('userId', userId);
-  const res = await fetch((Store.apiBase || '') + '/api/reports/expenses-summary' + (qs.toString() ? '?' + qs.toString() : ''), { headers: { 'x-session-token': Store.token || '' } });
-  if (!res.ok) { toast('فشل تحميل تقرير المصروفات', true); return; }
-  const data = await res.json();
+  const data = await biFetchReport('/api/reports/expenses-summary', p, userId);
+  if (!data) { toast('فشل تحميل تقرير المصروفات', true); return; }
   if (!data.ok) { toast('لا توجد بيانات للتصدير', true); return; }
-  await loadScript(JSPDF_URL);
-  const { jsPDF } = window.jspdf;
-  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-  pdf.setFont('arial', 'normal');
-  pdf.setFontSize(14);
-  pdf.text('تقرير المصروفات', 10, 10);
-  pdf.setFontSize(10);
-  pdf.text('الفترة: ' + (p.from || 'من أول طلب') + ' إلى ' + (p.to || 'اليوم'), 10, 17);
-  pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 24);
-  pdf.text('إجمالي المصروفات: ' + fmt(data.total_amount), 10, 34);
-  pdf.text('عدد المصروفات: ' + data.count, 10, 41);
-  pdf.save('expenses-report-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf');
+  const rep = {
+    id: 'expenses', title: 'تقرير المصروفات', from: p.from || '', to: p.to || today(),
+    summary: [{ label: 'إجمالي المصروفات', value: money(data.total_amount), kind: 'money' }, { label: 'عدد المصروفات', value: data.count, kind: 'num' }],
+    tables: [], notes: ['تفاصيل كل مصروف في صفحة «التقارير» ← تقرير المصروفات.'],
+  };
+  await repPdfRender(rep, biPdfMeta(p, userId), biPdfFile('expenses-report', p), $('#btnExpensesPdf'));
 }
 
 /* ---------------- تصدير تقرير المصروفات إلى Excel ---------------- */
@@ -7202,6 +7205,7 @@ async function exportExpensesXlsx() {
   if (!res.ok) { toast('فشل تحميل تقرير المصروفات', true); return; }
   const data = await res.json();
   if (!data.ok) { toast('لا توجد بيانات للتصدير', true); return; }
+  if (!window.XLSX) { try { await loadScript(XLSX_URL); } catch (_) { toast('تعذّر تحميل مكتبة Excel. تحقق من الاتصال.', true); return; } }
   const { XLSX } = window;
   const wb = XLSX.utils.book_new();
   const rows = [['إجمالي المصروفات', 'عدد المصروفات']];
@@ -7306,42 +7310,28 @@ async function exportExpensesXlsx() {
   async function exportOrdersPdf() {
     const c = ordersReportCalc();
     if (!c.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
-    await loadScript(JSPDF_URL);
-    const { jsPDF } = window.jspdf;
-    const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
-    pdf.setFont('arial', 'normal');
-    pdf.setFontSize(14);
-    pdf.text('تقرير الطلبات والتحصيل', 10, 12);
-    pdf.setFontSize(10);
-    pdf.text('الفترة: ' + (c.p.from || 'من أول طلب') + ' إلى ' + (c.p.to || 'اليوم'), 10, 20);
-    pdf.text('الموظف: ' + (c.userId ? ((Store.getUser(c.userId) || {}).name || '') : 'كل الموظفين'), 10, 27);
-    pdf.text('تاريخ التصدير: ' + fmtDateTime(Store.now()), 10, 34);
-    let y = 46;
-    pdf.setFontSize(12);
-    pdf.text('الملخص المالي (الطلبات الفعلية، بلا عروض الأسعار والملغاة)', 10, y); y += 8;
-    pdf.setFontSize(10);
-    pdf.text('عدد الطلبات الفعلية: ' + c.live.length, 10, y); y += 7;
-    pdf.text('إجمالي القيمة شامل الضريبة: ' + fmt(c.gross), 10, y); y += 7;
-    pdf.text('قبل الضريبة: ' + fmt(c.revenue), 10, y); y += 7;
-    pdf.text('المحصّل: ' + fmt(c.paid), 10, y); y += 7;
-    pdf.text('المتبقي على العملاء: ' + fmt(c.remaining), 10, y); y += 12;
-    pdf.setFontSize(12);
-    pdf.text('التوزيع حسب الحالة', 10, y); y += 8;
-    pdf.setFontSize(10);
-    for (const s of ORD_STATUS_ORDER) {
-      const b = c.byStatus[s];
-      if (!b) continue;
-      pdf.text(`${STATUS[s] || s}: ${b.count} طلب • الإجمالي ${fmt(money(b.total))} • المحصّل ${fmt(money(b.paid))} • المتبقي ${fmt(money(b.remaining))}`, 10, y);
-      y += 7;
-      if (y > 185) { pdf.addPage(); y = 15; }
-    }
-    pdf.text('التفصيل الكامل للطلبات والدفعات في ملف Excel المُصدَّر مع هذا التقرير.', 10, y + 6);
-    pdf.save('orders-report-' + (c.p.from || 'all') + '_' + (c.p.to || today()) + '.pdf');
+    const rows = ORD_STATUS_ORDER.filter((x) => c.byStatus[x]).map((x) => { const b = c.byStatus[x]; return { st: STATUS[x] || x, count: b.count, total: money(b.total), paid: money(b.paid), remaining: money(b.remaining) }; });
+    const rep = {
+      id: 'orders-bi', title: 'تقرير الطلبات والتحصيل', from: c.p.from || '', to: c.p.to || today(),
+      summary: [
+        { label: 'الطلبات الفعلية', value: c.live.length, kind: 'num' },
+        { label: 'الإجمالي شامل الضريبة', value: c.gross, kind: 'money' },
+        { label: 'قبل الضريبة', value: c.revenue, kind: 'money' },
+        { label: 'المحصّل', value: c.paid, kind: 'money' },
+        { label: 'المتبقي على العملاء', value: c.remaining, kind: 'money' },
+      ],
+      tables: [{ title: 'التوزيع حسب الحالة', columns: [
+        { key: 'st', label: 'الحالة' }, { key: 'count', label: 'الطلبات', kind: 'num' }, { key: 'total', label: 'الإجمالي', kind: 'money' },
+        { key: 'paid', label: 'المحصّل', kind: 'money' }, { key: 'remaining', label: 'المتبقي', kind: 'money' }], rows }],
+      notes: ['الملخص المالي للطلبات الفعلية فقط (بلا عروض الأسعار والملغاة).', 'التفصيل الكامل للطلبات والدفعات في ملف Excel.'],
+    };
+    await repPdfRender(rep, biPdfMeta(c.p, c.userId), biPdfFile('orders-report', c.p), $('#btnOrdersPdf'));
   }
 
   async function exportOrdersXlsx() {
     const c = ordersReportCalc();
     if (!c.list.length) { toast('لا توجد بيانات للتصدير', true); return; }
+    if (!window.XLSX) { try { await loadScript(XLSX_URL); } catch (_) { toast('تعذّر تحميل مكتبة Excel. تحقق من الاتصال.', true); return; } }
     const { XLSX } = window;
     const wb = XLSX.utils.book_new();
     const summary = [
@@ -7568,7 +7558,11 @@ async function exportExpensesXlsx() {
   const REP_PAGE = { w: 1123, h: 794 };
   async function repExportPdf() {
     const rep = repReady(); if (!rep) return;
-    const btn = $('#btnRepPdf'); if (btn) btn.disabled = true;
+    await repPdfRender(rep, repMeta(rep), repFileName(rep, 'pdf'), $('#btnRepPdf'));
+  }
+  /** محرّك PDF المشترك: كل تقارير PDF (التقارير وذكاء الأعمال) تمرّ من هنا كي تُرسم العربية متصلة */
+  async function repPdfRender(rep, meta, fileName, btn) {
+    if (btn) btn.disabled = true;
     const host = document.createElement('div');
     host.className = 'rep-print'; host.dir = 'rtl';
     host.style.cssText = 'position:fixed;top:0;left:-20000px;z-index:-1;background:#fff';
@@ -7577,7 +7571,6 @@ async function exportExpensesXlsx() {
       toast('جارٍ إنشاء ملف PDF…');
       await loadScript(H2C_URL);
       await loadScript(JSPDF_URL);
-      const meta = repMeta(rep);
       const pages = [];
       const newPage = (first) => {
         const pg = document.createElement('div');
@@ -7644,7 +7637,7 @@ async function exportExpensesXlsx() {
         if (i) pdf.addPage();
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
       }
-      downloadBlob(pdf.output('blob'), repFileName(rep, 'pdf'));
+      downloadBlob(pdf.output('blob'), fileName);
     } catch (e) {
       toast(e.message || 'تعذّر إنشاء ملف PDF', true);
     } finally {
