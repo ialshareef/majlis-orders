@@ -1746,12 +1746,15 @@ body.modal-open { overflow: hidden; }
 .doc-switch { margin-bottom: 14px; }
 .doc-switch button { font-size: .8rem; padding-inline: 6px; }
 .pdf-state { display: flex; align-items: center; gap: 8px; font-size: .85rem; color: var(--ink-2); background: var(--surface-2); border-radius: var(--r); padding: 10px 12px; margin: 0 0 14px; line-height: 1.6; }
-.pdf-state svg { width: 16px; height: 16px; }
+.pdf-state svg { flex: none; width: 16px; height: 16px; }
+.pdf-state-txt { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
 .pdf-state.ready { background: var(--ok-soft); color: var(--ok); }
 .pdf-state.err { background: var(--danger-soft); color: var(--danger); }
 .pdf-state b { font-size: .82rem; }
 .share-actions { display: grid; gap: 8px; }
-.share-actions .btn { margin-top: 0; }
+.share-actions .btn { margin-top: 0; min-width: 0; white-space: normal; text-align: center; padding-block: 8px; overflow-wrap: anywhere; }
+/* اسم العميل الطويل في رأس النافذة يلتف ولا يوسّعها */
+.share-target > div { min-width: 0; overflow-wrap: anywhere; }
 #shChat svg { color: #25D366; }
 #shChat:hover { border-color: rgba(37, 211, 102, .5); }
 

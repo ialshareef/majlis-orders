@@ -257,6 +257,25 @@ try {
 } catch (e) {
   ok(false, 'تشغيل', String(e && e.stack || e).slice(0, 400));
 }
+/* نافذة التصدير على الجوال (375px) لطلب باسم طويل وورقة كبيرة: لا شيء يتجاوز الشاشة،
+   وسطر الحالة نص واحد يلتف (كان كل جزء منه عموداً فيتّسع الإطار ويقصّ الأزرار) */
+try {
+  await page.setViewport({ width: 375, height: 812, isMobile: true, hasTouch: true });
+  await sleep(600);
+  await exportDoc(2002, 'invoice');
+  const m = await page.evaluate(() => {
+    const vw = document.documentElement.clientWidth;
+    const card = document.querySelector('#modal .modal-card') || document.querySelector('#modal');
+    const out = [...card.querySelectorAll('*')].filter((e) => { const r = e.getBoundingClientRect(); return r.width && (r.right > vw + 1 || r.left < -1); }).slice(0, 6).map((e) => (e.id || e.className || e.tagName) + '');
+    const st = document.getElementById('pdfState');
+    const kids = [...st.children].filter((e) => e.tagName !== 'svg' && e.tagName !== 'SVG' && !(e instanceof SVGElement));
+    return { vw, docW: document.documentElement.scrollWidth, cardW: card.getBoundingClientRect().width, out, kids: kids.length, txt: st.textContent.trim() };
+  });
+  if (saveDir) { fs.mkdirSync(saveDir, { recursive: true }); await page.screenshot({ path: path.join(saveDir, 'export-dialog-mobile.png') }); }
+  ok(m.out.length === 0 && m.docW <= m.vw + 1, 'mobile: نافذة التصدير داخل الشاشة بلا أزرار مقصوصة', m);
+  ok(m.kids === 1 && /صفحة واحدة/.test(m.txt), 'mobile: سطر الحالة نص واحد ملتف (لا أعمدة)', m);
+  await page.setViewport({ width: 1366, height: 900 });
+} catch (e) { ok(false, 'mobile: نافذة التصدير', String(e && e.message || e)); }
 ok(pageErrors.length === 0, 'ui: لا أخطاء JavaScript', pageErrors.slice(0, 3));
 await browser.close();
 server.close();

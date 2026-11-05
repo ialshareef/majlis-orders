@@ -3717,7 +3717,7 @@ function docTitle(order) {
       ${isReceipt ? '' : `<div class="segmented doc-switch" role="group" aria-label="نوع المستند">
         ${Object.entries(ORDER_DOCS).map(([k, d]) => `<button type="button" data-doc="${k}" class="${k === kind ? 'active' : ''}" aria-pressed="${k === kind}">${esc(d.label(order))}</button>`).join('')}
       </div>`}
-      <p id="pdfState" class="pdf-state" role="status">${icon('clock')} جاري تجهيز ملف PDF…</p>
+      <p id="pdfState" class="pdf-state" role="status">${icon('clock')}<span class="pdf-state-txt">جاري تجهيز ملف PDF…</span></p>
       <div class="share-actions">
         <button class="btn primary block lg" id="shWa" disabled>${icon('whatsapp')} مشاركة الملف عبر واتساب</button>
         ${phone ? `<button class="btn block" id="shChat">${icon('whatsapp')} فتح محادثة ${esc(cname || 'العميل')} (بالملخص)</button>` : ''}
@@ -3742,7 +3742,7 @@ function docTitle(order) {
         // إنشاء PDF يحتاج مكتبات من الإنترنت: رسالة واضحة مبكراً بدل خطأ تقني لاحق
         if (!navigator.onLine) {
           state.className = 'pdf-state err';
-          state.innerHTML = `${icon('alert')} تصدير PDF يحتاج اتصالًا بالإنترنت.`;
+          state.innerHTML = `${icon('alert')}<span class="pdf-state-txt">تصدير PDF يحتاج اتصالًا بالإنترنت.</span>`;
           note.textContent = 'تحقق من الاتصال ثم أعد فتح النافذة.';
           return;
         }
@@ -3750,7 +3750,7 @@ function docTitle(order) {
         const fileName = isReceipt ? `${money(payment.amount) < 0 ? 'سند-صرف' : 'سند-قبض'}-${order.number}.pdf` : ORDER_DOCS[curKind].file(order);
         btnWa.disabled = btnSave.disabled = btnPrint.disabled = true;
         state.className = 'pdf-state';
-        state.innerHTML = `${icon('clock')} جاري تجهيز ملف PDF…`;
+        state.innerHTML = `${icon('clock')}<span class="pdf-state-txt">جاري تجهيز ملف PDF…</span>`;
         note.textContent = defaultNote();
         // الورشة لا تُرسَل للعميل: يُخفى زرّا واتساب
         const forCustomer = isReceipt || ORDER_DOCS[curKind].share;
@@ -3767,7 +3767,8 @@ function docTitle(order) {
           const kb = Math.round(blob.size / 1024);
           const pdfFile = new File([blob], fileName, { type: 'application/pdf' });
           state.className = 'pdf-state ready';
-          state.innerHTML = `${icon('check')} الملف جاهز: <b>${esc(fileName)}</b> (${kb} كيلوبايت) · صفحة واحدة <bdi>${esc((paper && paper.label) || 'A4')}</bdi>`;
+          // نص الحالة في حاوية واحدة تلتف: في flex كان كل جزء (النص والاسم والمقاس) عموداً مستقلاً فيتّسع الإطار ويقصّ الأزرار
+          state.innerHTML = `${icon('check')}<span class="pdf-state-txt">الملف جاهز: <bdi dir="ltr"><b>${esc(fileName)}</b></bdi> (${kb} كيلوبايت) · صفحة واحدة <bdi>${esc((paper && paper.label) || 'A4')}</bdi></span>`;
           if (paper && paper.id !== 'a4') note.innerHTML = `${esc(defaultNote())}<br>${icon('alert')} المحتوى أكبر من A4 فاختير مقاس <bdi>${esc(paper.label)}</bdi> ليبقى النص بحجمه الطبيعي. للطباعة على ورق A4 اختر «ملاءمة للصفحة» (Fit to page) في نافذة الطباعة.`;
           btnWa.disabled = false; btnSave.disabled = false;
           btnSave.onclick = async () => {
@@ -3796,7 +3797,7 @@ function docTitle(order) {
         } catch (err) {
           if (my !== run) return;
           state.className = 'pdf-state err';
-          state.innerHTML = `${icon('alert')} ${esc(err.message)}`;
+          state.innerHTML = `${icon('alert')}<span class="pdf-state-txt">${esc(err.message)}</span>`;
           note.textContent = 'يمكنك استخدام زر الطباعة ثم اختيار "حفظ كـ PDF".';
           btnPrint.disabled = !$('#printArea').innerHTML.trim();
         }
