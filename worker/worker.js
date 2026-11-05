@@ -405,13 +405,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.79';
-// بصمة asalh-najd-1.0.79.apk (إصدار GitHub v1.0.79، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.79 وversionCode 10079، ونفس شهادة توقيع 1.0.78).
-const UPDATE_FALLBACK_SHA256 = '60d99875c492d47413d6bfa0e8fa94fdc3d81d5ad1a63ba5b189c83384bfb03a';
+const UPDATE_FALLBACK_VERSION = '1.0.80';
+// بصمة asalh-najd-1.0.80.apk (إصدار GitHub v1.0.80، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.80 وversionCode 10080، ونفس شهادة توقيع 1.0.79).
+const UPDATE_FALLBACK_SHA256 = 'dcb1120e1378b1e581b489124fc8e148d2604ce53949ea1a27bd7578e38da6e6';
 const UPDATE_FALLBACK_NOTES = [
-  'نافذة تصدير الملف على الجوال تظهر كاملة: الأزرار غير مقصوصة وسطر حالة الملف مرتب',
-  'ملخص المساحات والمرفقات في ملف PDF بقراءة أوضح',
+  'مساعد التصميم الذكي في صفحة تصميم العميل صار يعمل مجاناً (Cloudflare Workers AI)',
+  'نافذة تصدير الملف وملفات PDF بعرض أوضح على الجوال',
 ];
 
 function versionCodeOfName(v) {
