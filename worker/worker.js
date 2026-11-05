@@ -405,13 +405,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.78';
-// بصمة asalh-najd-1.0.78.apk (إصدار GitHub v1.0.78، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.78 وversionCode 10078، ونفس شهادة توقيع 1.0.77).
-const UPDATE_FALLBACK_SHA256 = 'c31cf6cdf73ac7d677f1503196874cc2c0b7381372bf01bb2b252c1d07619871';
+const UPDATE_FALLBACK_VERSION = '1.0.79';
+// بصمة asalh-najd-1.0.79.apk (إصدار GitHub v1.0.79، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.79 وversionCode 10079، ونفس شهادة توقيع 1.0.78).
+const UPDATE_FALLBACK_SHA256 = '60d99875c492d47413d6bfa0e8fa94fdc3d81d5ad1a63ba5b189c83384bfb03a';
 const UPDATE_FALLBACK_NOTES = [
-  'ملخص المساحات في ملفات PDF يعرض كل الأرقام كاملة دون قصّ',
-  'مرفقات الطلب في ملف PDF أكبر وأوضح: في العمود الأيسر تحت ملخص المساحات',
+  'نافذة تصدير الملف على الجوال تظهر كاملة: الأزرار غير مقصوصة وسطر حالة الملف مرتب',
+  'ملخص المساحات والمرفقات في ملف PDF بقراءة أوضح',
 ];
 
 function versionCodeOfName(v) {
