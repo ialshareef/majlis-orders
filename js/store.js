@@ -432,6 +432,7 @@
         // اللقطة = ما أقرّه الخادم فعلاً (الحمولة المُرسلة)، لا قاعدة البيانات الحية
         // التي قد تكون تغيّرت أثناء الطيران — وإلا ابتُلع التعديل الأحدث بصمت
         this._snapshotSent(payload);
+        emitWa(r);
         this.lastError = '';
         this.lastStatus = 0;
         return true;
@@ -573,6 +574,13 @@
   const backend = remote ? Remote : Local;
   if (remote) Remote.cfg = cfg;
 
+  /* إشعارات واتساب: الخادم يعيد r.wa فقط بعد حفظ ناجح فعلاً (والتنبيه في دفعة الحفظ نفسها)
+     ولمن يملك صلاحية الإرسال — الواجهة تعرض «إرسال تنبيه» عند هذا الحدث وحده */
+  function emitWa(r) {
+    if (!r || !Array.isArray(r.wa) || !r.wa.length) return;
+    try { global.dispatchEvent(new CustomEvent('majlis:wa-events', { detail: r.wa.slice() })); } catch (_) { /* متصفح قديم */ }
+  }
+
   const Store = {
     get mode() { return backend.mode; },
     get isRemote() { return remote; },
@@ -598,7 +606,7 @@
     /** طلب مباشر للخادم (تصاميم العملاء وغيرها). الوضع المحلي بلا خادم:
         يُرفض بخطأ واضح يحمل status=0 بدل undefined، فيعرف الرسم أنه لا خادم. */
     api: (method, path, body) => backend.api
-      ? backend.api(method, path, body)
+      ? backend.api(method, path, body).then((r) => { emitWa(r); return r; })
       : Promise.reject(Object.assign(new Error('لا يوجد خادم في الوضع المحلي — الصفحة تحتاج الاتصال بالإنترنت'), { status: 0 })),
     login: (u, p) => backend.login(u, p),
     restoreSession: () => backend.restoreSession(),

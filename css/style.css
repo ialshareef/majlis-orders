@@ -3398,3 +3398,132 @@ body.portal { background: var(--bg); }
   label.check { display: flex; align-items: center; gap: 10px; min-height: 40px; }
   label.check input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
 }
+
+/* =====================================================================
+   إشعارات واتساب اليدوية (wa.me) — شاشة الإدارة ونافذة الإرسال المتتابع
+   ===================================================================== */
+.wa-tabs { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; margin-bottom: 14px; }
+.wa-panel > .card, .wa-panel > .stats-row { margin-bottom: 14px; }
+.wa-h { margin: 0; font-size: 1rem; }
+.wa-h-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+.wa-count { font-size: .8rem; font-weight: 600; color: var(--ink-3); background: var(--sand); border-radius: 99px; padding: 2px 9px; margin-inline-start: 6px; }
+.wa-callout { display: flex; gap: 12px; align-items: flex-start; border-color: var(--accent-line); background: var(--accent-soft); }
+.wa-callout svg { width: 20px; height: 20px; flex: none; color: var(--accent); margin-top: 2px; }
+.wa-callout p { margin: 4px 0 0; color: var(--ink-2); }
+.wa-list { list-style: none; margin: 0; padding: 0; }
+.wa-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line-soft); }
+.wa-row:first-child { border-top: 0; }
+.wa-row-main { min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.wa-row-main .sub { flex-basis: 100%; font-size: .8rem; color: var(--ink-3); }
+.wa-desc { overflow-wrap: anywhere; }
+.wa-row .ra { display: flex; gap: 6px; flex: none; }
+.wa-type { white-space: nowrap; }
+.wa-st-ready { color: var(--ink-2); background: var(--sand); }
+.wa-st-opened { color: var(--accent); background: var(--accent-soft); }
+.wa-st-confirmed { color: var(--ok); background: var(--ok-soft); }
+.wa-st-skipped { color: var(--ink-3); background: var(--surface-2); }
+.wa-st-failed { color: var(--danger); background: var(--danger-soft); }
+.wa-off { opacity: .6; }
+.wa-err-txt { color: var(--danger); }
+#page-whatsapp label.check, #modal label.check { display: flex; align-items: center; gap: 8px; min-height: 36px; cursor: pointer; flex-wrap: wrap; }
+#page-whatsapp label.check input, #modal label.check input { width: 18px; height: 18px; flex: none; margin: 0; }
+.wa-evs { border: 1px solid var(--line); border-radius: var(--r); padding: 8px 12px 10px; margin: 10px 0; min-width: 0; }
+.wa-evs legend { padding: 0 6px; font-weight: 600; font-size: .88rem; }
+.wa-tpl-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 14px; }
+.wa-tpl textarea, #waCMsg { width: 100%; font: inherit; line-height: 1.6; resize: vertical; }
+.wa-preview { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; line-height: 1.6; background: #E7F6E1; color: #1F2A1C; border-radius: 10px 10px 2px 10px; padding: 10px 12px; min-height: 120px; max-height: 340px; overflow: auto; }
+.wa-vars { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.wa-vars .chip { font-size: .78rem; min-height: 28px; }
+.wa-types { display: flex; flex-wrap: wrap; margin-bottom: 10px; }
+.wa-msg-meta { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: .8rem; color: var(--ink-3); margin: -4px 0 6px; }
+.wa-sel-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+.wa-rc-list { max-height: 260px; overflow: auto; }
+.wa-rc-list label.check { border-bottom: 1px solid var(--line-soft); padding: 4px 0; }
+.wa-run-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+.wa-progress { height: 8px; border-radius: 99px; background: var(--sand); overflow: hidden; }
+.wa-progress > span { display: block; height: 100%; background: #25A244; border-radius: inherit; transition: width .25s var(--ease, ease); }
+.wa-prog-txt { margin: 8px 0 12px; font-weight: 700; font-size: 1.05rem; }
+.wa-prog-txt small { font-weight: 400; color: var(--ink-3); }
+.wa-cur { border-color: var(--accent-line); }
+.wa-cur-who { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 1.02rem; margin-bottom: 10px; }
+.wa-run-btns { flex-wrap: wrap; justify-content: flex-start; }
+.btn.wa-ok { background: #1F8B3A; border-color: #1F8B3A; color: #fff; }
+.btn.wa-ok:hover { background: #18742F; }
+.wa-run-list { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 4px; max-height: 240px; overflow: auto; }
+.wa-run-list li { display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: var(--r-sm); font-size: .88rem; }
+.wa-run-list li.cur { background: var(--accent-soft); font-weight: 600; }
+.wa-run-list .num { min-width: 1.6em; color: var(--ink-3); }
+.wa-done { display: flex; gap: 12px; align-items: flex-start; border-color: var(--ok-line); background: var(--ok-soft); }
+.wa-done svg { width: 22px; height: 22px; color: var(--ok); flex: none; }
+.wa-done p { margin: 4px 0 0; }
+.wa-honest { display: flex; gap: 8px; align-items: flex-start; }
+.wa-honest svg { width: 18px; height: 18px; flex: none; margin-top: 2px; }
+.wa-nudge { position: fixed; z-index: 75; inset-inline-end: 16px; bottom: 16px; width: min(380px, calc(100vw - 32px));
+  display: flex; align-items: center; gap: 10px; padding: 12px; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--line); border-inline-start: 4px solid #25A244; border-radius: var(--r); box-shadow: var(--shadow-lg, 0 10px 30px rgba(0,0,0,.18)); }
+.wa-nudge[hidden] { display: none; }
+.wa-nudge > svg { width: 24px; height: 24px; color: #1F8B3A; flex: none; }
+.wa-nudge-txt { flex: 1; min-width: 0; display: grid; }
+.wa-nudge-txt span { font-size: .8rem; color: var(--ink-3); overflow-wrap: anywhere; }
+@media (max-width: 760px) {
+  .wa-tpl-grid { grid-template-columns: 1fr; }
+  .wa-row { flex-wrap: wrap; }
+  .wa-row .ra { width: 100%; justify-content: flex-end; }
+  .wa-run-btns .btn { flex: 1 1 calc(50% - 6px); justify-content: center; }
+  .wa-nudge { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); }
+  .wa-tabs { width: 100%; }
+  .wa-tabs .chip { flex: 1 1 auto; }
+}
+
+/* =====================================================================
+   حركة الزوار في «عن التطبيق» — بطاقات الفترات + جدول الصفحات + رسم ٣٠ يوماً
+   ===================================================================== */
+.vs-body { color: var(--ink); }
+.vs-cards { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; margin-bottom: 12px; }
+.vs-card { background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 2px; min-width: 0; }
+.vs-card-lbl { font-size: .76rem; color: var(--ink-3); font-weight: 600; }
+.vs-card b { font-size: 1.45rem; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.vs-card small { font-size: .74rem; color: var(--ink-3); }
+.vs-card-all { background: var(--accent-soft); border-color: var(--accent-line); }
+.vs-table th, .vs-table td { white-space: nowrap; }
+.vs-table td b.num { font-size: .98rem; }
+.vs-sub { display: block; font-size: .7rem; color: var(--ink-3); margin-top: 1px; }
+.vs-chart-head { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; flex-wrap: wrap; margin: 14px 0 6px; font-size: .86rem; }
+.vs-chart { display: flex; align-items: flex-end; gap: 3px; height: 92px; padding: 6px 4px 0; border-bottom: 1px solid var(--line); background: linear-gradient(to top, var(--line-soft) 1px, transparent 1px) 0 50% / 100% 50%; direction: ltr; }
+.vs-bar { flex: 1 1 0; min-width: 3px; background: var(--accent-line); border-radius: 3px 3px 0 0; transition: background .15s; }
+.vs-bar:hover { background: var(--accent); }
+.vs-bar.peak { background: var(--accent); }
+.vs-axis { display: flex; justify-content: space-between; font-size: .7rem; color: var(--ink-3); margin-top: 3px; direction: ltr; }
+.vs-note { margin-top: 10px; }
+.vs-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+.vs-err { color: var(--danger); }
+@media (max-width: 760px) {
+  .vs-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .vs-card b { font-size: 1.25rem; }
+  .vs-foot .btn { width: 100%; justify-content: center; }
+}
+/* عناصر شبكة صندوق الزوار لا تتمدد بعرض الجدول (min-width:auto الافتراضي كان يوسّع الصندوق 108px على الجوال)
+   — الجدول نفسه يتمرّر أفقياً داخل .table-wrap */
+#visitStatsBox > *, #visitStatsBox .link-row, .vs-body { min-width: 0; max-width: 100%; }
+#visitStatsBox .table-wrap { overflow-x: auto; }
+/* مصادر الزيارة وروابط القنوات */
+.vs-src { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.vs-src li { display: grid; grid-template-columns: minmax(90px, 34%) 1fr auto; align-items: center; gap: 8px; font-size: .84rem; }
+.vs-src-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vs-src-bar { height: 8px; background: var(--sand); border-radius: 99px; overflow: hidden; }
+.vs-src-bar i { display: block; height: 100%; background: var(--accent); border-radius: inherit; }
+.vs-links { margin-top: 12px; border: 1px solid var(--line-soft); border-radius: var(--r); padding: 8px 10px; }
+.vs-links summary { cursor: pointer; font-size: .88rem; }
+.vs-links-list { display: grid; gap: 6px; margin-top: 8px; }
+.vs-link { display: grid; grid-template-columns: minmax(80px, 26%) minmax(0, 1fr) auto auto; gap: 6px; align-items: center; font-size: .82rem; }
+.vs-link input { min-width: 0; font-size: .78rem; }
+.vs-link-custom { grid-template-columns: minmax(80px, 26%) minmax(0, 1fr) auto; }
+@media (max-width: 760px) {
+  .vs-link, .vs-link-custom { grid-template-columns: 1fr auto auto; }
+  .vs-link > span { grid-column: 1 / -1; font-weight: 600; }
+}
+/* صف رابط القناة: الحقل والزرّان بارتفاع واحد (يمتد كلٌّ لارتفاع الصف) — الزر «صغير» يختلف ارتفاعه بين الجوال والكمبيوتر */
+.vs-link { align-items: stretch; }
+.vs-link > span { align-self: center; }
+.vs-link input { height: auto; min-height: 0; box-sizing: border-box; }
+.vs-link .btn { height: auto; }

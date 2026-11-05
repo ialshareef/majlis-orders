@@ -28,7 +28,8 @@ function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FA
     t('shown for admin', /box\.hidden = false;/.test(app));
 
     /* ---- 3) الجدول وأعمدته ---- */
-    t('table rendered', /visit-table/.test(app));
+    // الجدول أعيد تنسيقه (بطاقات الفترات + جدول الصفحات vs-table + رسم ٣٠ يوماً) بدل visit-table القديم
+    t('table rendered', /vs-table/.test(app) && /vs-cards/.test(app) && /vs-chart/.test(app));
     for(const h of ['زيارات فعلية','آخر ٧ أيام','نقراتك']){
       t('column: '+h, app.indexOf(h)>=0);
     }

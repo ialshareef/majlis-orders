@@ -394,7 +394,92 @@
     },
   };
 
-  const ORDER = ['orders', 'commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers'];
+  /* 9) زيارات الموقع — لمالك النظام فقط (البيانات من الخادم: /api/owner-analytics، والحماية هناك)
+     ctx.visits = { ready, error, visitsDaily:[{day,link,n}], visitorsDaily:[{day,u}], visitorsKeptFrom, funnel, links }
+     كل رقم مجموع فعلي من السجلات — لا تقدير ولا أرقام وهمية، واليوم بلا زيارات صفر. */
+  /* أسماء قنوات مصدر الزيارة (?src=…) — أي اسم آخر (حملة مخصّصة) يظهر كما كُتب */
+  const SRC_LABELS = { direct: 'مباشر (بلا رابط مصدر)', whatsapp: 'واتساب', instagram: 'إنستغرام', tiktok: 'تيك توك', snapchat: 'سناب شات',
+    x: 'إكس (تويتر)', facebook: 'فيسبوك', google: 'خرائط وبحث Google', qr: 'رمز QR (المعرض والمطبوعات)', sms: 'رسالة نصية', ads: 'إعلان ممول' };
+  const srcLabel = (k) => SRC_LABELS[k] || k;
+  const WEEKDAYS = ['الأحد', 'الاثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+  const dayIdx = (d) => new Date(d + 'T00:00:00Z').getUTCDay();
+  const addDays = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
+  R.visits = {
+    title: 'زيارات الموقع',
+    desc: 'زيارات صفحات العملاء يوماً بيوم، والزوار، وأيام الذروة، ومسار التصميم حتى الطلب',
+    need: (ctx) => !!(ctx.perms && ctx.perms.visits),
+    build(ctx) {
+      const v = ctx.visits;
+      if (!v || !v.ready) {
+        return { summary: [{ label: 'الحالة', value: v && v.error ? 'تعذّر تحميل الزيارات' : 'جارٍ تحميل الزيارات…', kind: 'text' }], tables: [], notes: [v && v.error ? v.error : 'تُجلب بيانات الزيارات من الخادم.'] };
+      }
+      const links = v.links || { customer: 'بوابة العميل', expanded: 'التصميم الموسّع' };
+      const lk = Object.keys(links);
+      const byDay = new Map();
+      (v.visitsDaily || []).forEach((r) => { if (inRange(r.day, ctx.from, ctx.to)) { const e = byDay.get(r.day) || {}; e[r.link] = (e[r.link] || 0) + num(r.n); byDay.set(r.day, e); } });
+      const uOf = new Map((v.visitorsDaily || []).map((r) => [r.day, num(r.u)]));
+      // كل أيام الفترة (حتى أيام الصفر): من بداية الفترة أو أول يوم فيه بيانات، حتى نهايتها
+      const to = ctx.to || ctx.today;
+      const firstData = [...byDay.keys()].sort()[0];
+      let from = ctx.from || firstData || to;
+      if (daysBetween(to, from) > 730) from = addDays(to, -730);   // سقف معقول للجدول اليومي
+      const kept = v.visitorsKeptFrom || '';
+      const rows = [];
+      for (let d = from; d && d <= to; d = addDays(d, 1)) {
+        const e = byDay.get(d) || {};
+        const r = { date: d, weekday: WEEKDAYS[dayIdx(d)], total: 0 };
+        lk.forEach((k) => { r[k] = num(e[k]); r.total += r[k]; });
+        r.visitors = kept && d < kept ? null : (uOf.get(d) || 0);
+        rows.push(r);
+      }
+      const total = rows.reduce((s, r) => s + r.total, 0);
+      const visitors = rows.reduce((s, r) => s + (r.visitors || 0), 0);
+      const peak = rows.reduce((a, r) => (r.total > (a ? a.total : 0) ? r : a), null);
+      const wk = WEEKDAYS.map((w, i) => ({ weekday: w, days: 0, visits: 0, i }));
+      rows.forEach((r) => { const x = wk[dayIdx(r.date)]; x.days++; x.visits += r.total; });
+      const wRows = wk.filter((x) => x.days).map((x) => ({ weekday: x.weekday, days: x.days, visits: x.visits, avg: Math.round((x.visits / x.days) * 10) / 10, share: pct(x.visits, total) }))
+        .sort((a, b) => b.avg - a.avg);
+      const F = ((v.funnel && v.funnel.steps) || []);
+      const fBy = Object.fromEntries(F.map((s) => [s.key, s]));
+      const orders = fBy.order ? num(fBy.order.n) : 0;
+      const started = fBy.start ? num(fBy.start.n) : 0;
+      const totals = { date: 'الإجمالي', total, visitors: rows.some((r) => r.visitors !== null) ? visitors : null };
+      // حسب المصدر: الزيارات والتصاميم والطلبات والمبيعات الفعلية لكل قناة
+      const srcRows = (v.sources || []).map((x) => ({ source: srcLabel(x.src), visits: num(x.visits), started: num(x.started), finished: num(x.finished), contact: num(x.contact), orders: num(x.orders), revenue: money(x.revenue), conv: pct(num(x.orders), num(x.visits)) }));
+      const sT = { source: 'الإجمالي', visits: 0, started: 0, finished: 0, contact: 0, orders: 0, revenue: 0 };
+      srcRows.forEach((r) => { ['visits', 'started', 'finished', 'contact', 'orders'].forEach((k) => { sT[k] += r[k]; }); sT.revenue = money(sT.revenue + r.revenue); });
+      sT.conv = pct(sT.orders, sT.visits);
+      const bestSrc = srcRows.filter((r) => r.orders > 0).sort((a, b) => b.orders - a.orders || b.revenue - a.revenue)[0];
+      lk.forEach((k) => { totals[k] = rows.reduce((s, r) => s + r[k], 0); });
+      return {
+        summary: [
+          { label: 'إجمالي الزيارات', value: total, kind: 'num' },
+          { label: 'الزوار (جهاز/يوم)', value: totals.visitors, kind: 'num' },
+          { label: 'متوسط الزيارات اليومي', value: rows.length ? Math.round((total / rows.length) * 10) / 10 : 0, kind: 'num' },
+          { label: 'أعلى يوم', value: peak && peak.total ? `${peak.date} (${peak.total})` : null, kind: 'text' },
+          { label: 'أنشط يوم في الأسبوع', value: wRows.length && wRows[0].visits ? wRows[0].weekday : null, kind: 'text' },
+          { label: 'بدء تصميم', value: started, kind: 'num' },
+          { label: 'طلبات مؤكدة من التصاميم', value: orders, kind: 'num' },
+          { label: 'التحويل: زيارة ← طلب', value: pct(orders, total), kind: 'pct' },
+          { label: 'أفضل مصدر (طلبات)', value: bestSrc ? `${bestSrc.source} (${bestSrc.orders})` : null, kind: 'text' },
+        ],
+        notes: [
+          'الزيارة = كل فتح لصفحة عامة. الزائر = جهاز واحد في اليوم (لا يُحتسب مرتين في اليوم نفسه، ولو فتح الصفحتين).',
+          'الروبوتات ومعاينات الروابط (واتساب، تيليجرام…) مستبعدة. الأيام بتوقيت المحل.',
+          kept ? `عدد الزوار محفوظ لآخر 40 يوماً فقط (منذ ${kept}) — قبله تظهر الزيارات بلا عدد زوار («—»).` : '',
+          'المصدر يُعرف من رابط القناة (?src=…) في «عن التطبيق». الزيارة تُنسب لرابطها، والتصميم يُنسب للمصدر المحفوظ على جهاز العميل 7 أيام، والطلب يرث مصدر تصميمه.',
+        ].filter(Boolean),
+        tables: [
+          { title: 'الزيارات يوماً بيوم', columns: [col('date', 'التاريخ', 'date'), col('weekday', 'اليوم'), ...lk.map((k) => col(k, links[k], 'num')), col('total', 'إجمالي الزيارات', 'num'), col('visitors', 'الزوار', 'num')], rows: rows.slice().reverse(), totals },
+          { title: 'حسب مصدر الزيارة (أي قناة تجلب الطلبات)', columns: [col('source', 'المصدر'), col('visits', 'الزيارات', 'num'), col('started', 'بدء تصميم', 'num'), col('finished', 'تصميم مكتمل', 'num'), col('contact', 'طلب تواصل', 'num'), col('orders', 'طلبات مؤكدة', 'num'), col('revenue', 'المبيعات', 'money'), col('conv', 'زيارة ← طلب ٪', 'pct')], rows: srcRows, totals: sT },
+          { title: 'حسب يوم الأسبوع (أفضل يوم للنشر والإعلان)', columns: [col('weekday', 'اليوم'), col('days', 'عدد الأيام', 'num'), col('visits', 'الزيارات', 'num'), col('avg', 'متوسط اليوم', 'num'), col('share', 'النسبة ٪', 'pct')], rows: wRows, totals: { weekday: 'الإجمالي', days: rows.length, visits: total } },
+          { title: 'مسار العميل: من الزيارة إلى الطلب', columns: [col('step', 'المرحلة'), col('n', 'العدد', 'num'), col('rate', 'النسبة ٪', 'pct')], rows: F.map((s) => ({ step: s.label, n: num(s.n), rate: s.rate })) },
+        ],
+      };
+    },
+  };
+
+  const ORDER = ['orders', 'commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers', 'visits'];
 
   function catalog(ctx) {
     return ORDER.filter((id) => !R[id].need || R[id].need(ctx)).map((id) => ({ id, title: R[id].title, desc: R[id].desc, usesStatus: !!R[id].usesStatus }));
@@ -448,7 +533,7 @@
     return '﻿' + lines.join('\r\n');
   }
 
-  const api = { build, catalog, tableAoa, headerAoa, summaryAoa, toCsv, cellValue, isSale, _defs: R };
+  const api = { build, catalog, tableAoa, headerAoa, summaryAoa, toCsv, cellValue, isSale, SRC_LABELS, srcLabel, _defs: R };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Reports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -130,6 +130,29 @@ const range = async (page, rr) => { await page.evaluate((r) => document.querySel
 const kpis = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#repKpis .stat')].map((s) => [s.querySelector('span').textContent.trim(), s.querySelector('b').textContent.trim()])));
 const heads = (page, i = 0) => page.evaluate((k) => { const t = document.querySelectorAll('#repTables table')[k]; return t ? [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim()) : []; }, i);
 const bodyRows = (page, i = 0) => page.evaluate((k) => { const t = document.querySelectorAll('#repTables table')[k]; return t ? [...t.querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()) : []; }, i);
+/* أوامر النص في PDF (BT…ET و«(…) Tj») خارج بيانات الصور فقط: بايتات JPEG المضغوطة عشوائية وقد تحوي
+   «) Tj» بالمصادفة (حدث فعلاً: «%)Tj» داخل صورة DCTDecode في تقرير يوم 2026-11-06 فأفشل الفحص زوراً).
+   تُحذف محتويات تيارات /Subtype /Image فقط — كل تيار محتوى آخر (حيث يكتب jsPDF النص) يُفحص كما هو. */
+function pdfTextOps(latin1) {
+  const out = [];
+  let i = 0;
+  const re = /stream\r?\n/g;
+  let m;
+  while ((m = re.exec(latin1))) {
+    const start = m.index + m[0].length;
+    const end = latin1.indexOf('endstream', start);
+    if (end < 0) break;
+    const dict = latin1.slice(Math.max(0, latin1.lastIndexOf('obj', m.index)), m.index);
+    out.push(latin1.slice(i, start));
+    if (!/\/Subtype\s*\/Image/.test(dict)) out.push(latin1.slice(start, end));   // تيار محتوى: يُفحص
+    i = end;
+    re.lastIndex = end + 9;
+  }
+  out.push(latin1.slice(i));
+  const s = out.join('');
+  return { tj: (s.match(/\)\s*Tj/g) || []).length, bt: (s.match(/(^|[\s\]>)])BT[\s\r\n]/g) || []).length };
+}
+
 async function download(page, btn) {
   await page.evaluate(() => { window.__dl = []; });
   await page.evaluate((b) => document.getElementById(b).click(), btn);
@@ -147,7 +170,7 @@ try {
   ok(nav.reports === true, 'owner: «التقارير» في القائمة', nav);
   await go(page, 'reports');
   ok(await page.evaluate(() => document.getElementById('page-reports').classList.contains('active')), 'owner: الصفحة تُفتح');
-  ok((await tabs(page)).join() === 'orders,commissions,pnl,staff,payments,receivables,expenses,customers', 'owner: الفهرس كامل (8 تقارير)', await tabs(page));
+  ok((await tabs(page)).join() === 'orders,commissions,pnl,staff,payments,receivables,expenses,customers,visits', 'owner: الفهرس كامل (9 تقارير مع «زيارات الموقع» للمالك)', await tabs(page));
   await pick(page, 'orders'); await range(page, 'm');
   let k = await kpis(page);
   ok(k['المبيعات قبل الضريبة'] === '3,000.00' && k['التكاليف'] === '1,600.00' && k['صافي الربح'] === '1,400.00', 'owner/orders: البيع 3000 والتكاليف 1600 والربح 1400 (هذا الشهر)', k);
@@ -204,7 +227,8 @@ try {
   for (const b of ['btnBiPdf', 'btnOrdersPdf', 'btnMandoubsPdf', 'btnExpensesPdf']) {
     f = await download(page, b);
     const t = f.buf.toString('latin1');
-    ok(f.name.endsWith('.pdf') && t.startsWith('%PDF') && /\/Subtype\s*\/Image/.test(t) && !/\)\s*Tj/.test(t), `bi/${b}: PDF مصوَّر بالعربية المتصلة (بلا نص jsPDF مباشر)`, { name: f.name, size: f.buf.length });
+    const txt = pdfTextOps(t);
+    ok(f.name.endsWith('.pdf') && t.startsWith('%PDF') && /\/Subtype\s*\/Image/.test(t) && txt.tj === 0 && txt.bt === 0, `bi/${b}: PDF مصوَّر بالعربية المتصلة (بلا نص jsPDF مباشر)`, { name: f.name, size: f.buf.length, ...txt });
   }
   ok(!(await page.evaluate(() => !!document.querySelector('.rep-print'))), 'bi/pdf: لا بقايا صفحات مؤقتة');
   await page.evaluate(() => { try { delete window.XLSX; } catch (_) { window.XLSX = undefined; } });

@@ -30,6 +30,7 @@
      GET  /api/users            (مدير)
      POST /api/users            (مدير) {id?, name, username, password?, role, active}
      DELETE /api/users/:id      (مدير)
+     GET/POST/PUT/DELETE /api/wa/…  إشعارات واتساب اليدوية (wa.me) — notifications.whatsapp.view|manage|send
    ====================================================================== */
 
 const SESSION_DAYS = 30;
@@ -75,6 +76,10 @@ const PERMISSIONS = Object.freeze({
   'designs.edit': true,
   'designs.convert': true,
   'designs.delete': true,
+  // إشعارات واتساب اليدوية: العرض والإدارة والإرسال صلاحيات مستقلة (لا تمنح أي صلاحية إدارية)
+  'notifications.whatsapp.view': true,
+  'notifications.whatsapp.manage': true,
+  'notifications.whatsapp.send': true,
   'users.view': true,
   'users.create': true,
   'users.edit': true,
@@ -226,6 +231,8 @@ async function verifyOrderOwnership(env, user, orderId) {
 const PROTECTED_ADMIN_PERMISSIONS = Object.freeze(["admin.core"]);
 
 export { PERMISSIONS, ROLE_PERMISSIONS, hasPerm, effectivePermissions, loadUserPermissions, verifyOrderOwnership, PROTECTED_ADMIN_PERMISSIONS, ADMIN_ONLY_PERMISSIONS, ownerIdOf };
+export { visitSource };
+export { waNormalizePhone, waLink, waRender, waCleanText, waDupErr, WA_DEFAULT_TEMPLATES, WA_TYPES, WA_MAX_RECIPIENTS };
 
 // ملفات الواجهة المضمّنة (يملؤها build-worker.ps1 عند بناء النسخة المنشورة)
 const ASSETS = null; /* __ASSETS__ */
@@ -250,6 +257,7 @@ export default {
     if (url.pathname === '/customer-design' || url.pathname.startsWith('/customer-design/')) {
       await recordVisit(env, request, 'customer');
       await recordAnalytics(env, request, 'design_visit');
+      await recordAnalytics(env, request, 'visit_src', visitSource(url.searchParams.get('src')));
       if (ASSETS) return serveAsset('/portal.html');
       return json({ ok: true, service: 'majlis-portal' }, 200, cors);
     }
@@ -259,6 +267,7 @@ export default {
        المسار لا يطابق شرط '/customer-design' أعلاه (يلزم '/' بعده) فلا تعارض. */
     if (url.pathname === '/customer-design-expanded' || url.pathname.startsWith('/customer-design-expanded/')) {
       await recordVisit(env, request, 'expanded');
+      await recordAnalytics(env, request, 'visit_src', visitSource(url.searchParams.get('src')));
       if (ASSETS) return serveAsset('/portal-expanded.html');
       return json({ ok: true, service: 'majlis-portal-expanded' }, 200, cors);
     }
@@ -290,7 +299,7 @@ async function route(request, env, url) {
   if (path === '/api/owner/recover' && method === 'POST') return ownerRecover(env, body, request);
 
   // بوابة العميل (عامة): كل مسار يتحقق من customer token ولا يرى إلا صفّه
-  if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request);
+  if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request, body);
   if (path === '/api/portal/settings' && method === 'GET') return portalSettings(env);
   if (path === '/api/portal/catalog' && method === 'GET') return portalCatalog(env);
   if (path === '/api/portal/design' && method === 'GET') return portalGet(env, request);
@@ -380,6 +389,29 @@ async function route(request, env, url) {
   if (path === '/api/reports/expenses-summary' && method === 'GET') {
     requireAnyPerm(user, ['expenses.view_own', 'expenses.view_all']);
     return expensesSummary(env, user, new URL(request.url).searchParams);
+  }
+
+  // --- إشعارات واتساب (Click to Chat): كل مسار يفرض صلاحيته هنا، لا بإخفاء الأزرار ---
+  if (path.startsWith('/api/wa/') || path === '/api/wa') {
+    const sp = new URL(request.url).searchParams;
+    if (path === '/api/wa' && method === 'GET') return waState(env, user);
+    if (path === '/api/wa/recipients' && method === 'POST') return waAddRecipient(env, user, body);
+    const mR = path.match(/^\/api\/wa\/recipients\/([^/]+)$/);
+    if (mR && method === 'PUT') return waUpdateRecipient(env, user, decodeURIComponent(mR[1]), body);
+    if (mR && method === 'DELETE') return waDeleteRecipient(env, user, decodeURIComponent(mR[1]));
+    const mT = path.match(/^\/api\/wa\/templates\/([a-z_]+)$/);
+    if (mT && method === 'PUT') return waSaveTemplate(env, user, mT[1], body);
+    if (path === '/api/wa/events' && method === 'GET') return waListEvents(env, user, sp);
+    const mE = path.match(/^\/api\/wa\/events\/(.+)$/);
+    if (mE && method === 'POST') return waSetEvent(env, user, decodeURIComponent(mE[1]), body);
+    if (path === '/api/wa/sends' && method === 'POST') return waStartSend(env, user, body);
+    const mS = path.match(/^\/api\/wa\/sends\/([^/]+)$/);
+    if (mS && method === 'GET') return waGetSend(env, user, decodeURIComponent(mS[1]));
+    if (mS && method === 'POST') return waSetSend(env, user, decodeURIComponent(mS[1]), body);
+    if (path === '/api/wa/log' && method === 'GET') return waListLog(env, user);
+    const mL = path.match(/^\/api\/wa\/log\/([^/]+)$/);
+    if (mL && method === 'POST') return waSetLog(env, user, decodeURIComponent(mL[1]), body);
+    throw new HttpError(404, 'المسار غير موجود');
   }
 
   // --- تقارير المناديب ---
@@ -509,13 +541,22 @@ function emptyDesign() {
   };
 }
 
-async function portalSession(env, request) {
+async function portalSession(env, request, body) {
   await portalThrottle(env, request);
   const token = randomToken();
   const t = now();
   const exp = new Date(Date.now() + DESIGN_TTL_DAYS * 86400000).toISOString();
-  await env.DB.prepare("INSERT INTO customer_designs (id, token, status, design, contact_requested, created_at, updated_at, expires_at) VALUES (?, ?, 'draft', ?, 0, ?, ?, ?)")
-    .bind(uid(), token, JSON.stringify(emptyDesign()), t, t, exp).run();
+  const id = uid(), design = JSON.stringify(emptyDesign());
+  const src = visitSource(body && body.src);
+  try {
+    await env.DB.prepare("INSERT INTO customer_designs (id, token, status, design, contact_requested, created_at, updated_at, expires_at, src) VALUES (?, ?, 'draft', ?, 0, ?, ?, ?, ?)")
+      .bind(id, token, design, t, t, exp, src).run();
+  } catch (e) {
+    // قاعدة لم يُضف إليها العمود بعد (ensureSeed): لا يتعطل بدء التصميم أبداً بسبب الإحصاء
+    if (!/no such column|has no column/i.test(String(e && e.message))) throw e;
+    await env.DB.prepare("INSERT INTO customer_designs (id, token, status, design, contact_requested, created_at, updated_at, expires_at) VALUES (?, ?, 'draft', ?, 0, ?, ?, ?)")
+      .bind(id, token, design, t, t, exp).run();
+  }
   return { ok: true, token, expiresAt: exp };
 }
 
@@ -1082,7 +1123,7 @@ async function getDesign(env, id) {
   if (typeof id !== 'string' || !id) throw new HttpError(404, 'التصميم غير موجود');
   const row = await env.DB.prepare('SELECT * FROM customer_designs WHERE id = ?').bind(id).first();
   if (!row) throw new HttpError(404, 'التصميم غير موجود');
-  return portalPublic(row);
+  return Object.assign(portalPublic(row), { source: row.src || 'direct' });
 }
 
 async function updateDesign(env, id, body) {
@@ -1150,18 +1191,24 @@ async function convertDesign(env, id, user) {
     createdAt: t, updatedAt: t,
     createdBy: user.id, createdByName: user.name,
     fromDesignId: row.id, fromDesignNo: row.number,
+    source: row.source || 'direct',   // مصدر زيارة العميل (تقرير «زيارات الموقع» حسب المصدر)
   };
   checkOrderFin(rec);
   const data = JSON.stringify(rec);
   const actEv = { id: uid(), at: t, action: 'design-convert', userId: user.id, userName: user.name, orderId: rec.id, orderNo: number, customer: rec.customer.name || '', total: 0, details: ['تحويل من تصميم ' + (row.number || '')] };
-  await env.DB.batch([
+  const st = [
     env.DB.prepare('INSERT INTO orders (id, number, status, customer_name, created_by, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
       .bind(rec.id, number, 'new', rec.customer.name || '', user.id, t, data, t),
     env.DB.prepare('UPDATE customer_designs SET order_id = ?, order_number = ?, status = ?, updated_at = ? WHERE id = ?')
       .bind(rec.id, number, 'converted', t, row.id),
     env.DB.prepare('INSERT INTO activity (id, at, data) VALUES (?, ?, ?)').bind(actEv.id, t, JSON.stringify(actEv)),
-  ]);
-  return { ok: true, orderId: rec.id, number };
+  ];
+  const waNew = await waQueueEvents(env, (sql, ...a) => st.push(env.DB.prepare(sql).bind(...a)), waOrderEvents(null, rec, number, s.currency || 'ر.س', user, t), user);
+  await env.DB.batch(st);
+  const out = { ok: true, orderId: rec.id, number };
+  const waShow = await waVisibleNew(env, user, waNew);
+  if (waShow.length) out.wa = waShow;
+  return out;
 }
 
 /* ------------------------------ المصروفات ------------------------------ */
@@ -1250,9 +1297,25 @@ async function saveExpense(env, user, body) {
   }
   const id = uid();
   const t = now();
-  await env.DB.prepare('INSERT INTO expenses (id, name, amount, category, note, created_by, created_at, updated_at, expense_date, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-    .bind(id, f.name, f.amount, f.category, f.note, createdBy, t, t, f.expenseDate, f.orderId).run();
-  return { ok: true, expense: { id, name: f.name, amount: f.amount, category: f.category, note: f.note, expense_date: f.expenseDate, order_id: f.orderId, created_by: createdBy, created_at: t, updated_at: t } };
+  const st = [env.DB.prepare('INSERT INTO expenses (id, name, amount, category, note, created_by, created_at, updated_at, expense_date, order_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, f.name, f.amount, f.category, f.note, createdBy, t, t, f.expenseDate, f.orderId)];
+  // تنبيه واتساب في الدفعة نفسها: لا تنبيه لمصروف لم يُحفظ
+  let waNew = [];
+  const active = await waActiveTypes(env);
+  if (active && active.has('expense_created')) {
+    const s = await shopSettings(env);
+    let employee = user.name || '';
+    if (createdBy !== user.id) { const u = await env.DB.prepare('SELECT name FROM users WHERE id = ?').bind(createdBy).first(); employee = (u && u.name) || employee; }
+    let orderNumber = null;
+    if (f.orderId) { const o = await env.DB.prepare('SELECT number FROM orders WHERE id = ?').bind(f.orderId).first(); orderNumber = o ? (o.number ?? null) : null; }
+    waNew = await waQueueEvents(env, (sql, ...a) => st.push(env.DB.prepare(sql).bind(...a)), [{ id: 'expense_created:' + id, type: 'expense_created', orderId: f.orderId, orderNumber, refId: id,
+      vars: { description: f.name, category: f.category || 'بلا تصنيف', amount: waMoney(f.amount, s.currency || 'ر.س'), employee, date: f.expenseDate, order_number: orderNumber ?? '' } }], user);
+  }
+  await env.DB.batch(st);
+  const out = { ok: true, expense: { id, name: f.name, amount: f.amount, category: f.category, note: f.note, expense_date: f.expenseDate, order_id: f.orderId, created_by: createdBy, created_at: t, updated_at: t } };
+  const waShow = await waVisibleNew(env, user, waNew);
+  if (waShow.length) out.wa = waShow;
+  return out;
 }
 
 async function updateExpense(env, user, id, body) {
@@ -1286,6 +1349,545 @@ async function expensesSummary(env, user, query) {
     byCategory[c] = (byCategory[c] || 0) + a;
   }
   return { ok: true, total_amount: total, count: rows.length, by_category: byCategory };
+}
+
+/* ------------------------------ إشعارات واتساب (Click to Chat — يدوي ومجاني) ------------------------------
+   - لا WhatsApp Cloud API ولا خدمة مدفوعة ولا أتمتة: الخادم يجهّز النص والرابط (wa.me)، والمستخدم
+     يفتح محادثة واحدة في كل مرة ويضغط «إرسال» في واتساب بنفسه.
+   - التنبيه يُنشأ فقط داخل دفعة D1 نفسها التي تحفظ الحدث (طلب جديد، دفعة، مصروف، تغيير حالة):
+     فشل الحفظ = لا تنبيه، ومعرّفه ثابت من الحدث (INSERT OR IGNORE) فإعادة المحاولة لا تكرّره.
+   - السجل لا يدّعي وصول الرسالة: «تم فتح واتساب» عند فتح الرابط، و«أكد المستخدم الإرسال يدوياً»
+     بضغطة المستخدم فقط — Click to Chat لا يعطي أي تأكيد من واتساب.
+   - الصلاحيات مستقلة: view (عرض الخدمة والسجل)، manage (المستلمون والقوالب)، send (الإرسال). */
+const WA_TYPES = Object.freeze(['order_created', 'payment_received', 'expense_created', 'order_status']);
+const WA_MAX_RECIPIENTS = 20;
+const WA_MSG_MAX = 2000;
+const WA_NAME_MAX = 60;
+const WA_LOG_STATUSES = Object.freeze(['ready', 'opened', 'confirmed', 'skipped', 'failed']);
+// الانتقالات المسموحة: «أكد الإرسال» لا يكون إلا بعد فتح المحادثة فعلاً، وهو نهائي
+const WA_TRANSITIONS = Object.freeze({
+  ready: ['opened', 'skipped', 'failed'],
+  opened: ['opened', 'confirmed', 'skipped', 'failed'],
+  failed: ['opened', 'skipped', 'failed'],
+  skipped: ['opened', 'skipped'],
+  confirmed: [],
+});
+const WA_DEFAULT_TEMPLATES = Object.freeze({
+  order_created: '🔔 تنبيه جديد – أصالة نجد\n\nتم تسجيل طلب جديد.\n\nرقم الطلب: {order_number}\nالعميل: {customer_name}\nالمبلغ: {total}\n\nيرجى مراجعة الطلب في النظام.',
+  payment_received: '💰 إشعار استلام دفعة – أصالة نجد\n\nرقم الطلب: {order_number}\nالمبلغ المستلم: {payment_amount}\nطريقة الدفع: {payment_method}\nالتاريخ: {date}',
+  expense_created: '🧾 إشعار مصروف جديد – أصالة نجد\n\nالبيان: {description}\nالتصنيف: {category}\nالمبلغ: {amount}\nالموظف: {employee}\nالتاريخ: {date}',
+  order_status: '🔔 تحديث حالة طلب – أصالة نجد\n\nرقم الطلب: {order_number}\nالحالة السابقة: {old_status}\nالحالة الجديدة: {new_status}\nالعميل: {customer_name}',
+});
+// المتغيرات المتاحة لكل نوع ومصدرها الفعلي في البيانات (تُعرض في شاشة القوالب)
+const WA_VARS = Object.freeze({
+  order_created: ['order_number', 'customer_name', 'total', 'status', 'employee', 'date'],
+  payment_received: ['order_number', 'customer_name', 'payment_amount', 'payment_method', 'date', 'employee'],
+  expense_created: ['description', 'category', 'amount', 'employee', 'date', 'order_number'],
+  order_status: ['order_number', 'old_status', 'new_status', 'customer_name', 'total', 'employee', 'date'],
+});
+const WA_STATUS_LABELS = Object.freeze({ quote: 'عرض سعر', new: 'جديد', progress: 'قيد التنفيذ', done: 'اكتمال التنفيذ', delivered: 'تم التوصيل', cancelled: 'ملغي' });
+const WA_PAY_METHODS = Object.freeze({ cash: 'نقداً', mada: 'مدى / شبكة', transfer: 'تحويل بنكي', card: 'بطاقة ائتمان', other: 'أخرى' });
+const WA_PERM = Object.freeze({ view: 'notifications.whatsapp.view', manage: 'notifications.whatsapp.manage', send: 'notifications.whatsapp.send' });
+
+/** تطبيع رقم الهاتف إلى صيغة دولية (أرقام فقط بلا +). السعودي المحلي (05… أو 5…) يُحوَّل إلى 9665… */
+function waNormalizePhone(raw) {
+  let s = String(raw == null ? '' : raw).trim();
+  if (!s) return { error: 'رقم الهاتف مطلوب' };
+  // أرقام عربية/فارسية ← لاتينية، وحذف المسافات والشرطات والأقواس والنقاط ومحارف الاتجاه الخفية
+  s = s.replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x660))
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x6F0))
+    .replace(/[\s\-(). ‎‏‪-‮⁦-⁩]/g, '');
+  if (s.length > 20) return { error: 'رقم الهاتف طويل جداً' };
+  let intl = false;
+  if (s.startsWith('+')) { intl = true; s = s.slice(1); }
+  else if (s.startsWith('00')) { intl = true; s = s.slice(2); }
+  if (!/^\d+$/.test(s)) return { error: 'رقم الهاتف يحتوي رموزاً غير مسموحة — أرقام فقط مع + في البداية' };
+  if (!intl) {
+    if (/^05\d{8}$/.test(s)) s = '966' + s.slice(1);
+    else if (/^5\d{8}$/.test(s)) s = '966' + s;
+    else if (!s.startsWith('966')) return { error: 'أدخل الرقم مع رمز الدولة (مثل ‎+971…)، أو جوالاً سعودياً يبدأ بـ 05' };
+  }
+  if (/^9660\d{9}$/.test(s)) s = '966' + s.slice(4);          // خطأ شائع: ‎+966 05…
+  if (s.startsWith('966')) {
+    if (!/^9665\d{8}$/.test(s)) return { error: 'رقم سعودي غير صحيح: الجوال 9 أرقام تبدأ بـ 5 بعد 966' };
+    return { phone: s };
+  }
+  if (s.startsWith('0')) return { error: 'رمز الدولة لا يبدأ بصفر' };
+  if (s.length < 8 || s.length > 15) return { error: 'طول الرقم الدولي غير صحيح (8 إلى 15 رقماً مع رمز الدولة)' };
+  return { phone: s };
+}
+
+/** نص صالح للرابط: أسطر موحّدة وبلا أنصاف أزواج UTF-16 (تُفشل encodeURIComponent) */
+function waCleanText(t) {
+  return String(t == null ? '' : t).replace(/\r\n?/g, '\n')
+    .replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(^|[^\uD800-\uDBFF])[\uDC00-\uDFFF]/g, '$1')
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, '');
+}
+
+/** رابط Click to Chat — الرقم مُطبَّع والنص مرمَّز UTF-8 (العربية والرموز التعبيرية والأسطر) */
+function waLink(phone, text) {
+  return 'https://wa.me/' + String(phone).replace(/\D/g, '') + '?text=' + encodeURIComponent(waCleanText(text));
+}
+
+function waRender(body, vars) {
+  return String(body || '').replace(/\{(\w+)\}/g, (m, k) => (vars && Object.prototype.hasOwnProperty.call(vars, k) && vars[k] !== null && vars[k] !== undefined && vars[k] !== '' ? String(vars[k]) : (vars && Object.prototype.hasOwnProperty.call(vars, k) ? '—' : m)));
+}
+
+function waMoney(v, cur) {
+  const n = Number(v);
+  const s = Number.isFinite(n) ? n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+  return s + (cur ? ' ' + cur : '');
+}
+
+const waDay = (v) => String(v || '').slice(0, 10);
+const waCan = (user, k) => hasPerm(user, WA_PERM[k], user && user.permissions);
+
+/** أنواع التنبيه المفعّلة (لها مستلم نشط واحد على الأقل). يُرجع null إن تعذّرت القراءة (لا جداول بعد) */
+async function waActiveTypes(env) {
+  try {
+    const r = await env.DB.prepare('SELECT m.event_type AS event_type FROM wa_event_recipients m JOIN wa_recipients r ON r.id = m.recipient_id WHERE r.active = 1').all();
+    return new Set((r.results || []).map((x) => x.event_type));
+  } catch (e) {
+    console.warn('wa: notification tables unavailable — events skipped');
+    return null;
+  }
+}
+
+/** يضيف بيانات التنبيهات الجديدة إلى دفعة الحفظ نفسها (ذرّية مع الحدث). يُرجع معرّفات ما سيُنشأ */
+async function waQueueEvents(env, push, cands, user) {
+  if (!cands.length) return [];
+  const active = await waActiveTypes(env);
+  if (!active) return [];
+  const list = cands.filter((c) => active.has(c.type));
+  if (!list.length) return [];
+  const have = new Set();
+  try {
+    for (let i = 0; i < list.length; i += 50) {
+      const chunk = list.slice(i, i + 50).map((c) => c.id);
+      const r = await env.DB.prepare(`SELECT id FROM wa_events WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
+      (r.results || []).forEach((x) => have.add(x.id));
+    }
+  } catch (e) { return []; }
+  const t = now();
+  const out = [];
+  for (const c of list) {
+    if (have.has(c.id)) continue;   // حدث سبق تسجيله (إعادة محاولة) — لا تكرار
+    push('INSERT OR IGNORE INTO wa_events (id, type, order_id, order_number, ref_id, data, status, created_by, created_by_name, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      c.id, c.type, c.orderId || null, c.orderNumber ?? null, c.refId || null, JSON.stringify(c.vars || {}), 'pending', user.id, user.name || '', t);
+    have.add(c.id);
+    out.push({ id: c.id, type: c.type, order_id: c.orderId || null, ref_id: c.refId || null });
+  }
+  return out;
+}
+
+/** أحداث طلب واحد في المزامنة: جديد، تغيّر حالة، دفعات جديدة موجبة */
+function waOrderEvents(prev, rec, number, cur, user, ts) {
+  const out = [];
+  const base = {
+    order_number: number ?? '', customer_name: (rec.customer && rec.customer.name) || '',
+    total: waMoney(rec.total, cur), employee: user.name || '',
+  };
+  if (!prev) {
+    out.push({ id: 'order_created:' + rec.id, type: 'order_created', orderId: rec.id, orderNumber: number,
+      vars: { ...base, status: WA_STATUS_LABELS[rec.status] || rec.status || '', date: waDay(rec.createdAt || ts) } });
+  } else if (rec.status && prev.status !== undefined && String(prev.status || 'new') !== String(rec.status)) {
+    out.push({ id: 'order_status:' + rec.id + ':' + (rec.updatedAt || ts) + ':' + rec.status, type: 'order_status', orderId: rec.id, orderNumber: number,
+      vars: { ...base, old_status: WA_STATUS_LABELS[prev.status || 'new'] || prev.status, new_status: WA_STATUS_LABELS[rec.status] || rec.status, date: waDay(rec.updatedAt || ts) } });
+  }
+  const old = new Set(((prev && Array.isArray(prev.payments)) ? prev.payments : []).filter((p) => p && p.id).map((p) => String(p.id)));
+  for (const p of (Array.isArray(rec.payments) ? rec.payments : [])) {
+    if (!p || !p.id || p.legacy || old.has(String(p.id)) || !(Number(p.amount) > 0)) continue;   // الاسترداد (سالب) ليس استلاماً
+    out.push({ id: 'payment_received:' + rec.id + ':' + p.id, type: 'payment_received', orderId: rec.id, orderNumber: number, refId: String(p.id),
+      vars: { order_number: number ?? '', customer_name: base.customer_name, payment_amount: waMoney(p.amount, cur),
+        payment_method: WA_PAY_METHODS[p.method] || p.method || '', date: waDay(p.at || ts), employee: p.by || user.name || '' } });
+  }
+  return out;
+}
+
+async function waRecipients(env) {
+  const [r, m] = await Promise.all([
+    env.DB.prepare('SELECT * FROM wa_recipients ORDER BY created_at').all(),
+    env.DB.prepare('SELECT event_type, recipient_id FROM wa_event_recipients').all(),
+  ]);
+  const ev = new Map();
+  (m.results || []).forEach((x) => { if (!ev.has(x.recipient_id)) ev.set(x.recipient_id, []); ev.get(x.recipient_id).push(x.event_type); });
+  return (r.results || []).map((x) => ({ id: x.id, name: x.name, phone: x.phone, active: x.active === 1 || x.active === true,
+    events: WA_TYPES.filter((t) => (ev.get(x.id) || []).includes(t)), created_at: x.created_at, updated_at: x.updated_at }));
+}
+
+async function waState(env, user) {
+  requireAnyPerm(user, Object.values(WA_PERM));
+  const [recipients, tpl] = await Promise.all([waRecipients(env), env.DB.prepare('SELECT * FROM wa_templates').all()]);
+  const custom = new Map((tpl.results || []).map((x) => [x.event_type, x]));
+  return {
+    ok: true,
+    max: WA_MAX_RECIPIENTS, msgMax: WA_MSG_MAX,
+    can: { view: waCan(user, 'view'), manage: waCan(user, 'manage'), send: waCan(user, 'send') },
+    recipients,
+    templates: Object.fromEntries(WA_TYPES.map((t) => [t, {
+      body: custom.has(t) ? custom.get(t).body : WA_DEFAULT_TEMPLATES[t],
+      isDefault: !custom.has(t), defaultBody: WA_DEFAULT_TEMPLATES[t], vars: WA_VARS[t],
+      recipients: recipients.filter((r) => r.events.includes(t)).map((r) => r.id),
+    }])),
+  };
+}
+
+function waCleanEvents(v) {
+  if (v === undefined) return undefined;
+  if (!Array.isArray(v) || v.some((t) => !WA_TYPES.includes(t))) throw new HttpError(400, 'نوع تنبيه غير معروف');
+  return [...new Set(v)];
+}
+
+async function waCleanRecipient(env, b, selfId) {
+  const name = String((b && b.name) || '').replace(/\s+/g, ' ').trim();
+  if (!name) throw new HttpError(400, 'اسم المستلم مطلوب');
+  if (name.length > WA_NAME_MAX) throw new HttpError(400, 'اسم المستلم أطول من ' + WA_NAME_MAX + ' حرفاً');
+  const p = waNormalizePhone(b && b.phone);
+  if (p.error) throw new HttpError(400, p.error);
+  const dup = await env.DB.prepare('SELECT id, name FROM wa_recipients WHERE phone = ?').bind(p.phone).first();
+  if (dup && dup.id !== selfId) throw new HttpError(409, 'الرقم مسجّل مسبقاً للمستلم «' + dup.name + '»');
+  return { name, phone: p.phone };
+}
+
+/* أخطاء القاعدة عند إضافة/تعديل مستلم. الحد أولاً: رسالة مشغّل الحد في D1 تحمل أيضاً «SQLITE_CONSTRAINT»
+   (مثل «D1_ERROR: wa_recipients limit 20: SQLITE_CONSTRAINT») فكانت تُقرأ تكراراً. والتكرار فقط بـ UNIQUE على phone. */
+function waDupErr(e) {
+  const m = String((e && e.message) || '');
+  if (/wa_recipients limit 20/.test(m)) throw new HttpError(400, 'وصلت إلى الحد الأقصى (' + WA_MAX_RECIPIENTS + ' مستلماً) — احذف مستلماً أولاً');
+  if (/UNIQUE constraint failed:\s*wa_recipients\.phone/i.test(m)) throw new HttpError(409, 'الرقم مسجّل مسبقاً');
+  throw e;
+}
+
+async function waAddRecipient(env, user, b) {
+  requirePerm(user, WA_PERM.manage);
+  const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM wa_recipients').first();
+  if (Number(n && n.n) >= WA_MAX_RECIPIENTS) throw new HttpError(400, 'وصلت إلى الحد الأقصى (' + WA_MAX_RECIPIENTS + ' مستلماً) — احذف مستلماً أولاً');
+  const f = await waCleanRecipient(env, b, null);
+  const events = waCleanEvents(b.events) || [];
+  const id = uid(), t = now();
+  const active = b.active === false || b.active === 0 ? 0 : 1;
+  const st = [env.DB.prepare('INSERT INTO wa_recipients (id, name, phone, active, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(id, f.name, f.phone, active, user.id, t, t)];
+  events.forEach((ev) => st.push(env.DB.prepare('INSERT OR IGNORE INTO wa_event_recipients (event_type, recipient_id) VALUES (?, ?)').bind(ev, id)));
+  await env.DB.batch(st).catch(waDupErr);
+  return { ok: true, recipient: { id, name: f.name, phone: f.phone, active: !!active, events } };
+}
+
+async function waUpdateRecipient(env, user, id, b) {
+  requirePerm(user, WA_PERM.manage);
+  const row = await env.DB.prepare('SELECT * FROM wa_recipients WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'المستلم غير موجود');
+  // الرقم المخزّن دولي بلا + — يُعاد التحقق منه بصيغته الدولية لا كرقم محلي
+  const f = await waCleanRecipient(env, { name: b.name !== undefined ? b.name : row.name, phone: b.phone !== undefined ? b.phone : '+' + row.phone }, id);
+  const events = waCleanEvents(b.events);
+  const active = b.active === undefined ? (row.active ? 1 : 0) : (b.active === false || b.active === 0 ? 0 : 1);
+  const t = now();
+  const st = [env.DB.prepare('UPDATE wa_recipients SET name = ?, phone = ?, active = ?, updated_at = ? WHERE id = ?').bind(f.name, f.phone, active, t, id)];
+  if (events) {
+    st.push(env.DB.prepare('DELETE FROM wa_event_recipients WHERE recipient_id = ?').bind(id));
+    events.forEach((ev) => st.push(env.DB.prepare('INSERT OR IGNORE INTO wa_event_recipients (event_type, recipient_id) VALUES (?, ?)').bind(ev, id)));
+  }
+  await env.DB.batch(st).catch(waDupErr);
+  return { ok: true };
+}
+
+async function waDeleteRecipient(env, user, id) {
+  requirePerm(user, WA_PERM.manage);
+  const row = await env.DB.prepare('SELECT id FROM wa_recipients WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'المستلم غير موجود');
+  // السجل يحتفظ بالاسم والرقم نصّاً (لا يُحذف تاريخ الإرسال مع المستلم)
+  await env.DB.batch([
+    env.DB.prepare('DELETE FROM wa_event_recipients WHERE recipient_id = ?').bind(id),
+    env.DB.prepare('DELETE FROM wa_recipients WHERE id = ?').bind(id),
+  ]);
+  return { ok: true };
+}
+
+async function waSaveTemplate(env, user, type, b) {
+  requirePerm(user, WA_PERM.manage);
+  if (!WA_TYPES.includes(type)) throw new HttpError(404, 'نوع تنبيه غير معروف');
+  const st = [];
+  const t = now();
+  if (b.reset === true) st.push(env.DB.prepare('DELETE FROM wa_templates WHERE event_type = ?').bind(type));
+  else if (b.body !== undefined) {
+    const body = waCleanText(b.body).trim();
+    if (!body) throw new HttpError(400, 'نص القالب مطلوب');
+    if (body.length > WA_MSG_MAX) throw new HttpError(400, 'نص القالب أطول من ' + WA_MSG_MAX + ' حرف');
+    st.push(env.DB.prepare('INSERT INTO wa_templates (event_type, body, updated_by, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(event_type) DO UPDATE SET body = excluded.body, updated_by = excluded.updated_by, updated_at = excluded.updated_at').bind(type, body, user.id, t));
+  }
+  if (b.recipients !== undefined) {
+    if (!Array.isArray(b.recipients) || b.recipients.length > WA_MAX_RECIPIENTS || b.recipients.some((x) => typeof x !== 'string')) throw new HttpError(400, 'قائمة المستلمين غير صالحة');
+    const ids = [...new Set(b.recipients)];
+    if (ids.length) {
+      const r = await env.DB.prepare(`SELECT id FROM wa_recipients WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+      if ((r.results || []).length !== ids.length) throw new HttpError(400, 'مستلم غير موجود في القائمة');
+    }
+    st.push(env.DB.prepare('DELETE FROM wa_event_recipients WHERE event_type = ?').bind(type));
+    ids.forEach((id) => st.push(env.DB.prepare('INSERT OR IGNORE INTO wa_event_recipients (event_type, recipient_id) VALUES (?, ?)').bind(type, id)));
+  }
+  if (st.length) await env.DB.batch(st);
+  return { ok: true };
+}
+
+/* الخصوصية: صلاحيات واتساب تسمح باستعمال الخدمة فقط، ولا تكشف أي بيانات تجارية.
+   التنبيه (ورقم طلبه واسم عميله ومبالغه) لا يُعرض ولا يُستعمل إلا لمن يرى سجله الأصلي بصلاحياته العادية:
+     - أحداث الطلب (جديد/دفعة/حالة): orders.view_all، أو orders.view_own لطلبه هو (المالك من عمود orders.created_by)
+     - المصروف: expenses.view_all، أو expenses.view_own لمصروفه هو — ورقم الطلب المرتبط به يُحذف إن لم يرَ الطلب
+   الطلب أو المصروف المحذوف لا يراه إلا صاحب ‎_all. الفحص في الخادم عند كل قراءة (لا وقت الحدث)، فسحب صلاحية
+   أو نقل ملكية يسري فوراً. يُرجع دالة: (حدث) ← 'full' | 'no-order' (مصروف بلا رقم طلبه) | null (محجوب). */
+const WA_IN_CHUNK = 90;
+
+async function waVisibility(env, user, list) {
+  const P = (p) => hasPerm(user, p, user.permissions);
+  const orderIds = [...new Set(list.map((e) => e.order_id).filter(Boolean))];
+  const expIds = [...new Set(list.filter((e) => e.type === 'expense_created' && e.ref_id).map((e) => e.ref_id))];
+  const owners = new Map(), expOwners = new Map();
+  for (let i = 0; i < orderIds.length; i += WA_IN_CHUNK) {
+    const c = orderIds.slice(i, i + WA_IN_CHUNK);
+    ((await env.DB.prepare(`SELECT id, created_by FROM orders WHERE id IN (${c.map(() => '?').join(',')})`).bind(...c).all()).results || []).forEach((r) => owners.set(r.id, r.created_by));
+  }
+  for (let i = 0; i < expIds.length; i += WA_IN_CHUNK) {
+    const c = expIds.slice(i, i + WA_IN_CHUNK);
+    ((await env.DB.prepare(`SELECT id, created_by FROM expenses WHERE id IN (${c.map(() => '?').join(',')})`).bind(...c).all()).results || []).forEach((r) => expOwners.set(r.id, r.created_by));
+  }
+  const canOrder = (oid) => !!oid && (P('orders.view_all') || (owners.has(oid) && owners.get(oid) === user.id && P('orders.view_own')));
+  return (e) => {
+    if (!e) return null;
+    if (e.type === 'expense_created') {
+      const can = P('expenses.view_all') || (expOwners.has(e.ref_id) && expOwners.get(e.ref_id) === user.id && P('expenses.view_own'));
+      if (!can) return null;
+      return !e.order_id || canOrder(e.order_id) ? 'full' : 'no-order';
+    }
+    return canOrder(e.order_id) ? 'full' : null;
+  };
+}
+
+/** نسخة التنبيه كما تصل المستخدم: الحد الأدنى — بلا أي حقل لا يراه */
+function waRedact(e, level) {
+  if (level !== 'no-order') return e;
+  const vars = { ...e.vars };
+  delete vars.order_number;
+  return { ...e, order_id: null, order_number: null, vars };
+}
+
+/** التنبيهات الجديدة التي يراها المستخدم (لعرض «إرسال تنبيه» بعد الحفظ) */
+async function waVisibleNew(env, user, list) {
+  if (!list.length || !waCan(user, 'send')) return [];
+  const vis = await waVisibility(env, user, list);
+  return list.filter((e) => vis(e)).map((e) => ({ id: e.id, type: e.type }));
+}
+
+function waEventOut(r) {
+  return { id: r.id, type: r.type, order_id: r.order_id || null, order_number: r.order_number ?? null, ref_id: r.ref_id || null,
+    vars: safeParse(r.data, {}) || {}, status: r.status, created_by_name: r.created_by_name || '', created_at: r.created_at,
+    handled_at: r.handled_at || null };
+}
+
+/* ع-1: عدد الاستعلامات ثابت لا يتبع عدد الجلسات — التنبيهات (1) + الجلسات (1) + عدّادات سجلاتها مجمّعة (1)
+   + أحداثها (1) + فحص الرؤية مجمّعاً (≤ 2 لكل 50 طلباً/مصروفاً). والتصفية بالصلاحية داخل SQL قبل LIMIT،
+   فلا تختفي تنبيهات المستخدم بسبب كثرة تنبيهات غيره. */
+const WA_EVENTS_LIMIT = 200;
+const WA_OPEN_SENDS_LIMIT = 20;
+
+function waEventsScopeSql(user) {
+  const P = (p) => hasPerm(user, p, user.permissions) ? 1 : 0;
+  return {
+    sql: `((e.type != 'expense_created' AND (? = 1 OR (? = 1 AND o.created_by = ?)))
+       OR (e.type = 'expense_created' AND (? = 1 OR (? = 1 AND x.created_by = ?))))`,
+    args: [P('orders.view_all'), P('orders.view_own'), user.id, P('expenses.view_all'), P('expenses.view_own'), user.id],
+  };
+}
+
+async function waListEvents(env, user, query) {
+  requireAnyPerm(user, [WA_PERM.view, WA_PERM.send]);
+  const pending = String(query.get('status') || '') === 'pending';
+  const scope = waEventsScopeSql(user);
+  const r = await env.DB.prepare(`SELECT e.* FROM wa_events e
+      LEFT JOIN orders o ON o.id = e.order_id
+      LEFT JOIN expenses x ON x.id = e.ref_id AND e.type = 'expense_created'
+      WHERE ${pending ? "e.status = 'pending' AND " : ''}${scope.sql}
+      ORDER BY e.created_at DESC LIMIT ${WA_EVENTS_LIMIT}`).bind(...scope.args).all();
+  const list = r.results || [];
+  // الجلسات غير المكتملة: مصفّاة بصاحبها في SQL قبل الحد (المالك يرى الجميع)
+  let sends = [];
+  if (waCan(user, 'send')) {
+    const sq = waIsOwner(user)
+      ? env.DB.prepare(`SELECT * FROM wa_sends WHERE status != 'finished' ORDER BY created_at DESC LIMIT ${WA_OPEN_SENDS_LIMIT}`)
+      : env.DB.prepare(`SELECT * FROM wa_sends WHERE status != 'finished' AND created_by = ? ORDER BY created_at DESC LIMIT ${WA_OPEN_SENDS_LIMIT}`).bind(user.id);
+    sends = (await sq.all()).results || [];
+  }
+  const sendIds = sends.map((x) => x.id);
+  const counts = new Map();
+  const sendEvents = new Map();
+  if (sendIds.length) {
+    const ph = sendIds.map(() => '?').join(',');
+    ((await env.DB.prepare(`SELECT send_id, COUNT(*) AS total, SUM(CASE WHEN status IN ('confirmed', 'skipped', 'failed') THEN 1 ELSE 0 END) AS handled FROM wa_log WHERE send_id IN (${ph}) GROUP BY send_id`).bind(...sendIds).all()).results || [])
+      .forEach((c) => counts.set(c.send_id, c));
+    const evIds = [...new Set(sends.map((x) => x.event_id).filter(Boolean))];
+    if (evIds.length) ((await env.DB.prepare(`SELECT * FROM wa_events WHERE id IN (${evIds.map(() => '?').join(',')})`).bind(...evIds).all()).results || []).forEach((e) => sendEvents.set(e.id, e));
+  }
+  // فحص الرؤية مرة واحدة لكل ما سيُعرض (تنبيهات القائمة + أحداث الجلسات) — دفاع ثانٍ فوق تصفية SQL
+  const vis = await waVisibility(env, user, list.concat([...sendEvents.values()]));
+  const out = { ok: true, events: list.map((e) => { const lv = vis(e); return lv ? waRedact(waEventOut(e), lv) : null; }).filter(Boolean), openSends: [] };
+  for (const x of sends) {
+    const lv = waSendAccess(user, x, x.event_id ? sendEvents.get(x.event_id) || null : null, vis);
+    if (!lv) continue;                                         // جلسة لم يعد يملك رؤية بياناتها: لا تُعرض للاستئناف
+    const c = counts.get(x.id) || { total: 0, handled: 0 };
+    out.openSends.push({ id: x.id, event_type: x.event_type, order_number: lv === 'full' ? (x.order_number ?? null) : null, status: x.status, created_at: x.created_at,
+      created_by_name: x.created_by_name || '', total: Number(c.total) || 0, handled: Number(c.handled) || 0 });
+  }
+  return out;
+}
+
+async function waSetEvent(env, user, id, b) {
+  requirePerm(user, WA_PERM.send);
+  const st = String((b && b.status) || '');
+  if (!['done', 'dismissed', 'pending'].includes(st)) throw new HttpError(400, 'حالة غير صالحة');
+  const row = await env.DB.prepare('SELECT * FROM wa_events WHERE id = ?').bind(id).first();
+  if (!row || !(await waVisibility(env, user, [row]))(row)) throw new HttpError(404, 'التنبيه غير موجود');
+  await env.DB.prepare('UPDATE wa_events SET status = ?, handled_by = ?, handled_at = ? WHERE id = ?').bind(st, user.id, now(), id).run();
+  return { ok: true };
+}
+
+const waIsOwner = (user) => hasPerm(user, 'admin.core', user && user.permissions);
+
+/** جلسة الإرسال (ورسالتها التي قد تحمل أسماء ومبالغ) لمن بدأها وحده — أو لمالك النظام.
+    صلاحية «إدارة الخدمة» لا تفتح رسائل غيرك: الإدارة للمستلمين والقوالب لا للبيانات. */
+function waOwnSend(user, s) {
+  if (s.created_by !== user.id && !waIsOwner(user)) throw new HttpError(403, 'جلسة الإرسال هذه لمستخدم آخر');
+}
+
+/* م-2: الوصول لجلسة إرسال يُحسب الآن لا وقت إنشائها. جلسة مرتبطة بحدث تتطلب أن يرى المستخدم سجله الأصلي
+   الآن بالمستوى نفسه: نُقلت ملكية الطلب أو سُحبت صلاحية العرض ← لا رسالة ولا رقم طلب ولا متابعة.
+   (رسالة الجلسة قد تحمل بيانات الحدث، فلا يكفي حجب الرقم.) الجلسة بلا حدث نصّ كتبه صاحبها بنفسه.
+   حدث محذوف = لا وصول إلا للمالك. يُرجع: 'full' | 'no-order' | null */
+function waSendAccess(user, s, ev, vis) {
+  if (s.created_by !== user.id && !waIsOwner(user)) return null;
+  if (!s.event_id) return 'full';
+  if (!ev) return waIsOwner(user) ? 'full' : null;
+  const lv = vis(ev);
+  if (!lv) return null;
+  if (lv === 'no-order' && s.order_number != null) return null;    // أُنشئت برقم طلب لم يعد يراه
+  return lv;
+}
+
+/** يحمّل الجلسة وحدثها ويفرض الوصول الحالي (403 دون كشف أي بيانات) */
+async function waLoadSend(env, user, id) {
+  const s = await env.DB.prepare('SELECT * FROM wa_sends WHERE id = ?').bind(id).first();
+  if (!s) throw new HttpError(404, 'جلسة الإرسال غير موجودة');
+  waOwnSend(user, s);
+  const ev = s.event_id ? await env.DB.prepare('SELECT * FROM wa_events WHERE id = ?').bind(s.event_id).first() : null;
+  const lv = waSendAccess(user, s, ev, await waVisibility(env, user, ev ? [ev] : []));
+  if (!lv) throw new HttpError(403, 'لم تعد تملك صلاحية عرض بيانات هذا التنبيه — لا يمكن متابعة الجلسة');
+  return s;
+}
+
+function waItemOut(x, message) {
+  return { id: x.id, seq: x.seq, recipient_id: x.recipient_id, name: x.recipient_name, phone: x.phone, status: x.status,
+    opened_at: x.opened_at || null, confirmed_at: x.confirmed_at || null, updated_at: x.updated_at, link: waLink(x.phone, message) };
+}
+
+async function waGetSend(env, user, id) {
+  requirePerm(user, WA_PERM.send);
+  const s = await waLoadSend(env, user, id);
+  const items = ((await env.DB.prepare('SELECT * FROM wa_log WHERE send_id = ?').bind(id).all()).results || []).sort((a, b) => a.seq - b.seq);
+  return { ok: true, send: { id: s.id, event_id: s.event_id, event_type: s.event_type, order_number: s.order_number ?? null, message: s.message,
+    status: s.status, created_at: s.created_at, created_by_name: s.created_by_name || '' }, items: items.map((x) => waItemOut(x, s.message)) };
+}
+
+async function waStartSend(env, user, b) {
+  requirePerm(user, WA_PERM.send);
+  const type = String((b && b.type) || '');
+  if (!WA_TYPES.includes(type)) throw new HttpError(400, 'اختر نوع التنبيه');
+  let ev = null;
+  if (b.eventId) {
+    ev = await env.DB.prepare('SELECT * FROM wa_events WHERE id = ?').bind(String(b.eventId)).first();
+    // حدث لا يرى المستخدم سجله الأصلي = كأنه غير موجود (لا كشف لوجوده ولا لبياناته)
+    if (!ev || !(await waVisibility(env, user, [ev]))(ev)) throw new HttpError(404, 'التنبيه غير موجود');
+    if (ev.type !== type) throw new HttpError(400, 'نوع التنبيه لا يطابق الحدث');
+  }
+  const message = waCleanText(b.message).trim();
+  if (!message) throw new HttpError(400, 'نص الرسالة فارغ');
+  if (message.length > WA_MSG_MAX) throw new HttpError(400, 'الرسالة أطول من ' + WA_MSG_MAX + ' حرف — اختصرها');
+  const ids = Array.isArray(b.recipientIds) ? [...new Set(b.recipientIds.filter((x) => typeof x === 'string'))] : [];
+  if (!ids.length) throw new HttpError(400, 'اختر مستلماً واحداً على الأقل');
+  if (ids.length > WA_MAX_RECIPIENTS) throw new HttpError(400, 'عدد المستلمين أكبر من الحد');
+  const r = await env.DB.prepare(`SELECT * FROM wa_recipients WHERE id IN (${ids.map(() => '?').join(',')})`).bind(...ids).all();
+  const byId = new Map((r.results || []).map((x) => [x.id, x]));
+  if (byId.size !== ids.length) throw new HttpError(400, 'مستلم غير موجود — حدّث الصفحة');
+  if ([...byId.values()].some((x) => !(x.active === 1 || x.active === true))) throw new HttpError(400, 'لا يمكن الإرسال لمستلم معطّل');
+  const sid = uid(), t = now();
+  const st = [env.DB.prepare('INSERT INTO wa_sends (id, event_id, event_type, order_number, message, status, created_by, created_by_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+    .bind(sid, ev ? ev.id : null, type, ev && (await waVisibility(env, user, [ev]))(ev) === 'full' ? (ev.order_number ?? null) : null, message, 'active', user.id, user.name || '', t, t)];
+  ids.forEach((id, i) => {
+    const x = byId.get(id);
+    st.push(env.DB.prepare('INSERT INTO wa_log (id, send_id, seq, recipient_id, recipient_name, phone, status, updated_by, updated_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(sid + '-' + (i + 1), sid, i + 1, x.id, x.name, x.phone, 'ready', user.id, t, t));
+  });
+  await env.DB.batch(st);
+  return waGetSend(env, user, sid);
+}
+
+async function waSetSend(env, user, id, b) {
+  requirePerm(user, WA_PERM.send);
+  const s = await waLoadSend(env, user, id);
+  const st = String((b && b.status) || '');
+  if (!['active', 'paused'].includes(st)) throw new HttpError(400, 'حالة غير صالحة');
+  if (s.status === 'finished') throw new HttpError(409, 'انتهت جلسة الإرسال');
+  const r = await env.DB.prepare("UPDATE wa_sends SET status = ?, updated_at = ? WHERE id = ? AND status != 'finished'").bind(st, now(), id).run();
+  if (!(r && r.meta && r.meta.changes === 1)) throw new HttpError(409, 'انتهت جلسة الإرسال');
+  return { ok: true };
+}
+
+async function waSetLog(env, user, id, b) {
+  requirePerm(user, WA_PERM.send);
+  const row = await env.DB.prepare('SELECT * FROM wa_log WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'السطر غير موجود');
+  const s = await waLoadSend(env, user, row.send_id);
+  if (s.status === 'finished') throw new HttpError(409, 'انتهت جلسة الإرسال');
+  const next = String((b && b.status) || '');
+  if (!WA_LOG_STATUSES.includes(next) || next === 'ready') throw new HttpError(400, 'حالة غير صالحة');
+  if (!(WA_TRANSITIONS[row.status] || []).includes(next)) {
+    throw new HttpError(409, next === 'confirmed' ? 'لا يمكن تأكيد الإرسال قبل فتح محادثة واتساب' : 'لا يمكن تغيير حالة هذا المستلم');
+  }
+  const t = now();
+  /* م-1: تحديث مشروط بالحالة التي فُحص عليها الانتقال (وبأن الجلسة لم تنتهِ): من طلبين متزامنين على المستلم نفسه
+     (تأكيد ‖ تخطٍّ) يتغيّر صف واحد فقط، والثاني يجد الحالة تغيّرت فيُرفض 409 — لا ينجح الاثنان أبداً. */
+  const u = await env.DB.prepare("UPDATE wa_log SET status = ?, opened_at = ?, confirmed_at = ?, updated_by = ?, updated_at = ? WHERE id = ? AND status = ? AND EXISTS (SELECT 1 FROM wa_sends WHERE id = ? AND status != 'finished')")
+    .bind(next, next === 'opened' ? t : (row.opened_at || null), next === 'confirmed' ? t : null, user.id, t, id, row.status, row.send_id).run();
+  if (!(u && u.meta && u.meta.changes === 1)) throw new HttpError(409, 'تغيّرت حالة هذا المستلم أو انتهت الجلسة — حدّث الصفحة');
+  // اكتمال الجلسة: كل مستلم أُكّد أو تُخطّي أو فشل ← تُغلق مرة واحدة فقط (التحديث مشروط بأنها لم تنتهِ)
+  const items = (await env.DB.prepare('SELECT id, status FROM wa_log WHERE send_id = ?').bind(row.send_id).all()).results || [];
+  const allFinal = items.length > 0 && items.every((x) => ['confirmed', 'skipped', 'failed'].includes(x.status));
+  let finished = false;
+  if (allFinal) {
+    const f = await env.DB.prepare("UPDATE wa_sends SET status = 'finished', updated_at = ? WHERE id = ? AND status != 'finished'").bind(t, row.send_id).run();
+    finished = !!(f && f.meta && f.meta.changes === 1);
+    if (finished && s.event_id) await env.DB.prepare("UPDATE wa_events SET status = 'done', handled_by = ?, handled_at = ? WHERE id = ? AND status = 'pending'").bind(user.id, t, s.event_id).run();
+  }
+  return { ok: true, status: next, finished };
+}
+
+async function waListLog(env, user) {
+  requirePerm(user, WA_PERM.view);
+  // كل سطر مع جلسته في استعلام واحد (كان سطراً لجلسة خارج آخر 500 جلسة يفقد نوعه)
+  const l = await env.DB.prepare(`SELECT l.*, s.event_id AS s_event_id, s.event_type AS s_event_type, s.order_number AS s_order_number, s.created_by_name AS s_by
+      FROM wa_log l JOIN wa_sends s ON s.id = l.send_id ORDER BY l.created_at DESC, l.seq LIMIT 500`).all();
+  const sends = new Map((l.results || []).map((x) => [x.send_id, { event_id: x.s_event_id, event_type: x.s_event_type, order_number: x.s_order_number, created_by_name: x.s_by }]));
+  const evIds = [...new Set([...sends.values()].map((x) => x.event_id).filter(Boolean))];
+  const evs = new Map();
+  for (let i = 0; i < evIds.length; i += WA_IN_CHUNK) {
+    const c = evIds.slice(i, i + WA_IN_CHUNK);
+    ((await env.DB.prepare(`SELECT * FROM wa_events WHERE id IN (${c.map(() => '?').join(',')})`).bind(...c).all()).results || []).forEach((e) => evs.set(e.id, e));
+  }
+  const vis = await waVisibility(env, user, [...evs.values()]);
+  const orderOk = (sd) => !!sd.event_id && evs.has(sd.event_id) && vis(evs.get(sd.event_id)) === 'full';
+  const rows = (l.results || []).slice().sort((a, b) => String(b.created_at).localeCompare(String(a.created_at)) || a.seq - b.seq).slice(0, 500);
+  return { ok: true, log: rows.map((x) => {
+    const sd = sends.get(x.send_id) || {};
+    return { id: x.id, send_id: x.send_id, seq: x.seq, event_type: sd.event_type || null, order_number: orderOk(sd) ? (sd.order_number ?? null) : null,
+      name: x.recipient_name, phone: x.phone, status: x.status, opened_at: x.opened_at || null, confirmed_at: x.confirmed_at || null,
+      created_at: x.created_at, updated_at: x.updated_at, by: sd.created_by_name || '' };
+  }) };
 }
 
 /* ------------------------------ دوال مساعدة لحساب التكاليف والإيرادات ------------------------------ */
@@ -1942,6 +2544,13 @@ async function sync(env, user, body) {
     numbers[o.id] = Number(r.value);
   }
 
+  const waCands = [];
+  const waOrderAt = new Map();
+  let waCur = null;
+  if ((od.upsert || []).length) {
+    const srow = commCtx ? null : await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+    waCur = ((commCtx ? commCtx.settings : (srow && safeParse(srow.data, {}))) || {}).currency || 'ر.س';
+  }
   (od.upsert || []).forEach((o) => {
     const rec = { ...o };
     delete rec._base;                              // حقل نقل لا يُخزَّن
@@ -1962,6 +2571,8 @@ async function sync(env, user, body) {
       'INSERT INTO orders (id, number, status, customer_name, created_by, created_at, data, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET number = excluded.number, status = excluded.status, customer_name = excluded.customer_name, created_by = COALESCE(excluded.created_by, orders.created_by), data = excluded.data, updated_at = excluded.updated_at',
       rec.id, rec.number ?? null, rec.status ?? null, (rec.customer && rec.customer.name) || '', rec.createdBy ?? null, rec.createdAt ?? ts, JSON.stringify(rec), ts
     );
+    waOrderAt.set(rec.id, stmts.length - 1);      // موضع بيان الطلب: تنبيهاته تُلصق به في المقطع نفسه
+    waCands.push(...waOrderEvents(existing.has(rec.id) ? existing.get(rec.id).data : null, rec, rec.number ?? null, waCur, user, ts));
   });
   if (od.delete && od.delete.length) {
     // حذف طلبك: orders.delete_own، وطلب غيرك (أو بلا مالك): orders.delete_all
@@ -2008,9 +2619,30 @@ async function sync(env, user, body) {
     q('INSERT INTO settings (id, data, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', JSON.stringify(body.settings), ts);
   }
 
+  // تنبيهات واتساب: تُلصق بيانات كل تنبيه بعد بيان طلبه مباشرة، ولا يفصل التقسيم (50 بياناً للمقطع) بينهما:
+  // الطلب وتنبيهاته يُحفظان معاً أو يسقطان معاً حتى لو تجاوزت المزامنة 50 عملية. إعادة المحاولة لا تكرّرها.
+  const waStmts = [];
+  const waNew = await waQueueEvents(env, (sql, ...a) => waStmts.push(env.DB.prepare(sql).bind(...a)), waCands, user);
+  const waAfter = new Map();
+  waNew.forEach((e, k) => {
+    const at = waOrderAt.has(e.order_id) ? waOrderAt.get(e.order_id) : stmts.length - 1;
+    if (!waAfter.has(at)) waAfter.set(at, []);
+    waAfter.get(at).push(waStmts[k]);
+  });
+  const groups = stmts.map((st, i) => [st, ...(waAfter.get(i) || [])]);
+
   // الدفعة الواحدة ذرية: أي فشل (بما فيه سجل التدقيق) يُسقط العملية كلها قبل أي كتابة
-  for (let i = 0; i < stmts.length; i += 50) await env.DB.batch(stmts.slice(i, i + 50));
-  return { ok: true, applied: stmts.length, numbers };
+  let chunk = [];
+  for (const g of groups) {
+    if (chunk.length && chunk.length + g.length > 50) { await env.DB.batch(chunk); chunk = []; }
+    chunk.push(...g);
+  }
+  if (chunk.length) await env.DB.batch(chunk);
+  const out = { ok: true, applied: stmts.length, numbers };
+  // الواجهة تعرض «إرسال تنبيه» لمن يملك صلاحية الإرسال فقط
+  const waShow = await waVisibleNew(env, user, waNew);
+  if (waShow.length) out.wa = waShow;
+  return out;
 }
 
 /* --------------------- التكاليف: رؤية مملوكة وحفظ مقصود ---------------------
@@ -2205,8 +2837,20 @@ async function ensureAnalytics(env) {
 /** زيادة عدّاد مجمّع. اسمح فقط بأسماء معرّفة مسبقاً (قائمة بيضاء) وأبعاد قصيرة. */
 const ANALYTICS_NAMES = new Set([
   'design_visit', 'design_start', 'design_step', 'design_step_exit', 'design_finish',
-  'whatsapp_click', 'design_sent', 'contact_request',
+  'whatsapp_click', 'design_sent', 'contact_request', 'visit_src',
 ]);
+
+const ANALYTICS_SERVER_ONLY = new Set(['visit_src']);
+
+/* مصادر الزيارة: رابط لكل قناة (?src=instagram …). الاسم مُطبَّع (حروف لاتينية صغيرة وأرقام و-_، حتى 24)
+   ومرادفات شائعة تُوحَّد. بلا src = «مباشر». لا يُخزَّن معه أي شيء عن الزائر — عدّاد مجمّع فقط. */
+const VISIT_SRC_ALIASES = { wa: 'whatsapp', whats: 'whatsapp', ig: 'instagram', insta: 'instagram', tt: 'tiktok', snap: 'snapchat', sc: 'snapchat',
+  twitter: 'x', fb: 'facebook', maps: 'google', gmaps: 'google', qrcode: 'qr', store: 'qr', showroom: 'qr' };
+function visitSource(v) {
+  const s = String(v == null ? '' : v).trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+  if (!s) return 'direct';
+  return VISIT_SRC_ALIASES[s] || s;
+}
 
 async function recordAnalytics(env, request, name, dim) {
   try {
@@ -2232,6 +2876,7 @@ async function recordAnalytics(env, request, name, dim) {
 async function analyticsEvent(env, request, body) {
   const name = String((body && body.name) || '');
   const dim = String((body && body.dim) || '');
+  if (ANALYTICS_SERVER_ONLY.has(name)) return { ok: true };
   await recordAnalytics(env, request, name, dim);
   return { ok: true };
 }
@@ -2436,6 +3081,17 @@ async function ownerAnalytics(env, query) {
   const prefs = await analyticsDesignPrefs(env, from, to, 12);
   const orders = await analyticsOrders(env, from, to);
   const avgDur = await analyticsAvgDurationMin(env, from, to);
+  /* تقرير «زيارات الموقع»: الزيارات لكل يوم ولكل صفحة، والزوار الفريدون لكل يوم عبر الصفحتين معاً
+     (بصمة الزائر مشتقة من اليوم والجهاز لا من الصفحة، فـ COUNT(DISTINCT fp) لا يعدّ الجهاز مرتين).
+     بصمات الزوار تُحذف بعد 40 يوماً (recordVisit) فالأيام الأقدم لها زيارات بلا عدد زوار. */
+  const sources = await analyticsSources(env, from, to);
+  let visitsDaily = [], visitorsDaily = [];
+  try {
+    visitsDaily = ((await env.DB.prepare('SELECT day, link, COALESCE(SUM(n),0) AS n FROM link_visits WHERE day >= ? AND day <= ? GROUP BY day, link').bind(from, to).all()).results || [])
+      .map((r) => ({ day: r.day, link: r.link, n: Number(r.n) || 0 }));
+    visitorsDaily = ((await env.DB.prepare('SELECT day, COUNT(DISTINCT fp) AS u FROM link_visitors WHERE day >= ? AND day <= ? GROUP BY day').bind(from, to).all()).results || [])
+      .map((r) => ({ day: r.day, u: Number(r.u) || 0 }));
+  } catch (e) { /* الجداول تُنشأ مع أول زيارة — قبلها لا بيانات */ }
 
   return {
     ok: true,
@@ -2450,6 +3106,11 @@ async function ownerAnalytics(env, query) {
     stepExit,
     prefs,
     orders,
+    visitsDaily,
+    visitorsDaily,
+    sources,
+    visitorsKeptFrom: visitDayOffset(env, 40),
+    links: VISIT_LINKS,
     /* توثيق الفجوات: أرقام غير متاحة، لا نعرض لها قيماً */
     unavailable: {
       referrer: 'مصدر الزيارة غير متوفر — لا نخزّن عنوان المُحيل ولا مُعرّف Cloak.',
@@ -2459,6 +3120,30 @@ async function ownerAnalytics(env, query) {
     },
   };
 }
+/** لكل مصدر: الزيارات (visit_src) + التصاميم المبدوءة والمكتملة وطلبات التواصل والطلبات المؤكدة ومبيعاتها (من الصفوف
+    الفعلية: customer_designs.src والطلب المرتبط بها). التصاميم تُنسب بيوم إنشائها. قاعدة بلا العمود بعد ← زيارات فقط. */
+async function analyticsSources(env, from, to) {
+  const out = new Map();
+  const get = (k) => { if (!out.has(k)) out.set(k, { src: k, visits: 0, started: 0, finished: 0, contact: 0, orders: 0, revenue: 0 }); return out.get(k); };
+  for (const r of await analyticsByDim(env, from, to, 'visit_src', 60)) get(r.dim || 'direct').visits += r.n;
+  try {
+    const d = await env.DB.prepare(`SELECT COALESCE(src, 'direct') AS src, COUNT(*) AS started,
+        SUM(CASE WHEN status != 'draft' THEN 1 ELSE 0 END) AS finished,
+        SUM(CASE WHEN contact_requested = 1 THEN 1 ELSE 0 END) AS contact,
+        SUM(CASE WHEN order_id IS NOT NULL THEN 1 ELSE 0 END) AS orders
+      FROM customer_designs WHERE date(created_at) >= ? AND date(created_at) <= ? GROUP BY COALESCE(src, 'direct')`).bind(from, to).all();
+    for (const r of (d.results || [])) { const e = get(r.src); e.started = Number(r.started) || 0; e.finished = Number(r.finished) || 0; e.contact = Number(r.contact) || 0; e.orders = Number(r.orders) || 0; }
+    const o = await env.DB.prepare(`SELECT COALESCE(d.src, 'direct') AS src, o.data AS data, o.status AS status FROM customer_designs d JOIN orders o ON o.id = d.order_id
+      WHERE date(d.created_at) >= ? AND date(d.created_at) <= ?`).bind(from, to).all();
+    for (const r of (o.results || [])) {
+      if (r.status === 'cancelled' || r.status === 'quote') continue;   // الملغي وعرض السعر ليسا بيعاً
+      const x = safeParse(r.data, {}) || {};
+      get(r.src).revenue += Number(x.total) || 0;
+    }
+  } catch (e) { /* العمود src لم يُضف بعد */ }
+  return [...out.values()].map((e) => ({ ...e, revenue: Math.round(e.revenue * 100) / 100 })).sort((a, b) => b.visits - a.visits || b.orders - a.orders);
+}
+
 function visitDayKeyOf(env, d) {
   const off = visitTzOffset(env);
   const t = new Date(d.getTime() + off * 60000);
@@ -2512,8 +3197,18 @@ async function linkVisits(env) {
     k.days.push({ day: r.day, n: Number(r.n) || 0 });
   }
   for (const k of Object.keys(byLink)) byLink[k].days.sort((a, b) => (a.day < b.day ? -1 : 1));
+  /* إجمالي الزوار عبر الصفحتين معاً: الجهاز الذي فتح الصفحتين في يوم واحد زائر واحد (بصمته لا تتبع الصفحة)
+     — جمع زوار كل صفحة كان يعدّه مرتين */
+  const tu = await env.DB.prepare(
+    `SELECT COUNT(DISTINCT CASE WHEN day = ? THEN day || '|' || fp END) AS today_u,
+       COUNT(DISTINCT CASE WHEN day >= ? THEN day || '|' || fp END) AS d7_u,
+       COUNT(DISTINCT day || '|' || fp) AS d30_u
+     FROM link_visitors WHERE day >= ?`).bind(today, d7, d30).first();
+  const totals = { today: { visitors: Number(tu && tu.today_u) || 0 }, d7: { visitors: Number(tu && tu.d7_u) || 0 }, d30: { visitors: Number(tu && tu.d30_u) || 0 } };
+  let sources = [];
+  try { sources = await analyticsByDim(env, d30, today, 'visit_src', 12); } catch (_) { /* لا أحداث بعد */ }
   return {
-    ok: true, links: VISIT_LINKS, byLink, today,
+    ok: true, links: VISIT_LINKS, byLink, totals, sources, today,
     tzOffsetMin: visitTzOffset(env),
     periods: { today: 'اليوم', d7: 'آخر ٧ أيام', d30: 'آخر ٣٠ يوماً' },
     note: 'الزيارات = كل فتح للصفحة. الزوار = بصمة جهاز واحدة في اليوم (لا تُحتسب مرتين). الروبوتات والطلبات بلا متصفح مستبعدة.',
@@ -2776,6 +3471,8 @@ async function ensureSeed(env) {
   await env.DB.prepare('ALTER TABLE users ADD COLUMN parent_rate REAL').run().catch(ignoreExistsColumn);
   // إجبار تغيير كلمة المرور للحسابات الجديدة فقط: الافتراضي = 0
   await env.DB.prepare('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0').run().catch(ignoreExistsColumn);
+  // مصدر زيارة العميل لكل تصميم (?src=…): عمود نصي اختياري — لا يمس بيانات قائمة (الصفوف القديمة = NULL = «مباشر»)
+  await env.DB.prepare('ALTER TABLE customer_designs ADD COLUMN src TEXT').run().catch(ignoreExistsColumn);
   // بوابة العميل: جدول مستقل تماماً عن الطلبات والمستخدمين (idempotent وآمن للتكرار)
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS customer_designs (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, order_id TEXT, order_number INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)").run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token)').run();

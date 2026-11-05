@@ -109,6 +109,11 @@
       ['users.disable', 'إيقاف مستخدم'],
       ['permissions.manage', 'إدارة الصلاحيات'],
     ]],
+    ['إشعارات واتساب', [
+      ['notifications.whatsapp.view', 'عرض الخدمة وسجل الإرسال (يشمل أرقام الطلبات ومبالغها)'],
+      ['notifications.whatsapp.manage', 'إدارة المستلمين والقوالب'],
+      ['notifications.whatsapp.send', 'إرسال التنبيهات (فتح واتساب)'],
+    ]],
     ['الإعدادات', [
       ['settings.manage', 'إدارة إعدادات المحل'],
     ]],
@@ -319,6 +324,7 @@
     bi: () => canAny('reports.view_own', 'reports.view_all'),
     designs: () => can('designs.view'),
     expenses: () => canAny('expenses.view_own', 'expenses.view_all'),
+    whatsapp: () => canAny('notifications.whatsapp.view', 'notifications.whatsapp.manage', 'notifications.whatsapp.send'),
     reports: () => canAny('reports.view_own', 'reports.view_all'),
   };
   const canPage = (name) => !PAGE_PERMS[name] || PAGE_PERMS[name]();
@@ -357,6 +363,9 @@
     resetNotifState();
     renderNotifications();
     showPage('order');
+    // شارة تنبيهات واتساب الجاهزة — طلب خفيف صامت لمن يملك الخدمة فقط
+    // وجلسة إرسال لم تكتمل (أُغلق التطبيق أثناءها) تُعرض للاستئناف
+    setTimeout(() => { try { if (Store.isRemote && canPage('whatsapp')) waLoad().then(() => { if (wa.openSends.length && can(WA_P.send)) waResumeNudge(); }).catch(() => {}); } catch (_) { /* */ } }, 1200);
     requestAnimationFrame(() => designer.resize());
     setTimeout(() => offerDraftRestore(pending), 400);
     // فحص تحديث التطبيق تلقائياً: مرة واحدة لكل تشغيل، صامت تماماً عند أي فشل،
@@ -512,6 +521,7 @@
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
     if (name === 'expenses') renderExpenses();
+    if (name === 'whatsapp') renderWhatsapp();
     if (name === 'order') requestAnimationFrame(() => { designer.resize(); positionInspector(); });
     window.scrollTo({ top: 0 });
   }
@@ -5026,6 +5036,505 @@ function docTitle(order) {
   $('#btnAddExpense').addEventListener('click', () => expenseForm(null));
   ['#expFrom', '#expTo', '#expCat', '#expUser'].forEach((s) => $(s).addEventListener('change', renderExpensesTable));
 
+  /* ---------------- إشعارات واتساب اليدوية (wa.me — مجاني، الإرسال بيد المستخدم) ----------------
+     - الخادم وحده ينشئ التنبيهات عند حفظ ناجح فعلاً (طلب جديد، دفعة، مصروف، تغيير حالة) ويفرض الصلاحيات؛
+       الواجهة تعرض ما يعيده فقط. لا نسخة محلية تُزامَن.
+     - الإرسال: محادثة واحدة في كل مرة بضغطة المستخدم (لا نوافذ جماعية تمنعها المتصفحات)، ثم يؤكد المستخدم
+       بنفسه أنه أرسل أو يتخطى. «أكد المستخدم الإرسال يدويًا» ليست تأكيداً من واتساب — Click to Chat لا يعطي أي تأكيد. */
+  const WA = window.WaNotify;
+  const WA_P = { view: 'notifications.whatsapp.view', manage: 'notifications.whatsapp.manage', send: 'notifications.whatsapp.send' };
+  const wa = { state: null, events: [], openSends: [], log: [], tab: 'send', loading: null, showHandled: false };
+  const waTabsFor = () => ['send', 'recipients', 'templates', 'log'].filter((t) => t === 'send' ? canAny(WA_P.send, WA_P.view)
+    : t === 'log' ? can(WA_P.view) : t === 'templates' ? canAny(WA_P.manage, WA_P.view) : canAny(WA_P.manage, WA_P.view));
+  const waPhoneHtml = (p) => `<bdi dir="ltr" class="num">${esc(WA.formatPhone(p))}</bdi>`;
+  const waTypeChip = (t) => `<span class="badge wa-type wa-t-${esc(t)}">${WA.TYPE_ICONS[t] || ''} ${esc(WA.TYPE_LABELS[t] || t)}</span>`;
+  const waStatusChip = (s) => `<span class="badge wa-st wa-st-${esc(s)}">${esc(WA.LOG_LABELS[s] || s)}</span>`;
+
+  async function waLoad(force) {
+    if (!Store.isRemote || !canAny(WA_P.view, WA_P.manage, WA_P.send)) return;
+    if (wa.loading) return wa.loading;
+    wa.loading = (async () => {
+      try {
+        const [st, ev, lg] = await Promise.all([
+          Store.api('GET', '/api/wa'),
+          canAny(WA_P.view, WA_P.send) ? Store.api('GET', '/api/wa/events') : Promise.resolve(null),
+          can(WA_P.view) ? Store.api('GET', '/api/wa/log') : Promise.resolve(null),
+        ]);
+        wa.state = st;
+        wa.events = (ev && ev.events) || [];
+        wa.openSends = (ev && ev.openSends) || [];
+        wa.log = (lg && lg.log) || [];
+        waBadge();
+      } finally { wa.loading = null; }
+    })();
+    return wa.loading;
+  }
+
+  function waBadge() {
+    const b = $('#waBadge');
+    if (!b) return;
+    const n = can(WA_P.send) ? wa.events.filter((e) => e.status === 'pending').length : 0;
+    b.hidden = !n; b.textContent = n > 99 ? '99+' : String(n);
+  }
+
+  async function renderWhatsapp() {
+    if (!canPage('whatsapp')) return;
+    const tabs = waTabsFor();
+    if (!tabs.includes(wa.tab)) wa.tab = tabs[0] || 'send';
+    $$('#waTabs [data-watab]').forEach((b) => { b.hidden = !tabs.includes(b.dataset.watab); });
+    $('#waNewSend').hidden = !can(WA_P.send);
+    const err = $('#waErr'); err.hidden = true;
+    if (!wa.state) $('#waPanelSend').innerHTML = '<p class="hint">جارٍ التحميل…</p>';
+    try { await waLoad(true); }
+    catch (e) { err.textContent = humanError(e && e.message, 'تعذّر تحميل إشعارات واتساب. تحقق من الاتصال.'); err.hidden = false; }
+    waShowTab(wa.tab);
+  }
+
+  function waShowTab(t) {
+    wa.tab = t;
+    $$('#waTabs [data-watab]').forEach((b) => { const on = b.dataset.watab === t; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    const panels = { send: '#waPanelSend', recipients: '#waPanelRecipients', templates: '#waPanelTemplates', log: '#waPanelLog' };
+    Object.entries(panels).forEach(([k, sel]) => { $(sel).hidden = k !== t; });
+    if (!wa.state) return;
+    if (t === 'send') waRenderSendTab();
+    if (t === 'recipients') waRenderRecipients();
+    if (t === 'templates') waRenderTemplates();
+    if (t === 'log') waRenderLog();
+  }
+  $$('#waTabs [data-watab]').forEach((b) => b.addEventListener('click', () => waShowTab(b.dataset.watab)));
+  $('#waNewSend').addEventListener('click', () => waComposer(null));
+
+  /* ---- التبويب 1: التنبيهات الجاهزة والجلسات غير المكتملة ---- */
+  function waRenderSendTab() {
+    const st = wa.state;
+    const active = st.recipients.filter((r) => r.active);
+    const list = wa.events.filter((e) => wa.showHandled || e.status === 'pending');
+    const canSend = can(WA_P.send);
+    $('#waPanelSend').innerHTML = `
+      <div class="stats-row">
+        <div class="stat"><span>تنبيهات بانتظار الإرسال</span><b>${wa.events.filter((e) => e.status === 'pending').length}</b></div>
+        <div class="stat"><span>المستلمون النشطون</span><b>${active.length}</b><small>من ${st.recipients.length} / ${st.max}</small></div>
+      </div>
+      ${!st.recipients.length ? `<div class="card wa-callout">${icon('info')}<div><b>لا يوجد مستلمون بعد.</b><p>${can(WA_P.manage) ? 'أضف المستلمين من تبويب «المستلمون» وحدد لكل منهم التنبيهات التي تصله.' : 'اطلب من المدير إضافة المستلمين.'} لا يُنشأ تنبيه لحدث ليس له مستلم نشط.</p></div></div>` : ''}
+      ${wa.openSends.length && canSend ? `<div class="card"><h3 class="wa-h">جلسات إرسال لم تكتمل</h3><ul class="wa-list">${wa.openSends.map((s) => `
+        <li class="wa-row"><div class="wa-row-main">${waTypeChip(s.event_type)}${s.order_number ? ` <b class="num">#${esc(s.order_number)}</b>` : ''}
+          <span class="sub">${s.status === 'paused' ? 'موقوفة مؤقتاً' : 'لم تكتمل'} • عولج ${s.handled} من ${s.total} • <bdi>${esc(fmtDateTimeUi(s.created_at))}</bdi>${s.created_by_name ? ' • ' + esc(s.created_by_name) : ''}</span></div>
+          <button class="btn small primary" data-waresume="${esc(s.id)}">${icon('whatsapp')} استئناف</button></li>`).join('')}</ul></div>` : ''}
+      <div class="card">
+        <div class="wa-h-row"><h3 class="wa-h">${wa.showHandled ? 'كل التنبيهات الأخيرة' : 'تنبيهات جاهزة للإرسال'}</h3>
+          <label class="check"><input type="checkbox" id="waShowHandled"${wa.showHandled ? ' checked' : ''}> عرض المعالجة أيضاً</label></div>
+        ${list.length ? `<ul class="wa-list">${list.map((e) => `
+          <li class="wa-row"><div class="wa-row-main">${waTypeChip(e.type)} <span class="wa-desc">${esc(WA.describe(e))}</span>
+            <span class="sub"><bdi>${esc(fmtDateTimeUi(e.created_at))}</bdi>${e.created_by_name ? ' • ' + esc(e.created_by_name) : ''}${e.status !== 'pending' ? ' • ' + (e.status === 'done' ? 'تمت معالجته' : 'تم تجاهله') : ''}</span></div>
+            ${canSend ? `<span class="ra"><button class="btn small primary" data-wasend="${esc(e.id)}">${icon('whatsapp')} إرسال</button>
+              ${e.status === 'pending' ? `<button class="btn small ghost" data-wadismiss="${esc(e.id)}" title="إخفاء التنبيه دون إرسال">تجاهل</button>` : ''}</span>` : ''}</li>`).join('')}</ul>`
+        : `<p class="empty">${wa.showHandled ? 'لا توجد تنبيهات بعد.' : 'لا توجد تنبيهات بانتظار الإرسال. تظهر هنا تلقائياً بعد حفظ طلب جديد أو دفعة أو مصروف أو تغيير حالة.'}</p>`}
+      </div>`;
+    const P = $('#waPanelSend');
+    $('#waShowHandled', P).addEventListener('change', (e) => { wa.showHandled = e.target.checked; waRenderSendTab(); });
+    $$('[data-wasend]', P).forEach((b) => b.addEventListener('click', () => waComposer(wa.events.find((e) => e.id === b.dataset.wasend))));
+    $$('[data-wadismiss]', P).forEach((b) => b.addEventListener('click', async () => {
+      try { await Store.api('POST', '/api/wa/events/' + encodeURIComponent(b.dataset.wadismiss), { status: 'dismissed' }); }
+      catch (ex) { toast(humanError(ex && ex.message, 'تعذّر تحديث التنبيه.'), true); return; }
+      await waLoad(true); waRenderSendTab(); toast('تم تجاهل التنبيه', 'info');
+    }));
+    $$('[data-waresume]', P).forEach((b) => b.addEventListener('click', () => waResume(b.dataset.waresume)));
+  }
+
+  /* ---- التبويب 2: المستلمون (20 كحد أقصى) ---- */
+  function waRenderRecipients() {
+    const st = wa.state, man = can(WA_P.manage);
+    const full = st.recipients.length >= st.max;
+    $('#waPanelRecipients').innerHTML = `
+      <div class="card">
+        <div class="wa-h-row"><h3 class="wa-h">المستلمون <span class="wa-count num" id="waRcCount">${st.recipients.length} / ${st.max}</span></h3>
+          ${man ? `<button class="btn primary" id="waAddR"${full ? ' disabled' : ''}>${icon('plus')} إضافة مستلم</button>` : ''}</div>
+        ${full && man ? '<p class="hint">وصلت إلى الحد الأقصى (20 مستلماً) — احذف مستلماً لإضافة آخر.</p>' : ''}
+        ${st.recipients.length ? `<div class="table-wrap"><table class="table responsive" id="waRcTable">
+          <thead><tr><th>الاسم</th><th>الرقم</th><th>التنبيهات التي تصله</th><th>الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+          <tbody>${st.recipients.map((r) => `<tr class="${r.active ? '' : 'wa-off'}">
+            <td data-label="الاسم"><b>${esc(r.name)}</b></td>
+            <td data-label="الرقم">${waPhoneHtml(r.phone)}</td>
+            <td data-label="التنبيهات">${r.events.length ? r.events.map((t) => `<span class="badge">${esc(WA.TYPE_LABELS[t])}</span>`).join(' ') : '<span class="hint">لا شيء</span>'}</td>
+            <td data-label="الحالة">${man ? `<label class="check"><input type="checkbox" data-waactive="${esc(r.id)}"${r.active ? ' checked' : ''}> ${r.active ? 'مفعّل' : 'معطّل'}</label>` : (r.active ? 'مفعّل' : 'معطّل')}</td>
+            <td class="row-actions">${man ? `<span class="ra"><button class="btn small" data-waedit="${esc(r.id)}">${icon('pen')} تعديل</button>
+              ${rowMenu([menuItem(`data-wadel="${esc(r.id)}"`, 'trash', 'حذف المستلم', true)], `إجراءات ${esc(r.name)}`)}</span>` : ''}</td>
+          </tr>`).join('')}</tbody></table></div>` : '<p class="empty">لا يوجد مستلمون.</p>'}
+        <p class="hint">الأرقام تُحفظ بصيغة دولية. الرقم السعودي المحلي (05…) يُحوَّل تلقائياً إلى ‎+966. لا تُضاف أي أرقام افتراضية.</p>
+      </div>`;
+    const P = $('#waPanelRecipients');
+    const add = $('#waAddR', P); if (add) add.addEventListener('click', () => waRecipientForm(null));
+    $$('[data-waedit]', P).forEach((b) => b.addEventListener('click', () => waRecipientForm(st.recipients.find((r) => r.id === b.dataset.waedit))));
+    $$('[data-wadel]', P).forEach((b) => b.addEventListener('click', async () => {
+      const r = st.recipients.find((x) => x.id === b.dataset.wadel);
+      if (!r || !(await confirmDlg('حذف مستلم', `حذف «${r.name}» (${WA.formatPhone(r.phone)})؟ يبقى سجل الإرسال السابق كما هو.`, 'حذف'))) return;
+      try { await Store.api('DELETE', '/api/wa/recipients/' + encodeURIComponent(r.id)); }
+      catch (ex) { toast(humanError(ex && ex.message, 'تعذّر حذف المستلم.'), true); return; }
+      await waLoad(true); waRenderRecipients(); toast('حُذف المستلم');
+    }));
+    $$('[data-waactive]', P).forEach((c) => c.addEventListener('change', async () => {
+      try { await Store.api('PUT', '/api/wa/recipients/' + encodeURIComponent(c.dataset.waactive), { active: c.checked }); }
+      catch (ex) { c.checked = !c.checked; toast(humanError(ex && ex.message, 'تعذّر الحفظ.'), true); return; }
+      await waLoad(true); waRenderRecipients(); toast(c.checked ? 'فُعّل المستلم' : 'عُطّل المستلم');
+    }));
+  }
+
+  function waRecipientForm(r) {
+    if (!can(WA_P.manage)) return;
+    const isNew = !r;
+    const x = r || { name: '', phone: '', active: true, events: WA.TYPES.slice() };
+    openModal(isNew ? 'إضافة مستلم' : 'تعديل مستلم', `
+      <label>اسم المستلم <input id="waRName" value="${esc(x.name)}" maxlength="60" autocomplete="off" placeholder="مثال: مدير المبيعات"></label>
+      <label>رقم الهاتف مع رمز الدولة <input id="waRPhone" dir="ltr" inputmode="tel" autocomplete="off" value="${esc(x.phone ? WA.formatPhone(x.phone) : '')}" placeholder="05XXXXXXXX أو ‎+9665XXXXXXXX"></label>
+      <p class="hint" id="waRPrev" aria-live="polite"></p>
+      <label class="check"><input type="checkbox" id="waRActive"${x.active ? ' checked' : ''}> مفعّل (يظهر في قوائم الإرسال)</label>
+      <fieldset class="wa-evs"><legend>التنبيهات التي تصله</legend>
+        ${WA.TYPES.map((t) => `<label class="check"><input type="checkbox" data-waev="${t}"${x.events.includes(t) ? ' checked' : ''}> ${WA.TYPE_ICONS[t]} ${esc(WA.TYPE_LABELS[t])}</label>`).join('')}
+      </fieldset>
+      <p id="waRErr" class="error" role="alert"></p>
+      <div class="btn-row"><button class="btn" id="waRCancel">إلغاء</button><button class="btn primary" id="waRSave">${icon('save')} حفظ</button></div>`, (b) => {
+      const prev = () => {
+        const v = $('#waRPhone', b).value;
+        const n = WA.normalizePhone(v);
+        $('#waRPrev', b).innerHTML = !v.trim() ? '' : n.error ? `<span class="wa-err-txt">${esc(n.error)}</span>` : `سيُحفظ: ${waPhoneHtml(n.phone)}`;
+      };
+      $('#waRPhone', b).addEventListener('input', prev); prev();
+      $('#waRCancel', b).onclick = closeModal;
+      $('#waRSave', b).onclick = async () => {
+        const err = $('#waRErr', b);
+        const name = $('#waRName', b).value.trim();
+        const n = WA.normalizePhone($('#waRPhone', b).value);
+        if (!name) { err.textContent = 'اسم المستلم مطلوب'; return; }
+        if (n.error) { err.textContent = n.error; return; }
+        const dup = wa.state.recipients.find((o) => o.phone === n.phone && (!r || o.id !== r.id));
+        if (dup) { err.textContent = `الرقم مسجّل مسبقاً للمستلم «${dup.name}»`; return; }
+        const body = { name, phone: '+' + n.phone, active: $('#waRActive', b).checked, events: $$('[data-waev]', b).filter((c) => c.checked).map((c) => c.dataset.waev) };
+        const btn = $('#waRSave', b); btn.disabled = true;
+        try {
+          if (isNew) await Store.api('POST', '/api/wa/recipients', body);
+          else await Store.api('PUT', '/api/wa/recipients/' + encodeURIComponent(r.id), body);
+        } catch (ex) { err.textContent = humanError(ex && ex.message, 'تعذّر حفظ المستلم.'); btn.disabled = false; return; }
+        closeModal();
+        await waLoad(true); waRenderRecipients(); toast(isNew ? 'أُضيف المستلم' : 'حُفظ المستلم');
+      };
+    }, 'drawer');
+  }
+
+  /* ---- التبويب 3: القوالب واختيار المستلمين لكل حدث ---- */
+  function waRenderTemplates() {
+    const st = wa.state, man = can(WA_P.manage);
+    $('#waPanelTemplates').innerHTML = WA.TYPES.map((t) => {
+      const T = st.templates[t];
+      const sample = (wa.events.find((e) => e.type === t) || {}).vars;
+      return `<div class="card wa-tpl" data-watpl="${t}">
+        <div class="wa-h-row"><h3 class="wa-h">${WA.TYPE_ICONS[t]} ${esc(WA.TYPE_LABELS[t])}</h3>${T.isDefault ? '<span class="badge">القالب الافتراضي</span>' : '<span class="badge st-progress">معدّل</span>'}</div>
+        <div class="wa-tpl-grid">
+          <div>
+            <label>نص الرسالة <textarea rows="9" data-watbody maxlength="${st.msgMax}"${man ? '' : ' readonly'}>${esc(T.body)}</textarea></label>
+            <div class="wa-vars">${T.vars.map((v) => `<button type="button" class="chip" data-wavar="{${v}}" title="${esc(WA.VAR_LABELS[v] || v)}"${man ? '' : ' disabled'}><bdi dir="ltr">{${v}}</bdi> ${esc(WA.VAR_LABELS[v] || '')}</button>`).join('')}</div>
+          </div>
+          <div><span class="lbl">معاينة${sample ? ' (بيانات آخر تنبيه من هذا النوع)' : ''}</span><pre class="wa-preview" data-waprev>${esc(WA.render(T.body, sample || {}))}</pre></div>
+        </div>
+        <fieldset class="wa-evs"><legend>المستلمون لهذا التنبيه</legend>
+          ${st.recipients.length ? st.recipients.map((r) => `<label class="check${r.active ? '' : ' wa-off'}"><input type="checkbox" data-wartpl="${esc(r.id)}"${T.recipients.includes(r.id) ? ' checked' : ''}${man ? '' : ' disabled'}> ${esc(r.name)} ${waPhoneHtml(r.phone)}${r.active ? '' : ' <small>(معطّل)</small>'}</label>`).join('') : '<p class="hint">لا يوجد مستلمون.</p>'}
+        </fieldset>
+        ${man ? `<p class="error" data-waterr role="alert"></p><div class="btn-row"><button class="btn" data-wareset${T.isDefault ? ' disabled' : ''}>استعادة النص الافتراضي</button><button class="btn primary" data-wasave>${icon('save')} حفظ</button></div>` : ''}
+      </div>`;
+    }).join('');
+    $$('#waPanelTemplates [data-watpl]').forEach((card) => {
+      const t = card.dataset.watpl;
+      const ta = $('[data-watbody]', card);
+      const sample = (wa.events.find((e) => e.type === t) || {}).vars || {};
+      const upd = () => { $('[data-waprev]', card).textContent = WA.render(ta.value, sample); };
+      ta.addEventListener('input', upd);
+      $$('[data-wavar]', card).forEach((c) => c.addEventListener('click', () => {
+        const s = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? s;
+        ta.value = ta.value.slice(0, s) + c.dataset.wavar + ta.value.slice(e);
+        ta.focus(); ta.selectionStart = ta.selectionEnd = s + c.dataset.wavar.length; upd();
+      }));
+      const save = $('[data-wasave]', card);
+      if (save) save.addEventListener('click', async () => {
+        const err = $('[data-waterr]', card);
+        if (!ta.value.trim()) { err.textContent = 'نص القالب مطلوب'; return; }
+        save.disabled = true;
+        try { await Store.api('PUT', '/api/wa/templates/' + t, { body: ta.value, recipients: $$('[data-wartpl]', card).filter((c) => c.checked).map((c) => c.dataset.wartpl) }); }
+        catch (ex) { err.textContent = humanError(ex && ex.message, 'تعذّر حفظ القالب.'); save.disabled = false; return; }
+        await waLoad(true); waRenderTemplates(); toast('حُفظ القالب');
+      });
+      const reset = $('[data-wareset]', card);
+      if (reset) reset.addEventListener('click', async () => {
+        try { await Store.api('PUT', '/api/wa/templates/' + t, { reset: true }); }
+        catch (ex) { toast(humanError(ex && ex.message, 'تعذّر الاستعادة.'), true); return; }
+        await waLoad(true); waRenderTemplates(); toast('استُعيد النص الافتراضي');
+      });
+    });
+  }
+
+  /* ---- التبويب 4: سجل الإرسال ---- */
+  function waRenderLog() {
+    const L = wa.log;
+    $('#waPanelLog').innerHTML = `<div class="card">
+      <p class="hint wa-honest">${icon('info')} واتساب لا يرسل أي تأكيد للنظام عبر روابط wa.me. «تم فتح واتساب» تعني أن المحادثة فُتحت، و«أكد المستخدم الإرسال يدويًا» تعني أن المستخدم ضغط زر التأكيد بنفسه — لا أن الرسالة وصلت.</p>
+      ${L.length ? `<div class="table-wrap"><table class="table responsive" id="waLogTable">
+        <thead><tr><th>الوقت</th><th>نوع التنبيه</th><th>الطلب</th><th>المستلم</th><th>الرقم</th><th>الحالة</th><th>بواسطة</th></tr></thead>
+        <tbody>${L.map((x) => `<tr>
+          <td data-label="الوقت" class="num"><bdi>${esc(fmtDateTimeUi(x.opened_at || x.created_at))}</bdi>${x.confirmed_at ? `<span class="sub">التأكيد: <bdi>${esc(fmtDateTimeUi(x.confirmed_at))}</bdi></span>` : ''}</td>
+          <td data-label="نوع التنبيه">${x.event_type ? esc(WA.TYPE_LABELS[x.event_type] || x.event_type) : '—'}</td>
+          <td data-label="الطلب" class="num">${x.order_number ? '#' + esc(x.order_number) : '<span class="hint">—</span>'}</td>
+          <td data-label="المستلم">${esc(x.name)}</td>
+          <td data-label="الرقم">${waPhoneHtml(x.phone)}</td>
+          <td data-label="الحالة">${waStatusChip(x.status)}</td>
+          <td data-label="بواسطة">${esc(x.by || '—')}</td></tr>`).join('')}</tbody></table></div>` : '<p class="empty">لا يوجد إرسال بعد.</p>'}
+    </div>`;
+  }
+
+  /* ---- نافذة تجهيز الرسالة: النوع، الحدث، النص، المستلمون ---- */
+  function waComposer(ev) {
+    if (!can(WA_P.send) || !wa.state) { if (!wa.state) waLoad(true).then(() => wa.state && waComposer(ev)).catch(() => toast('تعذّر تحميل إشعارات واتساب', true)); return; }
+    const st = wa.state;
+    let type = ev ? ev.type : (wa.events.find((e) => e.status === 'pending') || {}).type || WA.TYPES[0];
+    let evId = ev ? ev.id : '';
+    const eventsOf = (t) => wa.events.filter((e) => e.type === t);
+    openModal('إرسال تنبيه واتساب', `
+      <div class="seg-chips wa-types" role="radiogroup" aria-label="نوع التنبيه">${WA.TYPES.map((t) => `<button type="button" class="chip" role="radio" data-wactype="${t}">${WA.TYPE_ICONS[t]} ${esc(WA.TYPE_LABELS[t])}</button>`).join('')}</div>
+      <label>الحدث المرتبط <select id="waCEv"></select></label>
+      <label>نص الرسالة (يمكنك تعديله قبل الإرسال) <textarea id="waCMsg" rows="9" maxlength="${st.msgMax}"></textarea></label>
+      <div class="wa-msg-meta"><span id="waCLen" class="num"></span><button type="button" class="btn small ghost" id="waCReset">إعادة نص القالب</button></div>
+      <fieldset class="wa-evs"><legend>المستلمون <span id="waCCount" class="wa-count num"></span></legend>
+        <div class="wa-sel-row"><button type="button" class="btn small" id="waCAll">تحديد الكل</button><button type="button" class="btn small" id="waCNone">إلغاء التحديد</button></div>
+        <div id="waCList" class="wa-rc-list"></div>
+      </fieldset>
+      <p id="waCErr" class="error" role="alert"></p>
+      <div class="btn-row"><button class="btn" id="waCCancel">إلغاء</button><button class="btn primary" id="waCStart">${icon('whatsapp')} بدء الإرسال</button></div>`, (b) => {
+      const msg = $('#waCMsg', b);
+      const varsOf = () => (wa.events.find((e) => e.id === evId) || {}).vars || {};
+      const fillMsg = () => { msg.value = WA.render(st.templates[type].body, varsOf()); len(); };
+      const len = () => { const n = msg.value.length; $('#waCLen', b).textContent = `${n} / ${st.msgMax}`; $('#waCLen', b).classList.toggle('wa-err-txt', n > st.msgMax); };
+      const count = () => {
+        const all = $$('[data-wacr]', b), on = all.filter((c) => c.checked);
+        $('#waCCount', b).textContent = `المحدد: ${on.length} من ${all.length}`;
+        $('#waCStart', b).disabled = !on.length;
+      };
+      const drawRecipients = () => {
+        const act = st.recipients.filter((r) => r.active);
+        const pre = st.templates[type].recipients;
+        $('#waCList', b).innerHTML = act.length ? act.map((r) => `<label class="check"><input type="checkbox" data-wacr="${esc(r.id)}"${pre.includes(r.id) ? ' checked' : ''}> <b>${esc(r.name)}</b> ${waPhoneHtml(r.phone)}</label>`).join('')
+          : '<p class="hint">لا يوجد مستلمون نشطون — أضفهم من تبويب «المستلمون».</p>';
+        $$('[data-wacr]', b).forEach((c) => c.addEventListener('change', count));
+        count();
+      };
+      const drawType = () => {
+        $$('[data-wactype]', b).forEach((c) => { const on = c.dataset.wactype === type; c.classList.toggle('on', on); c.setAttribute('aria-checked', on ? 'true' : 'false'); });
+        const list = eventsOf(type);
+        if (!list.some((e) => e.id === evId)) evId = (list.find((e) => e.status === 'pending') || list[0] || {}).id || '';
+        $('#waCEv', b).innerHTML = list.map((e) => `<option value="${esc(e.id)}"${e.id === evId ? ' selected' : ''}>${esc(WA.describe(e))} — ${esc(fmtDate(e.created_at))}${e.status === 'pending' ? '' : ' (معالج)'}</option>`).join('')
+          + `<option value=""${evId ? '' : ' selected'}>بلا حدث — نص القالب فقط</option>`;
+        fillMsg(); drawRecipients();
+      };
+      $$('[data-wactype]', b).forEach((c) => c.addEventListener('click', () => { type = c.dataset.wactype; evId = ''; drawType(); }));
+      $('#waCEv', b).addEventListener('change', (e) => { evId = e.target.value; fillMsg(); });
+      msg.addEventListener('input', len);
+      $('#waCReset', b).onclick = fillMsg;
+      $('#waCAll', b).onclick = () => { $$('[data-wacr]', b).forEach((c) => (c.checked = true)); count(); };
+      $('#waCNone', b).onclick = () => { $$('[data-wacr]', b).forEach((c) => (c.checked = false)); count(); };
+      $('#waCCancel', b).onclick = closeModal;
+      $('#waCStart', b).onclick = async () => {
+        const err = $('#waCErr', b);
+        const ids = $$('[data-wacr]', b).filter((c) => c.checked).map((c) => c.dataset.wacr);
+        if (!msg.value.trim()) { err.textContent = 'نص الرسالة فارغ'; return; }
+        if (msg.value.length > st.msgMax) { err.textContent = `الرسالة أطول من ${st.msgMax} حرف — اختصرها`; return; }
+        if (!ids.length) { err.textContent = 'اختر مستلماً واحداً على الأقل'; return; }
+        // تنبيه سبقت معالجته: ضغطة ثانية للتأكيد بدل إرسال مكرر غير مقصود
+        if (evId && wa.events.find((e) => e.id === evId && e.status !== 'pending') && !b.dataset.waAgain) { b.dataset.waAgain = '1'; err.textContent = 'سبقت معالجة هذا التنبيه — اضغط «بدء الإرسال» مرة أخرى لإرساله من جديد.'; return; }
+        const btn = $('#waCStart', b); btn.disabled = true;
+        let r;
+        try { r = await Store.api('POST', '/api/wa/sends', { type, eventId: evId || undefined, message: msg.value, recipientIds: ids }); }
+        catch (ex) { err.textContent = humanError(ex && ex.message, 'تعذّر بدء الإرسال.'); btn.disabled = false; return; }
+        waRunner(r);
+      };
+      drawType();
+    }, 'drawer');
+  }
+
+  async function waResume(id) {
+    let r;
+    try { r = await Store.api('GET', '/api/wa/sends/' + encodeURIComponent(id)); }
+    catch (ex) { toast(waErrMsg(ex, 'تعذّر فتح جلسة الإرسال.'), true); await waLoad(true).catch(() => {}); if (canPage('whatsapp') && $('#page-whatsapp').classList.contains('active')) waShowTab('send'); return; }
+    if (r.send.status === 'paused') { try { await Store.api('POST', '/api/wa/sends/' + encodeURIComponent(id), { status: 'active' }); r.send.status = 'active'; } catch (_) { /* يكمل */ } }
+    waRunner(r);
+  }
+
+  /** رسالة الخطأ المعروضة: رسائل خدمة واتساب (400/403/404/409) عربية مكتوبة للمستخدم في الخادم فتُعرض كما هي،
+      وما عداها (الشبكة، 500) يمر على humanError كبقية التطبيق */
+  const waErrMsg = (ex, fallback) => (ex && ex.status >= 400 && ex.status < 500 && ex.status !== 401 && ex.message ? ex.message : humanError(ex && ex.message, fallback));
+
+  /** فتح محادثة واحدة بضغطة المستخدم نفسها (يبقى داخل الحدث فلا يمنعه مانع النوافذ المنبثقة) */
+  function waOpenChat(url) {
+    if (!/^https:\/\/wa\.me\/\d{8,15}\?text=/.test(url)) return false;
+    if (window.Capacitor) { window.open(url, '_system'); return true; }   // التطبيق: واتساب أو المتصفح الخارجي
+    const w = window.open(url, '_blank');
+    if (!w) return false;                                                 // منعه المتصفح
+    try { w.opener = null; } catch (_) { /* نطاق آخر */ }
+    return true;
+  }
+
+  /* ---- مشغّل الإرسال المتتابع: المستلم 1 من N ---- */
+  function waRunner(data) {
+    const send = data.send;
+    const items = data.items.slice();
+    const FINAL = ['confirmed', 'skipped', 'failed'];
+    let cur = Math.max(0, items.findIndex((x) => !FINAL.includes(x.status)));
+    let blocked = false;
+    let busy = false;
+    const setStatus = async (it, status) => {
+      const r = await Store.api('POST', '/api/wa/log/' + encodeURIComponent(it.id), { status });
+      it.status = status;
+      if (status === 'opened') it.opened_at = new Date().toISOString();
+      return r;
+    };
+    const nextIdx = () => { const i = items.findIndex((x, k) => k > cur && !FINAL.includes(x.status)); return i >= 0 ? i : items.findIndex((x) => !FINAL.includes(x.status)); };
+    openModal('إرسال تنبيه واتساب', '<div id="waRun"></div>', (b) => {
+      const draw = () => {
+        const done = items.filter((x) => FINAL.includes(x.status)).length;
+        const finished = done === items.length;
+        const it = items[cur];
+        const pct = Math.round((done / items.length) * 100);
+        $('#waRun', b).innerHTML = `
+          <div class="wa-run-head">${waTypeChip(send.event_type)}${send.order_number ? ` <b class="num">#${esc(send.order_number)}</b>` : ''}</div>
+          <div class="wa-progress" role="progressbar" aria-valuemin="0" aria-valuemax="${items.length}" aria-valuenow="${done}" aria-label="تقدم الإرسال"><span style="width:${pct}%"></span></div>
+          <p class="wa-prog-txt" id="waProgTxt" aria-live="polite">${finished ? `اكتمل: عولج ${items.length} من ${items.length}` : `المستلم ${cur + 1} من ${items.length}`} <small>• عولج ${done}</small></p>
+          ${finished ? `<div class="wa-done card">${icon('check')}<div><b>انتهت جلسة الإرسال</b>
+              <p>أكدتَ الإرسال لـ ${items.filter((x) => x.status === 'confirmed').length}، وتخطيت ${items.filter((x) => x.status === 'skipped').length}، وتعذّر الفتح لـ ${items.filter((x) => x.status === 'failed').length}.</p></div></div>
+              <div class="btn-row"><button class="btn primary" id="waRClose">إغلاق</button></div>`
+          : `<div class="wa-cur card">
+              <div class="wa-cur-who"><b>${esc(it.name)}</b> ${waPhoneHtml(it.phone)} ${waStatusChip(it.status)}</div>
+              ${blocked ? `<p class="error">منع المتصفح فتح النافذة. اضغط الرابط المباشر: <a href="${esc(it.link)}" target="_blank" rel="noopener noreferrer" id="waRDirect">فتح محادثة ${esc(it.name)}</a></p>` : ''}
+              <div class="btn-row wa-run-btns">
+                <button class="btn primary" id="waROpen">${icon('whatsapp')} ${it.status === 'opened' ? 'إعادة فتح واتساب' : 'فتح واتساب'}</button>
+                ${it.status === 'opened' ? `<button class="btn primary wa-ok" id="waRConfirm">${icon('check')} أرسلتُها — التالي</button>` : ''}
+                <button class="btn" id="waRSkip">تخطي</button>
+                ${it.status === 'opened' ? '<button class="btn ghost" id="waRFail">لم يُفتح واتساب</button>' : ''}
+              </div>
+              <p class="hint">${it.status === 'opened' ? 'اضغط «إرسال» داخل واتساب، ثم عد هنا واضغط «أرسلتُها — التالي». النظام لا يعرف إن وصلت الرسالة.' : 'تُفتح محادثة هذا المستلم وحده والرسالة مكتوبة فيها — الإرسال بضغطتك في واتساب.'}</p>
+            </div>
+            <div class="btn-row"><button class="btn ghost" id="waRPause">إيقاف مؤقت</button></div>`}
+          <ol class="wa-run-list">${items.map((x, k) => `<li class="${k === cur && !finished ? 'cur' : ''}"><span class="num">${k + 1}</span> ${esc(x.name)} ${waStatusChip(x.status)}</li>`).join('')}</ol>`;
+        const on = (id, fn) => { const el = $('#' + id, b); if (el) el.onclick = fn; };
+        // ضغطة واحدة = عملية واحدة: busy يُضبط متزامناً قبل أي انتظار، فالضغط المزدوج السريع (شائع على اللمس)
+        // لا يفتح محادثتين ولا يرسل حالتين — الأزرار المعطّلة وحدها لا تكفي لأن التعطيل يأتي بعد أول await
+        const guard = (fn) => async () => {
+          if (busy) return; busy = true;
+          $$('#waRun button', b).forEach((x) => (x.disabled = true));
+          try { await fn(); } catch (ex) {
+            // 403/404: لم يعد المستخدم يملك الجلسة أو رؤية بياناتها (سحب صلاحية، نقل ملكية) — تُغلق النافذة
+            // فلا تبقى بيانات التنبيه معروضة ولا يمكن متابعتها، وتُعرض رسالة الخادم الواضحة
+            if (ex && (ex.status === 403 || ex.status === 404)) { busy = false; return waDenied(ex); }
+            toast(waErrMsg(ex, 'تعذّر حفظ الحالة.'), true);
+            // 409: الحالة تغيّرت من نافذة أو جهاز آخر — تُقرأ من الخادم بدل البقاء على نسخة قديمة
+            if (ex && ex.status === 409) { busy = false; await wa.runnerRefresh().catch(() => {}); }
+          }
+          finally { busy = false; }
+          if ($('#waRun', b)) draw();
+        };
+        const waDenied = async (ex) => {
+          closeModal();
+          toast(waErrMsg(ex, 'لم تعد تملك صلاحية متابعة هذه الجلسة.'), true);
+          await waLoad(true).catch(() => {});
+          if (canPage('whatsapp') && $('#page-whatsapp').classList.contains('active')) waShowTab('send');
+        };
+        on('waRClose', async () => { closeModal(); await waLoad(true); if (wa.tab) waShowTab(wa.tab); });
+        on('waROpen', async () => {
+          if (busy) return;
+          if (window.Capacitor) {
+            /* التطبيق (أندرويد): لا قيد «ضغطة المستخدم» على فتح الروابط الخارجية، فيُتحقق من الخادم أولاً أن المستخدم
+               ما زال يملك الجلسة ورؤية بياناتها الآن (سحب صلاحية أو نقل ملكية بعد فتح النافذة ← لا فتح لواتساب أصلاً) */
+            return guard(async () => {
+              await Store.api('GET', '/api/wa/sends/' + encodeURIComponent(send.id));
+              waOpenChat(it.link);
+              await setStatus(it, 'opened');
+            })();
+          }
+          // المتصفح: الفتح أولاً داخل ضغطة المستخدم نفسها (وإلا منعه مانع النوافذ المنبثقة)، ثم تسجيل الحالة في الخادم
+          const opened = waOpenChat(it.link);
+          blocked = !opened;
+          await guard(() => setStatus(it, opened ? 'opened' : 'failed'))();
+        });
+        const direct = $('#waRDirect', b);
+        // الرابط البديل (عند منع المتصفح للنافذة): الضغطة الأولى وحدها تفتح وتسجّل — ما بعدها يُمنع حتى تنتهي
+        if (direct) direct.addEventListener('click', (ev) => {
+          if (busy) { ev.preventDefault(); return; }
+          busy = true; blocked = false;
+          setStatus(it, 'opened').then(() => { busy = false; draw(); }).catch((ex) => { busy = false; if (ex && (ex.status === 403 || ex.status === 404)) return waDenied(ex); toast(waErrMsg(ex, 'تعذّر حفظ الحالة.'), true); draw(); });
+        });
+        on('waRConfirm', guard(async () => { await setStatus(it, 'confirmed'); blocked = false; const n = nextIdx(); if (n >= 0) cur = n; }));
+        on('waRSkip', guard(async () => { await setStatus(it, 'skipped'); blocked = false; const n = nextIdx(); if (n >= 0) cur = n; }));
+        on('waRFail', guard(async () => { await setStatus(it, 'failed'); blocked = false; const n = nextIdx(); if (n >= 0) cur = n; }));
+        on('waRPause', async () => {
+          try { await Store.api('POST', '/api/wa/sends/' + encodeURIComponent(send.id), { status: 'paused' }); }
+          catch (ex) { if (ex && (ex.status === 403 || ex.status === 404)) return waDenied(ex); toast(waErrMsg(ex, 'تعذّر الإيقاف.'), true); return; }
+          closeModal(); toast('أُوقف الإرسال مؤقتاً — استأنفه من «جلسات إرسال لم تكتمل»', 'info');
+          await waLoad(true); if (canPage('whatsapp') && $('#page-whatsapp').classList.contains('active')) waShowTab('send');
+        });
+      };
+      draw();
+      /* العودة من واتساب (أندرويد: التطبيق يذهب للخلفية ثم يعود): تُقرأ الحالة من الخادم ويبقى المستلم الحالي كما هو.
+         إن أُغلق التطبيق كلياً فالجلسة محفوظة في الخادم وتُستأنف من «جلسات إرسال لم تكتمل». */
+      wa.runnerRefresh = async () => {
+        if (busy || !$('#waRun', b)) return;
+        try {
+          const r = await Store.api('GET', '/api/wa/sends/' + encodeURIComponent(send.id));
+          const byId = new Map(r.items.map((x) => [x.id, x]));
+          items.forEach((x) => { const y = byId.get(x.id); if (y) { x.status = y.status; x.opened_at = y.opened_at; } });
+          if ($('#waRun', b)) draw();
+        } catch (ex) {
+          // سُحبت الصلاحية أثناء وجوده في واتساب: تُغلق النافذة ولا تبقى بياناتها معروضة
+          if (ex && (ex.status === 403 || ex.status === 404) && $('#waRun', b)) { closeModal(); toast(waErrMsg(ex, 'لم تعد تملك صلاحية متابعة هذه الجلسة.'), true); waLoad(true).catch(() => {}); }
+          /* بلا اتصال: تبقى الحالة المحلية */
+        }
+      };
+    }, 'drawer');
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && wa.runnerRefresh && document.getElementById('waRun')) wa.runnerRefresh();
+  });
+
+  /* ---- بعد حفظ ناجح: الخادم أعاد تنبيهات جديدة ← عرض «إرسال تنبيه» دون مقاطعة العمل ---- */
+  function waNudge(list) {
+    if (!can(WA_P.send) || !list || !list.length) return;
+    let el = $('#waNudge');
+    if (!el) { el = document.createElement('div'); el.id = 'waNudge'; el.className = 'wa-nudge'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    const one = list.length === 1 ? list[0] : null;
+    el.innerHTML = `${icon('whatsapp')}<div class="wa-nudge-txt"><b>${one ? 'تنبيه واتساب جاهز' : list.length + ' تنبيهات واتساب جاهزة'}</b><span>${one ? esc(WA.TYPE_LABELS[one.type] || '') : list.map((x) => esc(WA.TYPE_LABELS[x.type] || '')).join('، ')}</span></div>
+      <button class="btn small primary" id="waNudgeGo">${one ? 'إرسال الآن' : 'عرض'}</button><button class="btn small ghost" id="waNudgeX" aria-label="لاحقاً">لاحقاً</button>`;
+    el.hidden = false;
+    clearTimeout(waNudge.t);
+    waNudge.t = setTimeout(() => { el.hidden = true; }, 15000);
+    $('#waNudgeX', el).onclick = () => { el.hidden = true; };
+    $('#waNudgeGo', el).onclick = async () => {
+      el.hidden = true;
+      try { await waLoad(true); } catch (ex) { toast(humanError(ex && ex.message, 'تعذّر تحميل التنبيهات.'), true); return; }
+      const ev = one && wa.events.find((e) => e.id === one.id);
+      if (ev) waComposer(ev); else { wa.tab = 'send'; showPage('whatsapp'); }
+    };
+    waLoad(true).catch(() => {});
+  }
+  window.addEventListener('majlis:wa-events', (e) => waNudge(e.detail));
+
+  /** بعد الدخول: جلسة إرسال سابقة لم تكتمل ← «استئناف» من المستلم الذي توقفت عنده */
+  function waResumeNudge() {
+    const s = wa.openSends[0];
+    if (!s) return;
+    let el = $('#waNudge');
+    if (!el) { el = document.createElement('div'); el.id = 'waNudge'; el.className = 'wa-nudge'; el.setAttribute('role', 'status'); document.body.appendChild(el); }
+    el.innerHTML = `${icon('whatsapp')}<div class="wa-nudge-txt"><b>جلسة إرسال لم تكتمل</b><span>${esc(WA.TYPE_LABELS[s.event_type] || '')} • عولج ${s.handled} من ${s.total}</span></div>
+      <button class="btn small primary" id="waNudgeGo">استئناف</button><button class="btn small ghost" id="waNudgeX">لاحقاً</button>`;
+    el.hidden = false;
+    // تذكير الاستئناف لا يختفي وحده (كان 15 ثانية ففات المستخدم): يبقى حتى «استئناف» أو «لاحقاً»
+    clearTimeout(waNudge.t);
+    $('#waNudgeX', el).onclick = () => { el.hidden = true; };
+    $('#waNudgeGo', el).onclick = () => { el.hidden = true; waResume(s.id); };
+  }
+
   /* ---------------- إدارة المناديب (مدير) ---------------- */
   const mandoubUsers = () => db().users.filter((u) => u.role === 'mandoub');
   const mandoubName = (id) => { const u = Store.getUser(id); return u ? u.name : '—'; };
@@ -5517,47 +6026,94 @@ function docTitle(order) {
     const clicks = loadVisitClicks();
     const clickTotal = Object.values(clicks).reduce((a, b) => a + (Number(b) || 0), 0);
     let server = null, err = '';
-    try {
-      const r = await Store.api('GET', '/api/link-visits');
-      server = r || null;
-    } catch (e) { err = (e && e.message) || 'تعذّر تحميل الإحصاءات'; }
-    const rows = [['customer', 'واجهة العميل'], ['expanded', 'التصميم الموسّع (تجريبي)'], ['staff', 'واجهة الموظفين']];
-    const B = (server && server.byLink) || {};
-    const P0 = (server && server.periods) || { today: 'اليوم', d7: 'آخر ٧ أيام', d30: 'آخر ٣٠ يوماً' };
+    try { server = (await Store.api('GET', '/api/link-visits')) || null; }
+    catch (e) { err = humanError(e && e.message, 'تعذّر تحميل الإحصاءات. تحقق من الاتصال.'); }
     let html = '';
     if (err) {
-      html += '<p class="hint" style="color:#c00">تعذّر تحميل الزيارات: ' + esc(err) + '</p>';
-    } else if (!Object.keys(B).length) {
-      html += '<p class="hint">لا توجد زيارات مسجّلة بعد. الأرقام تظهر هنا فور وصول أول زائر للصفحات العامة (تفتح من جهازك تُحتسب ضمنها).</p>';
+      html = `<p class="vs-err" role="alert">${esc(err)}</p>`;
+    } else {
+      /* الصفحات التي يسجّل الخادم زياراتها فعلاً (لا صفوف ثابتة دائماً صفر) */
+      const links = (server && server.links) || { customer: 'بوابة العميل', expanded: 'التصميم الموسّع' };
+      const B = (server && server.byLink) || {};
+      const keys = Object.keys(links);
+      // الزوار من إجمالي الخادم الفريد عبر الصفحتين (جمع زوار كل صفحة يعدّ الجهاز الذي فتح الصفحتين مرتين)
+      const T = (server && server.totals) || null;
+      const tot = (p) => keys.reduce((a, k) => {
+        const r = B[k] && B[k][p]; return { visits: a.visits + num(r && r.visits), visitors: T ? a.visitors : a.visitors + num(r && r.visitors) };
+      }, { visits: 0, visitors: T && T[p] ? num(T[p].visitors) : 0 });
+      const allTime = keys.reduce((a, k) => a + num(B[k] && B[k].all), 0);
+      const P = [['today', 'اليوم'], ['d7', 'آخر ٧ أيام'], ['d30', 'آخر ٣٠ يوماً']];
+      // 1) بطاقات الفترات: الزيارات رقم كبير، والزوار تحته
+      html += '<div class="vs-cards">' + P.map(([p, label]) => {
+        const t = tot(p);
+        return `<div class="vs-card"><span class="vs-card-lbl">${label}</span><b class="num">${num(t.visits).toLocaleString('en-US')}</b><small>زيارة · <bdi class="num">${num(t.visitors).toLocaleString('en-US')}</bdi> زائر</small></div>`;
+      }).join('') + `<div class="vs-card vs-card-all"><span class="vs-card-lbl">منذ البداية</span><b class="num">${allTime.toLocaleString('en-US')}</b><small>زيارة</small></div></div>`;
+      if (!allTime) html += '<p class="hint">لا توجد زيارات مسجّلة بعد. تظهر الأرقام فور وصول أول زائر لصفحات العملاء.</p>';
+      // 2) لكل صفحة: الزيارات والزوار في عمودين واضحين لكل فترة
+      html += `<div class="table-wrap"><table class="table compact vs-table"><thead><tr><th>الصفحة</th>${P.map(([, l]) => `<th class="ta-end">${l}</th>`).join('')}<th class="ta-end">منذ البداية</th></tr></thead><tbody>`
+        + keys.map((k) => `<tr><td><b>${esc(links[k])}</b></td>${P.map(([p]) => {
+          const r = B[k] && B[k][p];
+          return `<td class="ta-end"><b class="num">${num(r && r.visits)}</b><small class="vs-sub"><bdi class="num">${num(r && r.visitors)}</bdi> زائر</small></td>`;
+        }).join('')}<td class="ta-end"><b class="num">${num(B[k] && B[k].all)}</b></td></tr>`).join('')
+        + '</tbody></table></div>';
+      // 3) رسم آخر ٣٠ يوماً: عمود لكل يوم (مجموع الصفحتين) — أيام الصفر ظاهرة
+      const todayKey = (server && server.today) || today();
+      const per = new Map();
+      keys.forEach((k) => ((B[k] && B[k].days) || []).forEach((d) => per.set(d.day, (per.get(d.day) || 0) + num(d.n))));
+      const days = [];
+      for (let i = 29; i >= 0; i--) { const d = new Date(Date.parse(todayKey + 'T00:00:00Z') - i * 86400000).toISOString().slice(0, 10); days.push({ d, n: per.get(d) || 0 }); }
+      const max = Math.max(1, ...days.map((x) => x.n));
+      const peak = days.reduce((a, x) => (x.n > a.n ? x : a), { n: 0 });
+      const avg = Math.round((days.reduce((s, x) => s + x.n, 0) / 30) * 10) / 10;
+      html += `<div class="vs-chart-head"><b>آخر ٣٠ يوماً</b><span class="hint">متوسط <bdi class="num">${avg}</bdi> زيارة يومياً${peak.n ? ` · الأعلى <bdi class="num">${peak.n}</bdi> في <bdi dir="ltr">${esc(peak.d)}</bdi>` : ''}</span></div>`
+        + `<div class="vs-chart" role="img" aria-label="الزيارات اليومية لآخر ٣٠ يوماً">${days.map((x) => `<span class="vs-bar${x.d === peak.d && x.n ? ' peak' : ''}" style="height:${Math.max(2, Math.round((x.n / max) * 100))}%" title="${esc(x.d)}: ${x.n} زيارة"></span>`).join('')}</div>`
+        + `<div class="vs-axis"><bdi dir="ltr">${esc(days[0].d)}</bdi><bdi dir="ltr">${esc(days[29].d)}</bdi></div>`;
+      html += '<p class="hint vs-note">الزيارة = كل فتح للصفحة، والزائر = جهاز واحد في اليوم. الروبوتات ومعاينات الروابط مستبعدة، والأيام بتوقيت المحل.</p>';
+      // 4) أهم المصادر لآخر ٣٠ يوماً (من روابط القنوات ?src=…)
+      const SRC = (server && server.sources) || [];
+      const srcName = (k) => (window.Reports && Reports.srcLabel ? Reports.srcLabel(k) : k);
+      const srcMax = Math.max(1, ...SRC.map((x) => num(x.n)));
+      html += '<div class="vs-chart-head"><b>من أين جاء الزوار؟ (آخر ٣٠ يوماً)</b></div>'
+        + (SRC.length && SRC.some((x) => x.dim !== 'direct')
+          ? '<ul class="vs-src">' + SRC.map((x) => `<li><span class="vs-src-name">${esc(srcName(x.dim))}</span><span class="vs-src-bar"><i style="width:${Math.max(3, Math.round((num(x.n) / srcMax) * 100))}%"></i></span><b class="num">${num(x.n)}</b></li>`).join('') + '</ul>'
+          : '<p class="hint">لا مصادر مسجّلة بعد — شارك روابط القنوات أدناه بدل الرابط العام لتعرف أي قناة تجلب الزوار والطلبات.</p>');
+      // 5) روابط القنوات: رابط لكل قناة + اسم حملة مخصّص
+      const CH = [['whatsapp', 'واتساب'], ['instagram', 'إنستغرام'], ['tiktok', 'تيك توك'], ['snapchat', 'سناب شات'], ['x', 'إكس'], ['google', 'خرائط Google'], ['qr', 'رمز QR (المعرض والمطبوعات)'], ['sms', 'رسالة نصية']];
+      html += `<details class="vs-links"><summary><b>روابط القنوات</b> <span class="hint">— انشر لكل قناة رابطها لتعرف مصدر كل زائر وطلب</span></summary>
+        <div class="vs-links-list">${CH.map(([k, l]) => `<div class="vs-link"><span>${esc(l)}</span><input class="ltr num" readonly value="${esc(srcLink(k))}" aria-label="رابط ${esc(l)}"><button type="button" class="btn small" data-srccopy="${esc(k)}">${icon('copy')}<span>نسخ</span></button><button type="button" class="btn small" data-srcshare="${esc(k)}">${icon('upload')}<span>مشاركة</span></button></div>`).join('')}
+          <div class="vs-link vs-link-custom"><span>حملة مخصّصة</span><input id="vsSrcCustom" class="ltr" maxlength="24" placeholder="ramadan_ad" aria-label="اسم الحملة بأحرف لاتينية"><button type="button" class="btn small" id="vsSrcCustomCopy">${icon('copy')}<span>نسخ الرابط</span></button></div>
+          <p class="hint">اسم الحملة بأحرف لاتينية وأرقام فقط (مثل ramadan_ad). يظهر في التقرير كما كتبته.</p>
+        </div></details>`;
     }
-    if (!err) {
-      html += '<table class="visit-table visit-table-3p"><thead><tr><th>الرابط</th><th>اليوم</th><th>آخر ٧ أيام</th><th>آخر ٣٠ يومًا</th></tr></thead><tbody>';
-      for (const [k, label] of rows) {
-        const rec = B[k] || null;
-        const cell = (p) => {
-          const v = rec && rec[p] ? rec[p] : { visits: 0, visitors: 0 };
-          return '<b class="num">' + num(v.visits) + '</b> <small class="hint">' + num(v.visitors) + ' زائر</small>';
-        };
-        html += '<tr><td>' + esc(label) + '</td><td>' + cell('today') + '</td><td>' + cell('d7') + '</td><td>' + cell('d30') + '</td></tr>';
-      }
-      html += '</tbody></table>';
-      html += '<p class="hint">الرقم الكبير = إجمالي الزيارات، وتحته عدد الزوار الفريدين (جهاز واحد يُحتسب مرة واحدة في اليوم). الروبوتات والطلبات المبرمجة مستبعدة، والتوقيت ' + ((server && server.tzOffsetMin) ? ('+' + server.tzOffsetMin + ' ساعة عن UTC') : 'المحلي') + '.</p>';
-      // تفاصيل ٣٠ يوماً كسطر اختياري تحت الجدول (أيام مرقّمة، بلا أرقام وهمية)
-      const anyDays = rows.some(([k]) => B[k] && B[k].days && B[k].days.length);
-      if (anyDays) {
-        html += '<div class="visit-days">';
-        for (const [k, label] of rows) {
-          const ds = (B[k] && B[k].days) || [];
-          if (!ds.length) continue;
-          html += '<div class="visit-days-row"><b>' + esc(label) + '</b> ';
-          html += ds.map((d) => '<span title="' + esc(d.day) + ': ' + num(d.n) + ' زيارة">' + num(d.n) + '</span>').join(' · ');
-          html += '</div>';
-        }
-        html += '</div>';
-      }
+    html += `<div class="vs-foot">${can('reports.view_all') || canAny('reports.view_own', 'reports.view_all') ? '<button type="button" class="btn small primary" id="btnVisitsReport">' + icon('file') + ' تقرير الزيارات المفصّل والطباعة</button>' : ''}<span class="hint">نقراتك على أزرار الفتح/النسخ/المشاركة: <b class="num">${num(clickTotal)}</b> (على هذا الجهاز فقط)</span></div>`;
+    if (body) {
+      body.innerHTML = html;
+      const go = $('#btnVisitsReport', body);
+      if (go) go.onclick = () => { repId = 'visits'; repStore.set('id', repId); showPage('reports'); };
+      $$('[data-srccopy]', body).forEach((b) => b.addEventListener('click', () => srcCopy(srcLink(b.dataset.srccopy))));
+      $$('[data-srcshare]', body).forEach((b) => b.addEventListener('click', async () => {
+        const u = srcLink(b.dataset.srcshare);
+        if (navigator.share) { try { await navigator.share({ title: settings().shopName || 'أصالة نجد', text: 'صمّم مجلسك بنفسك', url: u }); return; } catch (_) { /* أُلغيت المشاركة */ } }
+        srcCopy(u);
+      }));
+      const cc = $('#vsSrcCustomCopy', body);
+      if (cc) cc.addEventListener('click', () => {
+        const v = String($('#vsSrcCustom', body).value || '').trim().toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+        if (!v) { toast('اكتب اسم الحملة بأحرف لاتينية أو أرقام', true); return; }
+        $('#vsSrcCustom', body).value = v;
+        srcCopy(srcLink(v));
+      });
     }
-    html += '<p class="hint">نقراتك على أزرار الفتح/النسخ/المشاركة: <b class="num">' + num(clickTotal) + '</b> — عدّاد محلي على هذا الجهاز فقط.</p>';
-    if (body) body.innerHTML = html;
+  }
+
+  /** رابط صفحة العميل لقناة معيّنة (?src=…) — يبني على الرابط الرسمي نفسه */
+  const srcLink = (k) => ACCESS_LINKS.customer + '?src=' + encodeURIComponent(k);
+  async function srcCopy(u) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(u);
+      else { const ta = document.createElement('textarea'); ta.value = u; document.body.appendChild(ta); ta.select(); document.execCommand('copy'); ta.remove(); }
+      toast('نُسخ الرابط');
+    } catch (_) { toast('تعذّر النسخ — انسخ الرابط يدوياً', true); }
   }
 
   /* روابط الوصول الرسمية الثابتة (من إعداد النشر: Worker majlis-api + مستودع ialshareef/majlis-orders).
@@ -7460,11 +8016,28 @@ async function exportExpensesXlsx() {
     return { profit: b.profit, rows: b.rows.map((r, i) => ({ ...r, kind: i === 0 ? 'owner' : (hasParent && i === 1 ? 'parent' : 'share') })) };
   }
 
+  /* تقرير «زيارات الموقع»: بيانات الخادم للفترة المختارة (لا تصل مع المزامنة). تُجلب عند فتح التقرير
+     أو تغيير الفترة، ثم يُعاد رسم الصفحة. «كل الفترات» = منذ أول زيارة مسجّلة. */
+  const repVisits = { key: '', data: null, loading: '' };
+  const repVisitsKey = (p) => (p.from || 'all') + '|' + (p.to || today());
+  function loadRepVisits(p) {
+    const key = repVisitsKey(p);
+    if (repVisits.loading === key || (repVisits.key === key && repVisits.data && repVisits.data.ready)) return;
+    repVisits.loading = key;
+    if (repVisits.key !== key) { repVisits.key = key; repVisits.data = null; }
+    const qs = new URLSearchParams({ range: 'custom', from: p.from || '2000-01-01', to: p.to || today() });
+    Store.api('GET', '/api/owner-analytics?' + qs.toString())
+      .then((r) => { if (repVisits.key === key) repVisits.data = Object.assign({ ready: true }, r); })
+      .catch((e) => { if (repVisits.key === key) repVisits.data = { ready: false, error: humanError(e && e.message, 'تعذّر تحميل الزيارات. تحقق من الاتصال.') }; })
+      .finally(() => { repVisits.loading = ''; if (document.body.dataset.page === 'reports' && repId === 'visits') renderReports(); });
+  }
+
   function repCtx() {
     const p = repPeriod();
     const scopeAll = can('reports.view_all');
     return {
       orders: db().orders || [], expenses: db().expenses || [], users: db().users || [],
+      visits: repVisits.key === repVisitsKey(p) ? repVisits.data : null,
       from: p.from, to: p.to, today: today(),
       userId: scopeAll ? $('#repUser').value : '',
       status: $('#repStatus').value,
@@ -7473,6 +8046,7 @@ async function exportExpensesXlsx() {
         profitAny: canAny('profit.view_own', 'profit.view_all'),
         commAny: canAny('commission.view_own', 'commission.view_all'),
         expenses: canAny('expenses.view_own', 'expenses.view_all'),
+        visits: can('admin.core'),   // زيارات الموقع للمالك وحده (الخادم يفرضها في /api/owner-analytics)
         profit: (o) => canFor(o, 'profit.view'),
         comm: (o) => canFor(o, 'commission.view'),
       },
@@ -7502,7 +8076,8 @@ async function exportExpensesXlsx() {
   function repMeta(rep) {
     const ctx = repCtx();
     const meta = [['المتجر', settings().shopName || 'أصالة نجد']];
-    if (ctx.scopeAll) meta.push(['الموظف / المندوب', ctx.userId ? ctx.userName(ctx.userId) : 'الكل']);
+    if (rep && rep.id === 'visits') meta.push(['النطاق', 'صفحات العملاء العامة']);
+    else if (ctx.scopeAll) meta.push(['الموظف / المندوب', ctx.userId ? ctx.userName(ctx.userId) : 'الكل']);
     else meta.push(['النطاق', 'طلباتي فقط (' + ((currentUser && currentUser.name) || '') + ')']);
     if (rep && rep.id === 'orders') meta.push(['الحالة', $('#repStatus').selectedOptions[0] ? $('#repStatus').selectedOptions[0].textContent : '']);
     meta.push(['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']);
@@ -7533,6 +8108,8 @@ async function exportExpensesXlsx() {
     }
     const def = cat.find((c) => c.id === repId);
     $('#repStatus').hidden = !def.usesStatus;
+    // تقرير الزيارات بلا تصفية بالموظف (الزيارات لا تخص موظفاً)
+    if (repId === 'visits') { $('#repUser').hidden = true; loadRepVisits(repPeriod()); }
 
     const p = repPeriod();
     if (repRange !== 'custom') { $('#repFrom').value = p.from; $('#repTo').value = p.to; }

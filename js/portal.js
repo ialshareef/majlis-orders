@@ -11,6 +11,19 @@
   var $$ = function (s, r) { return Array.from((r || document).querySelectorAll(s)); };
   var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
   var TOKEN_KEY = 'majlis_design_token';
+  /* مصدر الزيارة (?src=instagram …): يُحفظ 7 أيام على هذا الجهاز فقط ويُرسل مرة واحدة عند بدء التصميم،
+     فيُنسب التصميم والطلب الناتج عنه لقناته. بلا أي معرّف للعميل — اسم القناة فقط. */
+  var SRC_KEY = 'majlis_visit_src_v1';
+  var visitSrc = (function () {
+    try {
+      var q = new URLSearchParams(window.location.search).get('src');
+      q = String(q || '').toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24);
+      if (q) { localStorage.setItem(SRC_KEY, JSON.stringify({ s: q, t: Date.now() })); return q; }
+      var v = JSON.parse(localStorage.getItem(SRC_KEY) || 'null');
+      if (v && v.s && Date.now() - v.t < 7 * 864e5) return String(v.s);
+    } catch (_) { /* تخزين غير متاح */ }
+    return '';
+  })();
 
   var toastTimer = 0;
   function toast(msg, err) {
@@ -166,7 +179,7 @@
   async function startNew() {
     setBusy($('#pStart'), true);
     try {
-      var r = await api('/session', { method: 'POST', body: {} });
+      var r = await api('/session', { method: 'POST', body: { src: visitSrc } });
       apiToken = r.token;
       try { localStorage.setItem(TOKEN_KEY, r.token); } catch (_) { /* noop */ }
       S.meta = { number: null, status: 'draft' };

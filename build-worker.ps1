@@ -46,6 +46,8 @@ $files = @(
   @{ url = '/js/ai-design-adapter.js'; path = 'js\ai-design-adapter.js' },
   @{ url = '/js/ai-design.js'; path = 'js\ai-design.js' },
   @{ url = '/js/reports.js'; path = 'js\reports.js' },
+  # إشعارات واتساب اليدوية (wa.me) — دوال مساعدة للواجهة
+  @{ url = '/js/wa-notify.js'; path = 'js\wa-notify.js' },
   @{ url = '/js/app.js';     path = 'js\app.js' },
   # نظام الشرح والمساعدة (وحدة مشتركة بين الموظف والعميل)
   @{ url = '/js/help.js';    path = 'js\help.js' },

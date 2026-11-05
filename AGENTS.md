@@ -26,7 +26,7 @@
   powershell -ExecutionPolicy Bypass -Command '& .\deploy-cloudflare.ps1 -Environment test -AccountId <معرّف الحساب> -DbName <قاعدة اختبار> -WorkerName <Worker اختبار> -Preview:$false'
   ```
 - الرابط: `https://majlis-api.asalh-najd.workers.dev`
-- **ترتيب القاعدة**: السكربت يشغّل `worker/schema.sql` (آمن للتكرار) قبل رفع الكود، ثم يفحص تعريفات `permission_audit` و`expenses` (قراءة فقط). إن توقف برسالة `Old definitions with blocking foreign keys` فالقاعدة طُبّقت عليها 001/002 القديمة: خذ نسخة احتياطية، وطبّق `worker/migrations/003_fix_user_delete_fks.sql` مرة واحدة، ثم أعد النشر. وإن توقف برسالة `The expenses table lacks expense_date/order_id` فطبّق `worker/migrations/004_expense_fields.sql` مرة واحدة بعد نسخة احتياطية (لا تُعاد، ولا تُشغَّل 003 بعدها). لم يُرفع أي كود عند التوقف. **تطبيق أي هجرة على الإنتاج يحتاج موافقة المستخدم الصريحة.**
+- **ترتيب القاعدة**: السكربت يشغّل `worker/schema.sql` (آمن للتكرار) قبل رفع الكود، ثم يفحص تعريفات `permission_audit` و`expenses` (قراءة فقط). إن توقف برسالة `Old definitions with blocking foreign keys` فالقاعدة طُبّقت عليها 001/002 القديمة: خذ نسخة احتياطية، وطبّق `worker/migrations/003_fix_user_delete_fks.sql` مرة واحدة، ثم أعد النشر. وإن توقف برسالة `The expenses table lacks expense_date/order_id` فطبّق `worker/migrations/004_expense_fields.sql` مرة واحدة بعد نسخة احتياطية (لا تُعاد، ولا تُشغَّل 003 بعدها). لم يُرفع أي كود عند التوقف. الهجرة `005_whatsapp_notifications.sql` (جداول `wa_*` لإشعارات واتساب) جداول جديدة فقط وآمنة للتكرار، ومنسوخة في `schema.sql` فيطبّقها السكربت تلقائياً — لا تطبيق يدوي. **تطبيق أي هجرة على الإنتاج يحتاج موافقة المستخدم الصريحة.**
 - **متغيرات الـ Worker** تُضبط مرة واحدة من لوحة Cloudflare (Worker → Settings → Variables and Secrets)، والسكربت يحافظ عليها عند كل نشر ولا يكتب قيمها:
   - `ALLOWED_ORIGIN` (نص عادي، إلزامي): المصادر المسموح لها بالاتصال من خارج الموقع، مفصولة بفواصل. بدونه يُرفض تطبيق أندرويد. القيمة: `https://localhost` (تطبيق أندرويد) ويُضاف أي مصدر آخر يحتاجه الاتصال. `*` مرفوض عمداً.
   - `ADMIN_INIT_PASSWORD` (Secret): يلزم فقط عند تهيئة قاعدة بيانات **فارغة** — كلمة المرور المؤقتة لحساب `admin`، ويُفرض تغييرها عند أول دخول. لا تُكتب في أي ملف ولا في المحادثة.
@@ -53,6 +53,7 @@ git push origin main
 - الإصدارات: `https://github.com/ialshareef/majlis-orders/releases`
 
 ## ملاحظات
+- **إشعارات واتساب** يدوية ومجانية عبر روابط `wa.me` (Click to Chat): لا WhatsApp Cloud API ولا أسرار ولا أتمتة إرسال. الصلاحيات `notifications.whatsapp.view|manage|send` مستقلة (افتراضياً للمدير فقط). التنبيه يُنشأ في دفعة D1 نفسها التي تحفظ الحدث. الاختبارات: `test/whatsapp-notify.test.mjs` و`test/whatsapp-ui-e2e.mjs`.
 - لا ترفع `.cf-token` أبداً (مُدرج في `.gitignore` عند السطر 2). **يُحفظ في الجهاز ولا يُحذف** بقرار المستخدم — الحذف بعد النشر ملغى.
 - الوضع السحابي: البيانات في Cloudflare D1، والتطبيق يعمل دون اتصال (نسخة محلية) مع مزامنة.
 - الـ Service Worker «الشبكة أولاً» لتعكس التحديثات فوراً.
