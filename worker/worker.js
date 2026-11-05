@@ -405,14 +405,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.73';
-// بصمة asalh-najd-1.0.73.apk (إصدار GitHub v1.0.73، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.73 وversionCode 10073، ونفس شهادة توقيع 1.0.72).
-const UPDATE_FALLBACK_SHA256 = 'f63f085b917bfa6f2d769afca8ff9c1fa576da5c8fa346cceaf2de642f8ec837';
+const UPDATE_FALLBACK_VERSION = '1.0.74';
+// بصمة asalh-najd-1.0.74.apk (إصدار GitHub v1.0.74، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.74 وversionCode 10074، ونفس شهادة توقيع 1.0.73).
+const UPDATE_FALLBACK_SHA256 = '4e635db76c3ece86fd33af0a7755c1c96fbd1c4d7b7c7af18dd4bb506974c963';
 const UPDATE_FALLBACK_NOTES = [
-  'واجهة أكثر تناسقاً على الجوال واللوحي: لا نصوص أو جداول تخرج عن حدودها، وحقول وأزرار بمقاسات ومحاذاة موحّدة',
-  'جدول الطلبات: زر «فتح» والإجراءات ظاهرة دائماً، وأزرار لمس أكبر على الهاتف',
-  'تصحيح عناوين لوحة تحليلات المتجر، وعرض التواريخ والأرقام بترتيب صحيح داخل النص العربي',
+  'تقارير PDF في «ذكاء الأعمال» (الطلبات والمناديب والمصروفات) تظهر الآن بعربية متصلة وجداول مرتبة',
+  'إصلاح أزرار تصدير Excel في «ذكاء الأعمال» التي كانت تفشل أحياناً',
+  'جدول الطلبات يتسع بكل أعمدته على شاشة الحاسوب دون تمرير أفقي',
 ];
 
 function versionCodeOfName(v) {
