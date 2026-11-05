@@ -205,7 +205,9 @@ console.log('== 8) ألوان البستيل ==');
   t('style.css: رؤوس الأقسام أغمق من أقسامها', /\.ds-h-tbl\s*\{[^}]*var\(--ds-h-tbl-bg\)/.test(css)
     && /\.ds-h-leg\s*\{[^}]*var\(--ds-h-leg-bg\)/.test(css));
   t('style.css: عنوان المساحات بنفسجي أغمق داخل الصندوق', /\.ds-areas-h\s*\{[\s\S]*?background: var\(--ds-h-areas-bg\)/.test(css));
-  t('style.css: عناصر صندوق المساحات بشبكة عمودين', /\.ds-areas\s*\{[^}]*grid-template-columns:\s*1fr 1fr/.test(css)
+  // عمود واحد في العمود الجانبي (بعمودين كانت القيم ذات الخانتين تتجاوز خانتها وتُقصّ)، وخانات متجاورة حين يكون شريطاً تحت المخطط
+  t('style.css: ملخص المساحات عمود واحد في العمود الجانبي وخانات ≥44مم تحت المخطط', /\.ds-areas\s*\{[^}]*grid-template-columns:\s*minmax\(0, 1fr\)/.test(css)
+    && /\.ds-main > \.ds-areas-wrap \.ds-areas\s*\{[^}]*minmax\(44mm, 1fr\)/.test(css)
     && /\.ds-areas-i\b/.test(css) && /\.ds-areas-i\.hl\s*\{[^}]*grid-column:\s*1 \/ -1/.test(css));
   t('style.css: التوقيعات أسفل الصفحة دائماً', /\.inv-foot\s*\{[^}]*margin-top:\s*auto/.test(css));
   t('style.css: شارة السعة بالأخضر الفاتح', /\.ds-cap\s*\{[\s\S]*?background: var\(--ds-tbl-bg\)/.test(css));

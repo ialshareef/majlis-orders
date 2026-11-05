@@ -2470,16 +2470,18 @@ body.modal-open { overflow: hidden; }
 .inv .ds-cap { margin: 0; padding: 1.4mm 3mm; justify-content: flex-start; }
 .inv .ds-cap b { font-size: 15pt; }
 /* تحت المخطط: ملخص المساحات ودليل الألوان متجاوران بعرض القسم */
-.inv-dmeta { flex: none; display: flex; gap: 4mm; align-items: flex-start; margin-top: 2.4mm; }
-.inv-dmeta > .ds-areas-wrap { flex: none; width: 84mm; }
+.inv-dmeta { flex: none; display: flex; flex-direction: column; gap: 2mm; margin-top: 2.4mm; }
+/* ملخص المساحات تحت المخطط في أمر الشراء: خانات متجاورة بعرض كافٍ للاسم والقيمة */
+.inv-dmeta > .ds-areas-wrap .ds-areas { grid-template-columns: repeat(auto-fill, minmax(50mm, 1fr)); column-gap: 5mm; }
+.inv-dmeta > .ds-areas-wrap .ds-areas-i.hl { grid-column: auto; }
 .inv-dleg { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1.6mm; }
 .inv.work .inv-dsec { min-height: 110mm; }
 .inv.work .inv-dplan { width: 100%; min-height: 90mm; }
-/* المرفقات: صف صور بارتفاع ثابت أسفل التصميم، والاسم يلتف ولا يُقصّ */
-.inv-atts { flex: none; }
-.inv-atts .att-row { display: grid; grid-template-columns: repeat(auto-fill, minmax(42mm, 1fr)); gap: 3mm; }
+/* المرفقات في العمود الأيسر تحت ملخص المساحات: صورة بعرض العمود (70مم) واسمها تحتها */
+.inv-atts { display: flex; flex-direction: column; gap: 2mm; }
+.inv-atts h3 { margin: 0; font-size: 10pt; color: var(--accent); font-weight: 700; }
 .inv-atts figure { margin: 0; display: flex; flex-direction: column; }
-.inv-atts .imgbox { height: 38mm; display: flex; align-items: center; justify-content: center; border: 1px solid #E6DDCF; border-radius: .8mm; background: #fff; overflow: hidden; }
+.inv-atts .imgbox { height: 48mm; display: flex; align-items: center; justify-content: center; border: 1px solid #E6DDCF; border-radius: .8mm; background: #fff; overflow: hidden; }
 .inv-atts img { max-width: 100%; max-height: 100%; display: block; }
 .inv-atts figcaption { margin-top: .8mm; font-size: 8.5pt; color: #5F554B; text-align: center; overflow-wrap: anywhere; }
 .inv-items { flex: none; }
@@ -2688,13 +2690,20 @@ body.modal-open { overflow: hidden; }
 .ds-areas-h {
   margin: 0 -2.4mm .8mm; padding: .7mm 2.4mm;
   background: var(--ds-h-areas-bg); color: #403A55;
-  display: flex; justify-content: space-between; align-items: baseline; gap: 3mm;
+  display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: .3mm 3mm;
   font-size: 7.5pt; font-weight: 600; line-height: 1.35;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 .ds-areas-h b { font-size: 8.4pt; font-weight: 800; }
-.ds-areas { margin: 0; display: grid; grid-template-columns: 1fr 1fr; column-gap: 4mm; row-gap: .35mm; }
-.ds-areas-i { display: flex; justify-content: space-between; align-items: baseline; gap: 2mm; min-width: 0; }
+ /* عمود واحد: كل بند في سطر (الاسم يميناً والقيمة كاملة يساراً) — بعمودين كانت القيم
+   ذات الخانتين (16.79 م²) تتجاوز خانتها وتُقصّ في عمود عرضه ~70مم */
+.ds-areas { margin: 0; display: grid; grid-template-columns: minmax(0, 1fr); row-gap: .5mm; }
+/* المساحات شريطاً تحت المخطط (عرض كافٍ): خانات متجاورة كل منها ≥ 44مم بالاسم والقيمة كاملين */
+.ds-main > .ds-areas-wrap { flex: none; }
+.ds-main > .ds-areas-wrap .ds-areas { grid-template-columns: repeat(auto-fill, minmax(44mm, 1fr)); column-gap: 6mm; }
+.ds-main > .ds-areas-wrap .ds-areas-i.hl { grid-column: auto; }
+.ds-areas-i { display: flex; justify-content: space-between; align-items: baseline; gap: 3mm; min-width: 0; }
+.ds-areas-i dd { flex: none; }
 .ds-areas-i.hl { grid-column: 1 / -1; }
 .ds-areas-i dt { margin: 0; font-size: 8pt; color: #4A4458; white-space: nowrap; }
 .ds-areas-i dd { margin: 0; font-size: 8.5pt; font-weight: 700; color: #2A2633; white-space: nowrap; }

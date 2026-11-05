@@ -3223,11 +3223,11 @@ function docTitle(order) {
     try { return DesignSheet.plan(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) }, 2800); }
     catch (_) { return null; }
   }
-  function designSection(order, title) {
+  function designSection(order, title, extraSide = '') {
     const pl = sheetPlan(order);
     docPlan = pl;
     docNote = '';
-    if (!window.DesignSheet) return '';
+    if (!window.DesignSheet) return extraSide;
     const f = DesignSheet.facts(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) });
     docNote = f.note || '';
     return `
@@ -3237,7 +3237,7 @@ function docTitle(order) {
             <div class="ds-plan inv-dplan">${DesignSheet.planHtml(pl)}</div>
             <div class="inv-dmeta"><div class="inv-dleg">${DesignSheet.legendHtml(f, true)}</div></div>
           </div>
-          <aside class="inv-dside">${DesignSheet.sideHtml(f, 1)}</aside>
+          <aside class="inv-dside">${DesignSheet.sideHtml(f, 1)}${extraSide}</aside>
         </div>
       </section>`;
   }
@@ -3252,6 +3252,10 @@ function docTitle(order) {
     const c = order.customer || {};
     const atts = filledAttachments(order);
     const quote = order.status === 'quote';
+    /* المرفقات في العمود الأيسر تحت ملخص المساحات: كل صورة بعرض العمود كاملاً
+       (أكبر من صفّ الصور الصغيرة أسفل التصميم) واسمها تحتها يلتف ولا يُقصّ */
+    const attsHtml = atts.length ? `<div class="inv-atts"><h3>المرفقات</h3>${atts.map((a, i) => `
+          <figure><div class="imgbox"><img src="${a.src}" alt="مرفق ${i + 1}"></div><figcaption dir="auto">${(window.DesignSheet && DesignSheet.mixed ? DesignSheet.mixed(a.name) : esc(a.name)) || `مرفق ${i + 1}`}</figcaption></figure>`).join('')}</div>` : '';
     const nPays = (order.payments || []).filter((p) => money(p.amount) > 0).length;
     const notes = String(order.notes || '').trim();
     // النص المختلط (عربي + إنجليزي بأقواس) يُعزل اتجاهياً فلا تنقلب الأقواس عند الالتفاف
@@ -3272,9 +3276,8 @@ function docTitle(order) {
         <div><span>الحالة</span><b>${esc(quote ? 'عرض سعر' : (STATUS[order.status] || order.status || '—'))}</b></div>
         <div><span>طريقة القياس</span><b>${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>
       </div>
-      ${designSection(order, 'التصميم والمقاسات')}
-      ${atts.length ? `<section class="inv-atts"><h2>المرفقات</h2><div class="att-row">${atts.map((a, i) => `
-          <figure><div class="imgbox"><img src="${a.src}" alt="مرفق ${i + 1}"></div><figcaption dir="auto">${mx(a.name) || `مرفق ${i + 1}`}</figcaption></figure>`).join('')}</div></section>` : ''}
+      ${designSection(order, 'التصميم والمقاسات', attsHtml)}
+
       <section class="inv-items">
         <h2>التسعير</h2>
         <table>

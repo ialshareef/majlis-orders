@@ -447,8 +447,14 @@
       }).join('') + '</dl>'
       + '</div>'
       + '<div class="ds-body">'
-      + '<aside class="ds-side">' + sideHtml(f, cols || 1) + (leg === 'side' ? '<div class="ds-side-leg">' + legendHtml(f) + '</div>' : '') + '</aside>'
-      + '<div class="ds-main"><div class="ds-plan">' + planHtml(pl) + '</div>' + (leg === 'side' ? '' : legendHtml(f)) + '</div>'
+      /* مواضع الكتل بحسب المرشّح: side = الدليل والمساحات في العمود، mix = الدليل في العمود
+         والمساحات شريطاً عريضاً تحت المخطط، main = الدليل تحت المخطط والمساحات في العمود،
+         main2 = الاثنان تحت المخطط — يختار layout أول ما يتّسع بالخط نفسه */
+      + '<aside class="ds-side">' + sideHtml(f, cols || 1, leg === 'mix' || leg === 'main2')
+        + (leg === 'side' || leg === 'mix' ? '<div class="ds-side-leg">' + legendHtml(f) + '</div>' : '') + '</aside>'
+      + '<div class="ds-main"><div class="ds-plan">' + planHtml(pl) + '</div>'
+        + (leg === 'mix' || leg === 'main2' ? areasHtml(f) : '')
+        + (leg === 'side' || leg === 'mix' ? '' : legendHtml(f)) + '</div>'
       + '</div>'
       + (opts.footHtml ? '<div class="ds-foot">' + opts.footHtml + '</div>' : '')
       + '</div>';
@@ -568,7 +574,7 @@
     var out = [];
     list.forEach(function (p) {
       var from = p.cols > 1 ? Math.max(1, p.cols - 1) : 1;
-      for (var c = from; c <= (p.cols || 1); c++) { out.push({ paper: p, cols: c, leg: 'side' }); out.push({ paper: p, cols: c, leg: 'main' }); }
+      for (var c = from; c <= (p.cols || 1); c++) { ['side', 'mix', 'main', 'main2'].forEach(function (lg) { out.push({ paper: p, cols: c, leg: lg }); }); }
     });
     return out;
   }
@@ -589,7 +595,7 @@
     var last = PAPERS[PAPERS.length - 1];
     for (var t = 0; t < 3; t++) {
       if (el && el.parentNode === h) h.removeChild(el);
-      el = buildOn(h, opts, f, pl, customPaper(need), last.cols, 'main');
+      el = buildOn(h, opts, f, pl, customPaper(need), last.cols, 'main2');
       m = measureSheet(el);
       if (!m || m.overflow <= TOL_MM) return el;
       need = el.__size.h + m.overflow + 4;

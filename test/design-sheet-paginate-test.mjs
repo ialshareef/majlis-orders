@@ -85,7 +85,7 @@ function pdfInfo(buf) {
   return { pages, wMm: box.length ? +(box[2] / 72 * 25.4).toFixed(1) : 0, hMm: box.length ? +(box[3] / 72 * 25.4).toFixed(1) : 0, imgW, imgH };
 }
 
-const EXPECT_PAPER = { empty: 'a4', few: 'a4', medium: 'a4', tall: null, large: null, long: null, huge: null, longmeta: null };
+const EXPECT_PAPER = { empty: 'a4', few: 'a4', medium: 'a4', tall: null, large: null, long: null, huge: null, longmeta: null, bigroom: null };
 
 try {
   const page = await browser.newPage();
@@ -95,6 +95,10 @@ try {
   const fileUrl = 'file:///' + path.join(here, 'design-sheet-paginate-harness.html').split(path.sep).join('/');
   await page.goto(fileUrl, { waitUntil: 'load', timeout: 60000 });
 
+  /* القياس بخط التطبيق الحقيقي (IBM Plex Sans Arabic) لا بخط احتياطي أضيق — وإلا مرّ نص
+     يتجاوز خانته على جهاز العميل (كما حدث في ملخص المساحات) */
+  await page.evaluate(async () => { await document.fonts.load('700 10pt "IBM Plex Sans Arabic"', 'م'); await document.fonts.load('400 10pt "IBM Plex Sans Arabic"', 'م'); await document.fonts.ready; });
+  t('القياس بخط التطبيق IBM Plex Sans Arabic', await page.evaluate(() => document.fonts.check('700 10pt "IBM Plex Sans Arabic"', 'م')));
   const papers = {};
   for (const kind of Object.keys(EXPECT_PAPER)) {
     const r = await page.evaluate((k) => window.__build(k), kind);
