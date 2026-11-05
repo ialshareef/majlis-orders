@@ -40,6 +40,9 @@
     return isNaN(d) ? s.slice(0, 10) : `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
   };
   const fmtDateTime = (iso) => { if (!iso) return '—'; const d = new Date(iso); if (isNaN(d)) return String(iso); return `${fmtDate(d.toISOString())} ${pad2(d.getHours())}:${pad2(d.getMinutes())}`; };
+  /* للعرض داخل جملة عربية: عزل الاتجاه (LRI…PDI) يبقي «التاريخ ثم الوقت» بترتيبه بدل أن ينقلب إلى «12:41 2026-11-04».
+     لا يُستعمل في CSV/Excel/PDF حتى لا تدخل محارف خفية في الملفات. */
+  const fmtDateTimeUi = (iso) => String.fromCharCode(0x2066) + fmtDateTime(iso) + String.fromCharCode(0x2069);
   const STATUS = { quote: 'عرض سعر', new: 'جديد', progress: 'قيد التنفيذ', done: 'اكتمال التنفيذ', delivered: 'تم التوصيل', cancelled: 'ملغي' };
 
   /* ---------------- الصلاحيات: تصنيفات وأسماء عربية للعرض ----------------
@@ -2814,7 +2817,8 @@ function canEditOrder(o) {
   /** عنوان الطلب: رقمه، أو «بانتظار الرقم» إن حُفظ محلياً ولم يصل الخادم بعد */
   function syncOrderTitle() {
     const kind = cur.status === 'quote' ? 'عرض السعر' : 'الطلب';
-    $('#orderTitle').textContent = cur.number ? `${kind} #${cur.number}` : (cur.id ? `${kind} (بانتظار الرقم)` : (cur.status === 'quote' ? 'عرض سعر جديد' : 'طلب جديد'));
+    // الرقم في عزل اتجاه حتى يبقى «#1005» متماسكاً على كل الشاشات (كان يظهر 1005# بجوار النص العربي)
+    $('#orderTitle').innerHTML = cur.number ? `${esc(kind)} <bdi dir="ltr">#${esc(cur.number)}</bdi>` : esc( (cur.id ? `${kind} (بانتظار الرقم)` : (cur.status === 'quote' ? 'عرض سعر جديد' : 'طلب جديد')));
   }
   /** الخادم يمنح رقم الطلب عند أول حفظ ناجح: يُنقل إلى الطلب المفتوح */
   function adoptServerNumber() {
@@ -2953,7 +2957,7 @@ function canEditOrder(o) {
     remote = db().orders.find((o) => o.id === localCopy.id) || null;
     setNetState('ok');
     const who = (remote && remote.updatedByName) || 'موظف آخر';
-    const when = remote && remote.updatedAt ? fmtDateTime(remote.updatedAt) : '';
+    const when = remote && remote.updatedAt ? fmtDateTimeUi(remote.updatedAt) : '';
     const ch = remote ? diffOrder(remote, localCopy) : [];
     openModal('تعارض في التعديل', `
       <p class="conflict-lead">عُدِّل الطلب ${localCopy.number ? '#' + localCopy.number : ''} على الخادم بواسطة <b>${esc(who)}</b>${when ? ' • ' + esc(when) : ''} بعد أن فتحتَه.
@@ -3001,7 +3005,7 @@ function canEditOrder(o) {
     el.dataset.state = state;
     const labels = { ok: 'محدّث', sync: 'يزامن…', off: 'غير متصل', err: 'تعذّر التحديث' };
     $('#netLabel').textContent = labels[state] || '';
-    el.title = state === 'ok' && lastSyncAt ? `آخر تحديث ${fmtDateTime(new Date(lastSyncAt).toISOString())}` : (labels[state] || '');
+    el.title = state === 'ok' && lastSyncAt ? `آخر تحديث ${fmtDateTimeUi(new Date(lastSyncAt).toISOString())}` : (labels[state] || '');
   }
   function refreshNetAge() {
     const el = $('#netState');
@@ -3893,8 +3897,8 @@ function docTitle(order) {
       const st = esc(o.status || 'new');
       return `
       <tr data-status="${st}" class="${late ? 'is-late' : ''}">
-        <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? ` • ${esc(o.createdByName)}` : ''}</span></td>
-        <td data-label="العميل" class="c-cust"><b title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
+        <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? `<span class="sub-by" title="${esc(o.createdByName)}">${esc(o.createdByName)}</span>` : ''}</span></td>
+        <td data-label="العميل" class="c-cust"><b dir="auto" title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
         <td data-label="التكلفة" class="num c-money c-cost">${canSeeCosts(o) && cost !== null ? fmt(cost) : dash}</td>
         ${canSeeProfit(o) ? `
@@ -5594,7 +5598,7 @@ function docTitle(order) {
     const el = $('#orderMeta');
     if (!cur.id) { el.textContent = ''; return; }
     const who = cur.updatedByName || cur.createdByName || '';
-    el.textContent = `آخر تحديث: ${who} • ${fmtDateTime(cur.updatedAt || cur.createdAt)} • أُنشئ بواسطة ${cur.createdByName || '—'}`;
+    el.textContent = `آخر تحديث: ${who} • ${fmtDateTimeUi(cur.updatedAt || cur.createdAt)} • أُنشئ بواسطة ${cur.createdByName || '—'}`;
   }
 
   /** مقارنة نسختين من الطلب وإرجاع ملخص التغييرات */
@@ -5684,7 +5688,7 @@ function docTitle(order) {
       <div class="stat"><span>آخر 7 أيام</span><b>${all.filter((e) => localDate(e.at) >= weekStr).length}</b></div>
       <div class="stat"><span>طلبات أُنشئت اليوم</span><b>${all.filter((e) => e.action === 'create' && localDate(e.at) === tday).length}</b></div>
       <div class="stat"><span>الأكثر نشاطاً</span><b class="stat-text">${top ? esc(top[0]) : '—'}</b>${top ? `<small>${top[1]} تحديث</small>` : ''}</div>
-      <div class="stat"><span>آخر تحديث</span><b class="stat-text">${last ? esc(last.userName || '—') : '—'}</b>${last ? `<small>${fmtDateTime(last.at)}</small>` : ''}</div>`;
+      <div class="stat"><span>آخر تحديث</span><b class="stat-text">${last ? esc(last.userName || '—') : '—'}</b>${last ? `<small>${fmtDateTimeUi(last.at)}</small>` : ''}</div>`;
 
     const list = filteredActivity();
     const tb = $('#actTable tbody');
@@ -5789,14 +5793,14 @@ function docTitle(order) {
           <label>شعار المحل (رابط صورة https) <input id="sLogo" dir="ltr" value="${esc(s.logoUrl || '')}" placeholder="https://…/logo.png"></label>
           <label>رابط موقع المحل (خرائط جوجل) <input id="sMaps" dir="ltr" value="${esc(s.mapsUrl || '')}" placeholder="https://maps.google.com/…"></label>
           <div class="row2">
-            <label>واتساب المحل <input id="sWa" dir="ltr" value="${esc(s.whatsapp || '')}" placeholder=https://wa.me/9665… أو الرقم فقط"></label>
+            <label>واتساب المحل <input id="sWa" dir="ltr" value="${esc(s.whatsapp || '')}" placeholder="https://wa.me/9665… أو الرقم فقط"></label>
             <label>Instagram <input id="sIg" dir="ltr" value="${esc(s.instagram || '')}" placeholder="https://instagram.com/…"></label>
           </div>
           <div class="row2">
             <label>TikTok <input id="sTik" dir="ltr" value="${esc(s.tiktok || '')}" placeholder="https://tiktok.com/…"></label>
             <label>Snapchat <input id="sSnap" dir="ltr" value="${esc(s.snapchat || '')}" placeholder="https://snapchat.com/…"></label>
           </div>
-          <p class="hint">رابط البوابة للعملاء: <bdi class="num">${esc(window.location.origin + '/customer-design')}</bdi></p>
+          <p class="hint">رابط البوابة للعملاء: <bdi class="num url-line">${esc(window.location.origin + '/customer-design')}</bdi></p>
         </div>
       </section>
       <section class="set-section">
@@ -5817,7 +5821,7 @@ function docTitle(order) {
             <select id="sCorner"><option value="deduct" ${s.cornerMode !== 'full' ? 'selected' : ''}>بدون تكرار الزوايا (موصى به)</option><option value="full" ${s.cornerMode === 'full' ? 'selected' : ''}>بطول الجدار كامل (الزاوية تُحسب مرتين)</option></select>
           </label>
           <div class="row2">
-            <label>العربون المطلوب قبل التنفيذ % <input id="sDeposit" type="number" min="0" max="100" step="5" value="${num(s.depositPct ?? 25)}"><small class="hint">يُطلب تأكيد عند بدء تنفيذ طلب مدفوعه أقل. 0 = بلا تنبيه.</small></label>
+            <label>العربون المطلوب % <input id="sDeposit" type="number" min="0" max="100" step="5" value="${num(s.depositPct ?? 25)}"><small class="hint">يُطلب تأكيد عند بدء تنفيذ طلب مدفوعه أقل. 0 = بلا تنبيه.</small></label>
             <label>صلاحية عرض السعر (أيام) <input id="sQuoteDays" type="number" min="1" max="90" step="1" value="${num(s.quoteDays) || 7}"></label>
           </div>
           <div class="row2">
@@ -5846,7 +5850,7 @@ function docTitle(order) {
             <span>الطلبات <b class="num">${db().orders.length}</b></span>
             <span>الأصناف <b class="num">${db().items.length}</b></span>
             <span>المستخدمون <b class="num">${db().users.length}</b></span>
-            <span>آخر نسخة احتياطية ${s.lastBackupAt ? `<b>${esc(fmtDateTime(s.lastBackupAt))}</b>` : '<b class="warn-text">لم تُصدَّر بعد</b>'}</span>
+            <span>آخر نسخة احتياطية ${s.lastBackupAt ? `<b>${esc(fmtDateTimeUi(s.lastBackupAt))}</b>` : '<b class="warn-text">لم تُصدَّر بعد</b>'}</span>
           </div>
         </div>
       </section>
@@ -5958,7 +5962,7 @@ function docTitle(order) {
     if (hrs < 24) return `قبل ${plural(hrs, 'ساعة', 'ساعتين', 'ساعات', 'ساعة')}`;
     const days = Math.round(hrs / 24);
     if (days < 7) return `قبل ${daysWord(days)}`;
-    return fmtDateTime(iso);
+    return fmtDateTimeUi(iso);
   }
 
   let notifState = null;
@@ -6699,7 +6703,7 @@ function docTitle(order) {
   }
 
 /** رقم موحّد: قيمة أو شرطة عند الغياب — لا نخترع أصفاراً مضلّلة */
-  const ownerNum = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('ar-SA'));
+  const ownerNum = (v) => (v == null || v === '' || !Number.isFinite(Number(v)) ? '—' : Number(v).toLocaleString('en-US'));
 
   function renderOwnerPanel() {
     wireOwnerPanel();
@@ -6725,15 +6729,16 @@ function docTitle(order) {
       (F.steps || []).forEach((s) => { byKey[s.key] = s; });
       const start = byKey.start ? byKey.start.n : 0;
 
-      /* مؤشرات أعلى اللوحة: كل رقم ماكيان قابل للقياس من الخادم، وما لا يُقاس
+      /* مؤشرات أعلى اللوحة: كل رقم قابل للقياس يأتي من الخادم، وما لا يُقاس
          يُعرض «—» بصيغة صريحة. الزائر والزيارة رقمان مختلفان ولا يُدمجان:
          الزائر = بصمة اليوم، والزيارة = كل فتح للصفحة. */
       const stat = (label, value, note) => '<div class="stat"><span>' + esc(label) + '</span><b>'
         + (value == null || value === '' ? '—' : esc(String(value))) + '</b>'
-        + (note ? '<small>' + esc(note) + '</small>' : '') + '</div>';
+        + (note ? '<small>' + (note.html || esc(note)) + '</small>' : '') + '</div>';
       const dur = (r.avgDesignMin == null) ? '—' : (r.avgDesignMin + ' دقيقة');
       kpis.innerHTML = [
-        stat('زيارات الروابط', r.visits, (r.from || '') + ' ← ' + (r.to || '')),
+        // التاريخان معزولان ولا ينكسران عند الشرطة (كان «2026-» يلتف وحده على الجوال)
+        stat('زيارات الروابط', r.visits, { html: 'من <bdi class="num nowrap">' + esc(r.from || '—') + '</bdi> إلى <bdi class="num nowrap">' + esc(r.to || '—') + '</bdi>' }),
         stat('زوار فريدون', r.uniqueVisitors, 'بصمة اليوم — بلا تتبّع أفراد'),
         stat('فتح صفحة التصميم', (byKey.visit || {}).n, 'مستقلة عن زيارات الروابط'),
         stat('بدء تصميم', (byKey.start || {}).n, 'سلّم التحويل'),
@@ -6742,7 +6747,7 @@ function docTitle(order) {
         stat('متوسط مدة التصميم', dur, dur === '—' ? 'لا توجد بيانات كافية' : 'من وقت الإنشاء إلى آخر تحديث'),
       ].join('');
 
-      // قمع التحويل: كل عمود بنسبة مامه الصحيح
+      // قمع التحويل: كل عمود بنسبة حجمه الصحيح
       const maxN = Math.max(1, ...(F.steps || []).map((s) => s.n || 0));
       funnel.innerHTML = '<div class="funnel">' + (F.steps || []).map((s) => {
         const pctW = Math.round(((s.n || 0) / maxN) * 100);
@@ -6766,7 +6771,7 @@ function docTitle(order) {
           + '<i class="trend-bar start" style="height:' + Math.round((byDay[k].start / maxV) * 100) + '%"></i>'
           + '<i class="trend-bar finish" style="height:' + Math.round((byDay[k].finish / maxV) * 100) + '%"></i>'
           + '</span>').join('') + '</div>'
-          + '<div class="trend-legend"><span><i style="background:var(--accent)"></i>بدء تصميم</span><span><i style="background:var(--accent-line)"></i>أكمال</span></div>';
+          + '<div class="trend-legend"><span><i style="background:var(--accent)"></i>بدء تصميم</span><span><i style="background:var(--accent-line)"></i>إكمال</span></div>';
       } else {
         trend.innerHTML = '<p class="owner-empty">لا أرقام يومية في هذه الفترة.</p>';
       }
@@ -6799,33 +6804,33 @@ function docTitle(order) {
       const SEAT = { floor: 'أرضي', raised: 'رفيع', arabic: 'عربي', sofa: 'كنب' };
       prefs.innerHTML =
         '<p class="owner-empty">عدد التصاميم في الفترة: <b>' + ownerNum(pr.designs) + '</b></p>'
-        + '<b>أبعاد الغرف الأكثر · متردف الكنب</b>'
-        + (pr.avgSofaPieces == null ? '<p class="owner-empty">لا معطيار.</p>'
-          : '<p class="funnel-n">' + pr.avgSofaPieces + ' كنبة متوسطية في التصميم (عن العيّنات: ' + ownerNum(pr.avgSofaPiecesSample) + ')</p>')
+        + '<b>متوسط عدد قطع الكنب</b>'
+        + (pr.avgSofaPieces == null ? '<p class="owner-empty">لا توجد بيانات كافية.</p>'
+          : '<p class="funnel-n">' + pr.avgSofaPieces + ' قطعة كنب في التصميم الواحد (عدد العيّنات: ' + ownerNum(pr.avgSofaPiecesSample) + ')</p>')
         + '<b>أكثر أبعاد الغرفة</b>' + listOf(pr.rooms, 'أبعاد الغرفة')
         + '<b>عدد الجدران</b>' + listOf(pr.walls, 'عدد الجدران')
         + '<b>نوع الكنب</b>' + listOf((pr.sofaKinds || []).map((x) => Object.assign({}, x, { dim: (SEAT[x.dim] || x.dim) })), 'نوع الكنب')
         + '<b>أكثر الإكسسوارات المستخدمة</b>' + listOf(pr.accKinds, 'الإكسسوارات')
-        + '<b>أعماد عموق الكنب (م)</b>' + listOf(pr.sofaDepth, 'أعماد العموق');
+        + '<b>أعماق الكنب (م)</b>' + listOf(pr.sofaDepth, 'أعماق الكنب');
 
       // متابعة الطلبات: مراحل من جدول orders + أسباب الخسارة المسجّلة داخلياً
       const od = r.orders || { total: 0, byStatus: [], lossReasons: [] };
       orders.innerHTML = '<p class="owner-empty">عدد الطلبات: <b>' + ownerNum(od.total) + '</b></p>'
         + (od.byStatus && od.byStatus.length
-          ? '<ul class="dim-list">' + od.byStatus.map((x) => '<li><b>' + esc(x.dim) + '</b><span>' + ownerNum(x.n) + '</span></li>').join('') + '</ul>'
+          ? '<ul class="dim-list">' + od.byStatus.map((x) => '<li><b>' + esc(STATUS[x.dim] || x.dim) + '</b><span>' + ownerNum(x.n) + '</span></li>').join('') + '</ul>'
           : '<p class="owner-empty">لا طلبات في هذه الفترة.</p>')
         + (od.lossReasons && od.lossReasons.length
           ? '<b>أسباب الخسارة (مسجّلة داخلياً)</b>'
             + '<ul class="dim-list">' + od.lossReasons.map((x) => '<li><b>' + esc(x.dim) + '</b><span>' + ownerNum(x.n) + '</span></li>').join('') + '</ul>'
-          : '<p class="owner-empty">لا أسباب خسارة مسجلة داخلياً — لا نطلب أستبار من العميل.</p>');
+          : '<p class="owner-empty">لا أسباب خسارة مسجلة داخلياً — لا نطلب استبياناً من العميل.</p>');
 
       // مصادر البيانات وما هو غير متوفر — بلا إخفاء
       const un = r.unavailable || {};
-      sources.innerHTML = '<p class="owner-src"><b>مصادر الزيارة:</b> مين متوفّر — '
+      sources.innerHTML = '<p class="owner-src"><b>مصادر الزيارة:</b> غير متوفّرة — '
         + esc(un.referrer || '') + '</p>'
-        + '<p class="owner-src"><b>واتساب:</b> نسجل ضغط الزر فقط— لا يعني أن رسالة أصولت أو بييع بيينطاً. ' + esc(un.whatsappSent || '') + '</p>'
-        + '<p class="owner-src"><b>متوسط التصميم:</b> ' + (r.avgDesignMin == null ? '— لا يود متوسط محسوب.' : r.avgDesignMin + ' دقيقة') + '</p>'
-        + '<p class="owner-src"><b>الخصوصية:</b> لا بصمة جهاز ولا تتبع تعيّن أفراد. ' + esc(un.deviceFingerprint || '') + '</p>';
+        + '<p class="owner-src"><b>واتساب:</b> نسجّل ضغط الزر فقط — ولا يعني ذلك أن الرسالة وصلت أو أن بيعاً تمّ. ' + esc(un.whatsappSent || '') + '</p>'
+        + '<p class="owner-src"><b>متوسط التصميم:</b> ' + (r.avgDesignMin == null ? '— لا يوجد متوسط محسوب.' : r.avgDesignMin + ' دقيقة') + '</p>'
+        + '<p class="owner-src"><b>الخصوصية:</b> لا بصمة جهاز ولا تتبّع يحدّد الأفراد. ' + esc(un.deviceFingerprint || '') + '</p>';
     }).catch((e) => {
       const msg = (e && e.message) || 'تعذّر التحميل';
       [funnel, trend, steps, prefs, orders, sources].forEach((el) => { el.innerHTML = '<p class="owner-empty">' + esc(msg) + '</p>'; });

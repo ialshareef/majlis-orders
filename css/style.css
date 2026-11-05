@@ -82,13 +82,14 @@
   --bottomnav-h: calc(60px + env(safe-area-inset-bottom, 0px));
   --actionbar-h: 64px;
   --ctl-h: 40px;
+  --tb-h: 42px;   /* ارتفاع موحّد لحقول وأزرار أشرطة البحث والتصفية */
   --canvas-h: clamp(440px, calc(100vh - 338px), 960px);
   --ease: cubic-bezier(.2, .7, .2, 1);
 
   font-size: 15px;
   color-scheme: light;
 }
-@media (pointer: coarse) { :root { --ctl-h: 44px; } }
+@media (pointer: coarse) { :root { --ctl-h: 44px; --tb-h: 44px; } }
 
 /* =====================================================================
    2) الأساسيات
@@ -129,6 +130,12 @@ svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width:
   direction: ltr;
   text-align: right;
 }
+/* تاريخ أو رقم لا يُكسر عند الشرطة أو الفاصلة حين يلتف السطر */
+.nowrap { white-space: nowrap; }
+/* تاريخ أو رقم معزول الاتجاه داخل جملة عربية (فترات التقارير وذكاء الأعمال) يبقى قطعة واحدة */
+bdi[dir="ltr"] { white-space: nowrap; }
+/* رابط طويل داخل جملة: سطر مستقل يلتف عند الحاجة بدل أن ينكسر عند الشرطة وسط الكلمة */
+.url-line { display: block; overflow-wrap: anywhere; margin-top: 2px; }
 
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 /* الحقول مستثناة: لها تنسيق تركيز خاص بها (إطار بلون التمييز وهالة حوله)، فالمستطيل
@@ -166,6 +173,8 @@ input, select, textarea {
   transition: border-color .18s var(--ease), box-shadow .18s var(--ease), background-color .18s;
 }
 textarea { min-height: 0; resize: vertical; line-height: 1.6; }
+/* اسم خيار طويل في قائمة ضيقة يُختصر بـ «…» بدل أن يُقص وسط الكلمة (مثل «كل الموظفين والمنا») */
+select:not([multiple]):not([size]) { text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
 input:hover:not(:focus):not(:disabled), select:hover:not(:focus):not(:disabled), textarea:hover:not(:focus):not(:disabled) { border-color: #C7B89F; }
 input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: var(--focus); }
 input:disabled, select:disabled, textarea:disabled { opacity: .6; cursor: not-allowed; }
@@ -186,6 +195,9 @@ select {
 }
 
 .row2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+/* حين يلتف عنوان أحد الحقلين لسطرين (شاشة ضيقة) يبقى الحقلان على خط واحد.
+   الصفوف التي تحمل تلميحاً تحت الحقل تبقى بمحاذاة أعلى حتى لا يرفع التلميحُ الأطول حقلَه */
+.row2:not(:has(small, .hint)) { align-items: end; }
 .row2 > label { min-width: 0; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
 .stack { display: grid; gap: 20px; }
@@ -229,12 +241,12 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 /* موقع التوصيل في خرائط جوجل */
 .maps-row { grid-column: 1 / -1; display: flex; gap: 8px; align-items: center; }
 .maps-row input {
-  flex: 1; min-width: 0; height: 42px;
+  flex: 1; min-width: 0; height: var(--tb-h);
   border: 1px solid var(--line); border-radius: var(--r);
   padding: 0 11px; font-size: .9rem; background: var(--surface); color: var(--ink);
 }
 .maps-row input:focus { border-color: var(--accent); outline: none; box-shadow: var(--focus); }
-.maps-row .btn { flex-shrink: 0; }
+.maps-row .btn, .maps-row .btn.small { flex-shrink: 0; min-height: var(--tb-h); }
 .maps-link {
   grid-column: 1 / -1; display: inline-flex; align-items: center; gap: 7px;
   width: fit-content; font-size: .86rem; font-weight: 600; color: var(--accent);
@@ -283,6 +295,8 @@ input[aria-invalid="true"] { border-color: var(--danger); }
 .btn.danger { color: var(--danger); border-color: var(--danger-line); background: var(--surface); }
 .btn.danger:hover { background: var(--danger-soft); border-color: var(--danger); }
 .btn.ghost { background: transparent; border-color: transparent; box-shadow: none; color: var(--ink-2); }
+/* الزر الشفاف يلغي ظل الزر العادي، فيُعاد له مؤشر التركيز بلوحة المفاتيح (كان يختفي على «الأعمدة» و«إجراءات» وغيرهما) */
+.btn.ghost:focus-visible { box-shadow: var(--focus); border-color: var(--accent); }
 .btn.ghost:hover { background: var(--sand); color: var(--ink); }
 .btn.small { min-height: 34px; padding: 0 12px; font-size: .84rem; gap: 6px; border-radius: var(--r-sm); }
 .btn.small svg { width: 15px; height: 15px; }
@@ -524,7 +538,8 @@ main { grid-column: 2; grid-row: 1; min-width: 0; padding: 28px 32px 56px; width
 .sidebar .brand { order: 0; padding: 2px 6px 18px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .sb-nav { order: 1; flex: 1; display: flex; flex-direction: column; gap: 2px; padding-top: 6px; }
 .sb-tools { order: 2; display: flex; align-items: center; gap: 6px; padding: 10px 2px 6px; border-top: 1px solid var(--line); }
-.sb-foot { order: 3; display: grid; gap: 6px; }
+/* minmax(0,1fr): اسم مستخدم طويل يُختصر بـ «…» بدل أن يوسّع التذييل خارج الشريط */
+.sb-foot { order: 3; display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; }
 
 .sb-group { display: block; padding: 16px 12px 7px; font-size: .78rem; font-weight: 600; color: var(--ink-2); }
 .sb-nav button {
@@ -701,11 +716,13 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 .toolbar > select { width: auto; min-width: 150px; }
 .search { position: relative; margin: 0; flex: 1 1 320px; max-width: 560px; }
 .search svg { position: absolute; top: 50%; inset-inline-start: 13px; transform: translateY(-50%); color: var(--ink-3); pointer-events: none; }
-.search input { padding-inline-start: 40px; min-height: 42px; background: var(--surface); }
+.search input { padding-inline-start: 40px; min-height: var(--tb-h); background: var(--surface); }
 .date-range { display: inline-flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .date-f, .select-f { display: inline-flex; align-items: center; gap: 8px; margin: 0; font-size: .85rem; color: var(--ink-2); white-space: nowrap; }
-.date-f input { width: 158px; min-height: 42px; margin: 0; background: var(--surface); }
-.select-f select { width: auto; min-width: 150px; min-height: 42px; margin: 0; background-color: var(--surface); }
+.date-f input { width: 158px; min-height: var(--tb-h); margin: 0; background: var(--surface); }
+/* أزرار شريط الأدوات بارتفاع حقل البحث المجاور (لا زر أقصر من الحقل في نفس الصف) */
+.toolbar > .btn, .toolbar > .btn.small, .toolbar .actions > .btn { min-height: var(--tb-h); }
+.select-f select { width: auto; min-width: 150px; min-height: var(--tb-h); margin: 0; background-color: var(--surface); }
 .filter-line { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 .filter-line .link-btn { font-size: .86rem; }
 .filter-note { margin: -4px 0 14px; font-size: .85rem; color: var(--ink-3); }
@@ -728,7 +745,7 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 .owner-note code { direction: ltr; unicode-bidi: embed; }
 /* شاشة المصروفات: شريط تصفية يلتف في الجوال */
 .exp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; }
-.exp-filters select { min-height: 42px; margin: 0; width: auto; }
+.exp-filters select { min-height: var(--tb-h); margin: 0; width: auto; }
 @media (max-width: 560px) { .exp-filters .date-f, .exp-filters select { flex: 1 1 100%; } .exp-filters .date-f input { width: 100%; } }
 .ord-by-status { display: flex; flex-wrap: wrap; gap: 8px; margin: -2px 0 14px; }
 .ord-chip { display: inline-flex; align-items: baseline; gap: 7px; border: 1px solid var(--line); border-radius: 999px; padding: 4px 13px; font-size: .8rem; color: var(--ink-2); background: var(--surface-2); }
@@ -867,7 +884,11 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 /* جدول الطلبات: الرقم والعميل أبرز سطرين في الصف، وما دونهما نص مساند أصغر */
 #ordersTable td.c-no b { font-size: .98rem; font-weight: 700; }
 #ordersTable td.c-cust { max-width: 22ch; }
-#ordersTable td.c-cust b { display: block; font-size: .96rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#ordersTable td.c-cust b { display: block; font-size: .96rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+/* رقم الطلب: سطر التاريخ واسم المنشئ يلتف تحت الرقم بدل أن يوسّع العمود (كان 256px لاسم طويل) */
+#ordersTable td.c-no { max-width: 24ch; }
+#ordersTable td.c-no .sub { display: block; line-height: 1.45; }
+#ordersTable td.c-no .sub-by { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ordersTable td.c-no .sub, #ordersTable td.c-cust .sub { font-size: .77rem; }
 #ordersTable td.c-money { font-variant-numeric: tabular-nums; }
 #ordersTable td.c-deliv { white-space: nowrap; }
@@ -884,6 +905,18 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 
 /* الإجراءات: زر أساسي واحد + قائمة إجراءات */
 .table td.row-actions { white-space: nowrap; width: 1%; }
+/* سطح المكتب: حين يحتاج جدول عريض تمريراً أفقياً يبقى عمود الإجراءات ظاهراً في طرف السطر
+   بدل أن يختفي خارج الإطار مع الحالة والمبالغ الأخيرة */
+@media (min-width: 961px) {
+  .table-wrap > .table td.row-actions, .table-wrap > .table:has(td.row-actions) thead th:last-child {
+    position: sticky; left: 0; z-index: 1; background: var(--surface);
+    box-shadow: 1px 0 0 var(--line-soft);
+  }
+  .table-wrap > .table thead th:last-child { background: var(--surface-2); }
+  .table-wrap > .table tbody tr:hover > td.row-actions { background: var(--row-hover); }
+  /* زر القائمة في الصف أيقونة فقط (الاسم في title و aria-label) فيضيق العمود الثابت */
+  .table td.row-actions .rmenu-btn > span { display: none; }
+}
 .ra { display: inline-flex; align-items: center; gap: 6px; }
 .rmenu { position: relative; display: inline-flex; }
 .rmenu-btn[aria-expanded="true"] { background: var(--sand); color: var(--ink); }
@@ -2011,9 +2044,10 @@ body.modal-open { overflow: hidden; }
 
   .toolbar { gap: 8px; }
   .search { flex-basis: 100%; max-width: none; }
-  .date-range { width: 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-  .date-f { display: grid; gap: 4px; }
-  .date-f input { width: 100%; }
+  .date-range { width: 100%; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .date-range > .btn { grid-column: 1 / -1; }
+  .date-f { display: grid; gap: 4px; min-width: 0; }
+  .date-f input { width: 100%; min-width: 0; }
   .toolbar > select, .select-f { flex: 1 1 140px; }
   .select-f { display: grid; gap: 4px; }
   .select-f select { width: 100%; }
@@ -2046,6 +2080,7 @@ body.modal-open { overflow: hidden; }
   .table.responsive tr.is-late > td:first-child { box-shadow: none; }
   .table.responsive tr.is-late { box-shadow: inset -3px 0 0 var(--danger); }
   .card.module > .table-wrap { margin-inline: -16px; overflow: visible; }
+  .card.module > .table-wrap:has(> table:not(.responsive)), .rep-table.card.module > .table-wrap { overflow-x: auto; }
   .card.module > .table-wrap .table.responsive tbody tr:first-child { border-top: 1px solid var(--line-soft); }
 
   /* بطاقة الطلب: رأس (الرقم والحالة) ثم العميل ثم المبالغ ثم التفاصيل */
@@ -3120,7 +3155,7 @@ body.portal { background: var(--bg); }
 .wallanchor:has(> input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 /* ===== لوحة تحليلات المالك ===== */
-.owner-panel { display: grid; gap: 12px; margin: 12px 0 4px; }
+.owner-panel { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin: 12px 0 4px; }
 .owner-panel[hidden] { display: none; }
 .owner-panel .card-head {
   display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px;
@@ -3129,7 +3164,7 @@ body.portal { background: var(--bg); }
 .owner-custom { justify-content: flex-start; }
 .owner-grid {
   display: grid; gap: 12px;
-  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
 }
 .owner-grid .card { min-width: 0; display: grid; gap: 8px; align-content: start; }
 .owner-grid .card > b { font-size: .88rem; color: var(--ink-2); }
@@ -3164,6 +3199,8 @@ body.portal { background: var(--bg); }
 .owner-empty { font-size: .82rem; color: var(--ink-3); line-height: 1.6; margin: 0; }
 .owner-src { font-size: .76rem; color: var(--ink-3); line-height: 1.7; margin: 0; }
 .owner-src b { color: var(--ink-2); }
+/* عناوين فرعية داخل بطاقات اللوحة: أصغر من عنوان البطاقة نفسه لا أكبر منه */
+#ownerPrefs > b, #ownerOrders > b { display: block; margin-top: 6px; font-size: .8rem; font-weight: 600; color: var(--ink-2); }
 
 /* ================= بوت التصميم الذكي (بوابة العميل) ================= */
 .ai-launch { display: inline-flex; align-items: center; justify-content: center; gap: 9px; margin-top: 10px; }
@@ -3261,3 +3298,13 @@ body.portal { background: var(--bg); }
 .rep-page .rp-foot { display: flex; justify-content: space-between; font-size: 10px; color: #777; border-top: 1px solid #e3d8c7; padding: 6px 0 10px; margin-top: 6px; }
 .rep-page .rp-table td bdi { white-space: nowrap; }
 .rep-page .rp-table.dense th, .rep-page .rp-table.dense td { padding: 3px 3px; }
+
+/* ===== أهداف اللمس على الأجهزة اللمسية =====
+   الأزرار المصغّرة (المبلغ السريع، التكاليف الجاهزة، ثلاثي الصلاحيات، مربعات التفعيل) كانت
+   بين 21 و30px — أقل من حد اللمس المريح. يُكبَّر الارتفاع فقط على المؤشر اللمسي ولا يتغير شكل سطح المكتب. */
+@media (pointer: coarse) {
+  .chip, .seg-chips .chip, .pay-add .pay-quick .chip, .extra-presets .chip { min-height: 38px; }
+  .perm-tri button { min-height: 36px; padding-block: 0; }
+  label.check { display: flex; align-items: center; gap: 10px; min-height: 40px; }
+  label.check input[type="checkbox"] { width: 22px; height: 22px; flex: none; }
+}

@@ -193,7 +193,7 @@
         <button type="button" data-page="mandoubs" data-admin title="إدارة المناديب"><svg><use href="#i-users"/></svg><span>إدارة المناديب</span></button>
         <button type="button" data-page="settings" id="btnSettings" data-admin title="الإعدادات والنسخ الاحتياطي"><svg><use href="#i-settings"/></svg><span>الإعدادات والنسخ الاحتياطي</span></button>
         <button type="button" data-page="about" title="عن التطبيق"><svg><use href="#i-info"/></svg><span>عن التطبيق</span></button>
-        <button type="button" id="btnHelp" class="hj-help-btn" style="justify-content:flex-start;margin:6px 8px 0" title="دليل الاستخدام">
+        <button type="button" id="btnHelp" class="hj-help-btn" style="justify-content:flex-start;margin:6px 0 0" title="دليل الاستخدام">
           <svg aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.9c-.6.2-.8.6-.8 1.1v.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>
           <span>دليل الاستخدام</span>
         </button>
@@ -741,7 +741,7 @@
             <tbody></tbody>
           </table>
         </div>
-        <div id="desEmpty" class="empty" hidden><span class="empty-ico"><svg><use href="#i-sofa"/></svg></span><p>لا توجد تصاميم مطابقة — شارك رابط البوابة: <bdi class="num" id="desPortalUrl"></bdi></p></div>
+        <div id="desEmpty" class="empty" hidden><span class="empty-ico"><svg><use href="#i-sofa"/></svg></span><p>لا توجد تصاميم مطابقة — شارك رابط البوابة: <bdi class="num url-line" id="desPortalUrl"></bdi></p></div>
       </div>
     </section>
 
@@ -877,10 +877,10 @@
       <!-- ===== لوحة تحليلات المالك ===== -->
       <div class="card owner-panel" id="ownerPanel" data-admin hidden>
         <div class="card-head">
-          <b>لحة تحليلات المتجر · زوارث وتميزًاً ومرحل التحويل</b>
+          <b>لوحة تحليلات المتجر · الزوار والتصاميم ومسار التحويل</b>
           <div class="chip-group" id="ownerRangeChips" role="group" aria-label="فترة لوحة النشاط">
             <button type="button" class="chip" data-og="d" aria-pressed="false">اليوم</button>
-            <button type="button" class="chip" data-og="d7" aria-pressed="false">أخر 7 أيام</button>
+            <button type="button" class="chip" data-og="d7" aria-pressed="false">آخر 7 أيام</button>
             <button type="button" class="chip on" data-og="d30" aria-pressed="true">30 يوماً</button>
             <button type="button" class="chip" data-og="m" aria-pressed="false">هذا الشهر</button>
           </div>
@@ -897,11 +897,11 @@
             <div id="ownerFunnel"></div>
           </div>
           <div class="card">
-            <b>رسم يومي · بدء التممًة وأقل الصناعة</b>
+            <b>رسم يومي · بدء التصاميم وإكمالها</b>
             <div id="ownerTrend"></div>
           </div>
           <div class="card">
-            <b>المراحل في مراجه التصميم</b>
+            <b>المراحل في مصمّم المجالس</b>
             <div id="ownerSteps"></div>
           </div>
           <div class="card">
@@ -913,7 +913,7 @@
             <div id="ownerOrders"></div>
           </div>
           <div class="card">
-            <b>أسراس البيانات وما ليتوفّر</b>
+            <b>مصادر البيانات وما لا يتوفّر</b>
             <div id="ownerSources"></div>
           </div>
         </div>
