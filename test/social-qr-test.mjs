@@ -108,10 +108,11 @@ console.log('== 3) حمولة QR = الرابط نفسه (qrcode مزيّف يل
 
 console.log('== 4) التوصيل في مسار التصدير ==');
 {
-  t('build يستدعي socialQrList', /build: async \(o\) => buildPrintDoc\(o, await zatcaQr\(o\), await socialQrList\(\)\)/.test(src));
+  // أمر الشراء يستعمل شريط التواصل نفسه في PDF العميل (sheetFootHtml) بسطر ختام يذكر رقم الطلب
+  t('build يستدعي شريط التواصل الموحّد', /build: async \(o\) => buildPrintDoc\(o, await zatcaQr\(o\), await sheetFootHtml\(`للاستفسار عن طلبك اذكر رقمه #\$\{o\.number\}`, true\)\)/.test(src));
   t('buildPrintDoc يستقبل الكتلة', /function buildPrintDoc\(order, qrSrc = '', socialHtml = ''\)/.test(src));
   // شريط التواصل داخل صف التوقيعات (وسطه) — صفحة واحدة مضغوطة الارتفاع
-  t('الكتلة في صف التوقيعات', /<div class="inv-foot-mid">\$\{String\(socialHtml \|\| ''\)/.test(src));
+  t('الكتلة شريط بعرض الصفحة قبل التوقيعات (تصميم ورقة العميل)', /<div class="ds-foot inv-cfoot">\$\{socialHtml\}<\/div>/.test(src) && src.indexOf('inv-cfoot') < src.indexOf('<div class="inv-sign"><i></i><span>توقيع العميل'));
   t('أصناف سناب في CSS', /inv-chan-ic\.sn/.test(fs.readFileSync(path.join(here, '..', 'css', 'style.css'), 'utf8')));
   t('الروابط قابلة للنقر (وسم a)', /<a class="inv-chan" href=/.test(src));
   t('تراكب روابط حقيقي في makePdfBlob', /addPdfLinksToDoc\(pdf, inv, DOC_MARGIN, DOC_MARGIN, wMm, hMm\)/.test(src));

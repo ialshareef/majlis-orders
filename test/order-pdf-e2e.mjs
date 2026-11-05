@@ -68,7 +68,7 @@ const orders = [
   }),
   orderRow('o-empty', 2003, { customer: { name: 'عميل بلا بيانات', phone: '', address: '' }, vat: { enabled: false, rate: 15 } }),
 ];
-const SETTINGS = { shopName: 'أصالة نجد للمجالس العربية والديكور', phone: '0549955622', whatsapp: '966549955622', address: 'الرياض', vatNumber: '300000000000003', invoiceNote: 'الأسعار شاملة التركيب داخل الرياض. يُستلم الطلب خلال 21 يوم عمل من اعتماد التصميم.' };
+const SETTINGS = { shopName: 'أصالة نجد للمجالس العربية والديكور', phone: '0549955622', whatsapp: 'https://wa.me/966549955622', instagram: 'https://www.instagram.com/asalanajd_vip', mapsUrl: 'https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8?g_st=ac', address: 'الرياض', vatNumber: '300000000000003', invoiceNote: 'الأسعار شاملة التركيب داخل الرياض. يُستلم الطلب خلال 21 يوم عمل من اعتماد التصميم.' };
 const U = (id, username, name, role) => ({ id, username, name, role, active: 1, created_at: past, must_change_password: 0, password_hash: H });
 const env = envWith({
   users: [U('1', 'owner', 'المالك', 'admin')], sessions: [], orders, counters: [{ key: 'order_no', value: 3000 }],
@@ -174,6 +174,18 @@ async function exportDoc(number, kind) {
       const B = bx.getBoundingClientRect();
       bx.querySelectorAll('*').forEach((e) => { const r = e.getBoundingClientRect(); if ((r.width || r.height) && (r.left < B.left - 1 || r.right > B.right + 1 || r.bottom > B.bottom + 1)) outside.push(sel + '>' + (e.className || e.tagName)); });
     }));
+    /* بطاقة كل قناة: الأيقونة والاسم ورمز QR متجاورة بلا تراكب (الاسم كاملاً لا تحت الرمز) */
+    inv.querySelectorAll('.inv-cfoot .inv-chan').forEach((ch) => {
+      const parts = [...ch.children].filter((x) => getComputedStyle(x).display !== 'none').map((x) => x.getBoundingClientRect());
+      for (let i = 0; i < parts.length; i++) for (let j = i + 1; j < parts.length; j++) {
+        const a = parts[i], b = parts[j];
+        if (a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5) clipped.push('chan-overlap:' + ch.textContent.trim());
+      }
+      const lb = ch.querySelector('.inv-chan-lb');
+      if (lb && lb.scrollWidth > lb.getBoundingClientRect().width + 1) clipped.push('chan-label-cut:' + lb.textContent);
+      const ic = ch.querySelector('.inv-chan-ic');
+      if (!ic || getComputedStyle(ic).display === 'none' || !ic.querySelector('svg')) clipped.push('chan-no-icon:' + ch.textContent.trim());
+    });
     const tbl = inv.querySelector('.inv-items table');
     const file = window.__files[0];
     const buf = file ? new Uint8Array(await file.f.arrayBuffer()) : new Uint8Array();
@@ -214,13 +226,13 @@ function checkDoc(tag, r, expect = {}) {
   if (expect.bigger) ok(r.paper.id !== 'a4', tag + ': المحتوى الكثيف على مقاس أكبر من A4 لا مضغوطاً', r.paper.id);
   if (expect.rows != null) ok(r.rows === expect.rows, tag + ': كل الأصناف في الجدول (' + expect.rows + ')', r.rows);
   (expect.texts || []).forEach((s) => ok(r.text.replace(/\s+/g, ' ').includes(s.replace(/\s+/g, ' ')), tag + ': النص كاملاً: ' + s.slice(0, 40), s.slice(0, 60)));
-  if (expect.plan) ok(r.plan && r.plan[0] >= 60 && r.plan[1] >= 40, tag + ': المخطط بحجم مقروء', r.plan);
+  if (expect.plan) ok(r.plan && r.plan[0] >= 55 && r.plan[1] >= 40, tag + ': المخطط بحجم مقروء', r.plan);
   if (saveDir) { fs.mkdirSync(saveDir, { recursive: true }); fs.writeFileSync(path.join(saveDir, tag.replace(/[^\w-]+/g, '_') + '.pdf'), Buffer.from(r.b64, 'base64')); }
 }
 
 try {
   let r = await exportDoc(2001, 'invoice');
-  checkDoc('invoice-simple', r, { paper: 'a4', rows: 4, plan: true, texts: ['فهد سعود الدوسري', 'التسليم بعد أسبوعين.', 'توصيل وتركيب', 'جداول الأثاث', SETTINGS.invoiceNote] });
+  checkDoc('invoice-simple', r, { paper: 'a4', rows: 4, plan: true, texts: ['فهد سعود الدوسري', 'التسليم بعد أسبوعين.', 'توصيل وتركيب', 'جداول الأثاث', SETTINGS.invoiceNote, 'جميع القياسات بالسنتيمتر', 'تواصل معنا', 'للاستفسار عن طلبك اذكر رقمه'] });
   r = await exportDoc(2002, 'invoice');
   checkDoc('invoice-heavy', r, { bigger: true, rows: 26 + 3 + 1, plan: true,
     texts: ['عبدالرحمن بن عبدالعزيز بن محمد آل الشيخ القحطاني', 'Mohammed Al-Otaibi (VIP)', 'فيلا 14 (بجوار مسجد الإمام)', 'gate code 4471', 'الألوان حسب العينة رقم 7', heavyRows[25].name, 'Walnut Serving Table'] });

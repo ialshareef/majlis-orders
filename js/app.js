@@ -3148,7 +3148,10 @@ function canEditOrder(o) {
      (portal.js designContactHtml) — بطاقات div تحمل data-url + ملاحظة
      «احتفظ برقم التصميم» — حتى تتطابقت أبعاد الشريط ومواضع روابط QR
      في ورقتَي العميل والموظف في كل PDF، مع ترتيب قنوات العميل نفسه. */
-  async function sheetFootHtml() {
+  /** note: سطر الختام بجانب القنوات (افتراضياً تذكير رقم التصميم في ورقة التصميم).
+      inline: يُكتب السطر تحت الإرشاد بدل عمود مستقل (أمر الشراء أضيق من ورقة العميل،
+      فتأخذ القنوات العرض كاملاً ولا تتراكب أسماؤها مع رموز QR) */
+  async function sheetFootHtml(note = 'احتفظ برقم التصميم لمراجعته مع المحل', inline = false) {
     const list = shopSocialList(settings());
     if (!list.length) return '';
     const ORDER = { wa: 0, instagram: 1, tiktok: 2, snapchat: 3, mapsUrl: 4, tel: 5 };
@@ -3173,10 +3176,10 @@ function canEditOrder(o) {
     }
     const s = settings();
     return `<div class="inv-contact"><b>تواصل معنا</b>`
-      + `<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة</div>`
+      + `<div class="inv-chans-hint">امسح رمز QR أو اضغط عليها لفتح الحساب مباشرة${inline && note ? `<span class="inv-chans-note">${esc(note)}</span>` : ''}</div>`
       + `<div class="inv-chans">${cards}</div></div>`
-      + `<div class="ds-foot-note"><b>${esc(s.shopName || 'أصالة نجد')}</b>`
-      + `احتفظ برقم التصميم لمراجعته مع المحل</div>`;
+      + (inline ? '' : `<div class="ds-foot-note"><b>${esc(s.shopName || 'أصالة نجد')}</b>`
+      + `${esc(note)}</div>`);
   }
 
 /** عنوان المستند حسب حالة الطلب والضريبة.
@@ -3212,6 +3215,9 @@ function docTitle(order) {
      docPlan يحمل صورة آخر مستند مبني (أبعادها بالبكسل) حتى يضبط layoutDoc
      مقاسها على صندوقها الفعلي بعد اختيار الورقة — بنسبتها نفسها بلا تشويه. */
   let docPlan = null;
+  /* حاشية القياسات («جميع القياسات بالسنتيمتر…») تُكتب في صندوق الملاحظات بجانب الإجماليات
+     (فيه متّسع) بدل أسفل المخطط — فيكبر المخطط في الصفحة الواحدة */
+  let docNote = '';
   function sheetPlan(order) {
     if (!window.DesignSheet || !order.design) return null;
     try { return DesignSheet.plan(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) }, 2800); }
@@ -3220,15 +3226,16 @@ function docTitle(order) {
   function designSection(order, title) {
     const pl = sheetPlan(order);
     docPlan = pl;
+    docNote = '';
     if (!window.DesignSheet) return '';
     const f = DesignSheet.facts(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) });
+    docNote = f.note || '';
     return `
-      <section class="inv-dsec">
-        <h2>${esc(title)}</h2>
+      <section class="inv-dsec" aria-label="${esc(title)}">
         <div class="inv-dgrid">
           <div class="inv-dmain">
             <div class="ds-plan inv-dplan">${DesignSheet.planHtml(pl)}</div>
-            <div class="inv-dmeta"><div class="inv-dleg">${DesignSheet.legendHtml(f)}</div></div>
+            <div class="inv-dmeta"><div class="inv-dleg">${DesignSheet.legendHtml(f, true)}</div></div>
           </div>
           <aside class="inv-dside">${DesignSheet.sideHtml(f, 1)}</aside>
         </div>
@@ -3279,6 +3286,7 @@ function docTitle(order) {
         <div class="inv-notes">
           <p><b>ملاحظات:</b> ${notes ? mx(notes).replace(/\n/g, '<br>') : '—'}</p>
           ${s.invoiceNote ? `<p><b>شروط:</b> ${mx(s.invoiceNote).replace(/\n/g, '<br>')}</p>` : ''}
+          ${docNote ? `<p class="inv-mnote">${esc(docNote)}</p>` : ''}
         </div>
         ${qrSrc ? `<div class="inv-qr"><img src="${qrSrc}" alt="رمز الفاتورة الضريبية"><small>رمز الفاتورة الضريبية</small></div>` : ''}
         <div class="inv-totals">
@@ -3290,9 +3298,10 @@ function docTitle(order) {
           <div class="rem"><span>المتبقي</span><span class="num">${fmt(remainingOf(total, paid))} ${cur$}</span></div>`}
         </div>
       </div>
+      ${socialHtml ? `<div class="ds-foot inv-cfoot">${socialHtml}</div>` : ''}
       <div class="inv-foot">
         <div class="inv-sign"><i></i><span>توقيع العميل</span></div>
-        <div class="inv-foot-mid">${String(socialHtml || '').replace(/^\s*<div class="inv-bottom">/, '').replace(/<\/div>\s*$/, '')}${quote ? '<p class="inv-foot-note">هذا عرض سعر وليس أمر شراء</p>' : (socialHtml ? '' : '<p class="inv-foot-note">أمر شراء معتمد بعد التوقيع</p>')}</div>
+        <div class="inv-foot-mid"><p class="inv-foot-note">${quote ? 'هذا عرض سعر وليس أمر شراء' : 'أمر شراء معتمد بعد التوقيع'}</p></div>
         <div class="inv-sign"><i></i><span dir="auto">الموظف: ${mx(emp)}</span></div>
       </div>
     </div>`;
@@ -3495,7 +3504,8 @@ function docTitle(order) {
 
   /** المستندات الممكنة لطلب: أمر شراء العميل وأمر التصنيع */
   const ORDER_DOCS = {
-    invoice: { label: (o) => (o.status === 'quote' ? 'عرض السعر' : 'أمر شراء'), file: (o) => `${o.status === 'quote' ? 'عرض-سعر' : 'طلب'}-${o.number}.pdf`, build: async (o) => buildPrintDoc(o, await zatcaQr(o), await socialQrList()), share: true },
+    // شريط التواصل نفسه في PDF العميل (أيقونة + الاسم + QR في صف واحد) — مطابق بصرياً للعميل
+    invoice: { label: (o) => (o.status === 'quote' ? 'عرض السعر' : 'أمر شراء'), file: (o) => `${o.status === 'quote' ? 'عرض-سعر' : 'طلب'}-${o.number}.pdf`, build: async (o) => buildPrintDoc(o, await zatcaQr(o), await sheetFootHtml(`للاستفسار عن طلبك اذكر رقمه #${o.number}`, true)), share: true },
     workshop: { label: () => 'أمر التصنيع (بلا أسعار)', file: (o) => `أمر-تصنيع-${o.number}.pdf`, build: async (o) => buildWorkshopDoc(o), share: false },
   };
 

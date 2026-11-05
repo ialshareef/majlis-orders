@@ -413,7 +413,7 @@
   }
 
   /** شريط أسفل المخطط: دليل الألوان (عناصر متدفقة) + حاشية القياسات */
-  function legendHtml(f) {
+  function legendHtml(f, noNote) {
     var legend = f.legend.map(function (e) {
       var cls = 'sw' + (e.shape === 'circle' ? ' circle' : '') + (e.shape === 'outline' ? ' outline' : '');
       var style = e.shape === 'outline' ? '' : ' style="background:' + esc(e.color) + '"';
@@ -422,7 +422,7 @@
         + (e.sub ? '<span class="sb">' + esc(e.sub) + '</span>' : '') + '</li>';
     }).join('');
     return (legend ? '<div class="ds-leg-wrap"><h2 class="ds-h ds-h-leg">دليل الألوان والمواد</h2><ul class="ds-legend">' + legend + '</ul></div>' : '')
-      + '<p class="ds-note">' + esc(f.note) + '</p>';
+      + (noNote ? '' : '<p class="ds-note">' + esc(f.note) + '</p>');
   }
 
   /** HTML الورقة كاملة على مقاس paper (سلسلة — قابلة للاختبار بلا متصفح) */

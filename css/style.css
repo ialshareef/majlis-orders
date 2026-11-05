@@ -2417,13 +2417,14 @@ body.modal-open { overflow: hidden; }
    حسب المقاس المختار (A4 190×277، A3 277×400، A2 400×574، أو مخصص).
    الخطوط والمسافات هنا ثابتة ولا تُصغَّر لتتّسع الصفحة — المقاس هو الذي يكبر. */
 .inv {
-  width: 190mm; display: flex; flex-direction: column; gap: 2.4mm;
+  width: 190mm; display: flex; flex-direction: column; gap: 2mm;
   font-family: var(--font); color: #1F1B18; background: #fff; font-size: 10.5pt; direction: rtl;
   --accent: #7A5230;
   --ds-accent: #7A5230; --ds-line: #E4DACB; --ds-soft: #F6F1E9;
   --ds-tbl-bg: #EFF7EF; --ds-tbl-head: #D6E9D5; --ds-tbl-row: #F6FBF6; --ds-tbl-line: #DCE9DA;
   --ds-h-tbl-bg: #DBEDDA; --ds-leg-bg: #EEF4FB; --ds-h-leg-bg: #DCE9F7;
   --ds-plan-bg: #FBF6EA; --ds-areas-bg: #F1EFF8; --ds-h-areas-bg: #E3DEF3;
+  --ds-foot-bg: #EDF2F7; --ds-foot-head: #DBE5EF;
   -webkit-print-color-adjust: exact; print-color-adjust: exact;
 }
 /* تباعد الأحرف صفر في الفاتورة: html2canvas يرسم الحروف منفردة عند وجوده فتنكسر العربية */
@@ -2449,7 +2450,7 @@ body.modal-open { overflow: hidden; }
 /* خانات البيانات: النص الطويل يلتف كاملاً (لا قصّ بسطرين ولا «…») */
 .inv-info { flex: none; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2mm; }
 .inv.work .inv-info, .inv.receipt .inv-info { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-.inv-info div { background: #F6F1E9; border-radius: .8mm; padding: 1.5mm 3mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+.inv-info div { background: #F6F1E9; border-radius: .8mm; padding: 1.3mm 3mm; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .inv-info span { display: block; font-size: 8.5pt; color: #6E6357; }
 .inv-info b { display: block; font-size: 10.5pt; line-height: 1.35; color: #1F1B18; overflow-wrap: anywhere; unicode-bidi: plaintext; text-align: start; }
 .inv-info b.num { font-variant-numeric: tabular-nums; }
@@ -2499,6 +2500,7 @@ body.modal-open { overflow: hidden; }
 .inv-notes p { margin: 0; unicode-bidi: plaintext; text-align: start; }
 .inv-notes p + p { margin-top: 1.4mm; }
 .inv-notes b { color: #1F1B18; }
+.inv-notes .inv-mnote { font-size: 8.5pt; color: #6E6357; }
 .inv-totals { width: 76mm; border: 1px solid #E3D9CA; border-radius: .8mm; overflow: hidden; flex: none; align-self: start; }
 .inv-totals div { display: flex; justify-content: space-between; align-items: center; gap: 3mm; padding: 1.4mm 3.5mm; font-size: 10.5pt; }
 .inv-totals div > .num { white-space: nowrap; }
@@ -2541,23 +2543,21 @@ body.modal-open { overflow: hidden; }
 .inv-chan-lb { font-weight: 700; color: #1F1B18; font-size: 8pt; }
 .inv-chan-qr { width: 15mm; height: 15mm; image-rendering: pixelated; }
 .inv-chan-url { font-size: 7.5pt; color: #6A5F54; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: ltr; }
-/* أمر الشراء: شريط تواصل أفقي مضغوط الارتفاع (العنوان والإرشاد يميناً، والقنوات صفاً:
-   باركود + أيقونة + الاسم + الرابط) — نفس المعلومات بلا بطاقات عمودية طويلة */
-.inv-order .inv-contact { display: grid; grid-template-columns: 30mm minmax(0, 1fr); column-gap: 4mm; align-items: center; padding: 2mm 3mm; }
-.inv-order .inv-contact > b { margin: 0; grid-row: 1; grid-column: 1; }
-.inv-order .inv-chans-hint { grid-row: 2; grid-column: 1; text-align: start; font-size: 8pt; font-weight: 600; color: #5F554B; margin: .6mm 0 0; padding: 0; }
-.inv-order .inv-chans { grid-row: 1 / span 2; grid-column: 2; flex-wrap: wrap; gap: 2mm 4mm; justify-content: flex-start; }
-.inv-order .inv-chan { flex: none; display: grid; grid-template-columns: auto auto; grid-template-rows: auto auto; column-gap: 1.6mm; align-items: center; text-align: start; }
-.inv-order .inv-chan-qr { grid-row: 1 / span 2; grid-column: 1; width: 14mm; height: 14mm; }
-.inv-order .inv-chan-ic { display: none; }
-.inv-order .inv-chan-lb { grid-row: 1; grid-column: 2; font-size: 8.5pt; }
-.inv-order .inv-chan-url { grid-row: 2; grid-column: 2; font-size: 7.5pt; white-space: nowrap; overflow: visible; text-overflow: clip; }
+/* أمر الشراء: شريط التواصل نفسه في ورقة العميل (.ds-foot) بعرض الصفحة —
+   العنوان والإرشاد يميناً، والقنوات صفاً (أيقونة + الاسم + QR)، وسطر الختام يساراً */
+.inv .ds-foot.inv-cfoot { margin-top: 0; min-height: 0; border-radius: 1.6mm; padding: 1.2mm 3mm; }
+/* سطر علوي: «تواصل معنا» + الإرشاد + سطر الطلب، وتحته القنوات بعرض الصفحة كاملاً */
+.inv .inv-cfoot .inv-contact { grid-template-columns: auto minmax(0, 1fr); grid-template-areas: 'head hint' 'chans chans'; row-gap: 1.4mm; }
+.inv .inv-cfoot .inv-chans { justify-content: space-around; }
+.inv .inv-cfoot .inv-chan { flex: 0 1 auto; }
+.inv-chans-note { margin-inline-start: 3mm; color: #3F372F; font-weight: 700; }
+/* جدول الأثاث بجانب المخطط: ارتفاع سطر مضبوط (الخط نفسه 9pt) */
+.inv .ds-tbl td, .inv .ds-tbl th { line-height: 1.3; }
 .inv-foot { flex: none; display: flex; justify-content: space-between; align-items: flex-end; gap: 4mm; margin-top: auto; padding-top: 2mm; border-top: 1px dashed #D5C8B4; font-size: 9.5pt; color: #5F554B; }
 .inv-foot-mid { flex: 1; min-width: 0; text-align: center; display: flex; flex-direction: column; gap: 1.4mm; }
 .inv-foot-note { margin: 0; }
-.inv-foot-mid .inv-contact { text-align: start; }
 .inv-sign { flex: none; width: 44mm; text-align: center; }
-.inv-sign i { display: block; height: 8mm; }
+.inv-sign i { display: block; height: 6.5mm; }
 .inv-sign span { display: block; border-top: 1px solid #3A322C; padding-top: 1mm; color: #3A322C; font-weight: 600; }
 .inv.work .inv-items th:nth-child(4) { width: 26mm; }
 /* السند نصف صفحة: لا يُمدَّد ليملأ A4 */
