@@ -405,14 +405,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.74';
-// بصمة asalh-najd-1.0.74.apk (إصدار GitHub v1.0.74، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.74 وversionCode 10074، ونفس شهادة توقيع 1.0.73).
-const UPDATE_FALLBACK_SHA256 = '4e635db76c3ece86fd33af0a7755c1c96fbd1c4d7b7c7af18dd4bb506974c963';
+const UPDATE_FALLBACK_VERSION = '1.0.75';
+// بصمة asalh-najd-1.0.75.apk (إصدار GitHub v1.0.75، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.75 وversionCode 10075، ونفس شهادة توقيع 1.0.74).
+const UPDATE_FALLBACK_SHA256 = '173ca70ca28c108ca864af6abde9e4e59b1dab504f69898364c74b0ca84f4e2b';
 const UPDATE_FALLBACK_NOTES = [
-  'تقارير PDF في «ذكاء الأعمال» (الطلبات والمناديب والمصروفات) تظهر الآن بعربية متصلة وجداول مرتبة',
-  'إصلاح أزرار تصدير Excel في «ذكاء الأعمال» التي كانت تفشل أحياناً',
-  'جدول الطلبات يتسع بكل أعمدته على شاشة الحاسوب دون تمرير أفقي',
+  'أول دخول بعد تغيير كلمة المرور يحمّل البيانات والصلاحيات مباشرة دون الحاجة لإعادة فتح التطبيق',
+  'الدفعة الزائدة عن قيمة الطلب تُحفظ الآن، ويظهر سبب واضح إن تعذّر حفظ الطلب بعد تسجيل دفعة',
 ];
 
 function versionCodeOfName(v) {
