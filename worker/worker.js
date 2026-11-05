@@ -405,14 +405,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.76';
-// بصمة asalh-najd-1.0.76.apk (إصدار GitHub v1.0.76، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.76 وversionCode 10076، ونفس شهادة توقيع 1.0.75).
-const UPDATE_FALLBACK_SHA256 = '859c4e9f07ae69dabf4624f0f8572bc2fd4ea14eca01d9b8e9473a687c1727d4';
+const UPDATE_FALLBACK_VERSION = '1.0.77';
+// بصمة asalh-najd-1.0.77.apk (إصدار GitHub v1.0.77، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.77 وversionCode 10077، ونفس شهادة توقيع 1.0.76).
+const UPDATE_FALLBACK_SHA256 = 'ca998408551fe8b9fe27440cd8c271c69d70a66819aadb50ffeaba2da6dba1e6';
 const UPDATE_FALLBACK_NOTES = [
-  'ملف PDF للطلب صفحة واحدة دائماً: التصميم وجدول الأثاث مع التسعير في الصفحة نفسها، والخط بحجمه الطبيعي',
-  'المقاس يكبر تلقائياً (A4 ثم A3) حين يكثر المحتوى بدل تصغير النص، والملف أوضح عند التكبير والطباعة',
-  'معاينة ملف PDF نفسه في صفحة تصميم العميل قبل الإنهاء',
+  'خانة «تواصل معنا» في ملف PDF الطلب مرتبة مثل ملف العميل: أيقونة واسم ورمز QR لكل قناة',
+  'ملف PDF للطلب صفحة واحدة دائماً، والتصميم وجدول الأثاث مع التسعير في الصفحة نفسها',
 ];
 
 function versionCodeOfName(v) {
