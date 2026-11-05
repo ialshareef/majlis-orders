@@ -217,7 +217,8 @@ Step 'Uploading worker'
 $metaObj = @{
   main_module        = 'worker.js'
   compatibility_date = '2025-01-01'
-  bindings           = @(@{ type = 'd1'; name = 'DB'; id = $dbId })
+  # AI = Cloudflare Workers AI (بوت تصميم العميل) — مجاني ضمن الحصة اليومية لهذا الحساب، بلا مفتاح ولا اشتراك
+  bindings           = @(@{ type = 'd1'; name = 'DB'; id = $dbId }, @{ type = 'ai'; name = 'AI' })
   # رفع السكربت يستبدل الربط كله: بدون هذا تُمسح متغيرات اللوحة (ALLOWED_ORIGIN — وبدونه يُرفض
   # تطبيق أندرويد) والأسرار (ADMIN_INIT_PASSWORD، AI_API_KEY) مع كل نشر.
   keep_bindings      = @('plain_text', 'secret_text')

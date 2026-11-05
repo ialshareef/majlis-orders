@@ -547,7 +547,7 @@ async function portalSettings(env) {
       tiktok: safeUrl(s.tiktok),
       instagram: safeUrl(s.instagram),
       snapchat: safeUrl(s.snapchat),
-      aiDesign: { enabled: !!(env && env.AI_API_KEY && s.aiDesignEnabled !== false) },
+      aiDesign: { enabled: aiAvailable(env) && s.aiDesignEnabled !== false },
     },
   };
 }
@@ -704,7 +704,9 @@ async function portalView(env, number, request) {
 /* ------------------------------ مصمّم الذكاء الاصطناعي (AI) ------------------------------
    بوابة العميل الذكي: POST /api/portal/ai-design — لا يكتب شيئاً في قاعدة البيانات إلا عدّاد المعدل:
    - بحد أقصى 15 طلباً في الساعة لكل IP+توكن (يُخزَّن في login_fail)
-   - يعمل فقط عند توفّر المفتاح السري: AI_API_KEY / AI_BASE_URL / AI_MODEL
+   - مزوّدان: (1) مزوّد خارجي متوافق مع OpenAI إن ضُبط السر AI_API_KEY (مع AI_BASE_URL / AI_MODEL)،
+     وإلا (2) Cloudflare Workers AI عبر الربط env.AI — مجاني ضمن الحصة اليومية لحساب Cloudflare
+     نفسه (بلا مفتاح ولا اشتراك؛ تجاوز الحصة يُرفض بخطأ ولا يُحتسب مالاً). WORKERS_AI_MODEL اختياري.
    - يُقيَّد النص والرد بحدود قصوى ويمرّ عبر التحقق قبل الحفظ. */
 const AI_TEXT_MAX = 3000;
 const AI_HISTORY_MAX = 8;
@@ -866,7 +868,41 @@ function aiUserMessage(text, spec, history) {
   return parts.join('\n');
 }
 
+/** هل يتوفّر مزوّد للتصميم الذكي؟ مفتاح خارجي أو ربط Workers AI */
+function aiAvailable(env) {
+  return !!(env && (env.AI_API_KEY || (env.AI && typeof env.AI.run === 'function')));
+}
+
+/* Workers AI: نموذج متعدد اللغات يفهم العربية ويلتزم بـ JSON، وبديل أخف عند فشله.
+   الحصة المجانية 10,000 وحدة يومياً — الطلب الواحد ≈ 200 وحدة على النموذج الأول. */
+const WORKERS_AI_MODELS = ['@cf/meta/llama-3.3-70b-instruct-fp8-fast', '@cf/meta/llama-3.1-8b-instruct-fp8-fast'];
+
+async function aiCallWorkersAI(env, system, user) {
+  const models = env.WORKERS_AI_MODEL ? [String(env.WORKERS_AI_MODEL)] : WORKERS_AI_MODELS;
+  const messages = [{ role: 'system', content: system }, { role: 'user', content: user }];
+  let lastErr = null;
+  for (const model of models) {
+    for (const useFormat of [true, false]) {
+      try {
+        const input = { messages, max_tokens: 1600, temperature: 0.2 };
+        if (useFormat) input.response_format = { type: 'json_object' };
+        const out = await env.AI.run(model, input);
+        let content = out && (out.response !== undefined ? out.response : out.result && out.result.response);
+        if (content && typeof content === 'object') content = JSON.stringify(content);
+        if (typeof content === 'string' && content.trim() && content.length <= AI_CONTENT_MAX) return content;
+        lastErr = new Error('workers-ai empty');
+      } catch (e) {
+        lastErr = e;
+      }
+    }
+  }
+  const msg = String((lastErr && lastErr.message) || '');
+  console.warn('ai-design failed: workers-ai ' + (/quota|limit|neuron|429|capacity/i.test(msg) ? 'quota' : 'error'));
+  throw new HttpError(503, 'تعذّرت الاستجابة من خدمة التصميم حالياً. حاول مرة أخرى بعد قليل.');
+}
+
 async function aiCallModel(env, system, user) {
+  if (!env.AI_API_KEY && env.AI && typeof env.AI.run === 'function') return aiCallWorkersAI(env, system, user);
   const base = String(env.AI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
   const model = String(env.AI_MODEL || 'gpt-4o-mini');
   const attempt = async (useFormat) => {
@@ -906,7 +942,7 @@ async function portalAiDesign(env, request, body) {
   const token = designTokenOf(request);
   await portalRow(env, token);
   await aiThrottle(env, request, token);
-  if (!env || !env.AI_API_KEY) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
+  if (!aiAvailable(env)) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
   const settings = await shopSettings(env);
   if (settings.aiDesignEnabled === false) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
   const rawText = body && body.text != null ? String(body.text) : '';

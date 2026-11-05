@@ -845,6 +845,62 @@ try {
     const hashAfter = st6.users[0].password_hash;
     t('Failed login: password_hash unchanged', hashBefore === hashAfter, 'hash changed');
   }
+
+  console.log('== 13) Cloudflare Workers AI (مجاني بلا مفتاح ولا اشتراك) ==');
+  {
+    /* ربط env.AI وهمي يسجّل كل نداء: النموذج والمدخلات */
+    const mkAI = (fn) => { const runs = []; return { runs, run: async (model, input) => { runs.push({ model, input }); return fn(model, input, runs.length); } }; };
+    setProvider(() => { throw new Error('لا يجوز نداء مزوّد خارجي'); });
+    let st = freshState();
+    let AIb = mkAI(() => ({ response: READY_TXT }));
+    const s1 = await call({ DB: makeDb(st), AI: AIb }, 'GET', '/api/portal/settings');
+    t('WAI: البوت مفعّل بربط AI وحده (بلا AI_API_KEY)', s1.status === 200 && s1.body.settings.aiDesign.enabled === true, s1.text);
+
+    const r1 = await ai({ DB: makeDb(st), AI: AIb }, { text: 'مجلس 6×4 بباب واحد' });
+    t('WAI: طلب ناجح عبر Workers AI', r1.status === 200 && r1.body.status === 'ready', r1.text);
+    t('WAI: النموذج الأول متعدد اللغات وبوضع JSON', AIb.runs[0] && AIb.runs[0].model === '@cf/meta/llama-3.3-70b-instruct-fp8-fast'
+      && AIb.runs[0].input.response_format && AIb.runs[0].input.response_format.type === 'json_object', JSON.stringify(AIb.runs[0] && AIb.runs[0].model));
+    t('WAI: رسالة النظام + رسالة العميل فقط', AIb.runs[0].input.messages.length === 2 && AIb.runs[0].input.messages[0].role === 'system' && /مجلس 6×4/.test(AIb.runs[0].input.messages[1].content));
+    t('WAI: لا نداء لأي مزوّد خارجي', calls.length === 0, String(calls.length));
+
+    AIb = mkAI(() => ({ response: READY }));   // بعض النماذج تعيد كائناً جاهزاً في وضع JSON
+    const r2 = await ai({ DB: makeDb(freshState()), AI: AIb }, { text: 'مجلس' });
+    t('WAI: رد كائن JSON مقبول', r2.status === 200 && r2.body.status === 'ready', r2.text);
+
+    AIb = mkAI((m, input) => { if (input.response_format) throw new Error('json mode unsupported'); return { response: READY_TXT }; });
+    const r3 = await ai({ DB: makeDb(freshState()), AI: AIb }, { text: 'مجلس' });
+    t('WAI: فشل وضع JSON ← إعادة بلا response_format تنجح', r3.status === 200 && AIb.runs.length === 2 && AIb.runs[1].input.response_format === undefined, JSON.stringify({ s: r3.status, n: AIb.runs.length }));
+
+    AIb = mkAI((m) => { if (/70b/.test(m)) throw new Error('capacity'); return { response: READY_TXT }; });
+    const r4 = await ai({ DB: makeDb(freshState()), AI: AIb }, { text: 'مجلس' });
+    t('WAI: تعذّر النموذج الأول ← البديل الأخف ينجح', r4.status === 200 && AIb.runs.some((x) => /8b/.test(x.model)), JSON.stringify(AIb.runs.map((x) => x.model)));
+
+    AIb = mkAI(() => { throw new Error('daily neuron quota exceeded 429'); });
+    warns.length = 0;
+    const r5 = await ai({ DB: makeDb(freshState()), AI: AIb }, { text: 'مجلس' });
+    t('WAI: نفاد الحصة اليومية ← 503 برسالة عربية بلا تفاصيل تقنية', r5.status === 503 && /تعذّرت الاستجابة من خدمة التصميم/.test(r5.body.error) && !/quota|neuron|429/i.test(r5.body.error), r5.text);
+    t('WAI: سبب الفشل في السجل فقط (quota)', warns.some((w) => /workers-ai quota/.test(w)), warns.join(' | '));
+
+    AIb = mkAI(() => ({ response: 'ليس JSON' }));
+    const r6 = await ai({ DB: makeDb(freshState()), AI: AIb }, { text: 'مجلس' });
+    t('WAI: رد غير JSON ← 503 عربية', r6.status === 503, r6.text);
+
+    AIb = mkAI(() => ({ response: READY_TXT }));
+    setProvider(() => ok(READY_TXT));
+    const r7 = await ai({ DB: makeDb(freshState()), AI: AIb, ...AI }, { text: 'مجلس' });
+    t('WAI: مع AI_API_KEY يُستعمل المزوّد الخارجي لا Workers AI', r7.status === 200 && calls.length === 1 && AIb.runs.length === 0, JSON.stringify({ ext: calls.length, wai: AIb.runs.length }));
+
+    st = freshState();
+    st.settings = { aiDesignEnabled: false };
+    AIb = mkAI(() => ({ response: READY_TXT }));
+    const envOff = { DB: makeDb(st), AI: AIb };
+    const s8 = await call(envOff, 'GET', '/api/portal/settings');
+    const r8 = await ai(envOff, { text: 'مجلس' });
+    t('WAI: إيقاف المحل للبوت يبقى نافذاً', (s8.body.settings.aiDesign.enabled === false) && r8.status === 503 && AIb.runs.length === 0, JSON.stringify({ en: s8.body.settings.aiDesign, s: r8.status }));
+
+    const r9 = await call({ DB: makeDb(freshState()) }, 'GET', '/api/portal/settings');
+    t('WAI: بلا مفتاح ولا ربط ← معطّل', r9.body.settings.aiDesign.enabled === false, r9.text);
+  }
 } finally {
   console.warn = origWarn;
   globalThis.fetch = realFetch;

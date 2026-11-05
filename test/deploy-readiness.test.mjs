@@ -74,6 +74,7 @@ const ps = read('deploy-cloudflare.ps1');
 ok(/\[string\]\$Environment\s*=\s*'test'/.test(ps) && /\[switch\]\$Preview\s*=\s*\$true/.test(ps), 'deploy: الافتراضي آمن (test + Preview)');
 const keep = (ps.match(/keep_bindings\s*=\s*@\(([^)]*)\)/) || [])[1] || '';
 ok(/'plain_text'/.test(keep) && /'secret_text'/.test(keep), 'deploy: الرفع يحافظ على متغيرات اللوحة وأسرارها (keep_bindings)', keep);
+ok(/@\{ type = 'ai'; name = 'AI' \}/.test(ps), 'deploy: ربط Cloudflare Workers AI (بوت تصميم العميل المجاني) باسم AI');
 ok(!/ALLOWED_ORIGIN\s*=|ADMIN_INIT_PASSWORD\s*=|AI_API_KEY\s*=/.test(ps) && !/type\s*=\s*'(plain_text|secret_text)'/.test(ps), 'deploy: السكربت لا يكتب قيم المتغيرات أو الأسرار');
 ok(ps.indexOf("worker\\schema.sql") > 0 && ps.indexOf("worker\\schema.sql") < ps.indexOf("Step 'Uploading worker'"), 'deploy: schema.sql يُنفَّذ قبل رفع الكود');
 const guardAt = ps.indexOf("Step 'Checking table definitions'");
