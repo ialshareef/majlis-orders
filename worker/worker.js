@@ -405,14 +405,14 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.72';
-// بصمة asalh-najd-1.0.72.apk (إصدار GitHub v1.0.72، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.72 وversionCode 10072، ونفس شهادة توقيع 1.0.71).
-const UPDATE_FALLBACK_SHA256 = 'acab80fbb1a98997d94a2d30c4c8ff2459c312e8398d7415bd935638d5da1bb2';
+const UPDATE_FALLBACK_VERSION = '1.0.73';
+// بصمة asalh-najd-1.0.73.apk (إصدار GitHub v1.0.73، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.73 وversionCode 10073، ونفس شهادة توقيع 1.0.72).
+const UPDATE_FALLBACK_SHA256 = 'f63f085b917bfa6f2d769afca8ff9c1fa576da5c8fa346cceaf2de642f8ec837';
 const UPDATE_FALLBACK_NOTES = [
-  'قسم «التقارير» الجديد: ثمانية تقارير بفترة زمنية تختارها، وتصدير PDF وExcel وCSV',
-  'تفصيل الطلبات بالموظف أو المندوب والبيع والتكاليف وصافي الربح والعمولات، وعمولات كل موظف ومندوب',
-  'صافي الأرباح الشهري بعد العمولات والمصروفات، والتحصيل، والمتبقي على العملاء، والمبيعات حسب العميل',
+  'واجهة أكثر تناسقاً على الجوال واللوحي: لا نصوص أو جداول تخرج عن حدودها، وحقول وأزرار بمقاسات ومحاذاة موحّدة',
+  'جدول الطلبات: زر «فتح» والإجراءات ظاهرة دائماً، وأزرار لمس أكبر على الهاتف',
+  'تصحيح عناوين لوحة تحليلات المتجر، وعرض التواريخ والأرقام بترتيب صحيح داخل النص العربي',
 ];
 
 function versionCodeOfName(v) {
