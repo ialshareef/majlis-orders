@@ -405,13 +405,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.77';
-// بصمة asalh-najd-1.0.77.apk (إصدار GitHub v1.0.77، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.77 وversionCode 10077، ونفس شهادة توقيع 1.0.76).
-const UPDATE_FALLBACK_SHA256 = 'ca998408551fe8b9fe27440cd8c271c69d70a66819aadb50ffeaba2da6dba1e6';
+const UPDATE_FALLBACK_VERSION = '1.0.78';
+// بصمة asalh-najd-1.0.78.apk (إصدار GitHub v1.0.78، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// تطابق digest الإصدار، وversionName 1.0.78 وversionCode 10078، ونفس شهادة توقيع 1.0.77).
+const UPDATE_FALLBACK_SHA256 = 'c31cf6cdf73ac7d677f1503196874cc2c0b7381372bf01bb2b252c1d07619871';
 const UPDATE_FALLBACK_NOTES = [
-  'خانة «تواصل معنا» في ملف PDF الطلب مرتبة مثل ملف العميل: أيقونة واسم ورمز QR لكل قناة',
-  'ملف PDF للطلب صفحة واحدة دائماً، والتصميم وجدول الأثاث مع التسعير في الصفحة نفسها',
+  'ملخص المساحات في ملفات PDF يعرض كل الأرقام كاملة دون قصّ',
+  'مرفقات الطلب في ملف PDF أكبر وأوضح: في العمود الأيسر تحت ملخص المساحات',
 ];
 
 function versionCodeOfName(v) {
