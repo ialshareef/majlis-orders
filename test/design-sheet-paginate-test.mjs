@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
+import { routeDownloads, TEST_DL } from './_downloads.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
 
@@ -65,12 +66,13 @@ for (const rel of ['node_modules/html2canvas/dist/html2canvas.min.js', 'node_mod
   t('js: لا وظيفة قصّ أو إخفاء (scroll/crop/hide على المحتوى)', !/overflow\s*:\s*hidden/.test((/\.dsheet\s*\{[\s\S]*?\}/.exec(fs.readFileSync(path.join(root, 'css/style.css'), 'utf8')) || [''])[0]));
 }
 
-const browser = await puppeteer.launch({
+const browser = await puppeteer.launch({ downloadBehavior: TEST_DL,
   executablePath: chromePath,
   headless: 'new',
   protocolTimeout: 300000,
   args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--disable-web-security'],
 });
+routeDownloads(browser); // تنزيلات الاختبار إلى Documents/majlis-test-downloads لا مجلد التنزيلات
 
 const pdfPages = (buf) => (buf.toString('latin1').match(/\/Type \/Page(?!s)/g) || []).length;
 

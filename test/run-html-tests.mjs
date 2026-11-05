@@ -16,6 +16,7 @@ import path from 'node:path';
 import http from 'node:http';
 import { fileURLToPath } from 'node:url';
 
+import { routeDownloads, TEST_DL } from './_downloads.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const argv = process.argv.slice(2);
 let baseDir = path.join(here, '..');
@@ -58,8 +59,9 @@ const CHROME = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => fs.existsSync(p));
 if (!CHROME) { console.log('لا يوجد Chrome/Edge'); process.exit(2); }
 const puppeteer = (await import('puppeteer-core')).default;
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true,
+const browser = await puppeteer.launch({ downloadBehavior: TEST_DL, executablePath: CHROME, headless: true,
   args: ['--no-sandbox', '--disable-gpu', '--mute-audio', '--font-render-hinting=none', '--hide-scrollbars'] });
+routeDownloads(browser); // تنزيلات الاختبار إلى Documents/majlis-test-downloads لا مجلد التنزيلات
 
 /* اكتمال الاختبار بأي من صيغه المعتادة، ثم عدّ النتائج من سطور السجل إن وُجدت
    (أدقّ من اللافتة)، وإلا من العنوان/الـ rep/لافتة النتيجة. */

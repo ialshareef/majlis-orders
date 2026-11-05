@@ -13,6 +13,7 @@ import http from 'node:http';
 import crypto from 'node:crypto';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+import { routeDownloads, TEST_DL } from './_downloads.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
 const arg = (k) => (process.argv.includes(k) ? process.argv[process.argv.indexOf(k) + 1] : '');
@@ -101,7 +102,8 @@ const CHROME = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => fs.existsSync(p));
 if (!CHROME) { console.log('لا يوجد Chrome/Edge — تخطّي فحص التخطيط'); server.close(); process.exit(2); }
 const puppeteer = (await import('puppeteer-core')).default;
-const browser = await puppeteer.launch({ executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-gpu', '--mute-audio'] });
+const browser = await puppeteer.launch({ downloadBehavior: TEST_DL, executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-gpu', '--mute-audio'] });
+routeDownloads(browser); // تنزيلات الاختبار إلى Documents/majlis-test-downloads لا مجلد التنزيلات
 const pageErrors = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

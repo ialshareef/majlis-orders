@@ -22,6 +22,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
 
+import { routeDownloads, TEST_DL } from './_downloads.mjs';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
 
@@ -207,12 +208,13 @@ function checkScenario(name, tag, r, exp, boxes) {
   checkPdf(tag, buf, exp, boxes);
 }
 
-const browser = await puppeteer.launch({
+const browser = await puppeteer.launch({ downloadBehavior: TEST_DL,
   executablePath: chromePath,
   headless: 'new',
   protocolTimeout: 240000,
   args: ['--no-sandbox', '--disable-gpu', '--allow-file-access-from-files', '--disable-web-security'],
 });
+routeDownloads(browser); // تنزيلات الاختبار إلى Documents/majlis-test-downloads لا مجلد التنزيلات
 try {
   const page = await browser.newPage();
   const pageErrs = [];
