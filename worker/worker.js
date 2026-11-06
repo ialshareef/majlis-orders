@@ -437,13 +437,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.82';
-// بصمة asalh-najd-1.0.82.apk (إصدار GitHub v1.0.82، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// تطابق digest الإصدار، وversionName 1.0.82 وversionCode 10082، ونفس شهادة توقيع 1.0.81).
-const UPDATE_FALLBACK_SHA256 = '633e005ea67f0735a24f8cf06071380981e1ad37246e94a50f48d5f30a510a50';
+const UPDATE_FALLBACK_VERSION = '1.0.83';
+// بصمة asalh-najd-1.0.83.apk (إصدار GitHub v1.0.83، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.83 وversionCode 10083، ونفس شهادة توقيع 1.0.82).
+const UPDATE_FALLBACK_SHA256 = 'd2198eab18f3506652a38578c40a7125f65ba2efb3556ee682167c8d9a585644';
 const UPDATE_FALLBACK_NOTES = [
-  'إصلاح تغيير كلمة مرور المستخدم: رسالة الخطأ تظهر الآن بوضوح، والقاعدة (8 أحرف فأكثر) مكتوبة تحت الحقل',
-  'إشعارات واتساب، وتقرير «زيارات الموقع» مع مصادر الزوار',
+  'ترتيب القائمة الجانبية في مجموعات واضحة: العمل اليومي، المال والمتابعة، التقارير، الإدارة',
+  'قسم «التقارير والتحليلات» يجمع التقارير ولوحة الأرقام وزيارات الموقع، و«المستخدمون ونشاطهم» يضم سجل نشاط الموظفين',
 ];
 
 function versionCodeOfName(v) {
