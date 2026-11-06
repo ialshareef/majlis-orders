@@ -180,21 +180,23 @@
         <span class="sb-group">العمل اليومي</span>
         <button type="button" data-page="order" class="active" title="الطلب الحالي"><svg><use href="#i-pen"/></svg><span>الطلب الحالي</span></button>
         <button type="button" data-page="orders" title="جميع الطلبات"><svg><use href="#i-list"/></svg><span>جميع الطلبات</span></button>
-        <button type="button" data-page="customers" title="العملاء"><svg><use href="#i-user"/></svg><span>العملاء</span></button>
         <button type="button" data-page="designs" data-designs title="تصاميم العملاء"><svg><use href="#i-sofa"/></svg><span>تصاميم العملاء</span><span class="notif-badge" id="desBadge" hidden></span></button>
+        <button type="button" data-page="customers" title="العملاء"><svg><use href="#i-user"/></svg><span>العملاء</span></button>
+        <span class="sb-group">المال والمتابعة</span>
+        <button type="button" data-page="expenses" title="المصروفات" hidden><svg><use href="#i-wallet"/></svg><span>المصروفات</span></button>
+        <button type="button" data-page="mandoubs" data-admin title="المناديب والعمولات"><svg><use href="#i-truck"/></svg><span>المناديب والعمولات</span></button>
+        <button type="button" data-page="whatsapp" title="إشعارات واتساب" hidden><svg><use href="#i-whatsapp"/></svg><span>إشعارات واتساب</span><span class="notif-badge" id="waBadge" hidden></span></button>
         <span class="sb-group">التقارير</span>
-        <button type="button" data-page="reports" title="التقارير"><svg><use href="#i-file"/></svg><span>التقارير</span></button>
+        <!-- قسم واحد بتبويبات: التقارير الجاهزة، لوحة الأرقام (ذكاء الأعمال)، زيارات الموقع -->
+        <button type="button" data-page="reports" data-also="bi visits" title="التقارير والتحليلات"><svg><use href="#i-chart"/></svg><span>التقارير والتحليلات</span></button>
         <span class="sb-group" data-admin>الإدارة</span>
         <button type="button" data-page="items" data-admin title="الأصناف والأسعار"><svg><use href="#i-tag"/></svg><span>الأصناف والأسعار</span></button>
-        <button type="button" data-page="users" data-admin title="المستخدمون"><svg><use href="#i-users"/></svg><span>المستخدمون</span></button>
-        <button type="button" data-page="activity" data-admin title="سجل التحديثات"><svg><use href="#i-clock"/></svg><span>سجل التحديثات</span></button>
-        <button type="button" data-page="bi" data-admin title="ذكاء الأعمال"><svg><use href="#i-chart"/></svg><span>ذكاء الأعمال</span></button>
-        <button type="button" data-page="expenses" title="المصروفات" hidden><svg><use href="#i-wallet"/></svg><span>المصروفات</span></button>
-        <button type="button" data-page="whatsapp" title="إشعارات واتساب" hidden><svg><use href="#i-whatsapp"/></svg><span>إشعارات واتساب</span><span class="notif-badge" id="waBadge" hidden></span></button>
-        <button type="button" data-page="mandoubs" data-admin title="إدارة المناديب"><svg><use href="#i-users"/></svg><span>إدارة المناديب</span></button>
+        <!-- المستخدمون + نشاط الموظفين (سجل التحديثات) -->
+        <button type="button" data-page="users" data-also="activity" data-admin title="المستخدمون ونشاطهم"><svg><use href="#i-users"/></svg><span>المستخدمون ونشاطهم</span></button>
         <button type="button" data-page="settings" id="btnSettings" data-admin title="الإعدادات والنسخ الاحتياطي"><svg><use href="#i-settings"/></svg><span>الإعدادات والنسخ الاحتياطي</span></button>
-        <button type="button" data-page="about" title="عن التطبيق"><svg><use href="#i-info"/></svg><span>عن التطبيق</span></button>
-        <button type="button" id="btnHelp" class="hj-help-btn" style="justify-content:flex-start;margin:6px 0 0" title="دليل الاستخدام">
+        <hr class="sb-sep">
+        <button type="button" data-page="about" class="sb-minor" title="عن التطبيق"><svg><use href="#i-info"/></svg><span>عن التطبيق</span></button>
+        <button type="button" id="btnHelp" class="hj-help-btn sb-minor" style="justify-content:flex-start;margin:2px 0 0" title="دليل الاستخدام">
           <svg aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.9c-.6.2-.8.6-.8 1.1v.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="12" cy="17" r="1.1" fill="currentColor"/></svg>
           <span>دليل الاستخدام</span>
         </button>
@@ -1156,6 +1158,18 @@
     </section>
 
     <!-- ============ عن التطبيق ============ -->
+    <!-- ============ زيارات الموقع: تبويب ضمن «التقارير والتحليلات» (للمدير) ============ -->
+    <section id="page-visits" class="page">
+      <header class="page-head">
+        <div class="ph-title"><h2>زيارات الموقع</h2><p>كم شخصاً فتح صفحات العملاء، ومن أين جاؤوا، وكم منهم أرسل تصميماً.</p></div>
+      </header>
+      <div class="links-box" id="visitStatsBox" hidden>
+        <div class="link-row" style="display:block">
+          <div id="visitStatsBody" class="vs-body"><p class="hint">…جارٍ التحميل…</p></div>
+        </div>
+      </div>
+    </section>
+
     <section id="page-about" class="page">
       <header class="page-head">
         <div class="ph-title"><h2>عن التطبيق</h2><p>معلومات النظام والمطوّر.</p></div>
@@ -1199,13 +1213,6 @@
                 <button type="button" class="btn small" id="btnCopyExpanded"><svg><use href="#i-copy"/></svg><span>نسخ</span></button>
                 <button type="button" class="btn small" id="btnShareExpanded"><svg><use href="#i-upload"/></svg><span>مشاركة</span></button>
               </div>
-            </div>
-          </div>
-          <!-- إحصاءات حركة الزوار: للمدير فقط (يخفيها renderVisitStats لغير المدير) -->
-          <div class="links-box" id="visitStatsBox" hidden>
-            <h4>حركة الزوار (إحصاءات)</h4>
-            <div class="link-row" style="display:block">
-              <div id="visitStatsBody" class="vs-body"><p class="hint">…جارٍ التحميل…</p></div>
             </div>
           </div>
           <div class="update-box" id="updateBox">

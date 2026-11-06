@@ -256,9 +256,9 @@ try {
   for (const vp of VPS) {
     const { page, loginIssues } = await login('owner', vp);
     summary[vp.tag + ':login'] = loginIssues;
-    const pages = await page.evaluate(() => [...document.querySelectorAll('#mainNav button[data-page]')].filter((b) => !b.hidden).map((b) => b.dataset.page));
+    const pages = await page.evaluate(() => [...new Set([...document.querySelectorAll('#mainNav button[data-page]')].filter((b) => !b.hidden).map((b) => b.dataset.page).concat([...document.querySelectorAll('.page-tabs [data-goto]')].filter((b) => !b.hidden).map((b) => b.dataset.goto)))]);
     for (const p of pages) {
-      await page.evaluate((n) => { const b = document.querySelector(`#mainNav button[data-page="${n}"]`); b.click(); }, p);
+      await page.evaluate((n) => (document.querySelector(`#mainNav button[data-page="${n}"]`) || document.querySelector(`.page-tabs [data-goto="${n}"]`)).click(), p);
       await sleep(900);
       await page.evaluate(() => { document.activeElement && document.activeElement.blur && document.activeElement.blur(); window.scrollTo(0, 0); });
       // إغلاق القائمة الجانبية إن فُتحت على الجوال
@@ -268,7 +268,7 @@ try {
       if (shotsDir) { const h = await page.evaluate(() => document.documentElement.scrollHeight); await page.screenshot({ path: path.join(shotsDir, `${vp.tag}-${p}.png`), clip: { x: 0, y: 0, width: vp.width, height: Math.min(h, 1600) }, captureBeyondViewport: true }); }
     }
     const shot = async (n) => { if (shotsDir) await page.screenshot({ path: path.join(shotsDir, `${vp.tag}-${n}.png`) }); };
-    const goPage = async (p) => { await page.evaluate((n) => document.querySelector(`#mainNav button[data-page="${n}"]`).click(), p); await sleep(700); };
+    const goPage = async (p) => { await page.evaluate((n) => (document.querySelector(`#mainNav button[data-page="${n}"]`) || document.querySelector(`.page-tabs [data-goto="${n}"]`)).click(), p); await sleep(700); };
     // جدول الطلبات على سطح المكتب: كل الأعمدة تتسع دون تمرير أفقي (1366 وما فوق)
     await goPage('orders');
     if (vp.width >= 1280) {
@@ -318,9 +318,9 @@ try {
   for (const who of ['staff_with_a_very_long_username', 'mand2']) {
     for (const vp of [VPS[0], VPS[2]]) {
       const { page } = await login(who, vp);
-      const pages = await page.evaluate(() => [...document.querySelectorAll('#mainNav button[data-page]')].filter((b) => !b.hidden).map((b) => b.dataset.page));
+      const pages = await page.evaluate(() => [...new Set([...document.querySelectorAll('#mainNav button[data-page]')].filter((b) => !b.hidden).map((b) => b.dataset.page).concat([...document.querySelectorAll('.page-tabs [data-goto]')].filter((b) => !b.hidden).map((b) => b.dataset.goto)))]);
       for (const p of pages) {
-        await page.evaluate((n) => document.querySelector(`#mainNav button[data-page="${n}"]`).click(), p); await sleep(700);
+        await page.evaluate((n) => (document.querySelector(`#mainNav button[data-page="${n}"]`) || document.querySelector(`.page-tabs [data-goto="${n}"]`)).click(), p); await sleep(700);
         summary[`${who.slice(0, 8)}:${vp.tag}:${p}`] = await page.evaluate(auditInPage, { scope: `#page-${p}, .sidebar, #bottomNav`, touch: vp.width < 768 });
       }
       await page.browserContext().close();

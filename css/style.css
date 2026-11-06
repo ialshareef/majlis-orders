@@ -3527,3 +3527,16 @@ body.portal { background: var(--bg); }
 .vs-link > span { align-self: center; }
 .vs-link input { height: auto; min-height: 0; box-sizing: border-box; }
 .vs-link .btn { height: auto; }
+
+/* ---------- ترتيب القائمة: أقسام مدمجة بتبويبات + فاصل لعناصر أسفل القائمة ---------- */
+.page-tabs { display: flex; flex-wrap: wrap; width: fit-content; max-width: 100%; margin: 0 0 14px; }
+.page-tabs[hidden] { display: none; }
+.sb-sep { border: 0; border-top: 1px solid var(--line); margin: 12px 10px 6px; }
+.sb-nav button.sb-minor { font-size: .86rem; color: var(--ink-2); }
+#page-visits .links-box { max-width: none; margin: 0; }
+@media (max-width: 760px) {
+  .page-tabs { width: 100%; }
+  .page-tabs .chip { flex: 1 1 auto; }
+}
+/* زر «تطبيق» بجوار حقلي التاريخ في لوحة المالك بنفس ارتفاعهما */
+.owner-custom .btn { min-height: var(--tb-h); }

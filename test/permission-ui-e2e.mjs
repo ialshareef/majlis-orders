@@ -95,8 +95,8 @@ async function login(username) {
   await page.evaluate(() => { const m = document.getElementById('modal'); if (m && !m.hidden) document.getElementById('modalClose').click(); });
   return page;
 }
-const navVisible = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#mainNav button[data-page]')].map((b) => [b.dataset.page, !b.hidden])));
-const go = async (page, name) => { await page.evaluate((n) => document.querySelector(`#mainNav button[data-page="${n}"]`).click(), name); await sleep(700); };
+const navVisible = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#mainNav button[data-page]')].map((b) => [b.dataset.page, !b.hidden]).concat([...document.querySelectorAll('.page-tabs [data-goto]')].map((b) => [b.dataset.goto, !b.hidden]))));
+const go = async (page, name) => { await page.evaluate((n) => (document.querySelector(`#mainNav button[data-page="${n}"]`) || document.querySelector(`.page-tabs [data-goto="${n}"]`)).click(), name); await sleep(700); };
 const exists = (page, sel) => page.evaluate((s) => !!document.querySelector(s), sel);
 const visible = (page, sel) => page.evaluate((s) => { const e = document.querySelector(s); return !!(e && !e.hidden && e.getClientRects().length); }, sel);
 const rowsText = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s + ' tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()), sel);
@@ -107,7 +107,7 @@ try {
   let nav = await navVisible(page);
   ok(nav.designs === true, 'staff/default: «تصاميم العملاء» ظاهرة (designs.view افتراضي)', nav);
   ok(!nav.expenses && !nav.bi && !nav.items && !nav.users && !nav.settings && !nav.activity, 'staff/default: لا شاشة إدارية ولا مصروفات ولا تقارير تلقائياً', nav);
-  ok(await page.evaluate(() => document.querySelector('#mainNav .sb-group:nth-of-type(2)') ? document.querySelector('#mainNav .sb-group:nth-of-type(2)').hidden : true), 'staff/default: عنوان «الإدارة» مخفي حين لا صفحة تحته');
+  ok(await page.evaluate(() => [...document.querySelectorAll('#mainNav .sb-group')].slice(1).every((g) => g.hidden)), 'staff/default: عناوين الأقسام (المال، التقارير، الإدارة) مخفية حين لا صفحة تحتها');
   await go(page, 'orders');
   ok(await exists(page, '[data-cost="o2"]'), 'staff/default: «إضافة التكاليف» لطلبه (costs.add_own افتراضي)');
   ok(!(await exists(page, '[data-delo="o2"]')), 'staff/default: لا حذف لطلبه (orders.delete_own غير ممنوح)');

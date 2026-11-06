@@ -122,8 +122,8 @@ async function login(username) {
   await page.evaluate(() => { const m = document.getElementById('modal'); if (m && !m.hidden) document.getElementById('modalClose').click(); });
   return page;
 }
-const navVisible = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#mainNav button[data-page]')].map((b) => [b.dataset.page, !b.hidden])));
-const go = async (page, name) => { await page.evaluate((n) => document.querySelector(`#mainNav button[data-page="${n}"]`).click(), name); await sleep(900); };
+const navVisible = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#mainNav button[data-page]')].map((b) => [b.dataset.page, !b.hidden]).concat([...document.querySelectorAll('.page-tabs [data-goto]')].map((b) => [b.dataset.goto, !b.hidden]))));
+const go = async (page, name) => { await page.evaluate((n) => (document.querySelector(`#mainNav button[data-page="${n}"]`) || document.querySelector(`.page-tabs [data-goto="${n}"]`)).click(), name); await sleep(900); };
 const tabs = (page) => page.evaluate(() => [...document.querySelectorAll('#repCatalog [data-rep]')].map((b) => b.dataset.rep));
 const pick = async (page, id) => { await page.evaluate((i) => document.querySelector(`#repCatalog [data-rep="${i}"]`).click(), id); await sleep(400); };
 const range = async (page, rr) => { await page.evaluate((r) => document.querySelector(`#repRangeChips [data-rr="${r}"]`).click(), rr); await sleep(400); };

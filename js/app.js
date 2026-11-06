@@ -326,14 +326,44 @@
     expenses: () => canAny('expenses.view_own', 'expenses.view_all'),
     whatsapp: () => canAny('notifications.whatsapp.view', 'notifications.whatsapp.manage', 'notifications.whatsapp.send'),
     reports: () => canAny('reports.view_own', 'reports.view_all'),
+    visits: () => can('admin.core'),
   };
   const canPage = (name) => !PAGE_PERMS[name] || PAGE_PERMS[name]();
+  /* أقسام مدمجة: زر واحد في القائمة يفتح مجموعة صفحات تظهر كتبويبات أعلى كل صفحة منها */
+  const PAGE_TABS = [
+    [['reports', 'التقارير الجاهزة'], ['bi', 'لوحة الأرقام'], ['visits', 'زيارات الموقع']],
+    [['users', 'المستخدمون'], ['activity', 'نشاط الموظفين']],
+  ];
+  // صفحات زر القائمة: صفحته الأساسية ثم الصفحات المدمجة معه (data-also)
+  const navPages = (b) => [b.dataset.page].concat((b.dataset.also || '').split(/\s+/).filter(Boolean));
+  const navAllowed = (b) => navPages(b).some(canPage);
+  const navTarget = (b) => navPages(b).find(canPage) || b.dataset.page;
+  function buildPageTabs() {
+    PAGE_TABS.forEach((set) => set.forEach(([page]) => {
+      const sec = document.getElementById('page-' + page);
+      if (!sec || sec.querySelector('.page-tabs')) return;
+      const nav = document.createElement('nav');
+      nav.className = 'seg-chips page-tabs';
+      nav.setAttribute('aria-label', 'أقسام هذه الصفحة');
+      nav.innerHTML = set.map(([p, l]) => `<button type="button" class="chip${p === page ? ' on' : ''}" data-goto="${p}"${p === page ? ' aria-current="page"' : ''}>${esc(l)}</button>`).join('');
+      const head = sec.querySelector('.page-head');
+      if (head) head.after(nav); else sec.prepend(nav);
+      nav.addEventListener('click', (e) => { const b = e.target.closest('[data-goto]'); if (b) showPage(b.dataset.goto); });
+    }));
+  }
 
   function applyPermissions() {
     $$('[data-admin]').forEach((el) => (el.hidden = !can('admin.core')));
     $$('[data-designs]').forEach((el) => (el.hidden = !can('designs.view')));
     // أزرار التنقل تتبع صلاحية صفحتها لا الدور
-    $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => { if (PAGE_PERMS[b.dataset.page]) b.hidden = !canPage(b.dataset.page); });
+    $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => { if (navPages(b).some((p) => PAGE_PERMS[p])) b.hidden = !navAllowed(b); });
+    // التبويبات: كل تبويب يتبع صلاحية صفحته، والشريط يختفي إن بقي تبويب واحد
+    buildPageTabs();
+    $$('.page-tabs').forEach((nav) => {
+      let shown = 0;
+      $$('[data-goto]', nav).forEach((t) => { t.hidden = !canPage(t.dataset.goto); if (!t.hidden) shown++; });
+      nav.hidden = shown < 2;
+    });
     // عنوان قسم «الإدارة» يظهر فقط إن ظهرت تحته صفحة واحدة على الأقل
     $$('.sb-group').forEach((g) => {
       let n = g.nextElementSibling, any = false;
@@ -500,8 +530,9 @@
     if (!canPage(name)) name = 'order';
     $$('.page').forEach((p) => p.classList.toggle('active', p.id === 'page-' + name));
     $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => {
-      b.classList.toggle('active', b.dataset.page === name);
-      if (b.dataset.page === name) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+      const on = navPages(b).includes(name);
+      b.classList.toggle('active', on);
+      if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
     });
     // زر «القائمة» في الشريط السفلي يُضاء حين تكون الصفحة المفتوحة من خارج الشريط
     $('#btnMore').classList.toggle('active', !$(`#bottomNav button[data-page="${name}"]`));
@@ -517,6 +548,7 @@
     if (name === 'mandoubs') renderMandoubs();
     if (name === 'designs') renderDesigns();
     if (name === 'about') renderAbout();
+    if (name === 'visits') { try { renderVisitStats(); } catch (_) { /* noop */ } }
     if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'reports', 'mandoubs', 'designs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
@@ -525,7 +557,7 @@
     if (name === 'order') requestAnimationFrame(() => { designer.resize(); positionInspector(); });
     window.scrollTo({ top: 0 });
   }
-  $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => b.addEventListener('click', () => showPage(b.dataset.page)));
+  $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => b.addEventListener('click', () => showPage(navTarget(b))));
 
   /* القائمة الجانبية في الجوال: رأس الشريط الجانبي شريط علوي، وأقسامه لوحة منزلقة.
      الشريط السفلي يبقي الأكثر استعمالاً، و«القائمة» تفتح بقية الأقسام. */
@@ -6015,8 +6047,6 @@ function docTitle(order) {
     } catch (_) { /* فشل ربط التحديث لا يمنع عرض الصفحة */ }
     // روابط الوصول السريع: تُبنى من نفس الأصل (تعمل إنتاج/تجريبي/محلي بلا hard-code)
     try { wireAccessLinks(); } catch (_) { /* noop */ }
-    // إحصاءات حركة الزوار: للمدير فقط
-    try { renderVisitStats(); } catch (_) { /* noop */ }
   }
   /* ---------------- إحصاءات حركة الزوار (مدير) ----------------
      مصدران: (1) زيارات فعلية من الخادم لصفحات الزوار العامة،

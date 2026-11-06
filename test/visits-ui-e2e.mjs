@@ -90,11 +90,11 @@ async function login(un, vp = { width: 1366, height: 900 }) {
   return page;
 }
 const shot = async (page, name) => { if (saveDir) { fs.mkdirSync(saveDir, { recursive: true }); await page.screenshot({ path: path.join(saveDir, name + '.png'), fullPage: true }); } };
-const goAbout = async (page) => { await page.evaluate(() => document.querySelector('#mainNav [data-page="about"]').click()); await page.waitForFunction(() => document.querySelector('#visitStatsBody .vs-cards'), { timeout: 15000 }); };
+const goVisits = async (page) => { await page.evaluate(() => document.querySelector('.page-tabs [data-goto="visits"]').click()); await page.waitForFunction(() => document.querySelector('#visitStatsBody .vs-cards'), { timeout: 15000 }); };
 
 /* ---------------- 1) «عن التطبيق» للمالك ---------------- */
 const P = await login('owner');
-await goAbout(P);
+await goVisits(P);
 const cards = await P.evaluate(() => [...document.querySelectorAll('#visitStatsBody .vs-card')].map((c) => ({ lbl: c.querySelector('.vs-card-lbl').textContent.trim(), n: c.querySelector('b').textContent.trim(), sub: c.querySelector('small').textContent.replace(/\s+/g, ' ').trim() })));
 ok(cards.length === 4 && cards.map((c) => c.lbl).join('|') === 'اليوم|آخر ٧ أيام|آخر ٣٠ يوماً|منذ البداية', 'about: أربع بطاقات واضحة للفترات', cards.map((c) => c.lbl));
 ok(cards[0].n === '5' && /2 زائر/.test(cards[0].sub), 'about: اليوم 5 زيارات و2 زائر (الجهاز الذي فتح الصفحتين يُحتسب مرة)', cards[0]);
@@ -158,16 +158,17 @@ for (const [btn, ext, head] of [['btnRepPdf', '.pdf', '%PDF'], ['btnRepXlsx', '.
 
 /* ---------------- 3) الجوال ---------------- */
 const M = await login('owner', { width: 375, height: 812, isMobile: true, hasTouch: true });
-await goAbout(M);
+await goVisits(M);
 const mob = await M.evaluate(() => ({ sw: document.documentElement.scrollWidth, w: document.documentElement.clientWidth, cols: getComputedStyle(document.querySelector('.vs-cards')).gridTemplateColumns.split(' ').length }));
 ok(mob.sw <= mob.w + 1 && mob.cols === 2, 'mobile: البطاقات عمودان ولا تمرير أفقي عند 375px', mob);
 await shot(M, 'about-mobile');
 
 /* ---------------- 4) الموظف: لا قسم ولا تقرير ---------------- */
 const S = await login('staff1');
-await S.evaluate(() => document.querySelector('#mainNav [data-page="about"]').click());
+await S.evaluate(() => document.querySelector('.page-tabs [data-goto="visits"]').click());
 await sleep(1500);
 ok(await S.evaluate(() => document.getElementById('visitStatsBox').hidden), 'perm: قسم الزوار مخفي عن الموظف');
+ok(await S.evaluate(() => [...document.querySelectorAll('.page-tabs [data-goto="visits"]')].every((t) => t.hidden) && !document.getElementById('page-visits').classList.contains('active')), 'perm: تبويب «زيارات الموقع» مخفي عن الموظف ولا تُفتح صفحته');
 const st = await S.evaluate(async () => (await fetch('/api/owner-analytics?range=d30', { headers: { 'x-session-token': Store.token } })).status);
 ok(st === 403, 'perm: الخادم يرفض بيانات الزيارات للموظف (403)', st);
 ok(!errs.length, 'js: لا أخطاء JavaScript', errs);
