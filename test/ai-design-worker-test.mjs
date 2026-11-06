@@ -946,6 +946,12 @@ try {
     setProvider(() => reply({ questions: [{ q: 'ما هو مقاس الغرفة؟', options: ['6 في 4', '8 في 5'] }] }));
     r = await ai(env, { text: 'أبي أصمم مجلس' });
     t('طلب مبهم ← أسئلة المقاس والجلسة والباب معاً في جولة واحدة', r.body.questions.length === 3 && /جلس/.test(r.body.questions[1].q) && /باب/.test(r.body.questions[2].q), JSON.stringify(r.body.questions.map((q) => q.q)));
+    setProvider(() => reply({ status: 'ready', spec: { roomW: 6, roomH: 4, tv: { wall: 0, w: 1.5 }, sofaWalls: [0, 2, 3] } }));
+    r = await ai(env, { text: 'تلفاز مقابل الكنب' });
+    t('جدار التلفاز يُستبعد من جدران الجلسة', JSON.stringify(r.body.spec.sofaWalls) === '[2,3]', JSON.stringify(r.body.spec));
+    setProvider(() => reply({ spec: { roomW: 5, roomH: 4, seating: 'floor', door: { wall: 3 } }, questions: [{ q: 'أين الباب بالضبط؟', options: ['المنتصف', 'الزاوية'] }] }));
+    r = await ai(env, { text: 'مجلس ٥×٤ جلسة أرضية وباب على اليسار' });
+    t('الأساسيات الثلاث معروفة ← جاهز بلا أسئلة ثانوية', r.body.status === 'ready' && !r.body.questions.length, JSON.stringify({ s: r.body.status, q: r.body.questions }));
     // نهاية واضحة: بعد جولتي أسئلة ومع معرفة المقاس ← جاهز
     const Q3 = [{ q: 'لون القماش؟', options: ['بني', 'بيج'] }];
     setProvider(() => reply({ spec: { roomW: 6, roomH: 4 }, questions: Q3 }));

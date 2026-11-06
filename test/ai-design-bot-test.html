@@ -144,7 +144,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
           { id: 'q1', q: 'كم باباً تحتاج؟', options: ['باب واحد', 'بابان'] },
           { id: 'q2', q: 'ما الإكسسوارات؟', options: ['مركى', 'طاولة وسط', 'مسند'], multi: true },
         ],
-        assumptions: [], issues: [], spec: null,
+        assumptions: [], issues: [], spec: { door: null },
       });
       q('#aiText').value = 'كم باباً؟';
       q('#aiSend').click();

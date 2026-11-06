@@ -1039,9 +1039,15 @@ async function aiDesignCore(body, brief, callModel) {
   for (const [v, re] of AI_SEAT_WORDS) if (re.test(text)) { merged.seating = v; break; }
   const spec = aiSanitizeSpec(merged) || {};
   const hasSize = spec.roomW != null && spec.roomH != null;
+  // جدار التلفاز يبقى بلا جلسة (التلفاز مقابل الجلسة لا خلفها)
+  if (spec.tv && Array.isArray(spec.sofaWalls) && spec.sofaWalls.includes(spec.tv.wall)) {
+    const rest = spec.sofaWalls.filter((w) => w !== spec.tv.wall);
+    if (rest.length) spec.sofaWalls = rest;
+  }
 
   if (out.status !== 'invalid') {
-    if (hasSize && (out.status === 'ready' || askedRounds >= AI_MAX_QUESTION_ROUNDS || !out.questions.length)) {
+    // جاهز متى عُرف المقاس واكتملت الأساسيات، أو بعد جولتي أسئلة — لا أسئلة ثانوية تؤخر الإنشاء
+    if (hasSize && (out.status === 'ready' || askedRounds >= AI_MAX_QUESTION_ROUNDS || !out.questions.length || !aiMissing(spec).length)) {
       if (out.status !== 'ready') {
         out.assumptions.push('أكملتُ بقية التفاصيل بخيارات شائعة — يمكنك تعديلها بعد إنشاء التصميم.');
         out.note = 'تمام، عندي ما يكفي لتجهيز تصميمك.';

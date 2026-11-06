@@ -24,12 +24,12 @@ app.env.AI = {
     if (n === 1) return { response: JSON.stringify({ status: 'need_answers', note: 'أهلاً! أحتاج بعض التفاصيل.', spec: {},
       questions: [
         { id: 'seat', q: 'ما نوع الجلسة؟', options: ['جلسة عربية', 'أرضي', 'كنب'] },
-        { id: 'door', q: 'أين الباب؟', options: ['الجدار السفلي', 'الجدار الأيمن', 'الجدار الأيسر'] },
+        { id: 'tv', q: 'أين التلفاز؟', options: ['الجدار السفلي', 'الجدار العلوي', 'بدون تلفاز'] },
         { id: 'acc', q: 'ما الإكسسوارات التي تريدها؟', options: ['مركى', 'طاولة وسط', 'مسند ظهر'], multi: true },
       ] }) };
     // الجولة 2: النموذج «ينسى» المقاس ويعيد جزءاً من المواصفات فقط
-    if (n === 2) return { response: JSON.stringify({ status: 'need_answers', note: 'ممتاز، سؤال أخير.', spec: { seating: 'arabic', door: { wall: 1, w: 1 }, accessories: [{ name: 'مركى', qty: 2 }, { name: 'طاولة وسط', qty: 1 }] },
-      questions: [{ id: 'fab', q: 'ما لون القماش؟', options: ['بني', 'بيج', 'رمادي'] }] }) };
+    if (n === 2) return { response: JSON.stringify({ status: 'need_answers', note: 'ممتاز، سؤال أخير.', spec: { seating: 'arabic', tv: { wall: 2, w: 1.5 }, accessories: [{ name: 'مركى', qty: 2 }, { name: 'طاولة وسط', qty: 1 }] },
+      questions: [{ id: 'door', q: 'أين الباب؟', options: ['الجدار السفلي', 'الجدار الأيمن', 'الجدار الأيسر'] }] }) };
     return { response: JSON.stringify({ status: 'need_answers', note: 'سؤال آخر؟', spec: {}, questions: [{ id: 'x', q: 'هل تريد شباكاً؟', options: ['نعم', 'لا'] }] }) };
   },
 };
@@ -88,19 +88,19 @@ for (const [label, vp] of [['desktop', { width: 1366, height: 860 }], ['mobile',
   await click(1, 1);
   await click(2, 0); await click(2, 1);
   s = await S(p);
-  ok(JSON.stringify(s.answers) === JSON.stringify({ 0: ['جلسة عربية'], 1: ['الجدار الأيمن'], 2: ['مركى', 'طاولة وسط'] }), `${label}: كل الإجابات محفوظة (لا تُستبدل بآخر اختيار)`, s.answers);
+  ok(JSON.stringify(s.answers) === JSON.stringify({ 0: ['جلسة عربية'], 1: ['الجدار العلوي'], 2: ['مركى', 'طاولة وسط'] }), `${label}: كل الإجابات محفوظة (لا تُستبدل بآخر اختيار)`, s.answers);
   const cnt = await p.evaluate(() => document.getElementById('aiQCount').textContent);
   ok(/3 من 3/.test(cnt), `${label}: عدّاد «أجبت عن 3 من 3»`, cnt);
   await shot(p, `${label}-2-picked`);
   await p.evaluate(() => document.getElementById('aiAnswer').click());
   await waitIdle(p, 5);
-  ok(/جلسة عربية/.test(seen[1]) && /الجدار الأيمن/.test(seen[1]) && /مركى، طاولة وسط/.test(seen[1]), `${label}: الإجابات الثلاث وصلت للنموذج معاً`, seen[1] && seen[1].slice(-200));
+  ok(/جلسة عربية/.test(seen[1]) && /الجدار العلوي/.test(seen[1]) && /مركى، طاولة وسط/.test(seen[1]), `${label}: الإجابات الثلاث وصلت للنموذج معاً`, seen[1] && seen[1].slice(-200));
   s = await S(p);
   const spec = await p.evaluate(() => window.AiDesign.spec());
-  ok(spec && spec.roomW === 6 && spec.roomH === 4 && spec.seating === 'arabic' && spec.door && spec.door.wall === 1, `${label}: المقاس لم يضِع رغم أن النموذج نسيه`, spec);
+  ok(spec && spec.roomW === 6 && spec.roomH === 4 && spec.seating === 'arabic' && spec.tv && spec.tv.wall === 2, `${label}: المقاس لم يضِع رغم أن النموذج نسيه`, spec);
 
   // الجولة الثانية: سؤال واحد ← إجابة ← النهاية (ready) حتى لو أراد النموذج سؤالاً ثالثاً
-  ok(s.status === 'need_answers' && s.questions === 1, `${label}: جولة ثانية بسؤال واحد`, s);
+  ok(s.status === 'need_answers' && s.questions === 1, `${label}: جولة ثانية بسؤال واحد عن الناقص (الباب)`, s);
   await click(0, 1);
   await p.evaluate(() => document.getElementById('aiAnswer').click());
   await waitIdle(p, 7);
