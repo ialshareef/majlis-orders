@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.85';
-// بصمة asalh-najd-1.0.85.apk (إصدار GitHub v1.0.85، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.85 وversionCode 10085، ونفس شهادة توقيع 1.0.84).
-const UPDATE_FALLBACK_SHA256 = '04fb77d27617bc2a5f9660f1331a493a807a2af557b1cc5d95de4865f3ae6d51';
+const UPDATE_FALLBACK_VERSION = '1.0.86';
+// بصمة asalh-najd-1.0.86.apk (إصدار GitHub v1.0.86، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.86 وversionCode 10086، ونفس شهادة توقيع 1.0.85).
+const UPDATE_FALLBACK_SHA256 = '76a110a910e6d7a189854e7c2433726ad34dd67b0500e7b6039cb9573b9e44a3';
 const UPDATE_FALLBACK_NOTES = [
-  'حذف رابط «التصميم الموسّع» التجريبي: رابط تصميم العميل الحالي هو المعتمد وحده',
-  'الزيارات والتقارير تعرض زيارات رابط تصميم العميل فقط',
+  'جولة شرح جديدة في صفحة تصميم العميل: تبدأ عند فتح شاشة التصميم وتضيء كل جزء يُشرح',
+  'زر «تخطّي الجولة» في كل خطوة، وزر دليل الاستخدام في أعلى شاشة التصميم',
 ];
 
 function versionCodeOfName(v) {
