@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.86';
-// بصمة asalh-najd-1.0.86.apk (إصدار GitHub v1.0.86، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.86 وversionCode 10086، ونفس شهادة توقيع 1.0.85).
-const UPDATE_FALLBACK_SHA256 = '76a110a910e6d7a189854e7c2433726ad34dd67b0500e7b6039cb9573b9e44a3';
+const UPDATE_FALLBACK_VERSION = '1.0.87';
+// بصمة asalh-najd-1.0.87.apk (إصدار GitHub v1.0.87، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.87 وversionCode 10087، ونفس شهادة توقيع 1.0.86).
+const UPDATE_FALLBACK_SHA256 = 'ea718171f427af7214c1aa0b5669d3641037292f198155b934700c61e3332870';
 const UPDATE_FALLBACK_NOTES = [
-  'جولة شرح جديدة في صفحة تصميم العميل: تبدأ عند فتح شاشة التصميم وتضيء كل جزء يُشرح',
-  'زر «تخطّي الجولة» في كل خطوة، وزر دليل الاستخدام في أعلى شاشة التصميم',
+  'التصميم بالذكاء الاصطناعي: اختر إجابة لكل سؤال (أو أكثر من إجابة حيث يُسمح) وأرسلها كلها معاً',
+  'شريط يوضح ما عُرف من التصميم وما بقي، والأسئلة تنتهي بعد جولتين ثم يُجهّز التصميم مباشرة',
 ];
 
 function versionCodeOfName(v) {
