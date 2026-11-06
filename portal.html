@@ -67,6 +67,7 @@
     <b>تصميم المجلس</b>
     <button type="button" class="icon-btn" id="pUndo" aria-label="تراجع"><svg><use href="#p-undo"/></svg></button>
     <button type="button" class="icon-btn" id="pAiOpen" aria-label="التصميم بالذكاء الاصطناعي"><svg><use href="#p-ai"/></svg></button>
+    <button type="button" class="icon-btn p-help-ic" id="pHelpD" aria-label="دليل الاستخدام" title="دليل الاستخدام"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9" fill="none" stroke="currentColor" stroke-width="1.8"/><path d="M9.4 9.2a2.7 2.7 0 1 1 3.4 2.9c-.6.2-.8.6-.8 1.1v.5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><circle cx="12" cy="16.9" r="1.1" fill="currentColor"/></svg></button>
     <span class="p-savestate" id="pSaveState">مسودة</span>
   </header>
   <nav class="p-steps" id="pSteps" aria-label="خطوات التصميم"></nav>
@@ -150,8 +151,10 @@
 <script src="/js/ai-design.js"></script>
 <script src="/js/help.js"></script>
 <script>
-  /* نظام الشرح والمساعدة — بوابة العميل: شرح أول مرة + دليل دائم (زر #pHelp) */
-  MajlisHelp.init({ key: 'customer', manualBtn: '#pHelp' });
+  /* نظام الشرح والمساعدة — بوابة العميل: الدليل من زر الترحيب (#pHelp) وزر شاشة التصميم (#pHelpD).
+     الجولة لا تبدأ في صفحة الترحيب: portal.js يشغّلها عند فتح شاشة التصميم أول مرة (MajlisHelp.autoStart). */
+  MajlisHelp.init({ key: 'customer', manualBtn: '#pHelp', auto: false, onReplay: function (run) { if (window.Portal && Portal.helpReplay) Portal.helpReplay(run); else run(); } });
+  (function () { var b = document.getElementById('pHelpD'); if (b) b.addEventListener('click', function () { MajlisHelp.manualOpen('customer'); }); })();
 </script>
 </body>
 </html>

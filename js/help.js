@@ -27,61 +27,86 @@
      ====================================================================== */
   const CUSTOMER = {
     role: 'customer',
+    v: 2,
     title: 'دليل مصمم المجالس',
     intro: 'صمّم مجلسك خطوة بخطوة، ثم أرسله للمحل ليصير طلبًا.',
+    /* الجولة تبدأ عند فتح شاشة التصميم (لا في صفحة الترحيب) فكل خطوة تضيء عنصرًا ظاهرًا فعلًا.
+       manualOnly: شرح تفصيلي في «دليل الاستخدام» فقط. optional: تُتجاوز إن لم يظهر عنصرها. */
     steps: [
       {
-        h: 'مساحة التصميم',
-        p: 'هذه مساحة رسم المجلس: شكل الغرفة وتوزيع عناصرها يظهران هنا لحظة بلحظة.',
-        tip: 'قرّب بعجلة الفأرة أو بإصبعين، واسحب الخلفية للتحريك.',
-        targets: [{ sel: '#pCanvas' }],
+        hero: true, tourOnly: true,
+        h: 'أهلاً بك في مصمم المجالس',
+        p: 'جولة قصيرة (أقل من دقيقة) تعرّفك على أدوات التصميم. يمكنك تخطّيها الآن والعودة إليها في أي وقت من «دليل الاستخدام».',
+        tip: null,
       },
       {
-        h: 'الباب',
-        p: 'يمكنك الضغط على الباب وسحبه لتغيير موقعه على الجدار.',
-        tip: 'جرّب سحبه الآن — الإضاءة لا تمنع اللمس — ثم تابع «التالي».',
-        targets: [
-          { rect: 'door' },
-          { sel: '#pSteps button[data-step="openings"]', p: 'لا يوجد باب بعد — من خطوة «العناصر المعمارية» بالأعلى أضف بابًا على الجدار، ثم أكمل الجولة.' },
-        ],
-        until: 'doorMoved',
+        h: 'خطوات التصميم',
+        p: 'تصميمك خمس خطوات بالترتيب: من شكل الغرفة ومقاساتها حتى المراجعة. اضغط أي خطوة للرجوع إليها.',
+        tip: null,
+        targets: [{ sel: '#pSteps' }],
       },
       {
-        h: 'أبعاد الجدران',
-        p: 'أرقام الجدران بالمتر: اكتب الطول هنا فيتحدث الرسم فورًا.',
-        tip: 'طول الجدار الكامل يختلف عن المسافات الجزئية حول الباب.',
-        targets: [{ sel: '#pfW' }, { rect: 'wall' }],
+        h: 'لوحة الخطوة',
+        p: 'هنا تكتب المقاسات وتختار العناصر الخاصة بكل خطوة، والرسم يتحدث فورًا.',
+        tip: 'المقاسات بالمتر — مثال: 5.5',
+        targets: [{ sel: '.p-panel' }],
       },
       {
-        h: 'المسافات حول الفتحة',
-        p: 'الأرقام حول الباب: المسافة قبله، وعرضه، والمسافة بعده — بالمتر والسنتيمتر.',
-        tip: 'تتحدث لحظيًا مع تحريك الباب أو تغيير عرضه.',
-        targets: [{ rect: 'doorWide', pad: 30 }],
-        skipIf: 'door',
+        h: 'مخطط الغرفة',
+        p: 'معاينة مجلسك بمقاساته الحقيقية. المس أي قطعة أو باب لتعديله، واسحبه لتغيير مكانه.',
+        tip: 'قرّب بإصبعين أو بعجلة الفأرة، أو استخدم أزرار التكبير أسفل المخطط.',
+        targets: [{ sel: '.p-canvas' }],
       },
       {
+        h: 'التراجع',
+        p: 'أخطأت في تعديل؟ اضغط هنا للتراجع عن آخر خطوة.',
+        tip: null,
+        optional: true,
+        targets: [{ sel: '#pUndo' }],
+      },
+      {
+        h: 'التصميم بالذكاء الاصطناعي',
+        p: 'صِف مجلسك بكلماتك، ويقترح لك تصميمًا مبدئيًا تعدّله كما تريد.',
+        tip: null,
+        optional: true,
+        targets: [{ sel: '#pAiOpen' }],
+      },
+      {
+        h: 'التالي',
+        p: 'بعد إكمال كل خطوة اضغط «التالي». في الخطوة الأخيرة تراجع تصميمك وترسله لنا لتحصل على رقمه.',
+        tip: null,
+        targets: [{ sel: '#pNextStep' }],
+      },
+      {
+        h: 'دليل الاستخدام',
+        p: 'الشرح الكامل هنا في أي وقت، ومنه تعيد هذه الجولة.',
+        tip: null,
+        optional: true,
+        targets: [{ sel: '#pHelpD' }],
+      },
+      {
+        hero: true, tourOnly: true,
+        h: 'أنت جاهز 🎉',
+        p: 'ابدأ بكتابة مقاسات غرفتك. تصميمك يُحفظ تلقائيًا.',
+        tip: null,
+      },
+      {
+        manualOnly: true,
+        h: 'الباب والشبابيك',
+        p: 'من خطوة «العناصر المعمارية» أضف بابًا أو شباكًا على الجدار، ثم اضغط عليه واسحبه لتغيير موقعه.',
+        tip: 'الأرقام حول الباب تعرض المسافة قبله وعرضه والمسافة بعده، وتتحدث مع السحب.',
+      },
+      {
+        manualOnly: true,
         h: 'الأثاث والإكسسوارات',
         p: 'اختر عنصرًا واكتب عدده مباشرة، أو استخدم «فرش الكل» لتوزيع مبدئي ثم عدّل يدويًا.',
         tip: 'المس أي قطعة في الرسم لتعديلها أو حذفها.',
-        targets: [
-          { sel: '#pPanel [data-acc]' },
-          { sel: '#pfFillMajlis' },
-          { sel: '#pSteps button[data-step="furn"]', p: 'انتقل إلى خطوة «الأثاث والإكسسوارات» من الأعلى.' },
-        ],
       },
       {
+        manualOnly: true,
         h: 'المراجعة والإرسال',
-        p: 'راجع تصميمك كاملًا، ثم اضغط «إنهاء التصميم» لتحصل على رقم طلبك.',
-        tip: 'يمكنك إضافة بياناتك (الاسم والجوال) ليوصلك المحل أسرع — وهي اختيارية.',
-        targets: [
-          { sel: '#pSubmitDesign' },
-          { sel: '#pSteps button[data-step="review"]', p: 'انتقل إلى خطوة «المراجعة» من الأعلى.' },
-        ],
-      },
-      {
-        h: 'انتهى الشرح 🎉',
-        p: 'الآن أنت جاهز. إذا نسيت خطوة، افتح «الدليل» من زر المساعدة في أي وقت.',
-        tip: null,
+        p: 'راجع تصميمك كاملًا، ثم اضغط «إنهاء التصميم» لتحصل على رقم تصميمك.',
+        tip: 'يمكنك إضافة اسمك ورقم جوالك ليتواصل معك المحل أسرع — وهي اختيارية.',
       },
     ],
   };
@@ -470,6 +495,7 @@
           }
         }
       }
+      if (step.optional) return null;
       return { rect: null, p: null, el: null };
     }
 
@@ -704,6 +730,23 @@
       } catch (_) { /* التموضع لا يعطّل الصفحة أبداً */ }
     }
 
+    /* الجوال: إن غطّت الورقة طرف العنصر المشروح نمرّر الصفحة قليلاً ليبتعد عنها —
+       فقط إن بقي العنصر كاملاً داخل الشاشة بعد التمرير. */
+    nudgeSheet() {
+      try {
+        const card = this.el && this.el.querySelector('.hj-tour-card');
+        if (!card || card.dataset.side !== 'sheet' || !this._tgEl) return;
+        const c = card.getBoundingClientRect(), t = this._tgEl.getBoundingClientRect(), vh = window.innerHeight || 0;
+        let dy = 0;
+        if (card.dataset.sheet === 'top' && c.bottom + 8 > t.top) dy = t.top - (c.bottom + 8);
+        else if (card.dataset.sheet === 'bottom' && c.top - 8 < t.bottom) dy = t.bottom - (c.top - 8);
+        if (!dy || t.top - dy < 0 || t.bottom - dy > vh) return;
+        const before = window.scrollY;
+        window.scrollBy(0, dy);
+        if (window.scrollY !== before) this.layout();
+      } catch (_) { /* التموضع لا يعطّل الصفحة */ }
+    }
+
     show(i) {
       this.disarmUntil();
       this.i = i;
@@ -731,8 +774,9 @@
       // تموضع فوري متزامن (لا يعتمد على rAF وحده — قد لا تُطلق إطارات الرسم
       // في الخلفيات وheadless)، ثم تمريرة تثبيت بعد استقرار التمرير والخطوط
       this.layout();
+      this.nudgeSheet();
       const self = this;
-      setTimeout(() => { try { if (Tour.active === self) self.layout(); } catch (_) {} }, 60);
+      setTimeout(() => { try { if (Tour.active === self) { self.layout(); self.nudgeSheet(); } } catch (_) {} }, 60);
       this.armUntil(step);
       const next = this.el.querySelector('[data-hj="next"]');
       if (next) { try { next.focus({ preventScroll: true }); } catch (_) { try { next.focus(); } catch (_) {} } }
@@ -908,8 +952,10 @@
     /** إعادة تشغيل الشرح الأول يدويًا (يبقى التفضيل المحفوظ كما هو) */
     replay() {
       this.close();
-      const tour = new Tour({ key: this.key, steps: this.base.steps, title: this.cfg.title, ver: this.base.v });
-      tour.open();
+      const run = () => { const tour = new Tour({ key: this.key, steps: this.base.steps, title: this.cfg.title, ver: this.base.v }); tour.open(); };
+      const hook = REPLAY_HOOKS[this.key];
+      if (hook) { try { hook(run); return; } catch (_) { /* نعود للتشغيل المباشر */ } }
+      run();
     }
   }
 
@@ -921,9 +967,11 @@
      الواجهة العامة: Help.init — يربط زر الدليل + يشغّل الشرح الأول مرة واحدة
      opts: { key, manualBtn (اختياري), auto (افتراضي true) }
      ====================================================================== */
+  const REPLAY_HOOKS = {};
   function init(opts) {
     opts = opts || {};
     const key = opts.key || 'customer';
+    if (typeof opts.onReplay === 'function') REPLAY_HOOKS[key] = opts.onReplay;
     if ('designer' in opts) context({ designer: opts.designer });
     const cfg = CONTENT[key] || CONTENT.customer;
     const manual = new Manual(key);
@@ -959,6 +1007,16 @@
     }
   }
 
+  /** تشغيل الشرح الأول عند جاهزية الصفحة (مرة واحدة لكل نسخة محتوى). يعيد true إن ظهر. */
+  function autoStart(key, opts) {
+    const cfg = CONTENT[key] || CONTENT.customer;
+    const tour = new Tour({ key, steps: cfg.steps, title: cfg.title, ver: cfg.v });
+    if (!(opts && opts.force) && !tour.shouldShow()) return false;
+    if (document.querySelector('.hj-tour.show')) return false;
+    tour.open();
+    return true;
+  }
+
   function manualOpen(key) { const m = new Manual(key); m.open(); return m; }
 
   /* سياق اختياري (المصمم الحي) لخطوات المناطق المحسوبة على الرسم.
@@ -969,7 +1027,7 @@
     } catch (_) {}
   }
 
-  const API = { init, manualOpen, context, CONTENT, Tour, Manual, version: '2.0' };
+  const API = { init, autoStart, manualOpen, context, CONTENT, Tour, Manual, version: '2.1' };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.MajlisHelp = API;
 })(typeof window !== 'undefined' ? window : this);

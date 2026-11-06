@@ -256,8 +256,10 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
   }
   .hj-h { font-size: 1rem; }
   .hj-p { font-size: .9rem; line-height: 1.75; }
-  .hj-tour-foot { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
-  .hj-nav { justify-content: space-between; }
+  /* «تخطّي» في صف الأزرار نفسه: بطاقة أقصر لا تغطي العنصر المشروح على الجوال */
+  .hj-tour-foot { flex-direction: row; align-items: center; gap: 6px; }
+  .hj-tour-foot [data-hj="done"] { flex: 0 0 auto; padding-inline: 10px; }
+  .hj-nav { flex: 1; justify-content: space-between; }
   .hj-nav .hj-btn { flex: 1; }
   .hj-tour .hj-tour-card { font-size: .95rem; }
   .hj-tabs { top: 44px; padding: 10px 16px 8px; }
@@ -266,6 +268,11 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
   .hj-nofilter { padding: 0 16px 14px; }
   .hj-tour-head { padding-inline-start: 16px; }
   .hj-manual-foot { padding: 10px 16px 14px; }
+}
+
+/* أضيق الشاشات (320px): الأزرار الثلاثة لا تتسع لصف واحد — «تخطّي» يعود تحتها */
+@media (max-width: 340px) {
+  .hj-tour-foot { flex-direction: column-reverse; align-items: stretch; gap: 8px; }
 }
 
 @media (min-width: 381px) and (max-width: 520px) {

@@ -20,7 +20,8 @@ const T={pass:0,fail:0,lines:[]};
 function t(n,ok,i){(ok?T.pass++:T.fail++);T.lines.push((ok?'PASS  ':'FAIL  ')+n+(i?'  ['+i+']':''));}
 function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FAIL='+T.fail+'\n\n'+T.lines.join('\n');document.title='DONE p'+T.pass+'f'+T.fail;}
 const wait=(ms)=>new Promise(r=>setTimeout(r,ms));
-const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
+// المفاتيح غير المعرّفة تستخدم محتوى العميل (نسخة 2) فيُحفظ التفضيل بلاحقة @v2
+const seen=(k)=>localStorage.getItem('mj_help_seen_'+k+'@v2')||localStorage.getItem('mj_help_seen_'+k);
 
 (async function(){
   try{
@@ -28,7 +29,7 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     const H=window.MajlisHelp;
     t('module exposed (MajlisHelp)', !!H);
     t('API shape', !!(H.init && H.manualOpen && H.context && H.CONTENT && H.Tour && H.Manual), Object.keys(H||{}).join(','));
-    t('version', H.version==='2.0', 'v'+H.version);
+    t('version', H.version==='2.1', 'v'+H.version);
 
     /* ---------- المحتوى ---------- */
     const C=H.CONTENT;
@@ -41,7 +42,7 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     }
     // محتوى دليل العميل يغطي سيناريو التصميم الفعلي
     const cust=C.customer.steps.map(s=>s.h).join(' | ');
-    for(const w of ['التصميم','الباب','الجدران','الفتحة','الأثاث','المراجعة']) {
+    for(const w of ['التصميم','الباب','مخطط','الأثاث','المراجعة','دليل']) {
       t('  customer covers: '+w, cust.indexOf(w)>=0);
     }
     t('  customer steps carry targets', C.customer.steps.filter(s=>s.targets&&s.targets.length).length>=5,
@@ -59,9 +60,9 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     const steps=H.CONTENT.t1?0:C.customer.steps.length;
     const body=document.querySelector('.hj-tour-body');
     t('  step content rendered', !!(body && body.textContent.trim().length>10), (body&&body.textContent.trim().slice(0,28))||'');
-    t('  dots rendered', document.querySelectorAll('.hj-dots i').length===C.customer.steps.length);
+    t('  dots rendered', document.querySelectorAll('.hj-dots i').length===C.customer.steps.filter(s=>!s.manualOnly).length);
     t('  prev disabled at first step', document.querySelector('[data-hj="prev"]').disabled===true);
-    t('  next says التالي', document.querySelector('[data-hj="next"]').textContent.trim()==='التالي');
+    t('  first (welcome) step says ابدأ الجولة', document.querySelector('[data-hj="next"]').textContent.trim()==='ابدأ الجولة');
 
     /* ---------- 2) التالي / السابق ---------- */
     const h0=body.textContent;
@@ -100,7 +101,7 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     t('manual opens from button', !!man && man.classList.contains('show'));
     t('  manual title set', document.querySelector('.hj-mtitle').textContent.trim().length>3, document.querySelector('.hj-mtitle').textContent);
     const tabs=document.querySelectorAll('.hj-tabs button');
-    t('  one tab per step', tabs.length===C.customer.steps.length, tabs.length+' tabs');
+    t('  one tab per manual step', tabs.length===C.customer.steps.filter(s=>!s.tourOnly).length, tabs.length+' tabs');
     t('  first tab active', document.querySelectorAll('.hj-tabs button.on').length===1);
     const mb=document.querySelector('.hj-manual-body');
     const first=mb.textContent;

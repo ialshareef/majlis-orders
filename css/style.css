@@ -2882,6 +2882,8 @@ body.portal { background: var(--bg); }
 }
 .p-bar b { flex: 1; text-align: center; font-size: 1.02rem; }
 .p-bar .icon-btn { width: 44px; height: 44px; }
+.p-bar b { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 400px) { .p-bar { gap: 4px; } .p-bar .icon-btn { width: 40px; height: 40px; } .p-savestate { min-width: 0; } }
 .p-savestate { font-size: .78rem; color: var(--ink-3); min-width: 52px; text-align: end; }
 /* خطوات التصميم: عرض متساوٍ لكل خطوة (رقم ثابت على اليمين) فلا تتعرّج
    Eisenhower بعد حروف «الغرفة» و«المجلس» أقصر من «العناصر المعمارية». */

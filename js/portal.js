@@ -488,6 +488,15 @@ function portalAddAcc(itemId) {
     S.designer = dz;
     // سياق الجولة التعليمية: يعطي help.js المصمم الحي لخطوات المناطق المحسوبة
     try { if (window.MajlisHelp) window.MajlisHelp.context({ designer: dz }); } catch (_) {}
+    /* الشرح الأول يبدأ هنا (شاشة التصميم ظاهرة وعناصرها جاهزة) لا في صفحة الترحيب.
+       طلب «إعادة الشرح» من الترحيب ينتظر فتح الشاشة ثم يُشغَّل. */
+    setTimeout(function () {
+      try {
+        if ($('#pDesign').hidden || !window.MajlisHelp) return;
+        var run = helpPending; helpPending = null;
+        if (run) run(); else if (window.MajlisHelp.autoStart) window.MajlisHelp.autoStart('customer');
+      } catch (_) { /* الشرح لا يعطّل التصميم */ }
+    }, 700);
     /* على اللمس: بمجرد بدء سحب القطعة تُخفى ورقة الخصائص حتى لا تحجب المخطط
        أثناء النقل. المحرك يُعيد onSelect في كل حركة، فالحجب يكون بعلامة
        (S.dragHide) لا بإخفاء مؤقت يُعاد فتحه في الإطار التالي. */
@@ -1597,6 +1606,19 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
       $('#pLookDate').textContent = 'تعذّر تحميل هذا التصميم.';
     }
   }
+
+  /* «إعادة الشرح» من الدليل: الجولة تشرح شاشة التصميم، فإن لم تكن مفتوحة تُفتح أولاً
+     (متابعة التصميم المحفوظ إن وُجد، وإلا تصميم جديد) ثم تبدأ الجولة. */
+  var helpPending = null;
+  window.Portal = {
+    helpReplay: function (run) {
+      if (S.designer && !$('#pDesign').hidden) { run(); return; }
+      if (S.designer) { window.PortalAI.backToDesign(); setTimeout(run, 400); return; }
+      helpPending = run;
+      var r = $('#pResume');
+      if (r && !r.hidden) resume(); else startNew();
+    },
+  };
 
   // خطاف بوت التصميم الذكي: قراءة الحالة وتطبيق مواصفات جاهزة فقط — بلا تغيير على منطق البوابة
   window.PortalAI = {
