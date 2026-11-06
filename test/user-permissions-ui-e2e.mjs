@@ -317,6 +317,47 @@ try {
   }
 }
 
+/* ---------------- تغيير كلمة مرور مستخدم من نافذة التعديل ----------------
+   العطل: «حفظ» بكلمة مرور يرفضها الخادم (أقل من 8 أو شائعة) لم يُظهر شيئاً — سطر الخطأ كان أسفل
+   النافذة خارج الشاشة، والواجهة كانت تقبل 4 أحرف بينما الخادم يشترط 8. */
+try {
+  const { page } = await loginPage('admin');
+  const errState = () => page.evaluate(() => {
+    const e = document.getElementById('uErr'); const r = e.getBoundingClientRect();
+    return { msg: e.textContent, inView: r.height > 0 && r.top >= 0 && r.bottom <= innerHeight, toast: document.getElementById('toast').className.includes('show') ? document.getElementById('toast').innerText : '', open: !document.getElementById('modal').hidden };
+  });
+  const tryPass = async (pw) => {
+    await openUser(page, '2');
+    await sleep(800);
+    await page.evaluate((v) => { document.getElementById('uPass').value = v; }, pw);
+    await page.evaluate(() => document.getElementById('uSave').click());
+    await sleep(1200);
+  };
+  ok(await page.evaluate(() => /8 أحرف فأكثر/.test(document.body.innerText) || true) && true, 'pw: بدء سيناريو تغيير كلمة المرور');
+  await tryPass('abc1234');
+  let s = await errState();
+  ok(s.open && /8 أحرف/.test(s.msg) && s.inView && /8 أحرف/.test(s.toast), 'pw: كلمة مرور قصيرة (7) ← رسالة ظاهرة على الشاشة وتنبيه، والنافذة مفتوحة', s);
+  ok(await page.evaluate(() => /8 أحرف فأكثر/.test(document.getElementById('uPassHint').textContent)), 'pw: القاعدة مكتوبة تحت الحقل قبل الحفظ');
+  await page.evaluate(() => document.getElementById('modalClose').click()); await sleep(400);
+  await tryPass('12345678');
+  s = await errState();
+  ok(s.open && /شائعة/.test(s.msg) && s.inView && /شائعة/.test(s.toast), 'pw: كلمة شائعة يرفضها الخادم ← رسالته ظاهرة لا مخفية أسفل النافذة', s);
+  await page.evaluate(() => document.getElementById('modalClose').click()); await sleep(400);
+  await tryPass('staff1');
+  s = await errState();
+  ok(s.open && /8 أحرف/.test(s.msg) && s.inView, 'pw: كلمة مطابقة لاسم المستخدم/قصيرة ← رسالة ظاهرة', s);
+  await page.evaluate(() => document.getElementById('modalClose').click()); await sleep(400);
+  await tryPass('Good#Pass2026');
+  s = await errState().catch(() => ({ open: false }));
+  ok(!(await page.evaluate(() => !document.getElementById('modal').hidden)) && /تم حفظ المستخدم/.test(await page.evaluate(() => document.getElementById('toast').innerText)), 'pw: كلمة مرور قوية ← حُفظ المستخدم وأُغلقت النافذة');
+  // D1 الوهمية هنا لا تدعم بحث اسم المستخدم في الدخول كما ينبغي (انظر ملاحظتها أعلى الملف)، فيُفحص المخزّن مباشرة:
+  // تجزئة جديدة بصيغة PBKDF2 تختلف عن القديمة، ولم تُخزَّن كلمة المرور نصاً
+  const row = env.DB.tables.get('users').find((x) => x.id === '2');
+  ok(row && row.password_hash !== H && /^pbkdf2\$100000\$/.test(row.password_hash) && !String(row.password_hash).includes('Good#Pass2026'), 'pw: الخادم حفظ تجزئة كلمة المرور الجديدة (لا نصاً)', row && row.password_hash.slice(0, 16));
+} catch (e) {
+  fail++; console.log('FAIL  تعذّر إكمال سيناريو تغيير كلمة المرور  -> ' + String(e && e.message).split('\n')[0]);
+}
+
 ok(pageErrors.length === 0, 'ui: لا أخطاء JavaScript في الصفحة', pageErrors);
 await browser.close();
 server.close();

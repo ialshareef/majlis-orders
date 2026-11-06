@@ -4829,8 +4829,9 @@ function docTitle(order) {
       <label>الاسم الكامل <input id="uName" value="${esc(u.name)}"></label>
       <div class="row2">
         <label>اسم المستخدم <input id="uUser" value="${esc(u.username)}" autocomplete="off" class="ltr"></label>
-        <label>${user ? 'كلمة مرور جديدة (اتركها فارغة للإبقاء)' : 'كلمة المرور'} <input id="uPass" type="password" autocomplete="new-password"></label>
+        <label>${user ? 'كلمة مرور جديدة (اتركها فارغة للإبقاء)' : 'كلمة المرور'} <input id="uPass" type="password" autocomplete="new-password" minlength="8" aria-describedby="uPassHint"></label>
       </div>
+      <p class="hint" id="uPassHint">كلمة المرور: 8 أحرف فأكثر، لا تطابق اسم المستخدم، وليست شائعة مثل 12345678</p>
       <div class="row2">
         <label>الدور <select id="uRole"${u.isOwner ? ' disabled' : ''}><option value="staff" ${u.role === 'staff' ? 'selected' : ''}>موظف</option><option value="mandoub" ${u.role === 'mandoub' ? 'selected' : ''}>مندوب</option>${(can('admin.core') || u.role === 'admin') ? `<option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير</option>` : ''}</select></label>
         <label>الحالة <select id="uActive"${u.isOwner ? ' disabled' : ''}><option value="1" ${u.active !== false ? 'selected' : ''}>نشط</option><option value="0" ${u.active === false ? 'selected' : ''}>موقوف</option></select></label>
@@ -4859,7 +4860,16 @@ function docTitle(order) {
       $('#uSave', b).onclick = async () => {
         const name = $('#uName', b).value.trim(), username = $('#uUser', b).value.trim(), pass = $('#uPass', b).value;
         const role = $('#uRole', b).value, active = $('#uActive', b).value === '1';
-        const err = $('#uErr', b);
+        /* الخطأ يظهر حيث يراه المستخدم: سطر الخطأ أسفل نافذة طويلة (قسم الصلاحيات) كان خارج الشاشة، فبدا أن «حفظ» لا يفعل شيئاً.
+           الآن: النص + تمرير إليه + تنبيه على الشاشة، والتركيز على الحقل المعني */
+        const errEl = $('#uErr', b);
+        const err = { set textContent(m) {
+          errEl.textContent = m;
+          if (!m) return;
+          try { errEl.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (_) { /* متصفح قديم */ }
+          toast(m, true);
+          if (/كلمة المرور/.test(m)) { const pi = $('#uPass', b); if (pi) pi.focus({ preventScroll: true }); }
+        } };
         /* حفظ المستخدم لا يحفظ الصلاحيات (زر مستقل) — تنبيه داخل النافذة قبل أن تضيع
            التعديلات بإغلاقها؛ الضغطة الثانية على «حفظ» تتابع دونها. */
         if (perms.isDirty() && !dirtyAck) {
@@ -4870,14 +4880,21 @@ function docTitle(order) {
         if (!name || !username) { err.textContent = 'الاسم واسم المستخدم مطلوبان'; return; }
         if (!/^[a-zA-Z0-9_.@-]{3,}$/.test(username)) { err.textContent = 'اسم المستخدم: 3 أحرف فأكثر (أحرف إنجليزية وأرقام)'; return; }
         if (db().users.some((x) => x.username.toLowerCase() === username.toLowerCase() && x.id !== u.id)) { err.textContent = 'اسم المستخدم مستخدم من قبل'; return; }
-        if (!user && pass.length < 4) { err.textContent = 'كلمة المرور 4 أحرف فأكثر'; return; }
-        if (pass && pass.length < 4) { err.textContent = 'كلمة المرور 4 أحرف فأكثر'; return; }
+        // نفس قواعد الخادم (validatePassword): 8 أحرف فأكثر ولا تطابق اسم المستخدم — والشائعة يرفضها الخادم برسالة ظاهرة
+        if (!user && pass.length < 8) { err.textContent = 'كلمة المرور 8 أحرف فأكثر'; return; }
+        if (pass && pass.length < 8) { err.textContent = 'كلمة المرور 8 أحرف فأكثر'; return; }
+        if (pass && pass.toLowerCase() === username.toLowerCase()) { err.textContent = 'لا يجوز أن تكون كلمة المرور هي اسم المستخدم'; return; }
         if (user && user.id === currentUser.id && (role !== 'admin' || !active) && db().users.filter((x) => x.role === 'admin' && x.active !== false && x.id !== user.id).length === 0) {
           err.textContent = 'لا يمكن إزالة صلاحية آخر مدير أو إيقافه'; return;
         }
+        const saveBtn = $('#uSave', b);
+        saveBtn.disabled = true; saveBtn.setAttribute('aria-busy', 'true');
         try {
           await Store.saveUser({ id: user ? user.id : null, name, username, role, active }, pass);
-        } catch (e) { err.textContent = e.message; return; }
+        } catch (e) {
+          saveBtn.disabled = false; saveBtn.removeAttribute('aria-busy');
+          err.textContent = (e && e.message) || 'تعذّر حفظ المستخدم. تحقق من الاتصال وحاول مرة أخرى.'; return;
+        }
         closeModal(); renderUsers();
         if (user && user.id === currentUser.id) { Object.assign(currentUser, { name, username, role }); applyPermissions(); }
         toast('تم حفظ المستخدم');
