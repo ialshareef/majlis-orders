@@ -940,6 +940,12 @@ try {
     r = await ai(env, { text: 'جلسة عربية 5×4' });
     t('نوع الجلسة المكتوب يُعتمد إن نسيه النموذج', r.body.spec.seating === 'arabic', JSON.stringify(r.body.spec));
 
+    setProvider(() => reply({ status: 'ready', spec: { roomW: 5, roomH: 4, seating: 'arabic' } }));
+    r = await ai(env, { text: 'أبغى مجلس ٥×٤ جلسة أرضية' });
+    t('«جلسة أرضية» المكتوبة تغلب تخمين النموذج (عربي)', r.body.spec.seating === 'floor', JSON.stringify(r.body.spec));
+    setProvider(() => reply({ questions: [{ q: 'ما هو مقاس الغرفة؟', options: ['6 في 4', '8 في 5'] }] }));
+    r = await ai(env, { text: 'أبي أصمم مجلس' });
+    t('طلب مبهم ← أسئلة المقاس والجلسة والباب معاً في جولة واحدة', r.body.questions.length === 3 && /جلس/.test(r.body.questions[1].q) && /باب/.test(r.body.questions[2].q), JSON.stringify(r.body.questions.map((q) => q.q)));
     // نهاية واضحة: بعد جولتي أسئلة ومع معرفة المقاس ← جاهز
     const Q3 = [{ q: 'لون القماش؟', options: ['بني', 'بيج'] }];
     setProvider(() => reply({ spec: { roomW: 6, roomH: 4 }, questions: Q3 }));

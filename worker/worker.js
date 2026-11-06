@@ -863,7 +863,7 @@ function aiSystemPrompt(brief) {
     'قواعد الحوار:',
     '1) اقرأ «المواصفات الحالية» و«سجل المحادثة» وادمج معها كل ما في «رسالة العميل الآن». العميل قد يجيب عن عدة أسئلة في رسالة واحدة (كل سطر إجابة) — اعتمد كل الإجابات لا آخرها فقط.',
     '2) أعد spec كاملة دائماً (القديم + الجديد)، لا التغييرات فقط. لحذف عنصر طلب العميل إزالته ضع قيمته null.',
-    '3) المعلومات الأساسية ثلاث: مقاس الغرفة، ونوع الجلسة، ومكان الباب. اسأل فقط عن الناقص منها، ولا تسأل عن شيء عرفته.',
+    '3) المعلومات الأساسية ثلاث: مقاس الغرفة، ونوع الجلسة، ومكان الباب. اسأل فقط عن الناقص منها، ولا تسأل عن شيء عرفته. إن كان المقاس مجهولاً فاسأل عن كل الناقص من الثلاث في الجولة نفسها.',
     '4) اسأل حتى 3 أسئلة قصيرة في المرة، ولكل سؤال من 2 إلى 5 خيارات قصيرة جاهزة. ضع multi:true للسؤال الذي يقبل أكثر من إجابة (مثل الإكسسوارات أو جدران الكنب).',
     '5) متى عرفت مقاس الغرفة فاجعل status = "ready" وافترض الباقي بخيارات شائعة واذكرها في assumptions (مثلاً: جلسة عربية، الباب في منتصف الجدار السفلي، الكنب على الجدران الخالية من الباب). لا تؤخر الإنشاء بأسئلة ثانوية مثل القماش واللون.',
     '6) status = "need_answers" فقط إذا كان المقاس مجهولاً أو الطلب متناقضاً. status = "invalid" إذا لم يكن الطلب عن تصميم مجلس أو غرفة جلوس.',
@@ -871,7 +871,7 @@ function aiSystemPrompt(brief) {
     '',
     'مفاتيح spec:',
     '- roomW طول الغرفة و roomH عرضها بالمتر (0.5–30). في «6 في 4» أو «6×4»: roomW=6 و roomH=4.',
-    '- seating: "arabic" جلسة عربية/أرضية مرتفعة قليلاً، "floor" أرضي، "sofa" كنب، "raised" جلسة مرتفعة. depth عمق الجلسة بالمتر (0.3–1.5، الافتراضي 0.8).',
+    '- seating: "arabic" جلسة عربية، "floor" جلسة أرضية (أرضي)، "sofa" كنب، "raised" جلسة مرتفعة. التزم بما كتبه العميل حرفياً: «أرضية» = "floor". depth عمق الجلسة بالمتر (0.3–1.5، الافتراضي 0.8).',
     '- الجدران أرقام: 0 الجدار السفلي (الأمامي)، 1 الأيمن، 2 العلوي (المقابل/الخلفي)، 3 الأيسر. الجداران 0 و2 طولهما roomW، والجداران 1 و3 طولهما roomH.',
     '- door و window و tv و mashab (مشب/موقد): كائن {wall, w, distFromCorner, side}. w العرض بالمتر (باب 0.6–2.5، نافذة 0.4–4، تلفاز 0.8–4، مشب 0.6–2.5). distFromCorner المسافة من الزاوية (اختياري) و side "start" أو "end". للباب أيضاً swing "in"/"out" و hinge "left"/"right".',
     '- «التلفاز مقابل الكنب» يعني جداراً لا كنب عليه ويقابل الجلسة الرئيسية.',
@@ -1035,8 +1035,8 @@ async function aiDesignCore(body, brief, callModel) {
     const same = (merged.roomW === size.roomW && merged.roomH === size.roomH) || (merged.roomW === size.roomH && merged.roomH === size.roomW);
     if (!same) { merged.roomW = size.roomW; merged.roomH = size.roomH; }
   }
-  // نوع جلسة مذكور صراحةً ونسيه النموذج
-  if (!merged.seating) { for (const [v, re] of AI_SEAT_WORDS) if (re.test(text)) { merged.seating = v; break; } }
+  // نوع جلسة مكتوب صراحةً في رسالة العميل يغلب تخمين النموذج
+  for (const [v, re] of AI_SEAT_WORDS) if (re.test(text)) { merged.seating = v; break; }
   const spec = aiSanitizeSpec(merged) || {};
   const hasSize = spec.roomW != null && spec.roomH != null;
 
@@ -1051,6 +1051,10 @@ async function aiDesignCore(body, brief, callModel) {
     } else if (!hasSize) {
       out.status = 'need_answers';
       if (!out.questions.some((q) => /مقاس|طول|عرض|متر/.test(q.q))) out.questions.unshift(AI_DEFAULT_Q.size);
+      // المقاس مجهول: اسأل عن كل الأساسيات الناقصة في جولة واحدة بدل جولات متتالية
+      const asked = (re) => out.questions.some((q) => re.test(q.q));
+      if (!spec.seating && !asked(/جلس/)) out.questions.push(AI_DEFAULT_Q.seating);
+      if (!spec.door && !asked(/باب/)) out.questions.push(AI_DEFAULT_Q.door);
       out.questions = out.questions.slice(0, 3);
     }
     if (out.status === 'need_answers' && !out.questions.length) {
