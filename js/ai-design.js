@@ -9,8 +9,10 @@
     open: false, busy: false, locked: false, lockShown: false,
     msgs: [], history: [],
     spec: null, status: null, questions: [], assumptions: [], issues: [],
-    preview: null, applied: false
+    preview: null, applied: false,
+    answers: {}, rounds: 0, progress: null
   };
+  var ESSENTIALS = [['size', 'المقاس'], ['seating', 'نوع الجلسة'], ['door', 'مكان الباب']];
 
   function $(id) { return document.getElementById(id); }
 
@@ -32,6 +34,7 @@
       + '<div class="modal-card ai-card">'
       + '<div class="modal-head"><h3>صمّم مجلسك بالذكاء الاصطناعي</h3>'
       + '<button type="button" class="icon-btn" id="aiClose" aria-label="إغلاق"><svg><use href="#p-x"/></svg></button></div>'
+      + '<div class="ai-prog" id="aiProg" aria-live="polite"></div>'
       + '<div class="ai-body" id="aiBody"></div>'
       + '<div class="ai-extra" id="aiExtra" hidden></div>'
       + '<div class="ai-input">'
@@ -41,33 +44,121 @@
     document.body.appendChild(el);
   }
 
-  function botHTML(text, qs) {
-    var h = '<p>' + esc(text) + '</p>';
-    (qs || []).forEach(function (q) {
-      h += '<div class="ai-q"><b>' + esc(q.q) + '</b>';
+  /* أسئلة البوت: كل سؤال له إجابته (أو أكثر إن كان multi) — تُجمع كلها وتُرسل معاً بزر واحد.
+     الأسئلة القديمة تبقى للعرض فقط مع إبراز ما اختاره العميل. */
+  function botHTML(m, live) {
+    var h = '<p>' + esc(m.text) + '</p>';
+    var qs = m.qs || [];
+    qs.forEach(function (q, qi) {
+      var picked = (live ? A.answers[qi] : (m.picked && m.picked[qi])) || [];
+      h += '<div class="ai-q" data-qi="' + qi + '"><b>' + esc(q.q) + (q.multi ? ' <span class="ai-qhint">(يمكن اختيار أكثر من إجابة)</span>' : '') + '</b>';
       if (q.options && q.options.length) {
         h += '<div class="ai-chips">';
-        q.options.forEach(function (o) {
-          h += '<button type="button" class="ai-chip" data-ai-chip="' + esc(o) + '">' + esc(o) + '</button>';
+        q.options.forEach(function (o, oi) {
+          var on = picked.indexOf(o) >= 0;
+          h += '<button type="button" class="ai-chip' + (on ? ' on' : '') + '" data-ai-q="' + qi + '" data-ai-o="' + oi + '" aria-pressed="' + on + '"' + (live ? '' : ' disabled') + '>' + esc(o) + '</button>';
         });
         h += '</div>';
       }
       h += '</div>';
     });
+    if (live && qs.length) {
+      h += '<div class="ai-qfoot"><button type="button" class="btn primary ai-answer" id="aiAnswer">إرسال الإجابات</button>'
+        + '<span class="ai-qcount" id="aiQCount"></span></div>';
+    }
     return h;
+  }
+
+  function liveIdx() {
+    if (A.status !== 'need_answers' || A.busy) return -1;
+    for (var i = A.msgs.length - 1; i >= 0; i--) {
+      if (A.msgs[i].who === 'bot') return (A.msgs[i].qs && A.msgs[i].qs.length) ? i : -1;
+      if (A.msgs[i].who === 'me') return -1;
+    }
+    return -1;
+  }
+
+  function answeredCount() {
+    var n = 0;
+    Object.keys(A.answers).forEach(function (k) { if (A.answers[k] && A.answers[k].length) n++; });
+    return n;
+  }
+
+  function syncAnswerBar() {
+    var b = $('aiAnswer'), c = $('aiQCount');
+    if (!b) return;
+    var total = A.questions.length, n = answeredCount();
+    b.disabled = A.busy || A.locked || !n;
+    if (c) c.textContent = n ? ('أجبت عن ' + n + ' من ' + total + (n < total ? ' — الباقي سأختاره لك' : '')) : 'اختر إجابة لكل سؤال، ثم أرسلها معاً';
   }
 
   function renderBody() {
     var el = $('aiBody');
     if (!el) return;
-    el.innerHTML = A.msgs.map(function (m) {
-      return '<div class="ai-msg ' + m.who + '">' + (m.who === 'bot' ? botHTML(m.text, m.qs) : esc(m.text)) + '</div>';
+    var li = liveIdx();
+    el.innerHTML = A.msgs.map(function (m, i) {
+      return '<div class="ai-msg ' + m.who + '">' + (m.who === 'bot' ? botHTML(m, i === li) : esc(m.text)) + '</div>';
     }).join('');
+    syncAnswerBar();
+    renderProgress();
     el.scrollTop = el.scrollHeight;
+  }
+
+  /* ما الذي عرفه البوت وما الباقي — حتى يعرف العميل متى ينتهي */
+  function renderProgress() {
+    var el = $('aiProg');
+    if (!el) return;
+    var sp = A.spec || {};
+    var have = { size: sp.roomW != null && sp.roomH != null, seating: !!sp.seating, door: !!sp.door };
+    var h = '<ol class="ai-steps">';
+    ESSENTIALS.forEach(function (e) {
+      h += '<li class="' + (have[e[0]] ? 'done' : '') + '"><span class="ai-dot" aria-hidden="true">' + (have[e[0]] ? '✓' : '') + '</span>' + e[1] + '</li>';
+    });
+    h += '</ol><p class="ai-prog-t">';
+    if (A.preview && A.applied) h += 'تم تطبيق التصميم ✓ — يمكنك طلب تعديل بالكتابة هنا.';
+    else if (A.preview) h += 'المعاينة جاهزة — راجعها ثم طبّقها على المصمم.';
+    else if (A.status === 'ready') h += 'المعلومات كافية ✓ — اضغط «إنشاء التصميم» بالأسفل.';
+    else if (have.size) h += 'يمكنك إنشاء التصميم الآن، أو أجب عن الأسئلة لنتيجة أدق.';
+    else if (A.status === 'need_answers') {
+      var mx = (A.progress && A.progress.maxRounds) || 2;
+      h += 'أسئلة قليلة ثم أجهّز التصميم (جولة ' + Math.min(A.rounds || 1, mx + 1) + ' — المقاس هو الأهم).';
+    } else h += 'أحتاج ٣ معلومات: مقاس الغرفة، ونوع الجلسة، ومكان الباب — والباقي أقترحه لك.';
+    h += '</p>';
+    el.innerHTML = h;
   }
 
   function addMe(t) { A.msgs.push({ who: 'me', text: t }); renderBody(); }
   function addBot(t, qs) { A.msgs.push({ who: 'bot', text: t, qs: qs || [] }); renderBody(); }
+
+  function pickChip(qi, oi) {
+    var q = A.questions[qi];
+    if (!q || !q.options || q.options[oi] == null) return;
+    var o = q.options[oi];
+    var cur = (A.answers[qi] || []).slice();
+    var at = cur.indexOf(o);
+    if (q.multi) { if (at >= 0) cur.splice(at, 1); else cur.push(o); }
+    else cur = at >= 0 ? [] : [o];
+    A.answers[qi] = cur;
+    var box = document.querySelector('#aiBody .ai-q[data-qi="' + qi + '"]');
+    if (box && !box.querySelector('[disabled]')) {
+      Array.prototype.forEach.call(box.querySelectorAll('.ai-chip'), function (b) {
+        var on = cur.indexOf(q.options[+b.getAttribute('data-ai-o')]) >= 0;
+        b.classList.toggle('on', on);
+        b.setAttribute('aria-pressed', String(on));
+      });
+    }
+    syncAnswerBar();
+  }
+
+  /** نص الإجابات المختارة: سطر لكل سؤال «السؤال: الإجابة» */
+  function answersText() {
+    var lines = [];
+    A.questions.forEach(function (q, qi) {
+      var a = A.answers[qi];
+      if (a && a.length) lines.push(q.q.replace(/[؟?]\s*$/, '') + ': ' + a.join('، '));
+    });
+    return lines.join('\n');
+  }
 
   function showTyping() {
     var el = $('aiBody');
@@ -90,6 +181,7 @@
     var t = $('aiText'), s = $('aiSend');
     if (t) t.disabled = A.busy || A.locked;
     if (s) s.disabled = A.busy || A.locked;
+    syncAnswerBar();
   }
 
   function getItem(id) {
@@ -134,13 +226,22 @@
       }
       h += '<div class="ai-actrow"><button type="button" class="link-btn" id="aiClear">مسح المحادثة</button></div>';
     } else if (A.status === 'ready' && A.spec && ad) {
+      // زر الإنشاء أولاً حتى يظهر بلا تمرير، ثم الملخص
+      h += '<div class="ai-actrow ai-actrow-top"><button type="button" class="btn primary" id="aiCreate">إنشاء التصميم</button>'
+        + '<button type="button" class="link-btn" id="aiClear">مسح المحادثة</button></div>';
       h += '<div class="ai-sum"><h4>المواصفات المفهومة</h4><dl>';
       ad.specSummary(A.spec).forEach(function (r) { h += '<div><dt>' + esc(r.k) + '</dt><dd>' + esc(r.v) + '</dd></div>'; });
       h += '</dl></div>';
       A.assumptions.forEach(function (a) { h += '<p class="ai-assume">افتراض: ' + esc(a) + '</p>'; });
       A.issues.forEach(function (x) { h += '<p class="ai-warn">' + esc(x) + '</p>'; });
-      h += '<div class="ai-actrow"><button type="button" class="btn primary" id="aiCreate">إنشاء التصميم</button>'
-        + '<button type="button" class="link-btn" id="aiClear">مسح المحادثة</button></div>';
+    } else if (A.status === 'need_answers' && A.spec && A.spec.roomW != null && A.spec.roomH != null && ad) {
+      h += '<div class="ai-actrow ai-actrow-top"><button type="button" class="btn ghost" id="aiCreate">إنشاء التصميم الآن</button>'
+        + '<button type="button" class="link-btn" id="aiClear">مسح المحادثة</button></div>'
+        + '<p class="ai-assume">سأكمل ما لم تحدده بخيارات شائعة، ويمكنك تعديله بعد ذلك.</p>';
+      h += '<div class="ai-sum"><h4>ما فهمته حتى الآن</h4><dl>';
+      ad.specSummary(A.spec).forEach(function (r) { h += '<div><dt>' + esc(r.k) + '</dt><dd>' + esc(r.v) + '</dd></div>'; });
+      h += '</dl></div>';
+      A.issues.forEach(function (x) { h += '<p class="ai-warn">' + esc(x) + '</p>'; });
     } else {
       A.issues.forEach(function (x) { h += '<p class="ai-warn">' + esc(x) + '</p>'; });
       if (A.msgs.length) h += '<div class="ai-actrow"><button type="button" class="link-btn" id="aiClear">مسح المحادثة</button></div>';
@@ -161,26 +262,36 @@
     A.questions = d.questions || [];
     A.assumptions = d.assumptions || [];
     A.issues = d.issues || [];
+    A.progress = d.progress || null;
+    A.answers = {};
     A.preview = null;
     A.applied = false;
+    if (A.status === 'need_answers' && A.questions.length) A.rounds++;
     var text = d.note || fallbackText(A.status);
+    if (A.status === 'ready' && d.note) text += ' راجع الملخص بالأسفل ثم اضغط «إنشاء التصميم».';
     addBot(text, A.questions);
     var hist = text;
-    if (A.questions.length) hist += ' ' + A.questions[0].q;
-    A.history.push({ r: 'b', t: hist.slice(0, 200) });
+    if (A.questions.length) hist += ' — الأسئلة: ' + A.questions.map(function (q) { return q.q; }).join(' / ');
+    A.history.push({ r: 'b', t: hist.slice(0, 400) });
     renderExtra();
   }
 
   async function send() {
     if (A.busy || A.locked) return;
     var inp = $('aiText');
-    var text = inp ? inp.value.trim() : '';
+    var typed = inp ? inp.value.trim() : '';
+    var picked = liveIdx() >= 0 ? answersText() : '';
+    var text = picked && typed ? picked + '\n' + typed : (picked || typed);
     if (!text) return;
     if (inp) inp.value = '';
+    var li = liveIdx();
+    if (li >= 0) A.msgs[li].picked = JSON.parse(JSON.stringify(A.answers));
+    A.answers = {};
     addMe(text);
-    A.history.push({ r: 'u', t: text.slice(0, 200) });
+    A.history.push({ r: 'u', t: text.slice(0, 400) });
     A.busy = true;
     syncBusy();
+    renderBody();
     showTyping();
     try {
       var token = '';
@@ -193,7 +304,7 @@
       var res = await fetch('/api/portal/ai-design', {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'x-design-token': token },
-        body: JSON.stringify({ text: text, spec: A.spec, history: A.history.slice(-8) })
+        body: JSON.stringify({ text: text, spec: A.spec, history: A.history.slice(-9, -1), rounds: A.rounds })
       });
       var data = null;
       try { data = await res.json(); } catch (e3) { data = null; }
@@ -213,6 +324,7 @@
     } finally {
       A.busy = false;
       syncBusy();
+      renderBody();
     }
   }
 
@@ -226,7 +338,7 @@
       if (P && P.ensureCatalog) { try { await P.ensureCatalog(); } catch (e0) { /* noop */ } }
       var v = ad.validateSpec(A.spec);
       if (!v.spec || !ad.specReady(v.spec)) {
-        addBot('أكمل بعض التفاصيل حتى أجهّز التصميم: مقاس الغرفة، ووجود باب أو كنب أو تلفاز على الأقل.');
+        addBot('أحتاج مقاس الغرفة على الأقل (الطول × العرض بالمتر) حتى أجهّز التصميم.');
         return;
       }
       var built = ad.buildOps(v.spec, { catalog: (P && P.catalog()) || [] });
@@ -260,6 +372,8 @@
         summary: ad.specSummary(v.spec)
       };
       A.applied = false;
+      A.status = 'ready';
+      A.questions = [];
       addBot('جهّزت لك معاينة التصميم — راجعها بالأسفل ثم اضغط «تطبيق التصميم على المصمم».');
       renderExtra();
     } finally {
@@ -306,6 +420,9 @@
     A.applied = false;
     A.msgs = [];
     A.history = [];
+    A.answers = {};
+    A.rounds = 0;
+    A.progress = null;
     renderBody();
     addBot('تم مسح المحادثة — اطلب جديدًا مثل: «مجلس ٦×٤ بابان وتلفاز وكراسي عربية».');
     renderExtra();
@@ -320,7 +437,7 @@
     var m = $('aiModal');
     if (m) m.hidden = false;
     if (!A.msgs.length) {
-      addBot('أهلاً بك! صف لي مجلسك — المقاس، وعدد الأبواب، وأين تريد التلفاز، ونوع الجلسة — وسأجهّز لك تصميمًا خطوة بخطوة.');
+      addBot('أهلاً بك! صف لي مجلسك في رسالة واحدة — مثل: «مجلس 6×4، الباب في الجدار الأيمن، جلسة عربية، وتلفاز مقابل الجلسة». إن نقص شيء أسألك عنه بخيارات جاهزة، ثم أجهّز التصميم.');
     }
     if (A.locked && !A.lockShown) {
       A.lockShown = true;
@@ -349,10 +466,10 @@
       if (e.key === 'Enter') { e.preventDefault(); send(); }
     });
     $('aiBody').addEventListener('click', function (e) {
-      var chip = e.target && e.target.closest ? e.target.closest('[data-ai-chip]') : null;
-      if (!chip) return;
-      var t = $('aiText');
-      if (t && !t.disabled) { t.value = chip.getAttribute('data-ai-chip') || ''; t.focus(); }
+      var el = e.target && e.target.closest ? e.target.closest('[data-ai-q], #aiAnswer') : null;
+      if (!el || el.disabled || A.busy || A.locked) return;
+      if (el.id === 'aiAnswer') { send(); return; }
+      pickChip(+el.getAttribute('data-ai-q'), +el.getAttribute('data-ai-o'));
     });
     $('aiExtra').addEventListener('click', function (e) {
       var t = e.target;
@@ -380,7 +497,8 @@
     state: function () {
       return {
         open: A.open, busy: A.busy, locked: A.locked, status: A.status,
-        hasSpec: !!A.spec, hasPreview: !!A.preview, applied: A.applied, msgs: A.msgs.length
+        hasSpec: !!A.spec, hasPreview: !!A.preview, applied: A.applied, msgs: A.msgs.length,
+        rounds: A.rounds, answers: JSON.parse(JSON.stringify(A.answers)), questions: A.questions.length
       };
     }
   };

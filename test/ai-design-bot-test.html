@@ -137,19 +137,46 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       t('B-prompt-uses-catalog', providerCalls.length === 1 && providerCalls[0].messages[0].content.indexOf('قطيفة') >= 0, 'fabric name in system');
       t('B-no-key-in-dom', appDOM().indexOf('sk-test') < 0, 'no key leak');
 
-      // C: سؤال مع خيارات (زر شريطة يملأ الإدخال)
+      // C: عدة أسئلة — لكل سؤال إجابته، والسؤال المتعدد يقبل أكثر من إجابة، وكلها تُرسل معاً
       providerScript.push({
-        status: 'need_answers', note: 'ما عدد الأبواب؟',
-        questions: [{ id: 'q1', q: 'كم باباً تحتاج؟', options: ['باب واحد', 'بابان'] }],
+        status: 'need_answers', note: 'بقي سؤالان.',
+        questions: [
+          { id: 'q1', q: 'كم باباً تحتاج؟', options: ['باب واحد', 'بابان'] },
+          { id: 'q2', q: 'ما الإكسسوارات؟', options: ['مركى', 'طاولة وسط', 'مسند'], multi: true },
+        ],
         assumptions: [], issues: [], spec: null,
       });
       q('#aiText').value = 'كم باباً؟';
       q('#aiSend').click();
       await waitFor(function () { return !st().busy && q('#aiBody').textContent.indexOf('كم باباً تحتاج') >= 0; }, 60000, 'C-question');
-      var chip = q('#aiBody .ai-chip');
-      t('C-question-chip', !!chip && chip.textContent === 'باب واحد', chip && chip.textContent);
-      chip.click();
-      t('C-chip-fills-input', q('#aiText').value === 'باب واحد', q('#aiText').value);
+      var chip = function (qi, oi) { return q('#aiBody .ai-chip[data-ai-q="' + qi + '"][data-ai-o="' + oi + '"]:not([disabled])'); };
+      t('C-question-chip', !!chip(0, 0) && chip(0, 0).textContent === 'باب واحد', chip(0, 0) && chip(0, 0).textContent);
+      t('C-answer-btn-disabled-first', !!q('#aiAnswer') && q('#aiAnswer').disabled, 'aiAnswer');
+      t('C-multi-hint', q('#aiBody .ai-q[data-qi="1"]').textContent.indexOf('أكثر من إجابة') >= 0, 'hint');
+      chip(0, 0).click(); chip(0, 1).click();
+      t('C-single-choice-replaces', JSON.stringify(st().answers[0]) === '["بابان"]' && chip(0, 1).classList.contains('on') && !chip(0, 0).classList.contains('on'), JSON.stringify(st().answers));
+      chip(1, 0).click(); chip(1, 1).click();
+      t('C-multi-keeps-both', JSON.stringify(st().answers[1]) === '["مركى","طاولة وسط"]', JSON.stringify(st().answers));
+      chip(1, 1).click();
+      t('C-multi-toggle-off', JSON.stringify(st().answers[1]) === '["مركى"]', JSON.stringify(st().answers));
+      chip(1, 2).click();
+      t('C-input-untouched', q('#aiText').value === '', q('#aiText').value);
+      t('C-count', !q('#aiAnswer').disabled && q('#aiQCount').textContent.indexOf('2 من 2') >= 0, q('#aiQCount').textContent);
+      t('C-progress-strip', !!q('#aiProg .ai-steps') && q('#aiProg .ai-steps li.done') && q('#aiProg').textContent.indexOf('المقاس') >= 0, q('#aiProg').textContent);
+      t('C-early-create', !!q('#aiCreate') && q('#aiExtra').textContent.indexOf('ما فهمته حتى الآن') >= 0, q('#aiExtra').textContent.slice(0, 80));
+      var callsBefore = providerCalls.length;
+      providerScript.push({ status: 'need_answers', note: 'تمام.', questions: [{ q: 'لون القماش؟', options: ['بني', 'بيج'] }], assumptions: [], issues: [], spec: { door: { wall: 1, w: 0.9 } } });
+      q('#aiAnswer').click();
+      await waitFor(function () { return !st().busy && providerCalls.length > callsBefore && q('#aiBody').textContent.indexOf('تمام') >= 0; }, 60000, 'C-answers-sent');
+      var um = providerCalls[providerCalls.length - 1].messages[1].content;
+      t('C-all-answers-sent', um.indexOf('بابان') >= 0 && um.indexOf('مركى') >= 0 && um.indexOf('مسند') >= 0, um.slice(-160));
+      t('C-history-labels', um.indexOf('المساعد: بقي سؤالان') >= 0 && um.indexOf('العميل: كم باباً؟') >= 0, um.slice(0, 400));
+      var mine = q('#aiBody').querySelectorAll('.ai-msg.me');
+      var lastMe = mine[mine.length - 1].textContent;
+      t('C-my-message-shows-all', lastMe.indexOf('بابان') >= 0 && lastMe.indexOf('مركى، مسند') >= 0, lastMe);
+      t('C-old-chips-locked', q('#aiBody .ai-q[data-qi="0"] .ai-chip.on[disabled]') && q('#aiBody .ai-q[data-qi="0"] .ai-chip.on').textContent === 'بابان', 'picked kept');
+      t('C-spec-merged', AI.spec() && AI.spec().roomW === 6 && AI.spec().door && AI.spec().seating === 'arabic', JSON.stringify(AI.spec()));
+      t('C-third-reply-ready', st().status === 'ready' && st().questions === 0, 'status=' + st().status + ' rounds=' + st().rounds);
 
       // D: فشل المزوّد (كل المحاولتين 500) — رسالة عربية وإدخال يعمل
       providerScript.push({ __status: 500 }, { __status: 500 });
@@ -158,7 +185,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       await waitFor(function () { return !st().busy && q('#aiBody').textContent.indexOf('تعذّر') >= 0; }, 60000, 'D-fail');
       t('D-fail-arabic', q('#aiBody').textContent.indexOf('تعذّر') >= 0, 'error shown');
       t('D-retry-possible', !q('#aiText').disabled && !q('#aiSend').disabled, 'input re-enabled');
-      t('D-status-unchanged', st().status === 'need_answers', 'status=' + st().status);
+      t('D-status-unchanged', st().status === 'ready', 'status=' + st().status);
 
       // E: إنشاء المعاينة على مصمم شبح — المصمم الحي لم يتغيّر
       providerScript.push(READY);

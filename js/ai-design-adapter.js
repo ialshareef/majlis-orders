@@ -117,8 +117,9 @@
 
   function specReady(spec) {
     if (!spec || spec.roomW == null || spec.roomH == null) return false;
-    return !!(spec.door || spec.window || spec.tv || spec.mashab ||
-      (spec.sofaWalls && spec.sofaWalls.length) || (spec.accessories && spec.accessories.length));
+    // المقاس يكفي: الجلسة الافتراضية تُوزَّع على كل الجدران — إلا إذا طلب العميل صراحةً بلا جلسة ([])
+    if (!spec.sofaWalls || spec.sofaWalls.length) return true;
+    return !!(spec.door || spec.window || spec.tv || spec.mashab || (spec.accessories && spec.accessories.length));
   }
 
   function wallLenOf(spec, wall) { return (wall % 2 === 0) ? spec.roomW : spec.roomH; }

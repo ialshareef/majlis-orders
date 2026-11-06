@@ -3318,6 +3318,23 @@ body.portal { background: var(--bg); }
   border-radius: 999px; padding: 6px 13px; font-size: .84rem; cursor: pointer; font-family: inherit;
 }
 .ai-chip:hover { background: var(--accent-soft); }
+.ai-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.ai-chip.on::before { content: '✓ '; }
+.ai-chip:disabled { cursor: default; opacity: .55; }
+.ai-chip.on:disabled { opacity: .8; }
+.ai-qhint { font-weight: 400; color: var(--ink-3); font-size: .8rem; }
+.ai-qfoot { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.ai-qfoot .btn { min-height: 40px; }
+.ai-qfoot .btn:disabled { opacity: .5; cursor: not-allowed; }
+.ai-qcount { font-size: .8rem; color: var(--ink-3); }
+.ai-msg.me { white-space: pre-line; }
+.ai-prog { padding: 8px 16px 9px; border-bottom: 1px solid var(--line-soft); background: var(--surface-2); }
+.ai-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 14px; flex-wrap: wrap; font-size: .82rem; color: var(--ink-3); }
+.ai-steps li { display: inline-flex; align-items: center; gap: 5px; }
+.ai-steps li.done { color: var(--ok); font-weight: 600; }
+.ai-dot { width: 16px; height: 16px; border-radius: 50%; border: 1.5px solid currentColor; display: inline-grid; place-items: center; font-size: .65rem; line-height: 1; }
+.ai-steps li.done .ai-dot { background: var(--ok); border-color: var(--ok); color: #fff; }
+.ai-prog-t { margin: 5px 0 0; font-size: .8rem; color: var(--ink-2); line-height: 1.55; }
 .ai-extra { padding: 6px 16px 10px; border-top: 1px solid var(--line-soft); max-height: min(46vh, 430px); overflow-y: auto; }
 .ai-sum h4 { font-size: .92rem; margin: 12px 0 8px; color: var(--ink-2); }
 .ai-sum dl, .ai-facts { margin: 0; display: grid; gap: 5px; }
@@ -3328,6 +3345,7 @@ body.portal { background: var(--bg); }
 .ai-warn { font-size: .82rem; color: var(--warn); margin: 8px 0 0; line-height: 1.6; }
 .ai-ok { font-size: .88rem; color: var(--ok); margin: 10px 0 0; font-weight: 600; }
 .ai-actrow { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
+.ai-actrow-top { margin-top: 8px; }
 .ai-preview { margin-top: 10px; }
 .ai-preview img { width: 100%; border-radius: var(--r-lg); border: 1px solid var(--line); background: #fff; display: block; }
 .ai-facts { margin-top: 10px; }

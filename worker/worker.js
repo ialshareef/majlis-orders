@@ -730,6 +730,8 @@ async function portalView(env, number, request) {
    - يُقيَّد النص والرد بحدود قصوى ويمرّ عبر التحقق قبل الحفظ. */
 const AI_TEXT_MAX = 3000;
 const AI_HISTORY_MAX = 8;
+const AI_HISTORY_ITEM_MAX = 400;
+const AI_MAX_QUESTION_ROUNDS = 2; // بعد جولتي أسئلة يُنشأ التصميم بالافتراضات (متى عُرف المقاس)
 const AI_SPEC_MAX = 20000;
 const AI_CONTENT_MAX = 64000;
 const AI_RATE_LIMIT = 15;
@@ -805,12 +807,12 @@ function aiSanitizeModelOut(parsed) {
   out.note = aiStr(parsed.note, 240).replace(/[`{}\[\]]/g, '');
   if (Array.isArray(parsed.questions)) {
     for (const q of parsed.questions) {
-      if (out.questions.length >= 4) break;
+      if (out.questions.length >= 3) break;
       if (!q || typeof q !== 'object') continue;
       const text = aiStr(q.q, 300);
       if (!text) continue;
-      const options = Array.isArray(q.options) ? q.options.slice(0, 4).map((x) => aiStr(x, 80)).filter(Boolean) : [];
-      out.questions.push({ id: aiStr(q.id, 24) || 'q' + (out.questions.length + 1), q: text, options });
+      const options = Array.isArray(q.options) ? q.options.slice(0, 5).map((x) => aiStr(x, 80)).filter(Boolean) : [];
+      out.questions.push({ id: aiStr(q.id, 24) || 'q' + (out.questions.length + 1), q: text, options, multi: q.multi === true });
     }
   }
   if (Array.isArray(parsed.assumptions)) out.assumptions = parsed.assumptions.slice(0, 8).map((x) => aiStr(x, 200)).filter(Boolean);
@@ -855,23 +857,28 @@ async function aiCatalogBrief(env) {
 
 function aiSystemPrompt(brief) {
   return [
-    'أنت مصمّم مجالس محترف تعمل لصالح أصالة نجد. أجب دائماً بصيغة JSON فقط وفق التعليمات التالية.',
-    'أعد JSON بالشكل التالي بالضبط: status ? note ? questions ? assumptions ? issues ? spec.',
-    'status: "ready" عندما تكون البيانات كافية، أو "need_answers" عند الحاجة لأسئلة، أو "invalid" إذا تعذّر تنفيذ الطلب.',
-    'note: ملخص قصير للعميل (200 حرف كحد أقصى) — لا تذكر فيه JSON أو تفاصيل تقنية.',
-    'questions: حتى 4 أسئلة فقط عند نقص المعلومات، بصيغة {id, q, options} مع خيارات مقترحة لكل سؤال.',
-    'assumptions: الافتراضات التي اعتمدتها عند نقص الطلب. issues: تعارضات أو ملاحظات تحتاج انتباه العميل.',
-    'المواصفات spec بالتفصيل (الأقسام التالية):',
-    '- roomW عرض الغرفة (0.5–30) و roomH طول الغرفة (0.5–30) بالمتر.',
-    '- seating: "floor" أرضي أو "sofa" كنب أو "arabic" جلسة عربية أو "raised" جلسة مرتفعة. depth عمق الجلسة (0.3–1.5، الافتراضي 0.8).',
-    '- الجدران (جميع القياسات بالمتر): door عرض (0.6–2.5)، window عرض (0.4–4)، tv عرض (0.8–4)، mashab عرض (0.6–2.5).',
-    '- كل عنصر {wall, w, distFromCorner, side}: wall 0 للحائط الأمامي، 1 الأيمن، 2 الخلفي، 3 الأيسر؛ side "start" أو "end"؛ distFromCorner المسافة من الزاوية بالمتر — وإن تعذّر تحديده ضعه في assumptions.',
-    '- حركة الباب: swing "in"/"out" و hinge "left"/"right" (الافتراضي in و right).',
-    '- sofaWalls: جدران الكنب كقائمة أرقام من 0 إلى 3 (مثل [0,2]) دون تكرار؛ اختر الجدران الأنسب لوضع الكنب.',
-    '- fabric و foam: اختر من مكتبة الأقمشة والإسفنج المعروضة؛ وإن لم يتوفر مطلوب العميل أضفه في note.',
-    '- accessories: مصفوفة {name, qty} من الإكسسوارات المطلوبة (qty من 1 إلى 99)؛ وإن تجاوز الطلب ذلك اذكره في issues.',
-    '- لا تتجاوز حدود spec المذكورة؛ وعند نقص البيانات اسأل في questions أو افترض وضعها في assumptions.',
-    'صيغة الرد: JSON صالح فقط؛ لا تكتب أي نص قبله أو بعده، ولا تستخدم أي صيغة أخرى غير JSON.',
+    'أنت مساعد تصميم مجالس لمحل «أصالة نجد». مهمتك: تحويل وصف العميل إلى مواصفات تصميم بأقل عدد من الأسئلة.',
+    'أجب دائماً بكائن JSON واحد فقط بالمفاتيح: status, note, questions, assumptions, issues, spec. لا تكتب أي نص خارج JSON.',
+    '',
+    'قواعد الحوار:',
+    '1) اقرأ «المواصفات الحالية» و«سجل المحادثة» وادمج معها كل ما في «رسالة العميل الآن». العميل قد يجيب عن عدة أسئلة في رسالة واحدة (كل سطر إجابة) — اعتمد كل الإجابات لا آخرها فقط.',
+    '2) أعد spec كاملة دائماً (القديم + الجديد)، لا التغييرات فقط. لحذف عنصر طلب العميل إزالته ضع قيمته null.',
+    '3) المعلومات الأساسية ثلاث: مقاس الغرفة، ونوع الجلسة، ومكان الباب. اسأل فقط عن الناقص منها، ولا تسأل عن شيء عرفته.',
+    '4) اسأل حتى 3 أسئلة قصيرة في المرة، ولكل سؤال من 2 إلى 5 خيارات قصيرة جاهزة. ضع multi:true للسؤال الذي يقبل أكثر من إجابة (مثل الإكسسوارات أو جدران الكنب).',
+    '5) متى عرفت مقاس الغرفة فاجعل status = "ready" وافترض الباقي بخيارات شائعة واذكرها في assumptions (مثلاً: جلسة عربية، الباب في منتصف الجدار السفلي، الكنب على الجدران الخالية من الباب). لا تؤخر الإنشاء بأسئلة ثانوية مثل القماش واللون.',
+    '6) status = "need_answers" فقط إذا كان المقاس مجهولاً أو الطلب متناقضاً. status = "invalid" إذا لم يكن الطلب عن تصميم مجلس أو غرفة جلوس.',
+    '7) note: جملة أو جملتان للعميل بالعربية (أقل من 200 حرف) تلخص ما فهمته — بلا مصطلحات تقنية ولا أرقام جدران.',
+    '',
+    'مفاتيح spec:',
+    '- roomW طول الغرفة و roomH عرضها بالمتر (0.5–30). في «6 في 4» أو «6×4»: roomW=6 و roomH=4.',
+    '- seating: "arabic" جلسة عربية/أرضية مرتفعة قليلاً، "floor" أرضي، "sofa" كنب، "raised" جلسة مرتفعة. depth عمق الجلسة بالمتر (0.3–1.5، الافتراضي 0.8).',
+    '- الجدران أرقام: 0 الجدار السفلي (الأمامي)، 1 الأيمن، 2 العلوي (المقابل/الخلفي)، 3 الأيسر. الجداران 0 و2 طولهما roomW، والجداران 1 و3 طولهما roomH.',
+    '- door و window و tv و mashab (مشب/موقد): كائن {wall, w, distFromCorner, side}. w العرض بالمتر (باب 0.6–2.5، نافذة 0.4–4، تلفاز 0.8–4، مشب 0.6–2.5). distFromCorner المسافة من الزاوية (اختياري) و side "start" أو "end". للباب أيضاً swing "in"/"out" و hinge "left"/"right".',
+    '- «التلفاز مقابل الكنب» يعني جداراً لا كنب عليه ويقابل الجلسة الرئيسية.',
+    '- sofaWalls: الجدران التي عليها جلسة، مصفوفة أرقام بلا تكرار (مثل [1,2,3]). «حرف U» = ثلاثة جدران، «حرف L» = جداران متجاوران، «على كل الجدران» = [0,1,2,3].',
+    '- fabric و foam: اسم من المكتبة أدناه فقط إن طلبه العميل. accessories: [{name, qty}] من المكتبة أدناه (qty 1–99). notes: أي طلب لم تجد له مفتاحاً.',
+    '',
+    'questions: [{id, q, options, multi}]. assumptions: قائمة نصوص قصيرة. issues: تعارضات تحتاج انتباه العميل.',
     'الأقمشة المتاحة: ' + (brief.fabrics.join('، ') || 'لا توجد أقمشة محددة') + '.',
     'الإسفنج المتاح: ' + (brief.foams.join('، ') || 'لا يوجد إسفنج محدد') + '.',
     'الإكسسوارات المتاحة: ' + (brief.accessories.join('، ') || 'لا توجد إكسسوارات محددة') + '.',
@@ -882,9 +889,9 @@ function aiUserMessage(text, spec, history) {
   const parts = ['المواصفات الحالية: ' + (spec ? JSON.stringify(spec) : 'لا توجد')];
   if (history.length) {
     parts.push('سجل المحادثة:');
-    for (const h of history) parts.push((h.r === 'b' ? 'العميل: ' : 'المساعد: ') + h.t);
+    for (const h of history) parts.push((h.r === 'b' ? 'المساعد: ' : 'العميل: ') + h.t);
   }
-  parts.push('طلب العميل الآن: ' + text);
+  parts.push('رسالة العميل الآن: ' + text);
   return parts.join('\n');
 }
 
@@ -958,6 +965,109 @@ async function aiCallModel(env, system, user) {
   throw new HttpError(503, 'تعذّرت الاستجابة من خدمة التصميم حالياً. حاول مرة أخرى بعد قليل.');
 }
 
+/* AI_CORE_START */
+const AI_SEAT_WORDS = [['arabic', /عرب/], ['sofa', /كنب|كنبة|كنبات/], ['raised', /مرتفع/], ['floor', /أرض|ارض|قعدة أرضية/]];
+
+/** مقاس الغرفة من نص العميل: «6×4»، «6 في 4»، «٥ × ٤»، «طولها 7 وعرضها 5». */
+function aiParseRoomSize(text) {
+  const t = String(text || '').replace(/[\u0660-\u0669]/g, (c) => c.charCodeAt(0) - 0x0660).replace(/[\u06F0-\u06F9]/g, (c) => c.charCodeAt(0) - 0x06F0).replace(/[\u066B،]/g, (c) => (c === '\u066B' ? '.' : c));
+  const num = '(\\d{1,2}(?:[.,]\\d{1,2})?)';
+  const ok = (n) => Number.isFinite(n) && n >= 1.5 && n <= 30;
+  const f = (x) => Number(String(x).replace(',', '.'));
+  let m = t.match(new RegExp(num + '\\s*(?:م|متر|m)?\\s*(?:×|x|X|\\*|في|ب)\\s*' + num));
+  if (m && ok(f(m[1])) && ok(f(m[2]))) return { roomW: f(m[1]), roomH: f(m[2]) };
+  const L = t.match(new RegExp('طول(?:ها|ه|\\s+الغرفة|\\s+المجلس)?\\s*(?:=|:)?\\s*' + num));
+  const W = t.match(new RegExp('عرض(?:ها|ه|\\s+الغرفة|\\s+المجلس)?\\s*(?:=|:)?\\s*' + num));
+  if (L && W && ok(f(L[1])) && ok(f(W[1]))) return { roomW: f(L[1]), roomH: f(W[1]) };
+  return null;
+}
+
+/** ما الذي ما زال ناقصاً من المعلومات الأساسية؟ */
+function aiMissing(spec) {
+  const s = spec || {};
+  const miss = [];
+  if (s.roomW == null || s.roomH == null) miss.push('size');
+  if (!s.seating) miss.push('seating');
+  if (!s.door) miss.push('door');
+  return miss;
+}
+
+const AI_DEFAULT_Q = {
+  size: { id: 'size', q: 'كم مقاس الغرفة تقريباً (الطول × العرض بالمتر)؟', options: ['4 × 4', '5 × 4', '6 × 4', '7 × 5'], multi: false },
+  seating: { id: 'seating', q: 'ما نوع الجلسة؟', options: ['جلسة عربية', 'أرضي', 'كنب', 'جلسة مرتفعة'], multi: false },
+  door: { id: 'door', q: 'أين مكان الباب في المخطط؟', options: ['الجدار السفلي', 'الجدار الأيمن', 'الجدار العلوي', 'الجدار الأيسر'], multi: false },
+};
+
+/** دورة واحدة من المحادثة: تنظيف المدخلات ← النموذج ← دمج المواصفات وضمان التقدّم نحو الإنشاء. */
+async function aiDesignCore(body, brief, callModel) {
+  const rawText = body && body.text != null ? String(body.text) : '';
+  if (rawText.trim().length > AI_TEXT_MAX) throw new HttpError(400, 'النص أطول من الحد المسموح (3000 حرف).');
+  const text = aiStr(rawText, AI_TEXT_MAX);
+  if (!text) throw new HttpError(400, 'اكتب وصفًا للطلب.');
+  const history = [];
+  if (Array.isArray(body.history)) {
+    for (const h of body.history.slice(-AI_HISTORY_MAX)) {
+      if (!h || typeof h !== 'object') continue;
+      const t = aiStr(h.t, AI_HISTORY_ITEM_MAX);
+      if (t) history.push({ r: h.r === 'b' ? 'b' : 'u', t });
+    }
+  }
+  let prev = null;
+  if (body.spec && typeof body.spec === 'object' && JSON.stringify(body.spec).length <= AI_SPEC_MAX) prev = aiSanitizeSpec(body.spec);
+  const askedRounds = Math.max(history.filter((h) => h.r === 'b').length, Math.min(10, Math.max(0, Number(body.rounds) || 0)));
+
+  const content = await callModel(aiSystemPrompt(typeof brief === 'function' ? await brief() : brief), aiUserMessage(text, prev, history));
+  let parsed = null;
+  try { parsed = JSON.parse(String(content).replace(/^﻿/, '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch (e) { parsed = null; }
+  if (!parsed || typeof parsed !== 'object') {
+    console.warn('ai-design failed: bad-json');
+    throw new HttpError(503, 'تعذّرت الاستجابة من خدمة التصميم. حاول مرة أخرى.');
+  }
+  const out = aiSanitizeModelOut(parsed);
+
+  // دمج: ما سبق + ما أعاده النموذج (null = حذف) — لا تضيع إجابة سابقة إن نسيها النموذج
+  const ms = parsed.spec && typeof parsed.spec === 'object' && !Array.isArray(parsed.spec) ? parsed.spec : {};
+  const merged = Object.assign({}, prev || {}, out.spec || {});
+  for (const k of Object.keys(ms)) if (ms[k] === null) delete merged[k];
+  // مقاس مكتوب صراحةً في رسالة العميل يغلب تخمين النموذج
+  const size = aiParseRoomSize(text);
+  if (size) {
+    const same = (merged.roomW === size.roomW && merged.roomH === size.roomH) || (merged.roomW === size.roomH && merged.roomH === size.roomW);
+    if (!same) { merged.roomW = size.roomW; merged.roomH = size.roomH; }
+  }
+  // نوع جلسة مذكور صراحةً ونسيه النموذج
+  if (!merged.seating) { for (const [v, re] of AI_SEAT_WORDS) if (re.test(text)) { merged.seating = v; break; } }
+  const spec = aiSanitizeSpec(merged) || {};
+  const hasSize = spec.roomW != null && spec.roomH != null;
+
+  if (out.status !== 'invalid') {
+    if (hasSize && (out.status === 'ready' || askedRounds >= AI_MAX_QUESTION_ROUNDS || !out.questions.length)) {
+      if (out.status !== 'ready') {
+        out.assumptions.push('أكملتُ بقية التفاصيل بخيارات شائعة — يمكنك تعديلها بعد إنشاء التصميم.');
+        out.note = 'تمام، عندي ما يكفي لتجهيز تصميمك.';
+      }
+      out.status = 'ready';
+      out.questions = [];
+    } else if (!hasSize) {
+      out.status = 'need_answers';
+      if (!out.questions.some((q) => /مقاس|طول|عرض|متر/.test(q.q))) out.questions.unshift(AI_DEFAULT_Q.size);
+      out.questions = out.questions.slice(0, 3);
+    }
+    if (out.status === 'need_answers' && !out.questions.length) {
+      for (const k of aiMissing(spec)) out.questions.push(AI_DEFAULT_Q[k]);
+    }
+  } else {
+    out.questions = [];
+  }
+  const miss = aiMissing(spec);
+  return {
+    status: out.status, note: out.note, questions: out.questions, assumptions: out.assumptions.slice(0, 8), issues: out.issues,
+    spec: Object.keys(spec).length ? spec : null,
+    progress: { missing: miss, round: askedRounds + (out.status === 'need_answers' ? 1 : 0), maxRounds: AI_MAX_QUESTION_ROUNDS, canCreate: hasSize },
+  };
+}
+/* AI_CORE_END */
+
 async function portalAiDesign(env, request, body) {
   const token = designTokenOf(request);
   await portalRow(env, token);
@@ -965,32 +1075,9 @@ async function portalAiDesign(env, request, body) {
   if (!aiAvailable(env)) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
   const settings = await shopSettings(env);
   if (settings.aiDesignEnabled === false) throw new HttpError(503, 'خدمة التصميم بالذكاء الاصطناعي غير مفعّلة حالياً.');
-  const rawText = body && body.text != null ? String(body.text) : '';
-  if (rawText.trim().length > AI_TEXT_MAX) throw new HttpError(400, 'النص أطول من الحد المسموح (3000 حرف).');
-  const text = aiStr(rawText, AI_TEXT_MAX);
-  if (!text) throw new HttpError(400, 'اكتب وصفًا للطلب.');
-  const history = [];
-  if (Array.isArray(body.history)) {
-    for (const h of body.history) {
-      if (history.length >= AI_HISTORY_MAX) break;
-      if (!h || typeof h !== 'object') continue;
-      const t = aiStr(h.t, 200);
-      if (t) history.push({ r: h.r === 'b' ? 'b' : 'u', t });
-    }
-  }
-  let spec = null;
-  if (body.spec && typeof body.spec === 'object' && JSON.stringify(body.spec).length <= AI_SPEC_MAX) spec = aiSanitizeSpec(body.spec);
-  const brief = await aiCatalogBrief(env);
-  const content = await aiCallModel(env, aiSystemPrompt(brief), aiUserMessage(text, spec, history));
-  let parsed = null;
-  try { parsed = JSON.parse(String(content).replace(/^\uFEFF/, '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '')); } catch (e) { parsed = null; }
-  if (!parsed || typeof parsed !== 'object') {
-    console.warn('ai-design failed: bad-json');
-    throw new HttpError(503, 'تعذّرت الاستجابة من خدمة التصميم. حاول مرة أخرى.');
-  }
-  const out = aiSanitizeModelOut(parsed);
+  const out = await aiDesignCore(body || {}, () => aiCatalogBrief(env), (system, user) => aiCallModel(env, system, user));
   console.warn('ai-design ok status=' + out.status);
-  return { ok: true, status: out.status, note: out.note, questions: out.questions, assumptions: out.assumptions, issues: out.issues, spec: out.spec };
+  return { ok: true, ...out };
 }
 
 /* ------------------------------ تصاميم العملاء (موظفون) ------------------------------ */

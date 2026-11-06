@@ -294,8 +294,8 @@ try {
     })));
     const r = await ai(env, { text: 'ابدأ' });
     t('need_answers يمر كما هو', r.status === 200 && r.body.status === 'need_answers', r.text);
-    t('الأسئلة مقصوصة إلى 4', r.body.questions.length === 4, String(r.body.questions.length));
-    t('الخيارات مقصوصة إلى 4', r.body.questions[0].options.length === 4, String(r.body.questions[0].options.length));
+    t('الأسئلة مقصوصة إلى 3', r.body.questions.length === 3, String(r.body.questions.length));
+    t('الخيارات مقصوصة إلى 5', r.body.questions[0].options.length === 5, String(r.body.questions[0].options.length));
     t('بلا مواصفات ← spec null', r.body.spec === null);
 
     setProvider(() => ok(JSON.stringify({
@@ -349,12 +349,12 @@ try {
     setProvider(() => ok(READY_TXT));
 
     const hist = [];
-    for (let i = 0; i < 20; i++) hist.push({ r: 'u', t: 'بداية' + 'x'.repeat(240) + 'نهاية' + i });
+    for (let i = 0; i < 20; i++) hist.push({ r: 'u', t: 'بداية' + 'x'.repeat(440) + 'نهاية' + i });
     await ai(env, { text: 'أكمل', history: hist });
     const convo = calls[0].body.messages[1].content;
     const count = (convo.match(/العميل: /g) || []).length;
     t('التاريخ مقصوص إلى 8 رسائل', count <= 8, String(count));
-    t('كل رسالة تاريخ مقصوصة إلى 200 حرف', !convo.includes('نهاية'), 'tail leaked');
+    t('كل رسالة تاريخ مقصوصة إلى 400 حرف', !convo.includes('نهاية'), 'tail leaked');
 
     await ai(env, { text: 'أكمل', spec: { roomW: 6, roomH: 4, notes: 'ن'.repeat(20050) } });
     t('مواصفات تتجاوز 20KB ← تُسقط من السياق', calls[1].body.messages[1].content.includes('لا توجد'));
@@ -900,6 +900,74 @@ try {
 
     const r9 = await call({ DB: makeDb(freshState()) }, 'GET', '/api/portal/settings');
     t('WAI: بلا مفتاح ولا ربط ← معطّل', r9.body.settings.aiDesign.enabled === false, r9.text);
+  }
+
+  console.log('== 14) الحوار: إجابات متعددة، دمج المواصفات، نهاية الأسئلة ==');
+  {
+    const env = { get DB() { return makeDb(freshState()); }, ...AI };   // قاعدة جديدة لكل طلب (لا يتدخل حد المعدل)
+    const reply = (o) => ok(JSON.stringify(Object.assign({ status: 'need_answers', note: '', questions: [], assumptions: [], issues: [], spec: null }, o)));
+    const lastUser = () => calls[calls.length - 1].body.messages[1].content;
+
+    setProvider(() => reply({}));
+    await ai(env, { text: 'ثالث', history: [{ r: 'u', t: 'أبي مجلس' }, { r: 'b', t: 'كم المقاس؟' }] });
+    t('سجل المحادثة: كلام العميل باسم العميل والبوت باسم المساعد', /العميل: أبي مجلس/.test(lastUser()) && /المساعد: كم المقاس؟/.test(lastUser()), lastUser().slice(0, 300));
+    t('رسالة النظام تطلب اعتماد كل الإجابات', /كل الإجابات/.test(calls[calls.length - 1].body.messages[0].content));
+
+    // نموذج نسي ما سبق ← لا تضيع الإجابات السابقة
+    setProvider(() => reply({ spec: { seating: 'floor' } }));
+    let r = await ai(env, { text: 'نوع الجلسة: أرضي', spec: { roomW: 6, roomH: 4, door: { wall: 1, w: 1 } }, history: [{ r: 'b', t: 'سؤال' }] });
+    t('الدمج: المقاس والباب السابقان باقيان مع الإجابة الجديدة', r.body.spec && r.body.spec.roomW === 6 && r.body.spec.door && r.body.spec.door.wall === 1 && r.body.spec.seating === 'floor', JSON.stringify(r.body.spec));
+    // null = حذف
+    setProvider(() => reply({ status: 'ready', spec: { tv: null } }));
+    r = await ai(env, { text: 'شيل التلفزيون', spec: { roomW: 6, roomH: 4, tv: { wall: 2, w: 1.5 } } });
+    t('الدمج: null يحذف العنصر', r.body.spec && !r.body.spec.tv && r.body.spec.roomW === 6, JSON.stringify(r.body.spec));
+
+    // مقاس مكتوب صراحةً يغلب تخمين النموذج
+    const cases = [['مجلس 6×4', 6, 4], ['أبغى ٥ × ٤ جلسة أرضية', 5, 4], ['غرفة 7 في 5', 7, 5], ['طولها 7.5 متر وعرضها 4', 7.5, 4], ['المقاس: 5 × 4', 5, 4], ['6x3.5', 6, 3.5]];
+    for (const [txt, w, h] of cases) {
+      setProvider(() => reply({ status: 'ready', spec: { roomW: 3, roomH: 3 } }));
+      r = await ai(env, { text: txt });
+      t('قراءة المقاس من «' + txt + '»', r.body.spec && r.body.spec.roomW === w && r.body.spec.roomH === h, JSON.stringify(r.body.spec));
+    }
+    setProvider(() => reply({ status: 'ready', spec: { roomW: 4, roomH: 6 } }));
+    r = await ai(env, { text: 'مجلس 6×4' });
+    t('المقاس المعكوس من النموذج لا يُستبدل', r.body.spec.roomW === 4 && r.body.spec.roomH === 6, JSON.stringify(r.body.spec));
+    setProvider(() => reply({ spec: {} , questions: [{ q: 'عدد الأبواب؟', options: ['1', '2'] }] }));
+    r = await ai(env, { text: 'عندي 2 في الجدار' });
+    t('لا يخترع مقاساً من أرقام عابرة', !(r.body.spec && r.body.spec.roomW), JSON.stringify(r.body.spec));
+    // نوع الجلسة المذكور صراحةً
+    setProvider(() => reply({ status: 'ready', spec: { roomW: 5, roomH: 4 } }));
+    r = await ai(env, { text: 'جلسة عربية 5×4' });
+    t('نوع الجلسة المكتوب يُعتمد إن نسيه النموذج', r.body.spec.seating === 'arabic', JSON.stringify(r.body.spec));
+
+    // نهاية واضحة: بعد جولتي أسئلة ومع معرفة المقاس ← جاهز
+    const Q3 = [{ q: 'لون القماش؟', options: ['بني', 'بيج'] }];
+    setProvider(() => reply({ spec: { roomW: 6, roomH: 4 }, questions: Q3 }));
+    r = await ai(env, { text: 'أكمل', history: [{ r: 'b', t: 'س1' }, { r: 'u', t: 'ج1' }, { r: 'b', t: 'س2' }] });
+    t('بعد جولتين من الأسئلة والمقاس معروف ← ready بلا أسئلة', r.body.status === 'ready' && !r.body.questions.length, JSON.stringify({ s: r.body.status, q: r.body.questions.length }));
+    t('…مع افتراض واضح للعميل', r.body.assumptions.some((a) => /خيارات شائعة/.test(a)), JSON.stringify(r.body.assumptions));
+    r = await ai(env, { text: 'أكمل', history: [{ r: 'b', t: 'س1' }] });
+    t('جولة أولى: الأسئلة تبقى', r.body.status === 'need_answers' && r.body.questions.length === 1 && r.body.progress.canCreate === true, JSON.stringify(r.body.progress));
+    setProvider(() => reply({ spec: { roomW: 6, roomH: 4 } }));
+    r = await ai(env, { text: 'أكمل' });
+    t('need_answers بلا أسئلة والمقاس معروف ← ready', r.body.status === 'ready', r.body.status);
+    // بلا مقاس: لا ready أبداً، وسؤال المقاس أولاً
+    setProvider(() => reply({ status: 'ready', spec: { seating: 'sofa' } }));
+    r = await ai(env, { text: 'كنب', history: [{ r: 'b', t: 'a' }, { r: 'b', t: 'b' }, { r: 'b', t: 'c' }] });
+    t('بلا مقاس ← need_answers مع سؤال المقاس بخيارات', r.body.status === 'need_answers' && /مقاس/.test(r.body.questions[0].q) && r.body.questions[0].options.length >= 3, JSON.stringify(r.body.questions));
+    t('progress: الناقص هو المقاس والباب', JSON.stringify(r.body.progress.missing) === JSON.stringify(['size', 'door']) && r.body.progress.canCreate === false, JSON.stringify(r.body.progress));
+    // multi
+    setProvider(() => reply({ questions: [{ q: 'الإكسسوارات؟', options: ['طاولة', 'مركى'], multi: true }, { q: 'المقاس؟', options: ['5×4'] }] }));
+    r = await ai(env, { text: 'أبي مجلس' });
+    t('السؤال متعدد الإجابات يحمل multi:true والآخر false', r.body.questions[0].multi === true && r.body.questions[1].multi === false, JSON.stringify(r.body.questions));
+    // invalid يبقى كما هو بلا أسئلة
+    setProvider(() => reply({ status: 'invalid', questions: [{ q: 'x', options: [] }] }));
+    r = await ai(env, { text: 'كم سعر الذهب' });
+    t('طلب خارج الموضوع ← invalid بلا أسئلة', r.body.status === 'invalid' && !r.body.questions.length, JSON.stringify(r.body));
+    // إجابات متعددة في رسالة واحدة تصل كاملة للنموذج
+    setProvider(() => reply({}));
+    await ai(env, { text: 'كم مقاس الغرفة: 6 × 4\nما نوع الجلسة: جلسة عربية\nأين مكان الباب: الجدار الأيمن' });
+    t('كل الإجابات تصل للنموذج في رسالة واحدة', /6 × 4/.test(lastUser()) && /جلسة عربية/.test(lastUser()) && /الجدار الأيمن/.test(lastUser()), lastUser().slice(-200));
   }
 } finally {
   console.warn = origWarn;
