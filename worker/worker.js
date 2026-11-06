@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.87';
-// بصمة asalh-najd-1.0.87.apk (إصدار GitHub v1.0.87، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.87 وversionCode 10087، ونفس شهادة توقيع 1.0.86).
-const UPDATE_FALLBACK_SHA256 = 'ea718171f427af7214c1aa0b5669d3641037292f198155b934700c61e3332870';
+const UPDATE_FALLBACK_VERSION = '1.0.88';
+// بصمة asalh-najd-1.0.88.apk (إصدار GitHub v1.0.88، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.88 وversionCode 10088، ونفس شهادة توقيع 1.0.87).
+const UPDATE_FALLBACK_SHA256 = '1779f8654eea28982c1cb2a574172e0aa8813a302b61982658c1d8d814e71c5c';
 const UPDATE_FALLBACK_NOTES = [
-  'التصميم بالذكاء الاصطناعي: اختر إجابة لكل سؤال (أو أكثر من إجابة حيث يُسمح) وأرسلها كلها معاً',
-  'شريط يوضح ما عُرف من التصميم وما بقي، والأسئلة تنتهي بعد جولتين ثم يُجهّز التصميم مباشرة',
+  'التصميم بالذكاء الاصطناعي: اختر إجابة لكل سؤال (أو أكثر حيث يُسمح) وأرسلها كلها معاً، والأسئلة تنتهي بعد جولتين',
+  'فهم أدق لنوع الجلسة المكتوب، وأسئلة المقاس والجلسة والباب تأتي معاً في جولة واحدة',
 ];
 
 function versionCodeOfName(v) {
