@@ -130,7 +130,7 @@ if (!sqlite) {
   const hasExpenseCols = (d) => userDefs(d).some((r) => r.name === 'expenses' && /\bexpense_date\b/.test(r.sql) && /\border_id\b/.test(r.sql)); // فحص 004 في السكربت
 
   // الهجرات بالترتيب (001 ← 004) تنتهي بالتعريفات نفسها التي ينشئها schema.sql مباشرة
-  ok(migs.join(',') === '001_permission_tables.sql,002_expenses.sql,003_fix_user_delete_fks.sql,004_expense_fields.sql,005_whatsapp_notifications.sql', 'schema: الهجرات 001 و002 كما هي، والتصحيح في 003، وحقول المصروفات في 004، وإشعارات واتساب في 005', migs);
+  ok(migs.join(',') === '001_permission_tables.sql,002_expenses.sql,003_fix_user_delete_fks.sql,004_expense_fields.sql,005_whatsapp_notifications.sql,006_wa_recipient_users.sql', 'schema: الهجرات 001 و002 كما هي، والتصحيح في 003، وحقول المصروفات في 004، وإشعارات واتساب في 005، وربط مستلميه بالمستخدمين في 006', migs);
   const viaSchema = fresh(); viaSchema.exec(schema);
   const viaMigs = fresh();
   viaMigs.exec(schema.split('-- Permission Manager tables')[0]); // الجداول الأساسية فقط

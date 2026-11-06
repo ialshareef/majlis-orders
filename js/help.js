@@ -90,44 +90,103 @@
      المحتوى: الموظف
      مبني على القوائم الفعلية في index.html + صلاحيات canSeeCosts/canEditOrder
      ====================================================================== */
+  /* أهداف الجولة: زر القائمة الجانبية على الكمبيوتر، وزر الشريط السفلي في الجوال.
+     الأقسام الموجودة داخل القائمة المنزلقة في الجوال تُشرح على زر «القائمة» نفسه (نص بديل p).
+     need: الخطوة تُحذف من الجولة إن لم يكن القسم ظاهراً لهذا المستخدم (صلاحياته).
+     tourOnly: في الجولة فقط (الترحيب والختام) · manualOnly: في «دليل الاستخدام» فقط (شرح بلا عنصر محدد). */
+  const MORE_P = (name) => 'تجد «' + name + '» في «القائمة» — اضغطها لتظهر لك كل الأقسام.';
   const STAFF = {
     role: 'staff',
+    v: 2,
     title: 'دليل الموظف',
     intro: 'كيف تسجّل طلباً وتُديره وتتابّع حالته.',
     steps: [
       {
-        h: 'أهلًا بك 👋',
-        p: 'من الشريط الجانبي تبدأ الطلب الحالي، ثم «جميع الطلبات» و«العملاء». تتبّع المراحل من أعلى الصفحة باستخدام الخطوة الحالية.',
-        tip: 'اختصارات: استخدم الأزرار داخل تفاصيل الطلب للوصول السريع.',
+        hero: true, tourOnly: true,
+        h: 'أهلاً بك في نظام أصالة نجد',
+        p: 'جولة سريعة — أقل من دقيقة — تعرّفك على أهم أجزاء النظام وأين تجد كل شيء.',
+        tip: 'تنقّل بالأزرار أو بأسهم لوحة المفاتيح، وأوقف الجولة متى شئت.',
       },
       {
-        h: 'تسجيل طلب جديد',
-        p: 'في «الطلب الحالي» أدخل بيانات العميل والجوال والعنوان، ثم اختر الأصناف وأضف الكميات. المبالغ تُحسب تلقائيًا.',
-        tip: 'كل طلب جديد يأخذ رقمه تلقائيًا — لا تحتاج لكتابة الرقم.',
+        h: 'الطلب الحالي',
+        p: 'من هنا تبدأ أي طلب: ترسم المجلس، وتسعّره، وتسجّل بيانات العميل والدفعات.',
+        tip: 'كل طلب جديد يأخذ رقمه تلقائياً — لا تحتاج لكتابة الرقم.',
+        targets: [{ sel: ["#mainNav [data-page=\"order\"]","#bottomNav [data-page=\"order\"]"] }],
       },
       {
-        h: 'المتابعة والتعديل',
-        p: 'من «جميع الطلبات» افتح أي طلب لتعديل بياناته أو تغيير حالته (جديد ← قيد التنفيذ ← اكتمال التنفيذ ← تم التوصيل).',
-        tip: 'يمكنك تعديل الطلبات التي أنشأتها أنت. طلبات الزملاء تظهر للقراءة فقط، وللمدير وحده حق فتحها.',
+        h: 'مراحل الطلب',
+        p: 'الطلب يمر بخمس مراحل بالترتيب: التصميم، ثم التسعير، ثم العميل، ثم الدفع، ثم التصدير. انتقل بينها من هذا الشريط.',
+        tip: 'المبالغ تُحسب تلقائياً من الأصناف والكميات.',
+        targets: [{ sel: '#stepNav' }],
       },
       {
+        h: 'جميع الطلبات',
+        p: 'كل الطلبات في مكان واحد: ابحث، وافتح أي طلب لتعديله أو تغيير حالته (جديد ← قيد التنفيذ ← اكتمال التنفيذ ← تم التوصيل).',
+        tip: 'تعدّل الطلبات التي أنشأتها أنت، وطلبات الزملاء تظهر للقراءة فقط.',
+        targets: [{ sel: ["#mainNav [data-page=\"orders\"]","#bottomNav [data-page=\"orders\"]"] }],
+      },
+      {
+        h: 'العملاء',
+        p: 'سجل العملاء وطلبات كل عميل وجواله — يُبنى تلقائياً من الطلبات.',
+        targets: [{ sel: ["#mainNav [data-page=\"customers\"]","#bottomNav [data-page=\"customers\"]"] }],
+      },
+      {
+        h: 'تصاميم العملاء',
+        p: 'التصاميم التي يرسلها العملاء من صفحة «صمّم مجلسك» تصل هنا، وتحوّلها إلى طلب بضغطة.',
+        tip: 'الرقم الأحمر بجانبها يعني تصاميم جديدة لم تُراجع.',
+        need: '#mainNav [data-page="designs"]',
+        targets: [{ sel: '#mainNav [data-page="designs"]' }, { sel: ["#btnMore","#btnMenu"], p: MORE_P('تصاميم العملاء') }],
+      },
+      {
+        h: 'المال والمتابعة',
+        p: 'المصروفات، والمناديب وعمولاتهم، وإشعارات واتساب — كلٌّ في قسمه حسب صلاحياتك.',
+        need: ['#mainNav [data-page="expenses"]', '#mainNav [data-page="mandoubs"]', '#mainNav [data-page="whatsapp"]'],
+        targets: [{ sel: ['#mainNav [data-page="expenses"]', '#mainNav [data-page="mandoubs"]', '#mainNav [data-page="whatsapp"]'] }, { sel: ["#btnMore","#btnMenu"], p: MORE_P('المال والمتابعة') }],
+      },
+      {
+        h: 'التقارير والتحليلات',
+        p: 'تقارير جاهزة للطباعة والتصدير، ولوحة أرقام للمبيعات والأرباح، وزيارات الموقع — في تبويبات أعلى الصفحة.',
+        need: '#mainNav [data-page="reports"]',
+        targets: [{ sel: '#mainNav [data-page="reports"]' }, { sel: ["#btnMore","#btnMenu"], p: MORE_P('التقارير والتحليلات') }],
+      },
+      {
+        h: 'الإدارة',
+        p: 'الأصناف والأسعار، والمستخدمون وصلاحياتهم ونشاطهم، والإعدادات والنسخ الاحتياطي.',
+        need: ['#mainNav [data-page="items"]', '#mainNav [data-page="users"]', '#mainNav [data-page="settings"]'],
+        targets: [{ sel: ['#mainNav [data-page="users"]', '#mainNav [data-page="items"]', '#mainNav [data-page="settings"]'] }, { sel: ["#btnMore","#btnMenu"], p: MORE_P('الإدارة') }],
+      },
+      {
+        h: 'مركز التنبيهات',
+        p: 'هنا تصلك التنبيهات المهمة: تصاميم جديدة، وتحديثات، وما يحتاج متابعتك.',
+        targets: [{ sel: '#btnNotif' }],
+      },
+      {
+        h: 'دليل الاستخدام',
+        p: 'متى احتجت شرحاً افتح «دليل الاستخدام»، ومنه تعيد هذه الجولة في أي وقت.',
+        targets: [{ sel: '#btnHelp' }, { sel: ["#btnMore","#btnMenu"], p: 'تجد «دليل الاستخدام» في أسفل «القائمة»، ومنه تعيد هذه الجولة في أي وقت.' }],
+      },
+      {
+        manualOnly: true,
         h: 'حالات الطلب',
         p: 'الطلب يسير بين الحالات: مسودة عرض، جديد، قيد التنفيذ، منجز، تم التسليم، أو ملغي.',
         tip: 'الحالة «تم التسليم» هي التي تُحتسب ضمن المبيعات والتقارير.',
       },
       {
+        manualOnly: true,
         h: 'المدفوعات والتكلفة',
         p: 'سجّل الدفعات والدفع السريع أسفل تفاصيل الطلب، وأدخل التكاليف لحساب صافي الربح.',
         tip: 'التكلفة والأرباح تظهر للمدير فقط، وكل عملية تُسجَّل في «المستخدمون ونشاطهم ← نشاط الموظفين» باسم من قام بها.',
       },
       {
+        manualOnly: true,
         h: 'ما تظهره لك الصلاحيات',
         p: 'التكلفة والأرباح والتقارير والإعدادات تظهر للمدير فقط. كل موظف يرى ما أنشأه، والمندوب يرى طلباته المسندة إليه.',
         tip: 'إن احتجت صلاحية أكثر تواصل مع مدير النظام.',
       },
       {
-        h: 'انتهى الشرح 🎉',
-        p: 'كل شيء جاهز. افتح «الدليل» من زر المساعدة متى احتجته.',
+        hero: true, tourOnly: true,
+        h: 'أنت جاهز 🎉',
+        p: 'هذا كل ما تحتاجه للبدء. ابدأ أول طلب من «الطلب الحالي».',
         tip: null,
       },
     ],
@@ -140,37 +199,64 @@
      ====================================================================== */
   const MANDOUB = {
     role: 'mandoub',
+    v: 2,
     title: 'دليل المندوب',
     intro: 'طلباتك المسندة إليك، وإجراءاتك المسموحة.',
     steps: [
       {
-        h: 'أهلًا بك 👋',
-        p: 'المندوب مكلَّف بمتابعة طلب أو أكثر. مهمتك متابعة التنفيذ والتواصل مع العميل حتى التسليم.',
-        tip: 'ستجد طلباتك المسندة إليك في «جميع الطلبات».',
+        hero: true, tourOnly: true,
+        h: 'أهلاً بك في نظام أصالة نجد',
+        p: 'جولة سريعة تعرّفك على طلباتك وما يمكنك فعله فيها. مهمتك متابعة التنفيذ والتواصل مع العميل حتى التسليم.',
+        tip: 'تنقّل بالأزرار أو بأسهم لوحة المفاتيح، وأوقف الجولة متى شئت.',
       },
       {
-        h: 'معلومات الطلب',
-        p: 'اضغط على الطلب لتظهر بياناته: اسم العميل وجواله وعنوانه، الأصناف والكميات، الإجمالي المدفوع، وحالته الحالية.',
+        h: 'طلباتك',
+        p: 'هنا تجد الطلبات المسندة إليك: اضغط أي طلب لتظهر بياناته — العميل وجواله وعنوانه، والأصناف، والمدفوع، وحالته.',
         tip: 'راجع حالة التنفيذ مع العميل قبل التسليم.',
+        targets: [{ sel: ["#mainNav [data-page=\"orders\"]","#bottomNav [data-page=\"orders\"]"] }],
       },
       {
+        h: 'طلب جديد',
+        p: 'من «الطلب الحالي» تسجّل طلباً جديداً، والطلب الذي أنشأته أنت تعدّله وتحدّث حالته بنفسك.',
+        targets: [{ sel: ["#mainNav [data-page=\"order\"]","#bottomNav [data-page=\"order\"]"] }],
+      },
+      {
+        h: 'مراحل الطلب',
+        p: 'التصميم، ثم التسعير، ثم العميل، ثم الدفع، ثم التصدير — انتقل بينها من هذا الشريط.',
+        targets: [{ sel: '#stepNav' }],
+      },
+      {
+        h: 'مركز التنبيهات',
+        p: 'هنا تصلك التنبيهات المهمة وما يحتاج متابعتك.',
+        targets: [{ sel: '#btnNotif' }],
+      },
+      {
+        h: 'دليل الاستخدام',
+        p: 'متى احتجت شرحاً افتح «دليل الاستخدام»، ومنه تعيد هذه الجولة في أي وقت.',
+        targets: [{ sel: '#btnHelp' }, { sel: ["#btnMore","#btnMenu"], p: 'تجد «دليل الاستخدام» في أسفل «القائمة»، ومنه تعيد هذه الجولة في أي وقت.' }],
+      },
+      {
+        manualOnly: true,
         h: 'ما يمكنك تعديله',
         p: 'الطلب الذي أنشأته أنت قابل للتعديل والتحديث من طرفك، بما فيه تغيير حالته عند تقدّم العمل.',
         tip: 'إن كان الطلب أسنده إليك شخص آخر، فستظهر للقراءة فقط — راجعه مع مدير النظام لأي تعديل.',
       },
       {
+        manualOnly: true,
         h: 'ما لا يظهر لك',
         p: 'التكاليف والأرباح والتقارير المالية وإدارة الأصناف والمستخدمين فهي للمدير وحده.',
         tip: 'إن احتجت تعديل بيانات الطلب من غيرك، اطلبه من مدير النظام.',
       },
       {
+        manualOnly: true,
         h: 'نسبتك',
         p: 'لكل مندوب نسبة عمولة على مبيعات طلباته، ويراها المدير في ملفك ضمن «المناديب والعمولات».',
         tip: 'التقارير الكاملة متاحة للمدير في «التقارير والتحليلات».',
       },
       {
-        h: 'انتهى الشرح 🎉',
-        p: 'ابدأ بمراجعة طلباتك المسندة إليك. افتح «الدليل» من زر المساعدة عند الحاجة.',
+        hero: true, tourOnly: true,
+        h: 'أنت جاهز 🎉',
+        p: 'ابدأ بمراجعة طلباتك المسندة إليك من «جميع الطلبات».',
         tip: null,
       },
     ],
@@ -211,6 +297,13 @@
     };
   }
 
+  function clipRect(r, vw, vh) {
+    const m = 3;
+    const x0 = clampN(r.x, m, vw - m), y0 = clampN(r.y, m, vh - m);
+    const x1 = clampN(r.x + r.w, m, vw - m), y1 = clampN(r.y + r.h, m, vh - m);
+    return (x1 - x0 < 4 || y1 - y0 < 4) ? r : { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
   function placeCard(r, vw, vh, cw, ch) {
     const m = 10, gap = 12;
     const cx = clampN(r.x + r.w / 2 - cw / 2, m, Math.max(m, vw - cw - m));
@@ -249,6 +342,8 @@
       if (!el || !el.getBoundingClientRect) return null;
       const r = el.getBoundingClientRect();
       if (!r || r.width < 2 || r.height < 2) return null;
+      const vw = window.innerWidth || 0;
+      if (vw && (r.right <= 0 || r.left >= vw)) return null;
       const p = Math.max(0, pad == null ? 8 : pad);
       return { x: r.left - p, y: r.top - p, w: r.width + p * 2, h: r.height + p * 2 };
     } catch (_) { return null; }
@@ -300,6 +395,14 @@
     } catch (_) { return null; }
   }
 
+  /* شرط need: عنصر واحد على الأقل موجود وغير مخفي بالصلاحيات (hidden) — بغض النظر عن موضعه في الشاشة */
+  function needOk(need) {
+    const list = Array.isArray(need) ? need : [need];
+    return list.some((s) => {
+      try { const el = document.querySelector(s); return !!el && !el.hidden && !(el.closest && el.closest('[hidden]')); } catch (_) { return false; }
+    });
+  }
+
   /* أول باب/مشب في التصميم — لمفتاح until وشروط skipIf */
   function firstOpening(dz) {
     try {
@@ -319,7 +422,8 @@
   class Tour {
     constructor(opts) {
       this.key = opts.key;              // مفتاح التفضيل الفريد
-      this.steps = opts.steps || [];
+      this.ver = opts.ver || 0;         // نسخة المحتوى: جولة جديدة تُعرض مرة أخرى لمن رأى القديمة
+      this.steps = (opts.steps || []).filter((st) => !st.manualOnly);
       this.title = opts.title || '';
       this.onFinish = opts.onFinish || null;
       this.i = 0;
@@ -335,10 +439,12 @@
 
     shouldShow() {
       // نعرض مرة واحدة فقط لكل مفتاح؛ الاختيار «عدم الإظهار» أو «تخطي» يوقفها
-      return LS.get('mj_help_seen_' + this.key) !== '1';
+      return LS.get(this.seenKey()) !== '1';
     }
 
-    markSeen() { LS.set('mj_help_seen_' + this.key, '1'); }
+    seenKey() { return 'mj_help_seen_' + this.key + (this.ver ? '@v' + this.ver : ''); }
+
+    markSeen() { LS.set(this.seenKey(), '1'); }
 
     /* حلّ هدف الخطوة: أول مرشح صالح (عنصر ثم منطقة رسم). تُعيد
        {rect, p} أو {rect:null, p} (بطاقة م centered) أو null (تجاوز). */
@@ -359,7 +465,7 @@
               vis = cs ? (cs.display !== 'none' && cs.visibility !== 'hidden') : true;
             } catch (_) { vis = true; }
             const r = vis ? targetRect(el, tg.pad) : null;
-            if (r) return { rect: r, p: tg.p || null, el };
+            if (r) return { rect: r, p: tg.p || null, el, pad: tg.pad };
           }
         }
         if (tg.rect) {
@@ -392,15 +498,16 @@
           '<div class="hj-dim" data-dim="left"></div>',
           '<div class="hj-dim" data-dim="right"></div>',
           '<div class="hj-ring" hidden></div>',
-          '<div class="hj-tour-card" data-side="center">',
+          '<div class="hj-tour-card" data-side="center" aria-live="polite">',
+          '  <div class="hj-prog" aria-hidden="true"><i></i></div>',
           '  <div class="hj-tour-head">',
-          '    <span class="hj-dots" aria-hidden="true"></span>',
           '    <span class="hj-count" aria-hidden="true"></span>',
+          '    <span class="hj-dots" aria-hidden="true"></span>',
           '    <button type="button" class="hj-x" data-hj="close" aria-label="إغلاق الشرح">×</button>',
           '  </div>',
           '  <div class="hj-tour-body"></div>',
           '  <div class="hj-tour-foot">',
-          '    <button type="button" class="hj-btn hj-ghost" data-hj="done">إنهاء الشرح</button>',
+          '    <button type="button" class="hj-btn hj-ghost" data-hj="done">تخطّي الجولة</button>',
           '    <div class="hj-nav">',
           '      <button type="button" class="hj-btn hj-ghost" data-hj="prev">السابق</button>',
           '      <button type="button" class="hj-btn hj-primary" data-hj="next">التالي</button>',
@@ -496,7 +603,14 @@
     render() {
       const step = this.steps[this.i];
       const body = $('.hj-tour-body', this.el);
+      const card = this.el.querySelector('.hj-tour-card');
+      if (card) {
+        card.classList.toggle('hj-hero', !!step.hero);
+        // حركة دخول لكل خطوة (إعادة تشغيل الحركة بإزالة الصنف ثم إعادته)
+        card.classList.remove('hj-in'); void card.offsetWidth; card.classList.add('hj-in');
+      }
       body.innerHTML =
+        (step.hero ? '<span class="hj-hero-ic" aria-hidden="true">' + (this.i === 0 ? '👋' : '✓') + '</span>' : '') +
         '<h3 class="hj-h">' + esc(step.h) + '</h3>' +
         '<p class="hj-p">' + esc(this._body || step.p) + '</p>' +
         (step.tip ? '<p class="hj-tip">💡 ' + esc(step.tip) + '</p>' : '') +
@@ -508,11 +622,16 @@
         '<i class="' + (idx === this.i ? 'on' : '') + '"></i>').join('');
       const count = $('.hj-count', this.el);
       if (count) count.textContent = (this.i + 1) + ' من ' + this.steps.length;
+      const prog = $('.hj-prog i', this.el);
+      if (prog) prog.style.width = Math.round(((this.i + 1) / Math.max(1, this.steps.length)) * 100) + '%';
 
       // أزرار التنقل حسب الموضع
       const isLast = this.i === this.steps.length - 1;
       $('[data-hj="prev"]', this.el).disabled = this.i === 0;
-      $('[data-hj="next"]', this.el).textContent = isLast ? 'تم' : 'التالي';
+      $('[data-hj="next"]', this.el).textContent = isLast ? 'تم' : (this.i === 0 && step.hero ? 'ابدأ الجولة' : 'التالي');
+      // الختام: لا معنى لزر «تخطّي» في آخر خطوة
+      const skip = $('[data-hj="done"]', this.el);
+      if (skip) skip.hidden = isLast;
       this.paintTick();
     }
 
@@ -526,7 +645,10 @@
         const dims = wrap.querySelectorAll('.hj-dim');
         const ring = wrap.querySelector('.hj-ring');
         const card = wrap.querySelector('.hj-tour-card');
-        const r = this._rect;
+        if (this._tgEl && this._rect) { const m = targetRect(this._tgEl, this._tgPad); if (m) this._rect = m; }
+        // الفتحة تُحصر داخل الشاشة (هامش العنصر عند حافة الشاشة كان يخرج منها)
+        const r = this._rect ? clipRect(this._rect, vw, vh) : null;
+        wrap.classList.toggle('hj-center', !r || vw < 2 || vh < 2);
         if (!r || vw < 2 || vh < 2) {
           // بلا هدف: شريط واحد يغطي الشاشة (لا تكديس للشفافية)
           dims.forEach((d) => {
@@ -560,6 +682,7 @@
         }
         if (card) {
           card.dataset.side = 'center';
+          delete card.dataset.sheet;
           card.style.visibility = 'hidden';
           card.style.left = '0px';
           card.style.top = '0px';
@@ -572,8 +695,10 @@
             card.dataset.side = 'sheet';
             card.style.left = '8px';
             card.style.right = '8px';
-            card.style.top = 'auto';
-            card.style.bottom = '8px';
+            const low = r.y + r.h / 2 > vh / 2;
+            card.dataset.sheet = low ? 'top' : 'bottom';
+            card.style.top = low ? 'max(8px, env(safe-area-inset-top, 0px))' : 'auto';
+            card.style.bottom = low ? 'auto' : 'max(8px, env(safe-area-inset-bottom, 0px))';
             card.style.width = 'auto';
             return;
           }
@@ -594,6 +719,9 @@
       const step = this.steps[this.i];
       const tg = this.resolveTarget(step);
       this._rect = tg && tg.rect ? tg.rect : null;
+      // العنصر نفسه يُعاد قياسه عند كل تموضع: القياس قبل التمرير إليه كان يضع الفتحة فوق عنصر آخر
+      this._tgEl = tg && tg.el ? tg.el : null;
+      this._tgPad = tg ? tg.pad : null;
       this._body = (tg && tg.p) || null;
       // مرّر العنصر إلى منتصف الشاشة قبل القياس (بلا حركة ناعمة لضمان الاستقرار)
       try {
@@ -626,6 +754,7 @@
       if (Tour.active && Tour.active !== this) {
         try { Tour.active.finish(false); } catch (_) {}
       }
+      this.steps = this.steps.filter((st) => !st.need || needOk(st.need));
       this.build();
       this._body = null;
       // ابدأ من أول خطوة قابلة للحل (وإلا بطاقة المنتصف لأول خطوة)
@@ -702,7 +831,10 @@
   class Manual {
     constructor(key) {
       this.key = key;
-      this.cfg = CONTENT[key] || CONTENT.customer;
+      const base = CONTENT[key] || CONTENT.customer;
+      // الدليل يعرض الشرح فقط: خطوات الترحيب/الختام الخاصة بالجولة لا تُعرض كأقسام
+      this.cfg = Object.assign({}, base, { steps: base.steps.filter((st) => !st.tourOnly) });
+      this.base = base;
       this.el = null;
       this.section = 0;
     }
@@ -785,7 +917,7 @@
     /** إعادة تشغيل الشرح الأول يدويًا (يبقى التفضيل المحفوظ كما هو) */
     replay() {
       this.close();
-      const tour = new Tour({ key: this.key, steps: this.cfg.steps, title: this.cfg.title });
+      const tour = new Tour({ key: this.key, steps: this.base.steps, title: this.cfg.title, ver: this.base.v });
       tour.open();
     }
   }
@@ -819,7 +951,7 @@
       const rb = typeof opts.replayBtn === 'string' ? $(opts.replayBtn) : opts.replayBtn;
       if (rb && !rb.dataset.hjBound) {
         rb.addEventListener('click', () => {
-          const tour = new Tour({ key, steps: cfg.steps, title: cfg.title });
+          const tour = new Tour({ key, steps: cfg.steps, title: cfg.title, ver: cfg.v });
           tour.open();
         });
         rb.dataset.hjBound = '1';
@@ -828,7 +960,7 @@
 
     // تشغيل الشرح الأول تلقائيًا (مرة واحدة)
     if (opts.auto !== false) {
-      const tour = new Tour({ key, steps: cfg.steps, title: cfg.title });
+      const tour = new Tour({ key, steps: cfg.steps, title: cfg.title, ver: cfg.v });
       // نؤجّل التشغيل حتى يجهز DOM (خصوصًا في صفحات العميل ذات الواجهات المتبدّلة)
       const start = () => { if (tour.shouldShow()) tour.open(); };
       if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', start);
@@ -846,7 +978,7 @@
     } catch (_) {}
   }
 
-  const API = { init, manualOpen, context, CONTENT, Tour, Manual, version: '1.1' };
+  const API = { init, manualOpen, context, CONTENT, Tour, Manual, version: '2.0' };
   if (typeof module !== 'undefined' && module.exports) module.exports = API;
   global.MajlisHelp = API;
 })(typeof window !== 'undefined' ? window : this);

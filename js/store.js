@@ -538,7 +538,7 @@
     },
 
     async saveUser(data, password) {
-      const r = await this.api('POST', '/api/users', { id: data.id || null, name: data.name, username: data.username, password: password || '', role: data.role, active: data.active !== false, parentId: data.parentId || null, rate: data.rate, parentRate: data.parentRate });
+      const r = await this.api('POST', '/api/users', { id: data.id || null, name: data.name, username: data.username, password: password || '', role: data.role, active: data.active !== false, parentId: data.parentId || null, rate: data.rate, parentRate: data.parentRate, ...(data.wa !== undefined ? { wa: data.wa } : {}) });
       this.db.users = r.users || this.db.users;
       if (this.user && data.id === this.user.id) this.user = Object.assign({}, this.user, { name: data.name, username: data.username, role: data.role });
     },

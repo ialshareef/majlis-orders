@@ -289,3 +289,10 @@ CREATE TABLE IF NOT EXISTS wa_log (
 );
 CREATE INDEX IF NOT EXISTS wa_log_send_idx ON wa_log(send_id);
 CREATE INDEX IF NOT EXISTS wa_log_created_idx ON wa_log(created_at);
+
+-- ربط مستلمي واتساب بالمستخدمين (الهجرة 006): مستلم واحد على الأكثر لكل مستخدم.
+-- الرقم والأحداث في صف wa_recipients نفسه؛ هذا الجدول يحفظ الربط فقط (حذف المستخدم يحذف مستلمه في الخادم).
+CREATE TABLE IF NOT EXISTS wa_recipient_users (
+  recipient_id TEXT PRIMARY KEY,
+  user_id      TEXT NOT NULL UNIQUE
+);

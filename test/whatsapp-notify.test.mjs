@@ -516,7 +516,7 @@ const evs = (type) => rows(env, 'SELECT * FROM wa_events WHERE type = ? ORDER BY
 {
   const norm = (t) => t.replace(/--[^\n]*/g, '').replace(/\s+/g, ' ').trim();
   const mig = M005.slice(M005.indexOf('CREATE TABLE IF NOT EXISTS wa_recipients'));
-  const sch = SCHEMA.slice(SCHEMA.indexOf('CREATE TABLE IF NOT EXISTS wa_recipients'));
+  const sch = SCHEMA.slice(SCHEMA.indexOf('CREATE TABLE IF NOT EXISTS wa_recipients'), SCHEMA.indexOf('-- ربط مستلمي واتساب بالمستخدمين (الهجرة 006)'));
   ok(norm(mig) === norm(sch), 'migration: تعريفات 005 مطابقة حرفياً لما في schema.sql');
   for (const f of ['js/wa-notify.js', 'test/_d1-sqlite.mjs', 'test/whatsapp-ui-e2e.mjs', 'worker/migrations/005_whatsapp_notifications.sql']) ok(fs.existsSync(path.join(root, f)), 'files: الملف المذكور في التقرير موجود: ' + f);
 }

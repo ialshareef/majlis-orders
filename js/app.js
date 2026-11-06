@@ -4857,6 +4857,21 @@ function docTitle(order) {
     const u = user || { name: '', username: '', role: 'staff', active: true };
     // قسم الصلاحيات لمن يملك permissions.manage فقط (الخادم يرفض غيره بـ 403 على أي حال)
     const canPerms = Store.can('permissions.manage');
+    /* رقم واتساب للمستخدم: يربطه بقائمة «المستلمين» فيُستخدم رقمه عند إرسال التنبيهات.
+       يظهر لمن يدير إشعارات واتساب ويراها (القائمة تحمل الرقم المرتبط لهذا الصنف فقط). */
+    const WAN = window.WaNotify;
+    const canWa = !!WAN && Store.isRemote && can('notifications.whatsapp.manage') && can('notifications.whatsapp.view');
+    const uw = (u && u.wa) || null;
+    const waSec = canWa ? `<div class="perm-section wa-user-sec" id="uWaSec">
+        <div class="perm-head"><b>تنبيهات واتساب</b><span class="hint">اختياري</span></div>
+        <label>رقم واتساب <input id="uWaPhone" type="tel" inputmode="tel" class="ltr num" autocomplete="off" placeholder="05XXXXXXXX" value="${esc(uw ? WAN.formatPhone(uw.phone) : '')}" aria-describedby="uWaHint"></label>
+        <p class="hint" id="uWaHint">يُضاف المستخدم إلى «مستلمي التنبيهات» ويُستخدم رقمه عند إرسال تنبيه واتساب. اتركه فارغاً لإزالته من المستلمين.</p>
+        <div class="wa-user-events" role="group" aria-label="التنبيهات التي تصله تلقائياً">
+          <span class="hint">التنبيهات التي يُختار لها تلقائياً:</span>
+          ${WAN.TYPES.map((t) => `<label class="check"><input type="checkbox" data-uwaev="${t}"${uw && uw.events.includes(t) ? ' checked' : ''}> ${esc(WAN.TYPE_ICONS[t] || '')} ${esc(WAN.TYPE_LABELS[t])}</label>`).join('')}
+        </div>
+        ${uw && !uw.active ? '<p class="hint">التنبيهات لهذا الرقم <b>معطّلة</b> حالياً — فعّلها من «إشعارات واتساب ← المستلمون».</p>' : ''}
+      </div>` : '';
     openModal(user ? 'تعديل مستخدم' : 'مستخدم جديد', `
       <label>الاسم الكامل <input id="uName" value="${esc(u.name)}"></label>
       <div class="row2">
@@ -4870,6 +4885,7 @@ function docTitle(order) {
       </div>
       ${u.isOwner ? '<p class="hint">حساب <b>مالك النظام</b>: دوره «مدير» ونشِط دائماً — لا يُخفَّض ولا يُعطَّل ولا يُحذف.</p>' : ''}
       ${(!can('admin.core') && !u.isOwner) ? '<p class="hint">إنشاء المديرين وتعديل حساباتهم لمالك النظام وحده.</p>' : ''}
+      ${waSec}
       ${canPerms ? `<div class="perm-section" id="uPermSection">
         <div class="perm-head"><b>الصلاحيات</b><span class="hint" id="uPermRoleHint"></span><span class="perm-dirty" id="uPermDirty" hidden>تعديلات غير محفوظة</span></div>
         <p class="hint" id="uPermNewHint"${user ? ' hidden' : ''}>احفظ المستخدم أولاً، ثم عدّل صلاحياته من نافذة التعديل.</p>
@@ -4919,10 +4935,21 @@ function docTitle(order) {
         if (user && user.id === currentUser.id && (role !== 'admin' || !active) && db().users.filter((x) => x.role === 'admin' && x.active !== false && x.id !== user.id).length === 0) {
           err.textContent = 'لا يمكن إزالة صلاحية آخر مدير أو إيقافه'; return;
         }
+        // رقم واتساب: نفس قواعد الخادم (waNormalizePhone) — يُرسل فقط حين يظهر القسم
+        let waBody;
+        if (canWa) {
+          const raw = $('#uWaPhone', b).value.trim();
+          const ev = $$('[data-uwaev]', b).filter((c) => c.checked).map((c) => c.dataset.uwaev);
+          if (raw) {
+            const np = WAN.normalizePhone(raw);
+            if (np.error) { err.textContent = 'رقم واتساب: ' + np.error; $('#uWaPhone', b).focus({ preventScroll: true }); return; }
+          } else if (ev.length) { err.textContent = 'اكتب رقم واتساب أولاً، أو ألغِ اختيار التنبيهات'; $('#uWaPhone', b).focus({ preventScroll: true }); return; }
+          waBody = { phone: raw, events: ev };
+        }
         const saveBtn = $('#uSave', b);
         saveBtn.disabled = true; saveBtn.setAttribute('aria-busy', 'true');
         try {
-          await Store.saveUser({ id: user ? user.id : null, name, username, role, active }, pass);
+          await Store.saveUser({ id: user ? user.id : null, name, username, role, active, wa: waBody }, pass);
         } catch (e) {
           saveBtn.disabled = false; saveBtn.removeAttribute('aria-busy');
           err.textContent = (e && e.message) || 'تعذّر حفظ المستخدم. تحقق من الاتصال وحاول مرة أخرى.'; return;
@@ -5202,7 +5229,7 @@ function docTitle(order) {
         ${st.recipients.length ? `<div class="table-wrap"><table class="table responsive" id="waRcTable">
           <thead><tr><th>الاسم</th><th>الرقم</th><th>التنبيهات التي تصله</th><th>الحالة</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
           <tbody>${st.recipients.map((r) => `<tr class="${r.active ? '' : 'wa-off'}">
-            <td data-label="الاسم"><b>${esc(r.name)}</b></td>
+            <td data-label="الاسم"><b>${esc(r.name)}</b>${r.user ? ` <span class="badge wa-user-badge" title="الرقم مرتبط بحساب المستخدم ويُعدَّل أيضاً من نافذة تعديله">${icon('user')} مستخدم</span>` : ''}</td>
             <td data-label="الرقم">${waPhoneHtml(r.phone)}</td>
             <td data-label="التنبيهات">${r.events.length ? r.events.map((t) => `<span class="badge">${esc(WA.TYPE_LABELS[t])}</span>`).join(' ') : '<span class="hint">لا شيء</span>'}</td>
             <td data-label="الحالة">${man ? `<label class="check"><input type="checkbox" data-waactive="${esc(r.id)}"${r.active ? ' checked' : ''}> ${r.active ? 'مفعّل' : 'معطّل'}</label>` : (r.active ? 'مفعّل' : 'معطّل')}</td>

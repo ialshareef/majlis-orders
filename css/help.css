@@ -24,16 +24,26 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
   transition: opacity .2s var(--ease, ease), visibility .2s;
 }
 .hj-tour.show, .hj-manual.show { opacity: 1; visibility: visible; }
-.hj-dim {
-  position: absolute; background: rgba(16, 11, 8, .58);
-}
+/* التعتيم: الحلقة نفسها تظلّل كل الصفحة حولها بظل ممتد (فتحة بزوايا دائرية تنزلق بنعومة بين الخطوات).
+   الشرائط الأربع شفافة وتبقى لالتقاط النقر خارج الفتحة فقط، واللمس يمرّ من الفتحة إلى العنصر. */
+.hj-tour { --hj-scrim: rgba(12, 9, 6, .76); }
+.hj-dim { position: absolute; background: transparent; }
+/* خطوة بلا هدف (الترحيب والختام): تعتيم كامل مع ضبابية خفيفة للخلفية */
+.hj-tour.hj-center .hj-dim[data-dim="top"] { background: var(--hj-scrim); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
 .hj-ring {
   position: absolute; pointer-events: none;
   border: 2px solid var(--accent-fill, #C97B2D);
-  border-radius: 12px;
-  box-shadow: 0 0 0 3px rgba(255, 255, 255, .55), 0 0 22px rgba(201, 123, 45, .75);
-  transition: left .25s var(--ease, ease), top .25s var(--ease, ease), width .25s var(--ease, ease), height .25s var(--ease, ease);
+  border-radius: 14px;
+  box-shadow: 0 0 0 9999px var(--hj-scrim), 0 0 0 5px rgba(201, 123, 45, .28), 0 0 26px rgba(201, 123, 45, .55);
+  transition: left .32s cubic-bezier(.22, .8, .25, 1), top .32s cubic-bezier(.22, .8, .25, 1), width .32s cubic-bezier(.22, .8, .25, 1), height .32s cubic-bezier(.22, .8, .25, 1);
 }
+/* نبض هادئ حول الفتحة يلفت النظر للعنصر المشروح */
+.hj-ring::after {
+  content: ''; position: absolute; inset: -2px; border-radius: inherit;
+  border: 2px solid var(--accent-fill, #C97B2D);
+  animation: hjPulse 1.9s ease-out infinite;
+}
+@keyframes hjPulse { 0% { opacity: .75; transform: scale(1); } 80%, 100% { opacity: 0; transform: scale(1.08); } }
 
 .hj-tour-card, .hj-manual-card {
   background: var(--surface);
@@ -75,6 +85,41 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
 .hj-count { font-size: .8rem; color: var(--ink-3); font-variant-numeric: tabular-nums; white-space: nowrap; }
 .hj-done-tick { margin: 0; font-size: .85rem; font-weight: 700; color: #2E7D32; }
 .hj-manual-card { max-width: 560px; }
+
+/* ---------- بطاقة الجولة: شريط تقدّم + عدّاد + حركة دخول لكل خطوة ---------- */
+.hj-tour .hj-tour-card {
+  border-radius: 16px; overflow: hidden;
+  box-shadow: 0 26px 70px rgba(0, 0, 0, .38), 0 3px 10px rgba(0, 0, 0, .14);
+}
+.hj-tour .hj-tour-card[data-side="center"] { left: 50%; top: 50%; }
+.hj-tour.show .hj-tour-card[data-side="center"] { transform: translate(-50%, -50%); }
+.hj-tour .hj-tour-card[data-side="sheet"] { max-height: 52vh; border-radius: 18px; }
+.hj-tour .hj-tour-card.hj-in { animation: hjIn .3s cubic-bezier(.22, .8, .25, 1); }
+@keyframes hjIn { from { opacity: 0; translate: 0 8px; } to { opacity: 1; translate: 0 0; } }
+.hj-prog { height: 4px; background: var(--line-soft); flex: none; }
+.hj-prog i { display: block; height: 100%; width: 0; background: linear-gradient(90deg, var(--accent-fill, #C97B2D), var(--accent, #A8641F)); border-radius: 0 4px 4px 0; transition: width .35s cubic-bezier(.22, .8, .25, 1); }
+.hj-tour .hj-dots { display: none; }
+.hj-tour .hj-tour-head { border-bottom: 0; padding: 14px 16px 0 20px; padding-inline-start: 20px; position: static; }
+.hj-tour .hj-count {
+  font-size: .76rem; font-weight: 700; color: var(--accent, #A8641F);
+  background: var(--accent-soft, rgba(201, 123, 45, .12)); border-radius: 999px; padding: 4px 11px;
+}
+.hj-tour .hj-tour-body { padding: 12px 20px 6px; gap: 8px; }
+.hj-tour .hj-h { font-size: 1.14rem; letter-spacing: -.01em; }
+.hj-tour .hj-p { font-size: .93rem; line-height: 1.8; }
+.hj-tour .hj-tip { font-size: .82rem; }
+.hj-tour .hj-tour-foot { border-top: 0; margin-top: 4px; padding: 12px 20px 14px; }
+.hj-tour .hj-nofilter { padding: 0 20px 14px; font-size: .78rem; }
+.hj-tour .hj-btn.hj-primary { min-width: 104px; box-shadow: 0 6px 16px rgba(201, 123, 45, .32); }
+/* الترحيب والختام: بطاقة أعرض في المنتصف بأيقونة */
+.hj-tour .hj-tour-card.hj-hero { width: min(420px, calc(100vw - 24px)); text-align: center; }
+.hj-tour .hj-hero .hj-tour-body { justify-items: center; padding-top: 6px; }
+.hj-hero-ic {
+  width: 60px; height: 60px; border-radius: 50%; display: grid; place-items: center; font-size: 1.7rem;
+  background: var(--accent-soft, rgba(201, 123, 45, .12)); border: 1px solid var(--accent-line, rgba(201, 123, 45, .35));
+}
+.hj-tour .hj-hero .hj-h { font-size: 1.3rem; }
+.hj-tour .hj-hero .hj-tip { text-align: start; }
 
 /* --------------------------------- الرأس --------------------------------- */
 .hj-tour-head {
@@ -237,7 +282,8 @@ html.hj-lock, html.hj-lock body { overflow: hidden; }
 
 /* تقليل الحركة لمن يفضّل ذلك */
 @media (prefers-reduced-motion: reduce) {
-  .hj-tour, .hj-manual, .hj-tour-card, .hj-manual-card, .hj-dots i, .hj-btn, .hj-ring { transition: none; }
+  .hj-tour, .hj-manual, .hj-tour-card, .hj-manual-card, .hj-dots i, .hj-btn, .hj-ring, .hj-prog i { transition: none; }
+  .hj-ring::after, .hj-tour .hj-tour-card.hj-in { animation: none; }
 }
 
 /* الطباعة: لا نطبع نوافذ الشرح */

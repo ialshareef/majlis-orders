@@ -3540,3 +3540,10 @@ body.portal { background: var(--bg); }
 }
 /* زر «تطبيق» بجوار حقلي التاريخ في لوحة المالك بنفس ارتفاعهما */
 .owner-custom .btn { min-height: var(--tb-h); }
+
+/* رقم واتساب في نافذة المستخدم + شارة «مستخدم» في قائمة المستلمين */
+.wa-user-sec { display: grid; gap: 8px; }
+.wa-user-events { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; }
+.wa-user-events > .hint { flex: 1 1 100%; margin: 0; }
+.wa-user-badge { display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
+.wa-user-badge svg { width: 12px; height: 12px; }

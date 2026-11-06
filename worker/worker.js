@@ -355,7 +355,7 @@ async function route(request, env, url) {
     await env.DB.prepare("UPDATE counters SET value = ? WHERE key = 'order_no'").bind(Math.max(Number(m.m) || 1000, 1000)).run();
     return { ok: true };
   }
-  if (path === '/api/users' && method === 'GET') { requirePerm(user, 'users.view'); return { users: await listUsers(env) }; }
+  if (path === '/api/users' && method === 'GET') { requirePerm(user, 'users.view'); return { users: await listUsers(env, user) }; }
   if (path === '/api/users' && method === 'POST') { if (body && body.id) requirePerm(user, 'users.edit'); else requirePerm(user, 'users.create'); return saveUser(env, user, body, token); }
   // --- صلاحيات المستخدم التفصيلية (مدير بصلاحيات permissions.manage) ---
   const mPerms = path.match(/^\/api\/users\/([^/]+)\/permissions$/);
@@ -1505,14 +1505,101 @@ function waOrderEvents(prev, rec, number, cur, user, ts) {
 }
 
 async function waRecipients(env) {
-  const [r, m] = await Promise.all([
+  const [r, m, links] = await Promise.all([
     env.DB.prepare('SELECT * FROM wa_recipients ORDER BY created_at').all(),
     env.DB.prepare('SELECT event_type, recipient_id FROM wa_event_recipients').all(),
+    waUserLinks(env),
   ]);
   const ev = new Map();
   (m.results || []).forEach((x) => { if (!ev.has(x.recipient_id)) ev.set(x.recipient_id, []); ev.get(x.recipient_id).push(x.event_type); });
+  const byRid = new Map(links.map((l) => [l.recipient_id, l.user_id]));
+  let names = new Map();
+  if (byRid.size) {
+    const u = await env.DB.prepare('SELECT id, name FROM users').all().catch(() => ({ results: [] }));
+    names = new Map((u.results || []).map((x) => [x.id, x.name]));
+  }
   return (r.results || []).map((x) => ({ id: x.id, name: x.name, phone: x.phone, active: x.active === 1 || x.active === true,
-    events: WA_TYPES.filter((t) => (ev.get(x.id) || []).includes(t)), created_at: x.created_at, updated_at: x.updated_at }));
+    events: WA_TYPES.filter((t) => (ev.get(x.id) || []).includes(t)), created_at: x.created_at, updated_at: x.updated_at,
+    // مستلم مرتبط بحساب مستخدم: رقمه يُدار أيضاً من نافذة تعديل المستخدم
+    user: byRid.has(x.id) ? { id: byRid.get(x.id), name: names.get(byRid.get(x.id)) || '' } : null }));
+}
+
+/* ===== ربط المستلمين بالمستخدمين (الهجرة 006: جدول wa_recipient_users) =====
+   مستلم واحد على الأكثر لكل مستخدم. الرقم والأحداث في صف المستلم نفسه (مصدر واحد للحقيقة)،
+   فيستعمله الإرسال كأي مستلم آخر. القراءة مرنة: غياب الجدول (قاعدة لم تُحدَّث) = لا روابط. */
+async function waUserLinks(env) {
+  try { return (await env.DB.prepare('SELECT recipient_id, user_id FROM wa_recipient_users').all()).results || []; }
+  catch (_) { return []; }
+}
+
+/** عبارات ربط رقم واتساب بمستخدم عند حفظه (تُنفَّذ في دفعة حفظ المستخدم نفسها — ذرّياً).
+    wa غير مُرسل أو المنفّذ بلا notifications.whatsapp.manage: مزامنة الاسم وإيقاف التنبيهات عند تعطيل الحساب فقط. */
+async function waUserLinkStmts(env, me, userId, userName, userActive, wa) {
+  const links = await waUserLinks(env);
+  const link = links.find((l) => l.user_id === userId) || null;
+  const t = now();
+  const nm = String(userName || '').replace(/\s+/g, ' ').trim().slice(0, WA_NAME_MAX);
+  const st = [];
+  const dropRecipient = (rid) => [
+    env.DB.prepare('DELETE FROM wa_event_recipients WHERE recipient_id = ?').bind(rid),
+    env.DB.prepare('DELETE FROM wa_recipient_users WHERE recipient_id = ?').bind(rid),
+    env.DB.prepare('DELETE FROM wa_recipients WHERE id = ?').bind(rid),
+  ];
+  if (wa === undefined || wa === null || !waCan(me, 'manage')) {
+    if (link && userId) {
+      st.push(userActive
+        ? env.DB.prepare('UPDATE wa_recipients SET name = ?, updated_at = ? WHERE id = ?').bind(nm, t, link.recipient_id)
+        : env.DB.prepare('UPDATE wa_recipients SET name = ?, active = 0, updated_at = ? WHERE id = ?').bind(nm, t, link.recipient_id));
+    }
+    return st;
+  }
+  const raw = String((wa && wa.phone) || '').trim();
+  if (!raw) { if (link) st.push(...dropRecipient(link.recipient_id)); return st; }
+  const p = waNormalizePhone(raw);
+  if (p.error) throw new HttpError(400, 'رقم واتساب: ' + p.error);
+  const events = waCleanEvents(Array.isArray(wa.events) ? wa.events : []) || [];
+  let rid = link ? link.recipient_id : null;
+  const dup = await env.DB.prepare('SELECT id, name FROM wa_recipients WHERE phone = ?').bind(p.phone).first();
+  if (dup && dup.id !== rid) {
+    const owner = links.find((l) => l.recipient_id === dup.id);
+    if (owner && owner.user_id !== userId) throw new HttpError(409, 'رقم واتساب مسجّل لمستخدم آخر («' + dup.name + '»)');
+    // مستلم قائم بالرقم نفسه وغير مرتبط: يُربط بهذا المستخدم بدل إنشاء مستلم مكرر
+    if (rid) st.push(...dropRecipient(rid));
+    rid = dup.id;
+    st.push(env.DB.prepare('INSERT INTO wa_recipient_users (recipient_id, user_id) VALUES (?, ?)').bind(rid, userId));
+  }
+  const active = userActive && wa.active !== false ? 1 : 0;
+  if (!rid) {
+    const n = await env.DB.prepare('SELECT COUNT(*) AS n FROM wa_recipients').first();
+    if (Number(n && n.n) >= WA_MAX_RECIPIENTS) throw new HttpError(400, 'وصلت قائمة مستلمي واتساب إلى الحد الأقصى (' + WA_MAX_RECIPIENTS + ') — احذف مستلماً أولاً');
+    rid = uid();
+    st.push(env.DB.prepare('INSERT INTO wa_recipients (id, name, phone, active, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)').bind(rid, nm, p.phone, active, me.id, t, t));
+    st.push(env.DB.prepare('INSERT INTO wa_recipient_users (recipient_id, user_id) VALUES (?, ?)').bind(rid, userId));
+  } else {
+    st.push(env.DB.prepare('UPDATE wa_recipients SET name = ?, phone = ?, active = ?, updated_at = ? WHERE id = ?').bind(nm, p.phone, active, t, rid));
+  }
+  st.push(env.DB.prepare('DELETE FROM wa_event_recipients WHERE recipient_id = ?').bind(rid));
+  events.forEach((ev) => st.push(env.DB.prepare('INSERT OR IGNORE INTO wa_event_recipients (event_type, recipient_id) VALUES (?, ?)').bind(ev, rid)));
+  return st;
+}
+
+/** رقم واتساب لكل مستخدم مرتبط — يُرفق بقائمة المستخدمين لمن يملك صلاحية عرض الإشعارات فقط */
+async function waUsersInfo(env) {
+  const links = await waUserLinks(env);
+  if (!links.length) return new Map();
+  const [r, m] = await Promise.all([
+    env.DB.prepare('SELECT id, phone, active FROM wa_recipients').all(),
+    env.DB.prepare('SELECT event_type, recipient_id FROM wa_event_recipients').all(),
+  ]);
+  const rows = new Map((r.results || []).map((x) => [x.id, x]));
+  const out = new Map();
+  links.forEach((l) => {
+    const x = rows.get(l.recipient_id);
+    if (!x) return;
+    const ev = (m.results || []).filter((e) => e.recipient_id === x.id).map((e) => e.event_type);
+    out.set(l.user_id, { recipientId: x.id, phone: x.phone, active: x.active === 1 || x.active === true, events: WA_TYPES.filter((t) => ev.includes(t)) });
+  });
+  return out;
 }
 
 async function waState(env, user) {
@@ -1595,8 +1682,10 @@ async function waDeleteRecipient(env, user, id) {
   const row = await env.DB.prepare('SELECT id FROM wa_recipients WHERE id = ?').bind(id).first();
   if (!row) throw new HttpError(404, 'المستلم غير موجود');
   // السجل يحتفظ بالاسم والرقم نصّاً (لا يُحذف تاريخ الإرسال مع المستلم)
+  const unlink = (await waUserLinks(env)).some((l) => l.recipient_id === id);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM wa_event_recipients WHERE recipient_id = ?').bind(id),
+    ...(unlink ? [env.DB.prepare('DELETE FROM wa_recipient_users WHERE recipient_id = ?').bind(id)] : []),
     env.DB.prepare('DELETE FROM wa_recipients WHERE id = ?').bind(id),
   ]);
   return { ok: true };
@@ -2290,7 +2379,7 @@ async function bootstrap(env, user) {
   }
   // قائمة المستخدمين لمن يملك users.view (لا الدور). نسب العمولة للمدير وحده.
   if (hasPerm(user, 'users.view', user.permissions)) {
-    const users = await listUsers(env);
+    const users = await listUsers(env, user);
     out.users = admin ? users : users.map((u) => ({ ...u, rate: null, parentRate: null }));
   }
   // للمديرين: هل حُدِّد مالك النظام؟ (الواجهة تنبّه إن لم يُضبط OWNER_USER_ID أو كان غير صالح)
@@ -3217,10 +3306,13 @@ async function linkVisits(env) {
 
 
 
-async function listUsers(env) {
+async function listUsers(env, actor) {
   const r = await env.DB.prepare('SELECT id, username, name, role, active, created_at, parent_id, rate, parent_rate FROM users ORDER BY created_at').all();
   const ownerId = ownerIdOf(env);
+  // أرقام واتساب المرتبطة تظهر فقط لمن يملك صلاحية عرض إشعارات واتساب
+  const wa = actor && waCan(actor, 'view') ? await waUsersInfo(env).catch(() => new Map()) : null;
   return r.results.map((u) => ({
+    ...(wa ? { wa: wa.get(u.id) || null } : {}),
     id: u.id, username: u.username, name: u.name, role: u.role, active: !!u.active, createdAt: u.created_at,
     isOwner: !!ownerId && String(u.id) === ownerId && u.role === 'admin',
     parentId: u.parent_id || null,
@@ -3286,8 +3378,12 @@ async function saveUser(env, me, body, myToken) {
 
   if (!body.id) {
     validatePassword(password, username);
-    await env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at, parent_id, rate, parent_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
-      .bind(uid(), username, name, await hashPassword(password), role, active ? 1 : 0, now(), parentId, rate, parentRate).run();
+    const newId = uid();
+    const waSt = await waUserLinkStmts(env, me, newId, name, active, body.wa);
+    const ins = env.DB.prepare('INSERT INTO users (id, username, name, password_hash, role, active, created_at, parent_id, rate, parent_rate) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(newId, username, name, await hashPassword(password), role, active ? 1 : 0, now(), parentId, rate, parentRate);
+    if (waSt.length) await env.DB.batch([ins, ...waSt]).catch(waDupErr);
+    else await ins.run();
   } else {
     const admins = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").bind(body.id).first();
     if (Number(admins.n) === 0 && (role !== 'admin' || !active)) throw new HttpError(400, 'لا يمكن إزالة صلاحية آخر مدير أو إيقافه');
@@ -3297,9 +3393,10 @@ async function saveUser(env, me, body, myToken) {
     else stmts.push(env.DB.prepare('UPDATE users SET name = ?, username = ?, role = ?, active = ?, parent_id = ?, rate = ?, parent_rate = ? WHERE id = ?').bind(name, username, role, active ? 1 : 0, parentId, rate, parentRate, body.id));
     // إنهاء الجلسات الأخرى عند تغيير كلمة المرور أو الإيقاف
     if (password || !active) stmts.push(env.DB.prepare('DELETE FROM sessions WHERE user_id = ? AND token <> ?').bind(body.id, myToken || ''));
-    await env.DB.batch(stmts);
+    stmts.push(...(await waUserLinkStmts(env, me, body.id, name, active, body.wa)));
+    await env.DB.batch(stmts).catch(waDupErr);
   }
-  return { ok: true, users: await listUsers(env) };
+  return { ok: true, users: await listUsers(env, me) };
 }
 
 async function deleteUser(env, me, id) {
@@ -3311,11 +3408,18 @@ async function deleteUser(env, me, id) {
   if (target && target.role === 'admin' && !(me && me.isOwner === true)) throw new HttpError(403, 'حذف المديرين لمالك النظام وحده');
   const admins = await env.DB.prepare("SELECT COUNT(*) AS n FROM users WHERE role = 'admin' AND active = 1 AND id <> ?").bind(id).first();
   if (Number(admins.n) === 0) throw new HttpError(400, 'لا يمكن حذف آخر مدير في النظام');
+  const link = (await waUserLinks(env)).find((l) => l.user_id === id);
   await env.DB.batch([
     env.DB.prepare('DELETE FROM sessions WHERE user_id = ?').bind(id),
+    // رقم واتساب المرتبط بالحساب يُحذف معه (لا تصل التنبيهات لحساب محذوف)
+    ...(link ? [
+      env.DB.prepare('DELETE FROM wa_event_recipients WHERE recipient_id = ?').bind(link.recipient_id),
+      env.DB.prepare('DELETE FROM wa_recipient_users WHERE recipient_id = ?').bind(link.recipient_id),
+      env.DB.prepare('DELETE FROM wa_recipients WHERE id = ?').bind(link.recipient_id),
+    ] : []),
     env.DB.prepare('DELETE FROM users WHERE id = ?').bind(id),
   ]);
-  return { ok: true, users: await listUsers(env) };
+  return { ok: true, users: await listUsers(env, me) };
 }
 
 /* ------------------------------ صلاحيات المستخدم التفصيلية (admin) ------------------------------
@@ -3473,6 +3577,8 @@ async function ensureSeed(env) {
   await env.DB.prepare('ALTER TABLE users ADD COLUMN must_change_password INTEGER DEFAULT 0').run().catch(ignoreExistsColumn);
   // مصدر زيارة العميل لكل تصميم (?src=…): عمود نصي اختياري — لا يمس بيانات قائمة (الصفوف القديمة = NULL = «مباشر»)
   await env.DB.prepare('ALTER TABLE customer_designs ADD COLUMN src TEXT').run().catch(ignoreExistsColumn);
+  // ربط مستلمي واتساب بالمستخدمين (الهجرة 006) — جدول جديد مستقل، لا يمس الجداول القائمة
+  await env.DB.prepare('CREATE TABLE IF NOT EXISTS wa_recipient_users (recipient_id TEXT PRIMARY KEY, user_id TEXT NOT NULL UNIQUE)').run().catch(ignoreExistsObject);
   // بوابة العميل: جدول مستقل تماماً عن الطلبات والمستخدمين (idempotent وآمن للتكرار)
   await env.DB.prepare("CREATE TABLE IF NOT EXISTS customer_designs (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, order_id TEXT, order_number INTEGER, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)").run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token)').run();

@@ -28,7 +28,7 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
     const H=window.MajlisHelp;
     t('module exposed (MajlisHelp)', !!H);
     t('API shape', !!(H.init && H.manualOpen && H.context && H.CONTENT && H.Tour && H.Manual), Object.keys(H||{}).join(','));
-    t('version', H.version==='1.1', 'v'+H.version);
+    t('version', H.version==='2.0', 'v'+H.version);
 
     /* ---------- المحتوى ---------- */
     const C=H.CONTENT;
@@ -126,7 +126,7 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
       const title=document.querySelector('.hj-mtitle').textContent;
       const tabsN=document.querySelectorAll('.hj-tabs button').length;
       t('manual for '+k+' opens with its own title', ok && title===H.CONTENT[k].title, 'title="'+title+'" steps='+tabsN);
-      t('  '+k+' tabs match its steps', tabsN===H.CONTENT[k].steps.length);
+      t('  '+k+' tabs match its steps (بلا خطوات الجولة فقط)', tabsN===H.CONTENT[k].steps.filter(function(x){return !x.tourOnly;}).length, tabsN);
       m.close();
     }
 
