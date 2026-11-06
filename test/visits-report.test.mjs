@@ -98,14 +98,14 @@ const V = {
   const r = await call('t-u-own', 'range=custom&from=2026-11-01&to=2026-11-05');
   ok(r.s === 200 && Array.isArray(r.b.visitsDaily) && Array.isArray(r.b.visitorsDaily), 'server: المالك يحصل على visitsDaily وvisitorsDaily', r.s);
   const vd = Object.fromEntries(r.b.visitsDaily.map((x) => [x.day + '/' + x.link, x.n]));
-  ok(vd['2026-11-01/customer'] === 10 && vd['2026-11-01/expanded'] === 2 && vd['2026-11-03/customer'] === 30 && !vd['2026-10-01/customer'], 'server: الزيارات لكل يوم ولكل صفحة ضمن الفترة فقط', vd);
+  ok(vd['2026-11-01/customer'] === 10 && vd['2026-11-01/expanded'] === undefined && vd['2026-11-03/customer'] === 30 && !vd['2026-10-01/customer'], 'server: الزيارات لكل يوم ضمن الفترة فقط، وسجلات الرابط التجريبي الملغى مستبعدة', vd);
   const ud = Object.fromEntries(r.b.visitorsDaily.map((x) => [x.day, x.u]));
   ok(ud['2026-11-01'] === 2 && ud['2026-11-03'] === 1, 'server: الزوار الفريدون يوم 11-01 = 2 (الجهاز الذي فتح الصفحتين يُحتسب مرة)', ud);
-  ok(/^\d{4}-\d{2}-\d{2}$/.test(r.b.visitorsKeptFrom) && r.b.links && r.b.links.customer, 'server: تاريخ بدء حفظ الزوار وأسماء الصفحات');
+  ok(/^\d{4}-\d{2}-\d{2}$/.test(r.b.visitorsKeptFrom) && r.b.links && r.b.links.customer && !r.b.links.expanded, 'server: تاريخ بدء حفظ الزوار وأسماء الصفحات');
   ok((await call('t-u-adm', 'range=d30')).s === 403 && (await call('t-u-st', 'range=d30')).s === 403 && (await call('', 'range=d30')).s === 401, 'server: المدير العادي والموظف ← 403، وبلا جلسة ← 401');
   // التقرير من استجابة الخادم الفعلية
   const rep = Reports.build('visits', base({ from: '2026-11-01', to: '2026-11-05', today: '2026-11-05', visits: Object.assign({ ready: true }, r.b, { visitorsKeptFrom: '2026-10-01' }) }));
-  ok(rep.tables[0].totals.total === 42 && rep.tables[0].totals.visitors === 3 && rep.tables[0].rows.length === 5, 'end-to-end: استجابة الخادم ← تقرير بـ 42 زيارة و3 زوار في 5 أيام', rep.tables[0].totals);
+  ok(rep.tables[0].totals.total === 40 && rep.tables[0].totals.visitors === 3 && rep.tables[0].rows.length === 5, 'end-to-end: استجابة الخادم ← تقرير بـ 40 زيارة (بلا الرابط التجريبي) و3 زوار في 5 أيام', rep.tables[0].totals);
 }
 
 /* ---------------- 3) مصادر الزيارة: الرابط ← الزيارة ← التصميم ← الطلب ← المبيعات ---------------- */

@@ -104,13 +104,12 @@ console.log('== 5) الربط ==');
 {
   const portal = read('js/portal.js');
   const app = read('js/app.js');
-  const expanded = read('js/portal-expanded.js');
   t('portal.js: DesignSheet.build + pdfBlob', /DesignSheet\.build\(/.test(portal) && /DesignSheet\.pdfBlob\(/.test(portal));
   t('app.js: makeDesignSheetBlob تستخدم DesignSheet.pdfBlob', /DesignSheet\.pdfBlob\(/.test(app));
-  t('portal-expanded.js: الغلاف والختام عموديان والورقة بمقاسها المختار', /DesignSheet\.buildPages\(/.test(expanded) && /pdf\.addPage\(\[pg\.w, pg\.h\], pg\.orientation\)/.test(expanded) && /addPage\('a4', 'portrait'\)/.test(expanded));
-  for (const f of ['index.html', 'portal.html', 'portal-expanded.html']) {
+  for (const f of ['index.html', 'portal.html']) {
     t(f + ' يحمّل design-sheet.js', /js\/design-sheet\.js/.test(read(f)));
   }
+  t('النسخة التجريبية الموسّعة أُزيلت', !fs.existsSync(path.join(root, 'js', 'portal-expanded.js')) && !/portal-expanded/.test(read('sw.js')) && !/portal-expanded/.test(read('build-worker.ps1')));
   t('sw.js يضع design-sheet.js في الكاش', /\/js\/design-sheet\.js/.test(read('sw.js')));
   t('build-worker.ps1 يضمّنه في الحزمة', /design-sheet\.js/.test(read('build-worker.ps1')));
   const css = read('css/style.css');

@@ -14,7 +14,6 @@
       POST /api/portal/finish    إنهاء ومنح رقم عام (بتوكن الجلسة فقط)
       POST /api/portal/contact   طلب التواصل (بتوكن الجلسة فقط)
       GET  /api/portal/view/:no  عرض عام للتصميم برقمه (قراءة فقط، بلا توكن)
-      GET  /customer-design-expanded   التصميم الموسّع (نسخة تجريبية — جدول وواجهة منفصلة)
       GET  /api/designs          (موظف) قائمة تصاميم العملاء
       GET  /api/designs/:id      (موظف) فتح تصميم
       PUT  /api/designs/:id      (موظف) مراجعة/تعديل
@@ -261,15 +260,10 @@ export default {
       if (ASSETS) return serveAsset('/portal.html');
       return json({ ok: true, service: 'majlis-portal' }, 200, cors);
     }
-    /* التصميم الموسّع — نسخة تجريبية (منفصلة تماماً عن بوابة العميل):
-       صفحة مختلفة بملفها، وواجهة API مختلفة تحفظ في جدول customer_designs_exp
-       فلا تختلط تصاميم التجربة بتصاميم العملاء الحقيقيين ولا تستهلك أرقام MJ.
-       المسار لا يطابق شرط '/customer-design' أعلاه (يلزم '/' بعده) فلا تعارض. */
+    /* الرابط التجريبي القديم «التصميم الموسّع» أُلغي: من يفتحه يُحوَّل إلى بوابة العميل المعتمدة
+       (وتُحسب زيارته هناك فقط كزيارة لبوابة العميل). */
     if (url.pathname === '/customer-design-expanded' || url.pathname.startsWith('/customer-design-expanded/')) {
-      await recordVisit(env, request, 'expanded');
-      await recordAnalytics(env, request, 'visit_src', visitSource(url.searchParams.get('src')));
-      if (ASSETS) return serveAsset('/portal-expanded.html');
-      return json({ ok: true, service: 'majlis-portal-expanded' }, 200, cors);
+      return Response.redirect(url.origin + '/customer-design' + url.search, 302);
     }
     if (!url.pathname.startsWith('/api/')) {
       if (ASSETS) return serveAsset(url.pathname);
@@ -309,21 +303,6 @@ async function route(request, env, url) {
   const mView = path.match(/^\/api\/portal\/view\/([A-Za-z0-9-]+)$/);
   if (mView && method === 'GET') return portalView(env, mView[1], request);
   if (path === '/api/portal/ai-design' && method === 'POST') return portalAiDesign(env, request, body);
-
-  /* واجهة النسخة التجريبية (التصميم الموسّع): نفس منطق الأمان لكن على جدول
-     منفصل (customer_designs_exp) وبادئة توكن x — فالتصميم التجريبي لا يختلط
-     ببيانات العملاء ولا بأرقام MJ ولا يظهر في صفحة تصاميم الموظفين. */
-  if (path.startsWith('/api/portal-expanded')) {
-    const ep = path.slice('/api/portal-expanded'.length) || '/';
-    if (ep === '/session' && method === 'POST') return portalExpSession(env, request);
-    if (ep === '/settings' && method === 'GET') return portalSettings(env);
-    if (ep === '/catalog' && method === 'GET') return portalCatalog(env);
-    if (ep === '/design' && method === 'GET') return portalExpGet(env, request);
-    if (ep === '/save' && method === 'POST') return portalExpSave(env, request, body);
-    if (ep === '/finish' && method === 'POST') return portalExpFinish(env, request);
-    if (ep === '/contact' && method === 'POST') return portalExpContact(env, request, body);
-    throw new HttpError(404, 'المسار غير موجود');
-  }
 
   /* تسجيل حدث تحليلات مجمّع — عام عمداً لأن بوابة العميل تعمل بلا جلسة مستخدم،
      لكنه محصور جداً: قائمة أسماء بيضاء معرَّفة في السجل + بُعد نصّي مقصوص،
@@ -1012,94 +991,6 @@ async function portalAiDesign(env, request, body) {
   const out = aiSanitizeModelOut(parsed);
   console.warn('ai-design ok status=' + out.status);
   return { ok: true, status: out.status, note: out.note, questions: out.questions, assumptions: out.assumptions, issues: out.issues, spec: out.spec };
-}
-
-/* ------------------------------ التصميم الموسّع (نسخة تجريبية) ------------------------------
-   نفس قواعد أمان البوابة، لكن على جدول customer_designs_exp وبادجة token 'x':
-   - لا يختلط ببيانات العملاء الحقيقيين ولا يستهلك أرقام MJ
-   - لا تختلط ببيانات العملاء الحقيقية (جدول customer_designs)
-   - التوكن يبدأ بـ x فيرفضه جدول البوابة العادية والعكس
- لا تعرض أسعار من الخارج الداخلي — نفس مستوى حماية الحماية. */
-const EXP_TOKEN_PREFIX = 'x';
-
-function expTokenOf(request) {
-  const t = request.headers.get('x-design-token') || '';
-  return /^x[0-9a-f]{64}$/.test(t) ? t : null;
-}
-
-async function portalExpRow(env, token) {
-  if (!token) throw new HttpError(401, 'جلسة التصميم غير صالحة');
-  const row = await env.DB.prepare('SELECT * FROM customer_designs_exp WHERE token = ?').bind(token).first();
-  if (!row) throw new HttpError(401, 'جلسة التصميم غير صالحة');
-  if (row.expires_at && row.expires_at < now()) throw new HttpError(401, 'انتهت جلسة التصميم');
-  return row;
-}
-
-async function portalExpSession(env, request) {
-  await portalThrottle(env, request);
-  const token = EXP_TOKEN_PREFIX + randomToken();
-  const t = now();
-  const exp = new Date(Date.now() + DESIGN_TTL_DAYS * 86400000).toISOString();
-  await env.DB.prepare("INSERT INTO customer_designs_exp (id, token, status, design, contact_requested, created_at, updated_at, expires_at) VALUES (?, ?, 'draft', ?, 0, ?, ?, ?)")
-    .bind(uid(), token, JSON.stringify(emptyDesign()), t, t, exp).run();
-  return { ok: true, token, expiresAt: exp };
-}
-
-function portalExpPublic(row) {
-  return {
-    id: row.id,
-    number: row.public_no ? 'EXP-' + row.public_no : null,
-    status: row.status,
-    design: safeParse(row.design, null),
-    name: row.customer_name || '',
-    phone: row.customer_phone || '',
-    contactRequested: !!row.contact_requested,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  };
-}
-
-async function portalExpGet(env, request) {
-  const row = await portalExpRow(env, expTokenOf(request));
-  return Object.assign({ ok: true }, portalExpPublic(row));
-}
-
-async function portalExpSave(env, request, body) {
-  const row = await portalExpRow(env, expTokenOf(request));
-  checkDesign(body.design);
-  const name = body.name !== undefined ? cleanName(body.name) : row.customer_name || '';
-  const phone = body.phone !== undefined ? cleanPhone(body.phone) : row.customer_phone || '';
-  const t = now();
-  await env.DB.prepare('UPDATE customer_designs_exp SET design = ?, customer_name = ?, customer_phone = ?, updated_at = ? WHERE id = ?')
-    .bind(JSON.stringify(body.design), name, phone, t, row.id).run();
-  return { ok: true, updatedAt: t };
-}
-
-async function portalExpFinish(env, request) {
-  const row = await portalExpRow(env, expTokenOf(request));
-  let no = row.public_no;
-  if (no == null) {
-    const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'design_no_exp' RETURNING value").first();
-    if (!r) throw new HttpError(500, 'عدّاد أرقام التصاميم التجريبية غير موجود');
-    no = Number(r.value);
-  }
-  const t = now();
-  const status = row.status === 'draft' ? 'new' : row.status;
-  await env.DB.prepare('UPDATE customer_designs_exp SET public_no = ?, status = ?, updated_at = ? WHERE id = ?')
-    .bind(no, status, t, row.id).run();
-  return { ok: true, number: 'EXP-' + no, status };
-}
-
-async function portalExpContact(env, request, body) {
-  const row = await portalExpRow(env, expTokenOf(request));
-  const name = cleanName(body.name);
-  const phone = cleanPhone(body.phone);
-  if (!name || !phone) throw new HttpError(400, 'الاسم ورقم الجوال مطلوبان لطلب التواصل');
-  const t = now();
-  const status = row.status === 'draft' ? 'new' : row.status;
-  await env.DB.prepare('UPDATE customer_designs_exp SET customer_name = ?, customer_phone = ?, contact_requested = 1, status = ?, updated_at = ? WHERE id = ?')
-    .bind(name, phone, status, t, row.id).run();
-  return { ok: true };
 }
 
 /* ------------------------------ تصاميم العملاء (موظفون) ------------------------------ */
@@ -2832,13 +2723,14 @@ function restoreCosts(rec, prev) {
 
 /* ------------------------------ المستخدمون ------------------------------ */
 /* ---------------- زوار الروابط العامة ----------------
-   تُسجَّل الزيارات على الخادم عند تقديم صفحات الزوار العامة (بوابة العميل
-   والتصميم الموسّع). تُستثنى واجهة الموظفين (تحتاج جلسة) والروبوتات.
+   تُسجَّل الزيارات على الخادم عند تقديم صفحة الزوار العامة (بوابة العميل).
+   سجلات الرابط التجريبي الملغى «expanded» تبقى في الجدول لكنها لا تُقرأ (VISIT_LINK_SQL). تُستثنى واجهة الموظفين (تحتاج جلسة) والروبوتات.
    العدّ يومي مجمّع (day, link) — لا يُخزَّن أي IP ولا بيانات شخصية. */
 const VISIT_LINKS = {
   customer: 'بوابة العميل',
-  expanded: 'التصميم الموسّع',
 };
+/* شرط SQL: الروابط المعتمدة فقط — يستبعد أي سجل قديم لرابط ملغى من كل الأرقام والتقارير */
+const VISIT_LINK_SQL = 'link IN (' + Object.keys(VISIT_LINKS).map((k) => "'" + k + "'").join(', ') + ')';
 // روبوتات/مكشّفون شائعون لا تُعدّ زياراتهم (تفقد الدقة إن استُثنوا، فلا تبالَغ)
 const BOT_RE = /bot|crawler|spider|crawling|slurp|bingpreview|facebookexternalhit|whatsapp|telegrambot|discordbot|curl\/|wget|python-requests|headlesschrome|lighthouse|uptime|monitor|preview|scrapy|semrush|ahrefs|petalbot|applebot|ia_archiver|semrushbot/i;
 
@@ -3157,10 +3049,10 @@ async function ownerAnalytics(env, query) {
 
   // الزوار والزيارات من جدول الزوار القائم (مصدر موثوق قائم)
   const visRow = await env.DB.prepare(
-    'SELECT COALESCE(SUM(CASE WHEN day >= ? AND day <= ? THEN n ELSE 0 END),0) AS visits FROM link_visits'
+    'SELECT COALESCE(SUM(CASE WHEN day >= ? AND day <= ? THEN n ELSE 0 END),0) AS visits FROM link_visits WHERE ' + VISIT_LINK_SQL
   ).bind(from, to).first();
   const uvRow = await env.DB.prepare(
-    'SELECT COUNT(*) AS u FROM link_visitors WHERE day >= ? AND day <= ?'
+    'SELECT COUNT(*) AS u FROM link_visitors WHERE day >= ? AND day <= ? AND ' + VISIT_LINK_SQL
   ).bind(from, to).first();
 
   const daily = await analyticsDaily(env, from, to, ['design_start', 'design_finish']);
@@ -3176,9 +3068,9 @@ async function ownerAnalytics(env, query) {
   const sources = await analyticsSources(env, from, to);
   let visitsDaily = [], visitorsDaily = [];
   try {
-    visitsDaily = ((await env.DB.prepare('SELECT day, link, COALESCE(SUM(n),0) AS n FROM link_visits WHERE day >= ? AND day <= ? GROUP BY day, link').bind(from, to).all()).results || [])
+    visitsDaily = ((await env.DB.prepare('SELECT day, link, COALESCE(SUM(n),0) AS n FROM link_visits WHERE day >= ? AND day <= ? AND ' + VISIT_LINK_SQL + ' GROUP BY day, link').bind(from, to).all()).results || [])
       .map((r) => ({ day: r.day, link: r.link, n: Number(r.n) || 0 }));
-    visitorsDaily = ((await env.DB.prepare('SELECT day, COUNT(DISTINCT fp) AS u FROM link_visitors WHERE day >= ? AND day <= ? GROUP BY day').bind(from, to).all()).results || [])
+    visitorsDaily = ((await env.DB.prepare('SELECT day, COUNT(DISTINCT fp) AS u FROM link_visitors WHERE day >= ? AND day <= ? AND ' + VISIT_LINK_SQL + ' GROUP BY day').bind(from, to).all()).results || [])
       .map((r) => ({ day: r.day, u: Number(r.u) || 0 }));
   } catch (e) { /* الجداول تُنشأ مع أول زيارة — قبلها لا بيانات */ }
 
@@ -3258,14 +3150,14 @@ async function linkVisits(env) {
        COALESCE(SUM(CASE WHEN day >= ? THEN n ELSE 0 END), 0) AS d7_n,
        COALESCE(SUM(CASE WHEN day >= ? THEN n ELSE 0 END), 0) AS d30_n,
        COALESCE(SUM(n), 0) AS all_n
-     FROM link_visits GROUP BY link`).bind(today, d7, d30).all();
+     FROM link_visits WHERE ${VISIT_LINK_SQL} GROUP BY link`).bind(today, d7, d30).all();
   const uq = await env.DB.prepare(
     `SELECT link,
        COALESCE(SUM(CASE WHEN day = ? THEN 1 ELSE 0 END), 0) AS today_u,
        COALESCE(SUM(CASE WHEN day >= ? THEN 1 ELSE 0 END), 0) AS d7_u,
        COALESCE(SUM(CASE WHEN day >= ? THEN 1 ELSE 0 END), 0) AS d30_u
-     FROM link_visitors WHERE day >= ? GROUP BY link`).bind(today, d7, d30, d30).all();
-  const days = await env.DB.prepare('SELECT day, link, SUM(n) AS n FROM link_visits WHERE day >= ? GROUP BY day, link').bind(d30).all();
+     FROM link_visitors WHERE day >= ? AND ${VISIT_LINK_SQL} GROUP BY link`).bind(today, d7, d30, d30).all();
+  const days = await env.DB.prepare('SELECT day, link, SUM(n) AS n FROM link_visits WHERE day >= ? AND ' + VISIT_LINK_SQL + ' GROUP BY day, link').bind(d30).all();
   const blank = () => ({ today: { visits: 0, visitors: 0 }, d7: { visits: 0, visitors: 0 }, d30: { visits: 0, visitors: 0 }, all: 0, days: [] });
   const byLink = {};
   for (const r of (vis.results || [])) {
@@ -3292,7 +3184,7 @@ async function linkVisits(env) {
     `SELECT COUNT(DISTINCT CASE WHEN day = ? THEN day || '|' || fp END) AS today_u,
        COUNT(DISTINCT CASE WHEN day >= ? THEN day || '|' || fp END) AS d7_u,
        COUNT(DISTINCT day || '|' || fp) AS d30_u
-     FROM link_visitors WHERE day >= ?`).bind(today, d7, d30).first();
+     FROM link_visitors WHERE day >= ? AND ${VISIT_LINK_SQL}`).bind(today, d7, d30).first();
   const totals = { today: { visitors: Number(tu && tu.today_u) || 0 }, d7: { visitors: Number(tu && tu.d7_u) || 0 }, d30: { visitors: Number(tu && tu.d30_u) || 0 } };
   let sources = [];
   try { sources = await analyticsByDim(env, d30, today, 'visit_src', 12); } catch (_) { /* لا أحداث بعد */ }
@@ -3584,13 +3476,6 @@ async function ensureSeed(env) {
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_token_idx ON customer_designs(token)').run();
   await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_public_idx ON customer_designs(public_no)').run();
   await env.DB.prepare("INSERT OR IGNORE INTO counters (key, value) VALUES ('design_no', 26000126)").run();
-  /* التصميم الموسّع (تجريبي): جدول منفصل تماماً. يُنشأ بـ IF NOT EXISTS فلا يمسّ
-     بيانات العملاء ولا يستهلك أرقام MJ ولا يظهر في صفحة تصاميم الموظفين.
-     التوكن يبدأ بـ 'x' distinguishingه عن جدول البوابة العادية. */
-  await env.DB.prepare("CREATE TABLE IF NOT EXISTS customer_designs_exp (id TEXT PRIMARY KEY, public_no INTEGER UNIQUE, token TEXT UNIQUE, status TEXT NOT NULL DEFAULT 'draft', design TEXT NOT NULL, customer_name TEXT, customer_phone TEXT, contact_requested INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, expires_at TEXT)").run();
-  await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_exp_token_idx ON customer_designs_exp(token)').run();
-  await env.DB.prepare('CREATE INDEX IF NOT EXISTS designs_exp_public_idx ON customer_designs_exp(public_no)').run();
-  await env.DB.prepare("INSERT OR IGNORE INTO counters (key, value) VALUES ('design_no_exp', 90000000)").run();
   // إدراج مشروط لا متزامن آمن: طلبان باردان معاً لا ينتجان مديرين مكررين ولا خطأ
   const c = await env.DB.prepare('SELECT COUNT(*) AS n FROM users').first();
   if (Number(c.n) === 0) {
@@ -3722,7 +3607,7 @@ function serveAsset(pathname) {
      فيخدم واجهة الموظفين على أي مسار بلا نقطة (/foo، /anything …)، وهو تسريب
      لواجهة داخلية على رابط عشوائي. لا حاجة للرجوع: التطبيق بلا توجيه بالمسار
      ولا بالـ hash، وكل المسارات المشروعة إما أصول بالاسم أو تُعالَج قبل هذه الدالة
-     (/ و /customer-design و /customer-design-expanded و /api/*). */
+     (/ و /customer-design و /api/*؛ والرابط الملغى /customer-design-expanded يُحوَّل). */
   const a = ASSETS[key] || ASSETS[key + '/index.html'];
   if (!a) return new Response('404', { status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' } });
   let body = a.body;

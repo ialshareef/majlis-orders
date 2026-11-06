@@ -1,7 +1,6 @@
 /* اختبار تطبيق الكمية: ضغط Enter وزر «تم/تطبيق الكمية» يطبّقان الكمية مرة واحدة فقط
    (لا تنفيذ مزدوج ولا تنبيه مكرر).
    - portal.js  : لوحة «تطبيق الكمية» (#accqModal) — يستخرج الكود الفعلي ويشغّله بمحاكاة DOM.
-   - portal-expanded.js: لوحة كمية البطاقة — يستخرج commitQty ويشغّله بمحاكاة.
    تشغيل: node test/qty-apply-test.mjs                                          */
 import fs from 'fs';
 import path from 'path';
@@ -10,7 +9,6 @@ import url from 'url';
 const here = path.dirname(url.fileURLToPath(import.meta.url));
 const root = path.join(here, '..');
 const portal = fs.readFileSync(path.join(root, 'js', 'portal.js'), 'utf8');
-const px = fs.readFileSync(path.join(root, 'js', 'portal-expanded.js'), 'utf8');
 
 let pass = 0, fail = 0;
 const t = (n, ok, info) => { ok ? pass++ : fail++; console.log((ok ? 'PASS  ' : 'FAIL  ') + n + (info ? '  [' + info + ']' : '')); };
@@ -134,86 +132,6 @@ if (B) {
   t('A11) #psQty يستمع لـ Enter', /qi\.addEventListener\('keydown', function \(e\) \{\r?\n        if \(e\.key === 'Enter'\) \{ e\.preventDefault\(\); qiRun\(\); \}/.test(portal));
   t('A12) #psQty مانع qiLast + فتح بـ input', /var qiLast = null;/.test(portal) && /qi\.addEventListener\('input', function \(\) \{ qiLast = null; \}\)/.test(portal));
 }
-
-/* ============================================================
-   B) portal-expanded.js — لوحة كمية البطاقة (commitQty المشتركة)
-   ============================================================ */
-const cq = extractBlock(px, 'function commitQty(inp) {');
-t('B1) استخراج commitQty', !!cq, cq ? cq.length + ' chars' : 'not found');
-
-if (cq) {
-  const calls = { setAccQty: 0, syncTile: 0, toasts: [] };
-  const MAX_QTY = 99;
-  const counts = { a1: 3 };
-  const make = new Function('accCount', 'setAccQty', 'syncTile', 'toast', 'MAX_QTY', cq + '\nreturn commitQty;')(
-    (id) => counts[id] || 0,
-    (id, n) => { calls.setAccQty++; counts[id] = Math.max(0, Math.min(MAX_QTY, Math.round(n) || 0)); },
-    () => { calls.syncTile++; },
-    (m) => calls.toasts.push(String(m)),
-    MAX_QTY
-  );
-
-  // B2) تسلسل change ثم blur المؤجّل ثم «تم» على نفس القيمة → تطبيق واحد
-  {
-    const inp = { dataset: { qtyin: 'a1' }, value: '5' };
-    const r = [make(inp), make(inp), make(inp)];
-    t('B2) الالتزام المتكرر على نفس القيمة يُنفَّذ مرة واحدة',
-      r[0] === 'ok' && r[1] === 'blocked' && r[2] === 'blocked' && calls.setAccQty === 1 && counts.a1 === 5,
-      `r=${r} setAccQty=${calls.setAccQty} n=${counts.a1}`);
-  }
-  // B3) تعديل جديد يرفع القفل (input) → تطبيق ثانٍ
-  {
-    const inp = { dataset: { qtyin: 'a1', qtyLock: '1' }, value: '5' };
-    inp.dataset.qtyLock = '0'; // ما يفعله حدث input
-    const r = make(inp);
-    t('B3) حدث input يرفع القفل فيسمح بقيد جديد', r === 'ok' && calls.setAccQty === 2 && counts.a1 === 5,
-      `r=${r} setAccQty=${calls.setAccQty}`);
-  }
-  // B4) قيمة غير صالحة: تنبيه واحد ثم قفل
-  {
-    const before = calls.toasts.length;
-    const inp = { dataset: { qtyin: 'a1' }, value: '-5' };
-    const r1 = make(inp), r2 = make(inp);
-    t('B4) رفض غير الرقمي مع تنبيه واحد فقط',
-      r1 === 'bad' && r2 === 'blocked' && calls.toasts.length === before + 1 && inp.value === String(counts.a1),
-      `r=${r1}/${r2} toasts=+${calls.toasts.length - before} v=${inp.value}`);
-  }
-  // B5) حقل فارغ بلا تنبيه
-  {
-    const before = calls.toasts.length;
-    const inp = { dataset: { qtyin: 'a1' }, value: '' };
-    const r = make(inp);
-    t('B5) حقل فارغ: empty بلا تنبيه وبلا تطبيق',
-      r === 'empty' && calls.toasts.length === before && inp.value === String(counts.a1),
-      `r=${r} toasts=+${calls.toasts.length - before}`);
-  }
-  // B6) الحد الأقصى
-  {
-    const inp = { dataset: { qtyin: 'a1' }, value: '250' };
-    const r = make(inp);
-    t('B6) تجاوز الحد الأقصى يُنذر ثم يُطبَّق مقصوصًا عند setAccQty',
-      r === 'ok' && counts.a1 <= MAX_QTY, `r=${r} n=${counts.a1}`);
-  }
-  // B7) حقل مفقود → blocked (لا انهيار)
-  t('B7) حقل مفقود آمن', make(null) === 'blocked');
-
-  // B8) الربط: كل المسارات تمرّ بـ commitQty
-  t("B8) change ← commitQty(inp)", /addEventListener\('change', function \(\) \{ commitQty\(inp\); \}\)/.test(px));
-  t("B8) blur المؤجّل ← commitQty(el)", /setTimeout\(function \(\) \{ if \(!el\.isConnected\) return; commitQty\(el\); \}, 0\);/.test(px));
-  t("B8) Enter ← commitQty(inp) + renderPanel", /if \(e\.key === 'Enter'\) \{\r?\n            e\.preventDefault\(\);\r?\n            commitQty\(inp\);\r?\n            renderPanel\(\);\r?\n          \}/.test(px));
-  t('B8) زر «تم» ← commitQty(inp)', /var st = commitQty\(inp\);/.test(px));
-  t('B8) تعديل يرفع القفل', /inp\.addEventListener\('input', function \(\) \{ inp\.dataset\.qtyLock = '0'; \}\)/.test(px));
-  t('B8) تعريف واحد فقط لـ commitQty', (px.match(/function commitQty\(inp\)/g) || []).length === 1);
-  t('B8) لا بقي من commit القديم المنفصل', !/var commit = function \(\)/.test(px));
-  t('B8) commitQty تُحدّث الشارة syncTile', /syncTile\(id\);/.test(cq));
-}
-
-/* ============================================================
-   C) تأكيدات تفادي انجرافات
-   ============================================================ */
-t('C1) قواعد الرفض في portal-expanded لم تتغير', /'أدخل عددًا صحيحًا \(0 أو أكثر\)\.'/.test(px) && /'الحد الأقصى ' \+ MAX_QTY \+ ' قطعة\.'/.test(px));
-t('C2) زر الحذف بقي كما هو', /button\[data-qtydel\]/.test(px) && /setAccQty\(b\.dataset\.qtydel, 0\);/.test(px));
-t('C3) MAX_QTY مستمر في حدود حقل العدد الفعلية', /max="' \+ MAX_QTY \+ '"/.test(px));
 
 console.log('\nPASS=' + pass + '  FAIL=' + fail);
 process.exit(fail ? 1 : 0);

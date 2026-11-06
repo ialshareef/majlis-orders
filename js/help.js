@@ -262,17 +262,8 @@
     ],
   };
 
-  /* تسجيل نسخة تجريبية مختصرة من دليل العميل (تشرح بنفس الخطوات مع فروق الواجهة) */
-  const CUSTOMER_EXP = {
-    role: 'customer_exp',
-    title: 'دليل التصميم الموسّع',
-    intro: 'نسخة تجريبية من المصمم بخطوات مطابقة.',
-    steps: CUSTOMER.steps,
-  };
-
   const CONTENT = {
     customer: CUSTOMER,
-    customer_exp: CUSTOMER_EXP,
     staff: STAFF,
     mandoub: MANDOUB,
   };

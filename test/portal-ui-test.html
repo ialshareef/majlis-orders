@@ -165,9 +165,8 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
 // About: المطوران (اسم خالد موجود وبريده محذوف بقرار صريح)
 t('about-devs', idx.indexOf('Fawaz Al-sharif') >= 0 && idx.indexOf('Khaled Al Qaini') >= 0, 'dev names');
       t('about-devs-no-khaled-email', idx.indexOf('khaledalqaini@gmail.com') < 0, 'khaled email removed');
-      // روابط الوصول: الثلاثة موجودة (عميل + موظفون + التصميم الموسّع)
-      t('about-links-expanded', idx.indexOf('expandedLink') >= 0 && idx.indexOf('btnOpenExpanded') >= 0
-        && idx.indexOf('btnCopyExpanded') >= 0 && idx.indexOf('btnShareExpanded') >= 0, 'expanded link row');
+      // روابط الوصول: العميل والموظفون فقط (الرابط التجريبي «الموسّع» أُزيل)
+      t('about-links-no-expanded', idx.indexOf('expandedLink') < 0 && idx.indexOf('btnOpenExpanded') < 0 && idx.indexOf('customerLink') >= 0, 'no trial link row');
       // بوابة العميل في الـ worker bundle لاحقاً: portal.html تُخدم (فحص ثابت هنا لوجود الملف)
       var ph = await get('/portal.html');
       t('portal-file', ph.indexOf('pLanding') >= 0 && ph.indexOf('/js/portal.js') >= 0, 'portal.html');

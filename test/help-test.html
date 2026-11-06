@@ -32,8 +32,8 @@ const seen=(k)=>localStorage.getItem('mj_help_seen_'+k);
 
     /* ---------- المحتوى ---------- */
     const C=H.CONTENT;
-    t('content: customer/staff/mandoub/customer_exp', !!(C.customer&&C.staff&&C.mandoub&&C.customer_exp), Object.keys(C).join(','));
-    for(const k of ['customer','staff','mandoub','customer_exp']){
+    t('content: customer/staff/mandoub (no trial customer_exp)', !!(C.customer&&C.staff&&C.mandoub&&!C.customer_exp), Object.keys(C).join(','));
+    for(const k of ['customer','staff','mandoub']){
       const c=C[k];
       t('  '+k+': title+intro+steps', !!(c&&c.title&&c.intro&&Array.isArray(c.steps)&&c.steps.length>=4), c?c.steps.length+' steps':'-');
       const bad=c.steps.filter(s=>!(s&&s.h&&s.p));

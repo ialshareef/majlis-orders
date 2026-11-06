@@ -42,7 +42,7 @@ function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FA
     t('root serves staff app', root.status===200 && STAFF_MARK.test(root.body), root.status);
     const idx=await hit('/index.html');
     t('/index.html serves staff app', idx.status===200 && STAFF_MARK.test(idx.body), idx.status);
-    for(const a of ['/portal.html','/css/style.css','/js/app.js','/js/portal.js','/js/portal-expanded.js','/css/portal-expanded.css','/manifest.json','/sw.js','/portal-expanded.html']){
+    for(const a of ['/portal.html','/css/style.css','/js/app.js','/js/portal.js','/manifest.json','/sw.js']){
       const r=await hit(a);
       t('asset '+a, r.status===200, r.status);
     }
@@ -50,8 +50,12 @@ function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FA
     t('/customer-design serves portal', cd.status===200 && /pLanding/.test(cd.body) && !STAFF_MARK.test(cd.body), cd.status);
     const cdt=await hit('/customer-design/');
     t('/customer-design/ (trailing slash) serves portal', cdt.status===200 && /pLanding/.test(cdt.body), cdt.status);
-    const cx=await hit('/customer-design-expanded');
-    t('/customer-design-expanded serves expanded', cx.status===200 && /pxLanding|px-banner/.test(cx.body), cx.status);
+    // الرابط التجريبي الملغى: تحويل إلى بوابة العميل المعتمدة (مع بقاء ?src)، وملفاته لم تعد تُخدم
+    const cxr=await mod.default.fetch(new Request('https://majlis.test/customer-design-expanded?src=ig'),env);
+    t('/customer-design-expanded redirects to /customer-design', cxr.status===302 && cxr.headers.get('location')==='https://majlis.test/customer-design?src=ig', cxr.status+' '+cxr.headers.get('location'));
+    for(const a of ['/portal-expanded.html','/js/portal-expanded.js','/css/portal-expanded.css']){ const r=await hit(a); t('removed '+a+' => 404', r.status===404, r.status); }
+    const bsrc=await (await fetch('/worker/worker.bundle.js')).text();
+    t('/api/portal-expanded removed from bundle', !/portal-expanded|customer_designs_exp|portalExp/.test(bsrc), 'leftover');
     const api=await hit('/api/app-update');
     t('/api/app-update works', api.status===200 && /versionName/.test(api.body), api.status);
 

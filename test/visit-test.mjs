@@ -53,8 +53,8 @@ t('customer=1 بعد زيارة واحدة', (await totalOf('customer')) === 1, 
 await hit('/customer-design', UA);
 await hit('/customer-design/', UA);
 t('customer=3 بعد ثلاث زيارات', (await totalOf('customer')) === 3, 'n=' + (await totalOf('customer')));
-await hit('/customer-design-expanded', UA);
-t('expanded=1', (await totalOf('expanded')) === 1, 'n=' + (await totalOf('expanded')));
+const xr = await hit('/customer-design-expanded', UA);
+t('الرابط التجريبي الملغى يُحوَّل ولا يُسجَّل', xr.status === 302 && (await totalOf('expanded')) === 0 && (await totalOf('customer')) === 3, 'status=' + xr.status + ' e=' + (await totalOf('expanded')));
 
 // 2) الروبوتات لا تُحتسب
 const bots = ['Googlebot/2.1', 'bingbot/2.0', 'Mozilla/5.0 (compatible; YandexBot/3.0)', 'curl/8.4.0',
@@ -67,10 +67,10 @@ await hit('/customer-design', '');
 t('الطلب بلا UA لا يُحتسب', (await totalOf('customer')) === 3, 'n=' + (await totalOf('customer')));
 
 // 3) صفحات غير الزوار لا تُسجَّل
-for (const p of ['/', '/index.html', '/portal.html', '/portal-expanded.html', '/css/style.css', '/js/app.js', '/api/app-update', '/foo']) {
+for (const p of ['/', '/index.html', '/portal.html', '/css/style.css', '/js/app.js', '/api/app-update', '/foo']) {
   await hit(p, UA);
 }
-t('صفحات الأصول والموظفين لا تُسجَّل', (await totalOf('customer')) === 3 && (await totalOf('expanded')) === 1,
+t('صفحات الأصول والموظفين لا تُسجَّل', (await totalOf('customer')) === 3 && (await totalOf('expanded')) === 0,
   'c=' + (await totalOf('customer')) + ' e=' + (await totalOf('expanded')));
 
 // 4) صف (day,link,n)
@@ -88,8 +88,8 @@ t('المسار محاط بـ requireAdmin', /'\/api\/link-visits'[\s\S]{0,40}re
 await DB.prepare('INSERT OR REPLACE INTO link_visits (day, link, n) VALUES (?,?,?)').bind('2000-01-01', 'customer', 99).run();
 const since = new Date(Date.now() - 29 * 86400000).toISOString().slice(0, 10);
 const recent = await DB.prepare('SELECT COALESCE(SUM(n),0) AS t FROM link_visits WHERE day >= ?').bind(since).first();
-// داخل النافذة: customer=3 اليوم + expanded=1 اليوم = 4 (سطر 2000 مستبعد)
-t('نافذة ٣٠ يوماً تستبعد القديم', Number(recent.t) === 4, 't=' + recent.t + ' (يجب 4 لا 103)');
+// داخل النافذة: customer=3 اليوم (سطر 2000 مستبعد)
+t('نافذة ٣٠ يوماً تستبعد القديم', Number(recent.t) === 3, 't=' + recent.t + ' (يجب 3 لا 102)');
 
 console.log('\nPASS=' + pass + '  FAIL=' + fail);
 process.exit(fail ? 1 : 0);

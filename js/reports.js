@@ -413,7 +413,7 @@
       if (!v || !v.ready) {
         return { summary: [{ label: 'الحالة', value: v && v.error ? 'تعذّر تحميل الزيارات' : 'جارٍ تحميل الزيارات…', kind: 'text' }], tables: [], notes: [v && v.error ? v.error : 'تُجلب بيانات الزيارات من الخادم.'] };
       }
-      const links = v.links || { customer: 'بوابة العميل', expanded: 'التصميم الموسّع' };
+      const links = v.links || { customer: 'بوابة العميل' };
       const lk = Object.keys(links);
       const byDay = new Map();
       (v.visitsDaily || []).forEach((r) => { if (inRange(r.day, ctx.from, ctx.to)) { const e = byDay.get(r.day) || {}; e[r.link] = (e[r.link] || 0) + num(r.n); byDay.set(r.day, e); } });

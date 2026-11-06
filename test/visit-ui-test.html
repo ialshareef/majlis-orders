@@ -40,7 +40,7 @@ function flush(){document.getElementById('rep').textContent='PASS='+T.pass+'  FA
     t('VISIT_KEY defined', /majlis_visit_clicks_v1/.test(app));
     t('bumpVisitClick increments', /c\[kind\] = \(c\[kind\] \|\| 0\) \+ 1;/.test(app));
     t('buttons wired with kind', (app.match(/bumpVisitClick\(kind\)/g)||[]).length>=1);
-    t('all 3 links have clicks', ['customer','staff','expanded'].every(k=>app.indexOf("), '"+k+"');")>=0));
+    t('customer+staff links have clicks, trial link removed', ['customer','staff'].every(k=>app.indexOf("), '"+k+"');")>=0) && app.indexOf("), 'expanded');")<0);
     t('localStorage save', /localStorage\.setItem\(VISIT_KEY/.test(app));
 
     /* ---- 5) تشغيل فعلي للمنطق في عزل ---- */

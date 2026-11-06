@@ -6014,7 +6014,7 @@ function docTitle(order) {
 
   /** ورقة PDF للتصميم من جهة الموظف (هندسة فقط، بلا مالية)
       تُبنى من الوحدة المشتركة js/design-sheet.js — نفس ورقة العميل
-      والموسّع حرفياً، والمكوّنات الإضافية في صدر الصفحة فقط. */
+      حرفياً، والمكوّنات الإضافية في صدر الصفحة فقط. */
   async function makeDesignSheetBlob(d) {
     if (!navigator.onLine) throw new Error('تصدير PDF يحتاج اتصالًا بالإنترنت.');
     try { await loadScript(H2C_URL); await loadScript(JSPDF_URL); }
@@ -6097,7 +6097,7 @@ function docTitle(order) {
     if (!can('admin.core')) { box.hidden = true; return; }
     box.hidden = false;
     const body = $('#visitStatsBody');
-    const clicks = loadVisitClicks();
+    const clicks = loadVisitClicks(); delete clicks.expanded;   // عدّاد الرابط التجريبي الملغى لا يُحتسب
     const clickTotal = Object.values(clicks).reduce((a, b) => a + (Number(b) || 0), 0);
     let server = null, err = '';
     try { server = (await Store.api('GET', '/api/link-visits')) || null; }
@@ -6107,7 +6107,7 @@ function docTitle(order) {
       html = `<p class="vs-err" role="alert">${esc(err)}</p>`;
     } else {
       /* الصفحات التي يسجّل الخادم زياراتها فعلاً (لا صفوف ثابتة دائماً صفر) */
-      const links = (server && server.links) || { customer: 'بوابة العميل', expanded: 'التصميم الموسّع' };
+      const links = (server && server.links) || { customer: 'بوابة العميل' };
       const B = (server && server.byLink) || {};
       const keys = Object.keys(links);
       // الزوار من إجمالي الخادم الفريد عبر الصفحتين (جمع زوار كل صفحة يعدّ الجهاز الذي فتح الصفحتين مرتين)
@@ -6195,7 +6195,6 @@ function docTitle(order) {
   const ACCESS_LINKS = {
     customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design',
     staff: 'https://majlis-api.asalh-najd.workers.dev/',
-    expanded: 'https://majlis-api.asalh-najd.workers.dev/customer-design-expanded',
   };
 
   /** روابط العميل والموظفين: فتح/نسخ/مشاركة (Web Share API مع بديل النسخ) */
@@ -6206,7 +6205,6 @@ function docTitle(order) {
     const urls = {
       customerLink: ACCESS_LINKS.customer,
       staffLink: ACCESS_LINKS.staff,
-      expandedLink: ACCESS_LINKS.expanded,
     };
     Object.entries(urls).forEach(([id, url]) => {
       const inp = document.getElementById(id);
@@ -6247,9 +6245,6 @@ function docTitle(order) {
     bind('btnOpenStaff', () => open('staffLink'), 'staff');
     bind('btnCopyStaff', () => copy('staffLink'), 'staff');
     bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'), 'staff');
-    bind('btnOpenExpanded', () => open('expandedLink'), 'expanded');
-    bind('btnCopyExpanded', () => copy('expandedLink'), 'expanded');
-    bind('btnShareExpanded', () => share('expandedLink', 'التصميم الموسّع — نسخة تجريبية'), 'expanded');
     linksWired = true;
   }
 
