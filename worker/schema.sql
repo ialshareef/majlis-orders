@@ -296,3 +296,14 @@ CREATE TABLE IF NOT EXISTS wa_recipient_users (
   recipient_id TEXT PRIMARY KEY,
   user_id      TEXT NOT NULL UNIQUE
 );
+
+-- فتح الموظفين للتطبيق (007): صف لكل موظف في كل يوم بتوقيت المحل. n = مرات الفتح
+-- (فتح جديد بعد غياب 30 دقيقة؛ المزامنة الدورية لا تُحتسب)، و first_at/last_at أول وآخر نشاط في اليوم.
+CREATE TABLE IF NOT EXISTS staff_visits (
+  day      TEXT NOT NULL,
+  user_id  TEXT NOT NULL,
+  n        INTEGER NOT NULL DEFAULT 1,
+  first_at TEXT NOT NULL,
+  last_at  TEXT NOT NULL,
+  PRIMARY KEY (day, user_id)
+);

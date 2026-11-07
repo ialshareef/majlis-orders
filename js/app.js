@@ -6158,6 +6158,24 @@ function docTitle(order) {
           <div class="vs-link vs-link-custom"><span>حملة مخصّصة</span><input id="vsSrcCustom" class="ltr" maxlength="24" placeholder="ramadan_ad" aria-label="اسم الحملة بأحرف لاتينية"><button type="button" class="btn small" id="vsSrcCustomCopy">${icon('copy')}<span>نسخ الرابط</span></button></div>
           <p class="hint">اسم الحملة بأحرف لاتينية وأرقام فقط (مثل ramadan_ad). يظهر في التقرير كما كتبته.</p>
         </div></details>`;
+      let staffHtml = '';
+      // 6) الموظفون (آخر الصفحة بعد بيانات العملاء): من فتح تطبيق الموظفين (بالاسم — الموظف مسجّل الدخول)
+      const SF = (server && server.staff) || null;
+      if (SF) {
+        staffHtml += '<div class="vs-chart-head vs-staff-head"><b>دخول الموظفين للتطبيق</b><span class="hint">من فتح تطبيق الموظفين ومتى</span></div>';
+        staffHtml += '<div class="vs-cards vs-staff-cards">' + P.map(([p, label]) => {
+          const r = SF[p] || {};
+          return `<div class="vs-card"><span class="vs-card-lbl">${label}</span><b class="num">${num(r.users).toLocaleString('en-US')}</b><small>موظف · <bdi class="num">${num(r.opens).toLocaleString('en-US')}</bdi> مرة فتح</small></div>`;
+        }).join('') + '</div>';
+        const U = SF.byUser || [];
+        const when = (iso) => { if (!iso) return '—'; const d = new Date(iso); return isNaN(d) ? '—' : d.toLocaleString('ar-SA-u-nu-latn', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }); };
+        staffHtml += U.length
+          ? `<div class="table-wrap"><table class="table compact vs-table vs-staff-table"><thead><tr><th>الموظف</th><th class="ta-end">أيام الدخول</th><th class="ta-end">مرات الفتح</th><th class="ta-end">آخر دخول</th></tr></thead><tbody>`
+            + U.map((u) => `<tr><td><b>${esc(u.name)}</b></td><td class="ta-end num">${num(u.days)}</td><td class="ta-end num">${num(u.opens)}</td><td class="ta-end"><bdi>${esc(when(u.lastAt))}</bdi></td></tr>`).join('')
+            + '</tbody></table></div><p class="hint vs-note">آخر ٣٠ يوماً. «مرة فتح» = فتح التطبيق بعد غياب نصف ساعة أو أكثر؛ بقاء التطبيق مفتوحاً لا يُحسب مرات إضافية.</p>'
+          : '<p class="hint">لم يُسجَّل دخول أي موظف بعد. يبدأ العدّ من تاريخ هذا التحديث.</p>';
+      }
+      html += staffHtml;
     }
     html += `<div class="vs-foot">${can('reports.view_all') || canAny('reports.view_own', 'reports.view_all') ? '<button type="button" class="btn small primary" id="btnVisitsReport">' + icon('file') + ' تقرير الزيارات المفصّل والطباعة</button>' : ''}<span class="hint">نقراتك على أزرار الفتح/النسخ/المشاركة: <b class="num">${num(clickTotal)}</b> (على هذا الجهاز فقط)</span></div>`;
     if (body) {

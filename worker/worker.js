@@ -325,7 +325,7 @@ async function route(request, env, url) {
     await env.DB.prepare('DELETE FROM sessions WHERE token = ?').bind(token).run();
     return { ok: true };
   }
-  if (path === '/api/bootstrap' && method === 'GET') return bootstrap(env, user);
+  if (path === '/api/bootstrap' && method === 'GET') { await recordStaffVisit(env, user); return bootstrap(env, user); }
   if (path === '/api/sync' && method === 'POST') return sync(env, user, body);
   if (path === '/api/next-order-no' && method === 'POST') { requirePerm(user, 'orders.create'); const r = await env.DB.prepare("UPDATE counters SET value = value + 1 WHERE key = 'order_no' RETURNING value").first();
     return { number: r ? r.value : null };
@@ -2880,6 +2880,43 @@ async function recordVisit(env, request, link) {
   } catch (e) { console.warn('recordVisit failed:', e && e.message); /* إحصاء لا يعطّل الخدمة */ }
 }
 
+/* ---------------- فتح الموظفين للتطبيق ----------------
+   يُسجَّل عند تحميل بيانات التطبيق (/api/bootstrap) لمستخدم مسجّل الدخول — بالاسم، لأن الموظف معروف.
+   المزامنة الدورية (كل 30 ثانية) تستدعي المسار نفسه، فلا تُعدّ «فتحاً» جديداً إلا بعد غياب 30 دقيقة،
+   ولا يُكتب في القاعدة أكثر من مرة كل 5 دقائق لكل موظف. الأخطاء لا تعطّل التطبيق. */
+const STAFF_OPEN_GAP_MS = 30 * 60000;
+const STAFF_TOUCH_MS = 5 * 60000;
+async function recordStaffVisit(env, user) {
+  try {
+    if (!env.DB || !user || !user.id) return;
+    await env.DB.prepare('CREATE TABLE IF NOT EXISTS staff_visits (day TEXT NOT NULL, user_id TEXT NOT NULL, n INTEGER NOT NULL DEFAULT 1, first_at TEXT NOT NULL, last_at TEXT NOT NULL, PRIMARY KEY (day, user_id))').run().catch(ignoreExistsObject);
+    const day = visitDayKey(env);
+    const ts = Date.now(), iso = new Date(ts).toISOString();
+    const cur = await env.DB.prepare('SELECT n, last_at FROM staff_visits WHERE day = ? AND user_id = ?').bind(day, user.id).first();
+    if (!cur) {
+      await env.DB.prepare('INSERT OR IGNORE INTO staff_visits (day, user_id, n, first_at, last_at) VALUES (?, ?, 1, ?, ?)').bind(day, user.id, iso, iso).run();
+      return;
+    }
+    const gap = ts - (Date.parse(cur.last_at) || 0);
+    if (gap < STAFF_TOUCH_MS) return;
+    const n = (Number(cur.n) || 0) + (gap >= STAFF_OPEN_GAP_MS ? 1 : 0);
+    await env.DB.prepare('UPDATE staff_visits SET n = ?, last_at = ? WHERE day = ? AND user_id = ?').bind(n, iso, day, user.id).run();
+  } catch (e) { console.warn('recordStaffVisit failed:', e && e.message); }
+}
+
+/** فتح الموظفين للتطبيق في فترة: يومياً (عدد الموظفين ومرات الفتح) ولكل موظف (أيام الدخول، مرات الفتح، آخر نشاط). */
+async function staffVisits(env, from, to) {
+  const out = { daily: [], byUser: [] };
+  try {
+    out.daily = ((await env.DB.prepare('SELECT day, COUNT(*) AS users, COALESCE(SUM(n),0) AS opens FROM staff_visits WHERE day >= ? AND day <= ? GROUP BY day').bind(from, to).all()).results || [])
+      .map((r) => ({ day: r.day, users: Number(r.users) || 0, opens: Number(r.opens) || 0 }));
+    out.byUser = ((await env.DB.prepare(`SELECT s.user_id AS id, u.name AS name, u.username AS username, u.role AS role, COUNT(*) AS days, COALESCE(SUM(s.n),0) AS opens, MAX(s.last_at) AS last_at
+        FROM staff_visits s LEFT JOIN users u ON u.id = s.user_id WHERE s.day >= ? AND s.day <= ? GROUP BY s.user_id ORDER BY last_at DESC`).bind(from, to).all()).results || [])
+      .map((r) => ({ id: r.id, name: r.name || r.username || 'مستخدم محذوف', role: r.role || '', days: Number(r.days) || 0, opens: Number(r.opens) || 0, lastAt: r.last_at || '' }));
+  } catch (e) { /* الجدول يُنشأ مع أول فتح — قبله لا بيانات */ }
+  return out;
+}
+
 /** قراءة الإحصاءات للمدير: إجمالي لكل رابط + تفصيل آخر ٣٠ يوماً */
 /* ======================= تحليلات لوحة المالك =======================
     لا نعرف هوية أي زائر: لا نخزّن أي شيء يدل على 'زائر فردي' إلا:
@@ -3170,10 +3207,13 @@ async function ownerAnalytics(env, query) {
     visitorsDaily = ((await env.DB.prepare('SELECT day, COUNT(DISTINCT fp) AS u FROM link_visitors WHERE day >= ? AND day <= ? AND ' + VISIT_LINK_SQL + ' GROUP BY day').bind(from, to).all()).results || [])
       .map((r) => ({ day: r.day, u: Number(r.u) || 0 }));
   } catch (e) { /* الجداول تُنشأ مع أول زيارة — قبلها لا بيانات */ }
+  const staff = await staffVisits(env, from, to);
 
   return {
     ok: true,
     range, from, to, tzOffsetMin: visitTzOffset(env),
+    staffDaily: staff.daily,
+    staffByUser: staff.byUser,
     /* مؤشرات متاحة فعلاً */
     visits: Number(visRow && visRow.visits) || 0,
     uniqueVisitors: Number(uvRow && uvRow.u) || 0,
@@ -3285,8 +3325,18 @@ async function linkVisits(env) {
   const totals = { today: { visitors: Number(tu && tu.today_u) || 0 }, d7: { visitors: Number(tu && tu.d7_u) || 0 }, d30: { visitors: Number(tu && tu.d30_u) || 0 } };
   let sources = [];
   try { sources = await analyticsByDim(env, d30, today, 'visit_src', 12); } catch (_) { /* لا أحداث بعد */ }
+  // فتح الموظفين للتطبيق: عدد الموظفين المختلفين ومرات الفتح لكل فترة + تفصيل آخر ٣٠ يوماً لكل موظف
+  const sv = await staffVisits(env, d30, today);
+  const sum = (since) => { let opens = 0; for (const d of sv.daily) if (d.day >= since) opens += d.opens; return opens; };
+  const staffUsers = async (since) => { try { const r = await env.DB.prepare('SELECT COUNT(DISTINCT user_id) AS u FROM staff_visits WHERE day >= ? AND day <= ?').bind(since, today).first(); return Number(r && r.u) || 0; } catch (_) { return 0; } };
+  const staff = {
+    today: { users: await staffUsers(today), opens: sum(today) },
+    d7: { users: await staffUsers(d7), opens: sum(d7) },
+    d30: { users: await staffUsers(d30), opens: sum(d30) },
+    byUser: sv.byUser,
+  };
   return {
-    ok: true, links: VISIT_LINKS, byLink, totals, sources, today,
+    ok: true, links: VISIT_LINKS, byLink, totals, sources, today, staff,
     tzOffsetMin: visitTzOffset(env),
     periods: { today: 'اليوم', d7: 'آخر ٧ أيام', d30: 'آخر ٣٠ يوماً' },
     note: 'الزيارات = كل فتح للصفحة. الزوار = بصمة جهاز واحدة في اليوم (لا تُحتسب مرتين). الروبوتات والطلبات بلا متصفح مستبعدة.',

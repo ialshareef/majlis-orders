@@ -95,13 +95,20 @@ const goVisits = async (page) => { await page.evaluate(() => document.querySelec
 /* ---------------- 1) «عن التطبيق» للمالك ---------------- */
 const P = await login('owner');
 await goVisits(P);
-const cards = await P.evaluate(() => [...document.querySelectorAll('#visitStatsBody .vs-card')].map((c) => ({ lbl: c.querySelector('.vs-card-lbl').textContent.trim(), n: c.querySelector('b').textContent.trim(), sub: c.querySelector('small').textContent.replace(/\s+/g, ' ').trim() })));
+const cards = await P.evaluate(() => [...document.querySelectorAll('#visitStatsBody .vs-cards:not(.vs-staff-cards) .vs-card')].map((c) => ({ lbl: c.querySelector('.vs-card-lbl').textContent.trim(), n: c.querySelector('b').textContent.trim(), sub: c.querySelector('small').textContent.replace(/\s+/g, ' ').trim() })));
 ok(cards.length === 4 && cards.map((c) => c.lbl).join('|') === 'اليوم|آخر ٧ أيام|آخر ٣٠ يوماً|منذ البداية', 'about: أربع بطاقات واضحة للفترات', cards.map((c) => c.lbl));
 ok(cards[0].n === '4' && /2 زائر/.test(cards[0].sub), 'about: اليوم 4 زيارات و2 زائر (سجلات الرابط التجريبي الملغى لا تُحتسب)', cards[0]);
+// دخول الموظفين للتطبيق: المالك فتح التطبيق للتو فيظهر بالاسم
+const staffUi = await P.evaluate(() => ({
+  cards: [...document.querySelectorAll('#visitStatsBody .vs-staff-cards .vs-card')].map((c) => c.querySelector('b').textContent.trim() + ' ' + c.querySelector('small').textContent.replace(/\s+/g, ' ').trim()),
+  rows: [...document.querySelectorAll('#visitStatsBody .vs-staff-table tbody tr')].map((r) => [...r.cells].map((c) => c.textContent.trim())),
+}));
+ok(staffUi.cards.length === 3 && /^1 موظف · 1 مرة فتح/.test(staffUi.cards[0]), 'staff: بطاقات «دخول الموظفين للتطبيق» — اليوم موظف واحد ومرة فتح', staffUi.cards);
+ok(staffUi.rows.length === 1 && staffUi.rows[0][1] === '1' && staffUi.rows[0][2] === '1', 'staff: جدول الموظفين بالاسم وأيام الدخول ومرات الفتح', staffUi.rows);
 ok(cards[1].n === '11' && /3 زائر/.test(cards[1].sub) && cards[2].n === '23' && cards[3].n === '43', 'about: ٧ أيام 11 · ٣٠ يوماً 23 · منذ البداية 43', cards);
-const rows = await P.evaluate(() => [...document.querySelectorAll('#visitStatsBody .vs-table tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
+const rows = await P.evaluate(() => [...document.querySelectorAll('#visitStatsBody .vs-table:not(.vs-staff-table) tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
 ok(rows.length === 1 && /بوابة العميل/.test(rows[0]) && !rows.some((r) => /الموظفين|الموسّع/.test(r)), 'about: الجدول ببوابة العميل فقط (بلا الرابط التجريبي الملغى ولا صف الموظفين)', rows);
-const chart = await P.evaluate(() => ({ bars: document.querySelectorAll('#visitStatsBody .vs-bar').length, peak: document.querySelectorAll('#visitStatsBody .vs-bar.peak').length, head: document.querySelector('.vs-chart-head').innerText.replace(/\s+/g, ' ') }));
+const chart = await P.evaluate(() => ({ bars: document.querySelectorAll('#visitStatsBody .vs-bar').length, peak: document.querySelectorAll('#visitStatsBody .vs-bar.peak').length, head: document.querySelector('.vs-chart-head:not(.vs-staff-head)').innerText.replace(/\s+/g, ' ') }));
 ok(chart.bars === 30 && chart.peak === 1 && /الأعلى 12/.test(chart.head) && /متوسط 0.8/.test(chart.head), 'about: رسم 30 يوماً بعمود ذروة واحد (12) ومتوسط 0.8', chart);
 ok(!(await P.evaluate(() => document.getElementById('visitStatsBody').classList.contains('hint'))), 'about: المحتوى لم يعد رمادياً باهتاً (أُزيلت hint عن الحاوية)');
 const srcList = await P.evaluate(() => [...document.querySelectorAll('#visitStatsBody .vs-src li')].map((li) => li.innerText.replace(/\s+/g, ' ').trim()));
@@ -125,12 +132,12 @@ ok(true, 'report: زر «تقرير الزيارات المفصّل» يفتح �
 const tabs = await P.evaluate(() => [...document.querySelectorAll('#repCatalog [data-rep]')].map((b) => b.dataset.rep));
 ok(tabs[tabs.length - 1] === 'visits', 'report: «زيارات الموقع» في فهرس التقارير', tabs);
 await P.evaluate(() => document.querySelector('#repRangeChips [data-rr="all"]').click());
-await P.waitForFunction(() => /إجمالي الزيارات/.test(document.getElementById('repKpis').innerText) && document.querySelectorAll('#repTables table').length === 4, { timeout: 15000 });
+await P.waitForFunction(() => /إجمالي الزيارات/.test(document.getElementById('repKpis').innerText) && document.querySelectorAll('#repTables table').length === 5, { timeout: 15000 });
 const k = await P.evaluate(() => Object.fromEntries([...document.querySelectorAll('#repKpis .stat')].map((s) => [s.querySelector('span').textContent.trim(), s.querySelector('b').textContent.trim()])));
 ok(k['إجمالي الزيارات'] === '43' && k['الزوار (جهاز/يوم)'] === '3', 'report/all: إجمالي 43 زيارة و3 زوار (بلا الرابط التجريبي)', k);
 ok(/\(20\)/.test(k['أعلى يوم']) && k['أنشط يوم في الأسبوع'] && k['أنشط يوم في الأسبوع'] !== '—', 'report/all: أعلى يوم (20) وأنشط يوم أسبوع', k);
 const tt = await P.evaluate(() => [...document.querySelectorAll('#repTables h3')].map((h) => h.textContent.trim()));
-ok(tt.join('|') === 'الزيارات يوماً بيوم|حسب مصدر الزيارة (أي قناة تجلب الطلبات)|حسب يوم الأسبوع (أفضل يوم للنشر والإعلان)|مسار العميل: من الزيارة إلى الطلب', 'report: الجداول الأربعة (مع «حسب مصدر الزيارة»)', tt);
+ok(tt.join('|') === 'الزيارات يوماً بيوم|حسب مصدر الزيارة (أي قناة تجلب الطلبات)|حسب يوم الأسبوع (أفضل يوم للنشر والإعلان)|مسار العميل: من الزيارة إلى الطلب|دخول الموظفين للتطبيق', 'report: الجداول الخمسة (مع «حسب مصدر الزيارة» و«دخول الموظفين للتطبيق»)', tt);
 const srcRows = await P.evaluate(() => [...document.querySelectorAll('#repTables table')[1].querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
 ok(srcRows.length === 3 && srcRows.some((r) => /^إنستغرام 3/.test(r)) && srcRows.some((r) => /^واتساب 2/.test(r)), 'report/sources: صف لكل مصدر بزياراته', srcRows);
 const dailyRows = await P.evaluate(() => document.querySelectorAll('#repTables table')[0].querySelectorAll('tbody tr').length);

@@ -406,7 +406,7 @@
   const addDays = (d, n) => new Date(Date.parse(d + 'T00:00:00Z') + n * 86400000).toISOString().slice(0, 10);
   R.visits = {
     title: 'زيارات الموقع',
-    desc: 'زيارات صفحات العملاء يوماً بيوم، والزوار، وأيام الذروة، ومسار التصميم حتى الطلب',
+    desc: 'زيارات صفحات العملاء يوماً بيوم، والزوار، ودخول الموظفين للتطبيق، وأيام الذروة، ومسار التصميم حتى الطلب',
     need: (ctx) => !!(ctx.perms && ctx.perms.visits),
     build(ctx) {
       const v = ctx.visits;
@@ -418,6 +418,8 @@
       const byDay = new Map();
       (v.visitsDaily || []).forEach((r) => { if (inRange(r.day, ctx.from, ctx.to)) { const e = byDay.get(r.day) || {}; e[r.link] = (e[r.link] || 0) + num(r.n); byDay.set(r.day, e); } });
       const uOf = new Map((v.visitorsDaily || []).map((r) => [r.day, num(r.u)]));
+      const sOf = new Map((v.staffDaily || []).map((r) => [r.day, num(r.users)]));
+      const staffRows = (v.staffByUser || []).map((u) => ({ name: u.name, days: num(u.days), opens: num(u.opens), last: u.lastAt ? String(u.lastAt).slice(0, 10) : '' }));
       // كل أيام الفترة (حتى أيام الصفر): من بداية الفترة أو أول يوم فيه بيانات، حتى نهايتها
       const to = ctx.to || ctx.today;
       const firstData = [...byDay.keys()].sort()[0];
@@ -430,6 +432,7 @@
         const r = { date: d, weekday: WEEKDAYS[dayIdx(d)], total: 0 };
         lk.forEach((k) => { r[k] = num(e[k]); r.total += r[k]; });
         r.visitors = kept && d < kept ? null : (uOf.get(d) || 0);
+        r.staff = sOf.get(d) || 0;
         rows.push(r);
       }
       const total = rows.reduce((s, r) => s + r.total, 0);
@@ -443,7 +446,7 @@
       const fBy = Object.fromEntries(F.map((s) => [s.key, s]));
       const orders = fBy.order ? num(fBy.order.n) : 0;
       const started = fBy.start ? num(fBy.start.n) : 0;
-      const totals = { date: 'الإجمالي', total, visitors: rows.some((r) => r.visitors !== null) ? visitors : null };
+      const totals = { date: 'الإجمالي', total, visitors: rows.some((r) => r.visitors !== null) ? visitors : null, staff: staffRows.length };
       // حسب المصدر: الزيارات والتصاميم والطلبات والمبيعات الفعلية لكل قناة
       const srcRows = (v.sources || []).map((x) => ({ source: srcLabel(x.src), visits: num(x.visits), started: num(x.started), finished: num(x.finished), contact: num(x.contact), orders: num(x.orders), revenue: money(x.revenue), conv: pct(num(x.orders), num(x.visits)) }));
       const sT = { source: 'الإجمالي', visits: 0, started: 0, finished: 0, contact: 0, orders: 0, revenue: 0 };
@@ -462,18 +465,21 @@
           { label: 'طلبات مؤكدة من التصاميم', value: orders, kind: 'num' },
           { label: 'التحويل: زيارة ← طلب', value: pct(orders, total), kind: 'pct' },
           { label: 'أفضل مصدر (طلبات)', value: bestSrc ? `${bestSrc.source} (${bestSrc.orders})` : null, kind: 'text' },
+          { label: 'موظفون دخلوا التطبيق', value: staffRows.length, kind: 'num' },
         ],
         notes: [
           'الزيارة = كل فتح لصفحة عامة. الزائر = جهاز واحد في اليوم (لا يُحتسب مرتين في اليوم نفسه، ولو فتح الصفحتين).',
           'الروبوتات ومعاينات الروابط (واتساب، تيليجرام…) مستبعدة. الأيام بتوقيت المحل.',
           kept ? `عدد الزوار محفوظ لآخر 40 يوماً فقط (منذ ${kept}) — قبله تظهر الزيارات بلا عدد زوار («—»).` : '',
+          'عمود «الموظفون» = عدد الموظفين الذين فتحوا تطبيق الموظفين في ذلك اليوم (بدأ العدّ مع تحديث 1.0.90). «مرة فتح» = فتح بعد غياب نصف ساعة أو أكثر.',
           'المصدر يُعرف من رابط القناة (?src=…) في «عن التطبيق». الزيارة تُنسب لرابطها، والتصميم يُنسب للمصدر المحفوظ على جهاز العميل 7 أيام، والطلب يرث مصدر تصميمه.',
         ].filter(Boolean),
         tables: [
-          { title: 'الزيارات يوماً بيوم', columns: [col('date', 'التاريخ', 'date'), col('weekday', 'اليوم'), ...lk.map((k) => col(k, links[k], 'num')), col('total', 'إجمالي الزيارات', 'num'), col('visitors', 'الزوار', 'num')], rows: rows.slice().reverse(), totals },
+          { title: 'الزيارات يوماً بيوم', columns: [col('date', 'التاريخ', 'date'), col('weekday', 'اليوم'), ...lk.map((k) => col(k, links[k], 'num')), col('total', 'إجمالي الزيارات', 'num'), col('visitors', 'الزوار', 'num'), col('staff', 'الموظفون', 'num')], rows: rows.slice().reverse(), totals },
           { title: 'حسب مصدر الزيارة (أي قناة تجلب الطلبات)', columns: [col('source', 'المصدر'), col('visits', 'الزيارات', 'num'), col('started', 'بدء تصميم', 'num'), col('finished', 'تصميم مكتمل', 'num'), col('contact', 'طلب تواصل', 'num'), col('orders', 'طلبات مؤكدة', 'num'), col('revenue', 'المبيعات', 'money'), col('conv', 'زيارة ← طلب ٪', 'pct')], rows: srcRows, totals: sT },
           { title: 'حسب يوم الأسبوع (أفضل يوم للنشر والإعلان)', columns: [col('weekday', 'اليوم'), col('days', 'عدد الأيام', 'num'), col('visits', 'الزيارات', 'num'), col('avg', 'متوسط اليوم', 'num'), col('share', 'النسبة ٪', 'pct')], rows: wRows, totals: { weekday: 'الإجمالي', days: rows.length, visits: total } },
           { title: 'مسار العميل: من الزيارة إلى الطلب', columns: [col('step', 'المرحلة'), col('n', 'العدد', 'num'), col('rate', 'النسبة ٪', 'pct')], rows: F.map((s) => ({ step: s.label, n: num(s.n), rate: s.rate })) },
+          { title: 'دخول الموظفين للتطبيق', columns: [col('name', 'الموظف'), col('days', 'أيام الدخول', 'num'), col('opens', 'مرات الفتح', 'num'), col('last', 'آخر دخول', 'date')], rows: staffRows, totals: { name: 'الإجمالي', days: staffRows.reduce((s, r) => s + r.days, 0), opens: staffRows.reduce((s, r) => s + r.opens, 0) } },
         ],
       };
     },
