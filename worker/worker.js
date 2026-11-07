@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.89';
-// بصمة asalh-najd-1.0.89.apk (إصدار GitHub v1.0.89، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.89 وversionCode 10089، ونفس شهادة توقيع 1.0.88).
-const UPDATE_FALLBACK_SHA256 = '327413e7e4dcdfff35a758ab5e0dfac81928ade24b6f306f4e4d7750fa539359';
+const UPDATE_FALLBACK_VERSION = '1.0.90';
+// بصمة asalh-najd-1.0.90.apk (إصدار GitHub v1.0.90، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.90 وversionCode 10090، ونفس شهادة توقيع 1.0.89).
+const UPDATE_FALLBACK_SHA256 = '6490b7b7c385ffa692f82c8e124e032b966128ad880b24d51bf4dff307609f7f';
 const UPDATE_FALLBACK_NOTES = [
-  'التصميم بالذكاء الاصطناعي: اختر إجابة لكل سؤال (أو أكثر حيث يُسمح) وأرسلها كلها معاً، والأسئلة تنتهي بعد جولتين على الأكثر',
-  'التصميم يُجهَّز فور معرفة المقاس ونوع الجلسة ومكان الباب، والتلفاز على جدار خالٍ مقابل الجلسة',
+  'إحصائية جديدة: دخول الموظفين للتطبيق — من فتح التطبيق، وكم مرة، وآخر دخول (في صفحة الزيارات وتقرير الزيارات)',
+  'عمود «الموظفون» في جدول الزيارات يوماً بيوم',
 ];
 
 function versionCodeOfName(v) {
