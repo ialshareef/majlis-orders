@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.91';
-// بصمة asalh-najd-1.0.91.apk (إصدار GitHub v1.0.91، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.91 وversionCode 10091، ونفس شهادة توقيع 1.0.90).
-const UPDATE_FALLBACK_SHA256 = 'a2ef931d1a787494ecadc226974e07b75ce34c4bb6070af81e0b49c9a47bd09e';
+const UPDATE_FALLBACK_VERSION = '1.0.92';
+// بصمة asalh-najd-1.0.92.apk (إصدار GitHub v1.0.92، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.92 وversionCode 10092، ونفس شهادة توقيع 1.0.91).
+const UPDATE_FALLBACK_SHA256 = '738943199e5cea83fb46ac28d9f239199a9566a8fde05574791860afc718b97b';
 const UPDATE_FALLBACK_NOTES = [
-  'رابط تنزيل تطبيق أندرويد من GitHub في «عن التطبيق»، مع نسخ ومشاركة',
-  'خيار «ثبّت التطبيق» عند فتح رابط الموظفين من المتصفح (أندرويد والحاسوب والآيفون)',
+  'إصلاح ملفات PDF للتقارير: آخر صف في كل صفحة لم يعد يُقصّ تحت تذييل الصفحة',
+  'يشمل كل التقارير: العمولات، الطلبات، المتبقي على العملاء، العملاء، ذكاء الأعمال، الزيارات وغيرها',
 ];
 
 function versionCodeOfName(v) {
