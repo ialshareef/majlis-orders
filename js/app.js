@@ -8310,6 +8310,10 @@ async function exportExpensesXlsx() {
       await loadScript(H2C_URL);
       await loadScript(JSPDF_URL);
       const pages = [];
+      /* التذييل يُملأ من البداية بنص بالطول نفسه («صفحة 00 من 00») حتى تُقاس مساحة المحتوى الحقيقية:
+         كان فارغاً أثناء التقسيم ثم يُملأ بعده، فيأخذ سطره من آخر صف في كل صفحة فيُقصّ تحته */
+      const stamp = fmtDateTime(Store.now());
+      const footHtml = (i, n) => `<span>${esc(settings().shopName || 'أصالة نجد')} • ${esc(rep.title)}</span><span>صُدِّر في <bdi>${esc(stamp)}</bdi></span><span>صفحة ${i} من ${n}</span>`;
       const newPage = (first) => {
         const pg = document.createElement('div');
         pg.className = 'rep-page';
@@ -8318,11 +8322,17 @@ async function exportExpensesXlsx() {
           ? `<div class="rp-head"><div><h1>${esc(rep.title)}</h1><p>الفترة: ${repPeriodHtml(rep)}</p></div><dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl></div>`
           : `<div class="rp-head small"><b>${esc(rep.title)}</b><span>الفترة: ${repPeriodHtml(rep)}</span></div>`;
         const body = document.createElement('div'); body.className = 'rp-body'; pg.appendChild(body);
-        const foot = document.createElement('div'); foot.className = 'rp-foot'; pg.appendChild(foot);
+        const foot = document.createElement('div'); foot.className = 'rp-foot'; foot.innerHTML = footHtml('00', '00'); pg.appendChild(foot);
         host.appendChild(pg); pages.push(pg);
         return body;
       };
-      const fits = (body) => body.scrollHeight <= body.clientHeight + 1;
+      // هامش أمان صغير: اختلاف تقريب الأطوال بين القياس والتصوير لا يقصّ آخر سطر
+      // (scrollHeight لا يقلّ عن clientHeight، فيُقاس أسفل آخر عنصر مباشرة)
+      const fits = (body) => {
+        if (body.scrollHeight > body.clientHeight + 1) return false;
+        const last = body.lastElementChild;
+        return !last || last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom - 2;
+      };
       let body = newPage(true);
       const sum = document.createElement('div'); sum.className = 'rp-kpis';
       sum.innerHTML = rep.summary.map((s) => `<div><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : (s.kind === 'money' ? fmt(s.value) : s.kind === 'pct' ? r2(s.value) + '٪' : esc(String(s.value)))}</b></div>`).join('');
@@ -8366,8 +8376,7 @@ async function exportExpensesXlsx() {
         minFs[tb.dataset.t] = Math.min(minFs[tb.dataset.t] ?? fs, fs);
       });
       host.querySelectorAll('.rp-table').forEach((tb) => { tb.style.fontSize = minFs[tb.dataset.t] + 'px'; });
-      const stamp = fmtDateTime(Store.now());
-      pages.forEach((pg, i) => { pg.querySelector('.rp-foot').innerHTML = `<span>${esc(settings().shopName || 'أصالة نجد')} • ${esc(rep.title)}</span><span>صُدِّر في <bdi>${esc(stamp)}</bdi></span><span>صفحة ${i + 1} من ${pages.length}</span>`; });
+      pages.forEach((pg, i) => { pg.querySelector('.rp-foot').innerHTML = footHtml(i + 1, pages.length); });
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
       for (let i = 0; i < pages.length; i++) {

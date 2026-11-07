@@ -3405,7 +3405,8 @@ body.portal { background: var(--bg); }
 .rep-page .rp-table tr.tot td { background: #f3e9dc; font-weight: 700; border-top: 2px solid #8B5E34; }
 .rep-page .rp-table .hint { color: #999; }
 .rep-page .rp-notes { font-size: 10.5px; color: #555; margin: 10px 0 0; padding-inline-start: 16px; line-height: 1.7; }
-.rep-page .rp-foot { display: flex; justify-content: space-between; font-size: 10px; color: #777; border-top: 1px solid #e3d8c7; padding: 6px 0 10px; margin-top: 6px; }
+.rep-page .rp-foot { flex: none; display: flex; justify-content: space-between; gap: 12px; white-space: nowrap; font-size: 10px; line-height: 1.4; color: #777; border-top: 1px solid #e3d8c7; padding: 6px 0 10px; margin-top: 6px; }
+.rep-page .rp-foot span:first-child { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .rep-page .rp-table td bdi { white-space: nowrap; }
 .rep-page .rp-table.dense th, .rep-page .rp-table.dense td { padding: 3px 3px; }
 

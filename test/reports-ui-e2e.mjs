@@ -99,6 +99,24 @@ async function login(username) {
   const page = await ctx.newPage();
   page.on('pageerror', (e) => pageErrors.push(username + ': ' + String(e.message).split('\n')[0]));
   // التقاط التنزيلات: browserDownload ينقر رابط blob بسمة download
+  /* فحص تخطيط كل صفحة PDF لحظة تصويرها: لا صف ولا نص يتجاوز منطقة المحتوى إلى التذييل أو يُقصّ */
+  await page.evaluateOnNewDocument(() => {
+    window.__pdfPages = [];
+    let real;
+    Object.defineProperty(window, 'html2canvas', {
+      configurable: true,
+      get() { return real && (async (el, o) => {
+        if (el.classList && el.classList.contains('rep-page')) {
+          const body = el.querySelector('.rp-body').getBoundingClientRect(), foot = el.querySelector('.rp-foot').getBoundingClientRect(), pg = el.getBoundingClientRect();
+          const items = [...el.querySelectorAll('.rp-body tr, .rp-body h2, .rp-body .rp-kpis, .rp-body .rp-notes')];
+          const over = items.filter((x) => x.getBoundingClientRect().bottom > body.bottom + 0.5).map((x) => x.textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
+          window.__pdfPages.push({ title: (el.querySelector('.rp-head h1, .rp-head b') || {}).textContent, over, footIn: foot.bottom <= pg.bottom + 0.5 && foot.top >= body.bottom - 0.5, foot: el.querySelector('.rp-foot').textContent.trim() });
+        }
+        return real(el, o);
+      }); },
+      set(v) { real = v; },
+    });
+  });
   await page.evaluateOnNewDocument(() => {
     window.__dl = [];
     const orig = HTMLAnchorElement.prototype.click;
@@ -153,8 +171,10 @@ function pdfTextOps(latin1) {
   return { tj: (s.match(/\)\s*Tj/g) || []).length, bt: (s.match(/(^|[\s\]>)])BT[\s\r\n]/g) || []).length };
 }
 
+/* صفحات آخر PDF: كل صف داخل منطقة المحتوى، والتذييل كامل تحتها */
+const pdfLayout = (page) => page.evaluate(() => { const p = window.__pdfPages || []; return { n: p.length, bad: p.filter((x) => x.over.length || !x.footIn || !/صفحة \d+ من \d+/.test(x.foot)) }; });
 async function download(page, btn) {
-  await page.evaluate(() => { window.__dl = []; });
+  await page.evaluate(() => { window.__dl = []; window.__pdfPages = []; });
   await page.evaluate((b) => document.getElementById(b).click(), btn);
   await page.waitForFunction(() => window.__dl.length > 0, { timeout: 90000 });
   const f = await page.evaluate(() => window.__dl[window.__dl.length - 1]);
@@ -217,6 +237,17 @@ try {
   pdfTxt = f.buf.toString('latin1');
   pagesN = (pdfTxt.match(/\/Type \/Page\b(?!s)/g) || []).length;
   ok(pagesN >= 3, 'export/pdf: 72 طلباً تُقسَّم على عدة صفحات', { pagesN, size: f.buf.length });
+  let lay = await pdfLayout(page);
+  ok(lay.n === pagesN && !lay.bad.length, 'export/pdf/layout: كل صفوف الطلبات داخل الصفحة ولا شيء تحت التذييل (' + lay.n + ' صفحات)', lay.bad.slice(0, 3));
+  // كل تقارير الفهرس بالفترة الكاملة: نفس الفحص لكل صفحة
+  for (const id of ['commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers', 'visits']) {
+    await pick(page, id); await range(page, 'all'); await sleep(id === 'visits' ? 1500 : 300);
+    f = await download(page, 'btnRepPdf');
+    const n = (f.buf.toString('latin1').match(/\/Type \/Page\b(?!s)/g) || []).length;
+    lay = await pdfLayout(page);
+    ok(lay.n === n && n >= 1 && !lay.bad.length, `export/pdf/layout/${id}: ${n} صفحة — لا صف مقصوص ولا نص تحت التذييل`, lay.bad.slice(0, 3));
+  }
+  await pick(page, 'orders');
   ok(!(await page.evaluate(() => !!document.querySelector('.rep-print'))), 'export/pdf: لا بقايا صفحات مؤقتة في الصفحة');
 
   /* ----- «ذكاء الأعمال»: أزرار PDF القديمة تمرّ بمحرّك الصفحات المصوَّرة (عربية متصلة)
@@ -229,6 +260,8 @@ try {
     const t = f.buf.toString('latin1');
     const txt = pdfTextOps(t);
     ok(f.name.endsWith('.pdf') && t.startsWith('%PDF') && /\/Subtype\s*\/Image/.test(t) && txt.tj === 0 && txt.bt === 0, `bi/${b}: PDF مصوَّر بالعربية المتصلة (بلا نص jsPDF مباشر)`, { name: f.name, size: f.buf.length, ...txt });
+    const ly = await pdfLayout(page);
+    ok(ly.n >= 1 && !ly.bad.length, `bi/${b}/layout: ${ly.n} صفحة — لا صف مقصوص ولا نص تحت التذييل`, ly.bad.slice(0, 3));
   }
   ok(!(await page.evaluate(() => !!document.querySelector('.rep-print'))), 'bi/pdf: لا بقايا صفحات مؤقتة');
   await page.evaluate(() => { try { delete window.XLSX; } catch (_) { window.XLSX = undefined; } });
