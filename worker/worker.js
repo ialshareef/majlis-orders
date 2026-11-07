@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.90';
-// بصمة asalh-najd-1.0.90.apk (إصدار GitHub v1.0.90، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.90 وversionCode 10090، ونفس شهادة توقيع 1.0.89).
-const UPDATE_FALLBACK_SHA256 = '6490b7b7c385ffa692f82c8e124e032b966128ad880b24d51bf4dff307609f7f';
+const UPDATE_FALLBACK_VERSION = '1.0.91';
+// بصمة asalh-najd-1.0.91.apk (إصدار GitHub v1.0.91، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.91 وversionCode 10091، ونفس شهادة توقيع 1.0.90).
+const UPDATE_FALLBACK_SHA256 = 'a2ef931d1a787494ecadc226974e07b75ce34c4bb6070af81e0b49c9a47bd09e';
 const UPDATE_FALLBACK_NOTES = [
-  'إحصائية جديدة: دخول الموظفين للتطبيق — من فتح التطبيق، وكم مرة، وآخر دخول (في صفحة الزيارات وتقرير الزيارات)',
-  'عمود «الموظفون» في جدول الزيارات يوماً بيوم',
+  'رابط تنزيل تطبيق أندرويد من GitHub في «عن التطبيق»، مع نسخ ومشاركة',
+  'خيار «ثبّت التطبيق» عند فتح رابط الموظفين من المتصفح (أندرويد والحاسوب والآيفون)',
 ];
 
 function versionCodeOfName(v) {
