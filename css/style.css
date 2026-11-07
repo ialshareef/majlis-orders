@@ -3567,3 +3567,29 @@ body.portal { background: var(--bg); }
 .wa-user-events > .hint { flex: 1 1 100%; margin: 0; }
 .wa-user-badge { display: inline-flex; align-items: center; gap: 3px; vertical-align: middle; }
 .wa-user-badge svg { width: 12px; height: 12px; }
+
+/* ===== شريط «ثبّت التطبيق» (js/install.js) ===== */
+.install-bar {
+  position: fixed; inset-inline: 12px; bottom: calc(12px + env(safe-area-inset-bottom, 0px)); z-index: 85;
+  display: flex; align-items: center; gap: 12px; padding: 12px 14px;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-lg, 14px);
+  box-shadow: var(--shadow-lg); max-width: 560px; margin-inline: auto;
+  animation: sheet-up .26s var(--ease, ease) backwards;
+}
+.install-bar[hidden] { display: none; }
+.install-ic { width: 40px; height: 40px; border-radius: 10px; flex: none; }
+.install-txt { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; line-height: 1.5; }
+.install-txt b { font-size: .92rem; }
+.install-txt span { font-size: .8rem; color: var(--ink-2); }
+.install-share { display: inline-flex; vertical-align: middle; width: 18px; height: 18px; color: var(--accent); }
+.install-share svg { width: 18px; height: 18px; }
+.install-act { display: flex; gap: 6px; flex: none; }
+@media (max-width: 760px) {
+  /* فوق شريط التنقل السفلي */
+  .install-bar { bottom: calc(76px + env(safe-area-inset-bottom, 0px)); inset-inline: 10px; }
+  body:has(#loginScreen:not([hidden])) .install-bar { bottom: calc(12px + env(safe-area-inset-bottom, 0px)); }
+}
+@media (max-width: 420px) {
+  .install-bar { flex-wrap: wrap; }
+  .install-act { width: 100%; justify-content: flex-end; }
+}

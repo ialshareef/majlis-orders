@@ -1205,6 +1205,21 @@
                 <button type="button" class="btn small" id="btnShareStaff"><svg><use href="#i-upload"/></svg><span>مشاركة</span></button>
               </div>
             </div>
+            <div class="link-row" id="apkRow">
+              <div class="link-head"><span>🤖 تطبيق أندرويد (APK)</span><small id="apkLinkInfo">آخر إصدار من GitHub — للتثبيت على جوالات أندرويد</small></div>
+              <div class="link-actions">
+                <input id="apkLink" class="ltr num" readonly aria-label="رابط تنزيل تطبيق أندرويد">
+                <button type="button" class="btn small" id="btnOpenApk">تنزيل</button>
+                <button type="button" class="btn small" id="btnCopyApk"><svg><use href="#i-copy"/></svg><span>نسخ</span></button>
+                <button type="button" class="btn small" id="btnShareApk"><svg><use href="#i-upload"/></svg><span>مشاركة</span></button>
+              </div>
+            </div>
+            <div class="link-row" id="installWebRow">
+              <div class="link-head"><span>📲 تطبيق الويب</span><small id="installWebStatus">ثبّت النظام على هذا الجهاز ليفتح كتطبيق من الشاشة الرئيسية</small></div>
+              <div class="link-actions">
+                <button type="button" class="btn small primary" id="btnInstallWeb">تثبيت تطبيق الويب</button>
+              </div>
+            </div>
           </div>
           <div class="update-box" id="updateBox">
             <button type="button" class="btn block" id="btnCheckUpdate">التحقق من وجود تحديث</button>
@@ -1252,6 +1267,7 @@
 <script src="js/wa-notify.js"></script>
 <script src="js/app.js"></script>
 <script src="js/help.js"></script>
+<script src="js/install.js"></script>
 <script>
   // تسجيل الـ Service Worker ليعمل التطبيق دون اتصال ويُثبَّت على الجهاز
   if ('serviceWorker' in navigator) {

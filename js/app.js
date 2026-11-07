@@ -6214,6 +6214,7 @@ function docTitle(order) {
     customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design',
     staff: 'https://majlis-api.asalh-najd.workers.dev/',
   };
+  const APK_RELEASES_URL = 'https://github.com/ialshareef/majlis-orders/releases/latest';
 
   /** روابط العميل والموظفين: فتح/نسخ/مشاركة (Web Share API مع بديل النسخ) */
   let linksWired = false;
@@ -6263,6 +6264,28 @@ function docTitle(order) {
     bind('btnOpenStaff', () => open('staffLink'), 'staff');
     bind('btnCopyStaff', () => copy('staffLink'), 'staff');
     bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'), 'staff');
+    // تطبيق أندرويد: رابط ملف APK لآخر إصدار من GitHub (من بيانات التحديث الرسمية)، وصفحة الإصدارات احتياطاً
+    const apkInp = document.getElementById('apkLink');
+    if (apkInp) {
+      apkInp.value = APK_RELEASES_URL;
+      fetch(ACCESS_LINKS.staff + 'api/app-update', { cache: 'no-store', credentials: 'omit' }).then((r) => r.json()).then((d) => {
+        const u = d && d.update;
+        if (u && typeof u.apkUrl === 'string' && u.apkUrl.indexOf('https://github.com/ialshareef/majlis-orders/') === 0) {
+          apkInp.value = u.apkUrl;
+          const info = document.getElementById('apkLinkInfo');
+          if (info && u.versionName) info.textContent = 'الإصدار ' + u.versionName + ' من GitHub — للتثبيت على جوالات أندرويد';
+        }
+      }).catch(() => { /* يبقى رابط صفحة الإصدارات */ });
+    }
+    bind('btnOpenApk', () => open('apkLink'));
+    bind('btnCopyApk', () => copy('apkLink'));
+    bind('btnShareApk', () => share('apkLink', 'تطبيق أصالة نجد لأندرويد'));
+    bind('btnInstallWeb', () => {
+      if (window.MajlisInstall && window.MajlisInstall.available()) { window.MajlisInstall.open(); return; }
+      if (window.MajlisInstall) window.MajlisInstall.open();
+      const st = document.getElementById('installWebStatus');
+      toast(st ? st.textContent : 'من قائمة المتصفح اختر «تثبيت التطبيق»');
+    });
     linksWired = true;
   }
 
