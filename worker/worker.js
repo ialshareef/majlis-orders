@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.92';
-// بصمة asalh-najd-1.0.92.apk (إصدار GitHub v1.0.92، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.92 وversionCode 10092، ونفس شهادة توقيع 1.0.91).
-const UPDATE_FALLBACK_SHA256 = '738943199e5cea83fb46ac28d9f239199a9566a8fde05574791860afc718b97b';
+const UPDATE_FALLBACK_VERSION = '1.0.93';
+// بصمة asalh-najd-1.0.93.apk (إصدار GitHub v1.0.93، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.93 وversionCode 10093، ونفس شهادة توقيع 1.0.92).
+const UPDATE_FALLBACK_SHA256 = '6c03755628b6091e203dda628e924675a3281ce606e2def149f7fb066a3f3782';
 const UPDATE_FALLBACK_NOTES = [
-  'إصلاح ملفات PDF للتقارير: آخر صف في كل صفحة لم يعد يُقصّ تحت تذييل الصفحة',
-  'يشمل كل التقارير: العمولات، الطلبات، المتبقي على العملاء، العملاء، ذكاء الأعمال، الزيارات وغيرها',
+  'التقارير: اختر ما يشمله التقرير (الحالات، والمدفوعة بالكامل فقط) — الطلبات الجديدة خارج المبيعات والأرباح افتراضياً',
+  'تقرير جديد «الطلبات الجديدة»، وتبويبات في صفحة الطلبات: جديدة / قيد العمل / تم التوصيل / الكل',
 ];
 
 function versionCodeOfName(v) {
