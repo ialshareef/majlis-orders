@@ -636,6 +636,12 @@
         <div class="ph-title"><h2>جميع الطلبات</h2><p>ابحث، صفِّ، وافتح أي طلب لمتابعته.</p></div>
         <div class="actions"><button type="button" class="btn primary" id="ordersNew"><svg><use href="#i-plus"/></svg> طلب جديد</button></div>
       </header>
+      <div class="ord-tabs" id="ordTabs" role="tablist" aria-label="أقسام الطلبات">
+        <button type="button" role="tab" data-otab="new" aria-selected="false"><i class="st-dot st-new"></i><span>جديدة</span><b class="ot-n num" data-otn="new">0</b></button>
+        <button type="button" role="tab" data-otab="work" aria-selected="false"><i class="st-dot st-progress"></i><span>قيد العمل</span><b class="ot-n num" data-otn="work">0</b></button>
+        <button type="button" role="tab" data-otab="delivered" aria-selected="false"><i class="st-dot st-delivered"></i><span>تم التوصيل</span><b class="ot-n num" data-otn="delivered">0</b></button>
+        <button type="button" role="tab" data-otab="all" aria-selected="false"><span>الكل</span><b class="ot-n num" data-otn="all">0</b></button>
+      </div>
       <div class="toolbar">
         <label class="search"><svg><use href="#i-search"/></svg><input id="ordSearch" type="search" enterkeyhint="search" aria-label="البحث في الطلبات" placeholder="بحث بالاسم أو الجوال أو رقم الطلب"></label>
         <div class="date-range">
@@ -894,6 +900,7 @@
         </div>
         <select id="biUser" aria-label="تصفية حسب الموظف"><option value="">كل الموظفين</option></select>
       </div>
+      <div class="rep-include" id="biInclude" role="group" aria-label="الطلبات التي تُحسب في الأرقام"></div>
       <p class="filter-note" id="biNote"></p>
 
       <!-- ===== لوحة تحليلات المالك ===== -->
@@ -1096,7 +1103,7 @@
         </div>
         <select id="repUser" aria-label="تصفية حسب الموظف أو المندوب"><option value="">كل الموظفين والمناديب</option></select>
         <select id="repStatus" aria-label="تصفية حسب الحالة">
-          <option value="">الطلبات الفعلية</option>
+          <option value="">حسب «يشمل التقرير»</option>
           <option value="all">كل الطلبات</option>
           <option value="quote">عرض سعر</option>
           <option value="new">جديد</option>
@@ -1106,6 +1113,7 @@
           <option value="cancelled">ملغي</option>
         </select>
       </div>
+      <div class="rep-include" id="repInclude" role="group" aria-label="الطلبات التي يشملها التقرير"></div>
       <p class="filter-note" id="repNote"></p>
       <div class="stats-row kpis" id="repKpis"></div>
       <div id="repTables"></div>

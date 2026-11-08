@@ -26,6 +26,28 @@
   const money = (v) => Math.round((num(v) + 1e-9) * 100) / 100;
   const pct = (a, b) => (b > 0 ? Math.round((a / b) * 10000) / 100 : null);
   const isSale = (o) => !!o && o.status !== 'cancelled' && o.status !== 'quote';
+  /* «يشمل التقرير»: ctx.include = { statuses: ['progress','done','delivered'], paidOnly: false }
+     يحدد أي الطلبات تُحسب مبيعاتٍ وأرباحاً وعمولات (افتراضياً بلا «جديد» لأنه لم يبدأ بعد).
+     عروض الأسعار والملغاة خارج المبيعات دائماً. بلا ctx.include ← السلوك القديم (كل طلب فعلي). */
+  const INCLUDE_STATUSES = ['new', 'progress', 'done', 'delivered'];
+  const DEFAULT_INCLUDE = { statuses: ['progress', 'done', 'delivered'], paidOnly: false };
+  const fullyPaid = (o) => money(num(o.total) - num(o.paid)) <= 0.004;
+  const counted = (ctx, o, ignorePaid) => {
+    if (!isSale(o)) return false;
+    const inc = ctx.include;
+    if (!inc) return true;
+    if (Array.isArray(inc.statuses) && inc.statuses.indexOf(o.status) < 0) return false;
+    if (inc.paidOnly && !ignorePaid && !fullyPaid(o)) return false;
+    return true;
+  };
+  /** وصف ما يشمله التقرير بالعربية (للملاحظات ورأس PDF) */
+  function includeText(ctx) {
+    const inc = ctx.include;
+    if (!inc) return 'كل الطلبات الفعلية';
+    const L = (ctx.labels && ctx.labels.STATUS) || {};
+    const st = INCLUDE_STATUSES.filter((k) => (inc.statuses || []).indexOf(k) >= 0).map((k) => L[k] || k);
+    return (st.length ? st.join('، ') : 'لا حالات') + (inc.paidOnly ? ' — المدفوعة بالكامل فقط' : '');
+  }
   const inRange = (d, from, to) => !!d && (!from || d >= from) && (!to || d <= to);
   const daysBetween = (a, b) => {
     const pa = Date.parse(a + 'T00:00:00Z'), pb = Date.parse(b + 'T00:00:00Z');
@@ -41,9 +63,10 @@
     if (byDate) list = list.filter((o) => inRange(ctx.calc.ordDate(o), ctx.from, ctx.to));
     if (statusMode === 'filter') {
       const st = ctx.status || '';
-      if (st === '') list = list.filter(isSale);
+      if (st === '') list = list.filter((o) => counted(ctx, o));
       else if (st !== 'all') list = list.filter((o) => o.status === st);
-    } else if (statusMode === 'sales') list = list.filter(isSale);
+    } else if (statusMode === 'sales') list = list.filter((o) => counted(ctx, o));
+    else if (statusMode === 'salesStatus') list = list.filter((o) => counted(ctx, o, true));   // المديونيات: «المدفوعة بالكامل» لا معنى له هنا
     return list.slice().sort((a, b) => String(a.createdAt).localeCompare(String(b.createdAt)));
   }
   const byUser = (ctx, list) => (ctx.userId ? list.filter((o) => o.createdBy === ctx.userId) : list);
@@ -85,7 +108,7 @@
   R.orders = {
     title: 'تفصيل الطلبات',
     desc: 'كل طلب ببياناته: الموظف أو المندوب، البيع، التكاليف، صافي الربح، العمولات، والتحصيل',
-    usesStatus: true,
+    usesStatus: true, usesInclude: true,
     build(ctx) {
       const list = byUser(ctx, scopedOrders(ctx));
       const L = ctx.labels;
@@ -102,7 +125,7 @@
           revenue: f.revenue, discount: f.discount, vat: f.vat, total: f.total,
           cost: f.cost, profit: f.profit, margin: f.margin,
           ownerComm: f.ownerComm, parentComm: f.parentComm, share: f.share, afterComm: f.afterComm,
-          paid: f.paid, remaining: f.remaining, _sale: isSale(o),
+          paid: f.paid, remaining: f.remaining, _sale: counted(ctx, o),
         };
       });
       const columns = [col('number', 'رقم الطلب'), col('date', 'التاريخ', 'date'), col('customer', 'العميل'), col('phone', 'الجوال'),
@@ -130,10 +153,36 @@
       if (showP) summary.push({ label: 'التكاليف', value: tot.cost || 0, kind: 'money' }, { label: 'صافي الربح', value: tot.profit || 0, kind: 'money' });
       if (showC) summary.push({ label: 'إجمالي العمولات والحصص', value: money((tot.ownerComm || 0) + (tot.parentComm || 0) + (tot.share || 0)), kind: 'money' });
       summary.push({ label: 'المحصّل', value: tot.paid || 0, kind: 'money' }, { label: 'المتبقي على العملاء', value: tot.remaining || 0, kind: 'money' });
-      const notes = ['المبالغ الإجمالية تشمل الطلبات الفعلية فقط (بلا عروض الأسعار والملغاة).'];
+      const notes = ['المبالغ الإجمالية تشمل: ' + includeText(ctx) + ' (بلا عروض الأسعار والملغاة).'];
       const noCost = sales.filter((r) => showP && r.profit === null).length;
       if (noCost) notes.push(`${noCost} طلب بلا تكاليف مُدخلة: لا يُحسب له ربح ولا عمولة.`);
       return { summary, tables: [{ title: 'الطلبات', columns, rows, totals: tot }], notes };
+    },
+  };
+
+  /* 1ب) الطلبات الجديدة: لم يبدأ تنفيذها بعد — مبيعات قادمة لا محقّقة (خارج «يشمل التقرير») */
+  R.pending = {
+    title: 'الطلبات الجديدة',
+    desc: 'طلبات لم يبدأ تنفيذها بعد: قيمتها والعربون المدفوع ومنذ متى تنتظر — مبيعات قادمة لا تدخل في الأرباح',
+    build(ctx) {
+      const list = byUser(ctx, scopedOrders(ctx, { statusMode: 'none' })).filter((o) => o.status === 'new');
+      const rows = list.map((o) => {
+        const f = orderFigures(ctx, o); const c = o.customer || {}; const d = ctx.calc.ordDate(o);
+        return { number: o.number != null ? '#' + o.number : '—', date: d, customer: c.name || '—', phone: c.phone || '', by: ctx.userName(o.createdBy, o.createdByName), total: f.total, paid: f.paid, remaining: f.remaining, age: daysBetween(ctx.today, d) };
+      }).sort((a, b) => (b.age || 0) - (a.age || 0));
+      const tot = { number: 'الإجمالي', customer: rows.length + ' طلب', total: sum(rows, (r) => r.total), paid: sum(rows, (r) => r.paid), remaining: sum(rows, (r) => r.remaining) };
+      const oldest = rows.reduce((m, r) => Math.max(m, r.age || 0), 0);
+      return {
+        summary: [
+          { label: 'عدد الطلبات الجديدة', value: rows.length, kind: 'num' },
+          { label: 'القيمة المتوقعة', value: tot.total, kind: 'money' },
+          { label: 'العربون المحصّل', value: tot.paid, kind: 'money' },
+          { label: 'المتبقي عند التنفيذ', value: tot.remaining, kind: 'money' },
+          { label: 'أقدم طلب ينتظر (يوم)', value: rows.length ? oldest : null, kind: 'num' },
+        ],
+        notes: ['هذه الطلبات لم يبدأ تنفيذها بعد، فلا تُحسب في المبيعات والأرباح والعمولات إلا إذا اخترت «جديد» في «يشمل التقرير».', 'الأقدم أولاً: الطلب الذي ينتظر طويلاً يحتاج متابعة مع العميل.'],
+        tables: [{ title: 'الطلبات الجديدة', columns: [col('number', 'رقم الطلب'), col('date', 'تاريخ الطلب', 'date'), col('customer', 'العميل'), col('phone', 'الجوال'), col('by', 'الموظف / المندوب'), col('total', 'الإجمالي', 'money'), col('paid', 'العربون المدفوع', 'money'), col('remaining', 'المتبقي', 'money'), col('age', 'ينتظر منذ (يوم)', 'num')], rows, totals: tot }],
+      };
     },
   };
 
@@ -141,7 +190,7 @@
   R.commissions = {
     title: 'عمولات الموظفين والمناديب',
     desc: 'مستحقات كل موظف ومندوب: عمولة طلباته، وعمولته من طلبات تابعيه، وحصة المشاركة',
-    need: (ctx) => ctx.perms.commAny,
+    need: (ctx) => ctx.perms.commAny, usesInclude: true,
     build(ctx) {
       const list = scopedOrders(ctx, { statusMode: 'sales' });
       const people = new Map();
@@ -207,7 +256,7 @@
   R.pnl = {
     title: 'صافي الأرباح',
     desc: 'المبيعات − التكاليف − العمولات − المصروفات، مع تفصيل شهري',
-    need: (ctx) => ctx.perms.profitAny,
+    need: (ctx) => ctx.perms.profitAny, usesInclude: true,
     build(ctx) {
       const list = byUser(ctx, scopedOrders(ctx, { statusMode: 'sales' }));
       let exps = [];
@@ -255,38 +304,39 @@
   /* 4) أداء الموظفين والمناديب */
   R.staff = {
     title: 'أداء الموظفين والمناديب',
-    desc: 'عدد الطلبات والمبيعات والربح والتحصيل لكل موظف ومندوب',
+    desc: 'عدد الطلبات والمبيعات والربح والتحصيل لكل موظف ومندوب', usesInclude: true,
     build(ctx) {
       const all = byUser(ctx, scopedOrders(ctx, { statusMode: 'none' }));
       const g = new Map();
       for (const o of all) {
         const k = o.createdBy || 'none';
-        if (!g.has(k)) g.set(k, { name: ctx.userName(o.createdBy, o.createdByName), role: ctx.labels.ROLES[ctx.userRole(o.createdBy)] || '', orders: 0, quotes: 0, cancelled: 0, revenue: 0, profit: 0, costedRev: 0, costed: 0, paid: 0, remaining: 0 });
+        if (!g.has(k)) g.set(k, { name: ctx.userName(o.createdBy, o.createdByName), role: ctx.labels.ROLES[ctx.userRole(o.createdBy)] || '', orders: 0, quotes: 0, cancelled: 0, pending: 0, revenue: 0, profit: 0, costedRev: 0, costed: 0, paid: 0, remaining: 0 });
         const e = g.get(k);
         if (o.status === 'quote') { e.quotes++; continue; }
         if (o.status === 'cancelled') { e.cancelled++; continue; }
+        if (!counted(ctx, o)) { e.pending++; continue; }   // جديد أو غير مدفوع بالكامل حسب «يشمل التقرير»
         const f = orderFigures(ctx, o);
         e.orders++; e.revenue += f.revenue; e.paid += f.paid; e.remaining += f.remaining;
         if (f.profit !== null) { e.profit += f.profit; e.costedRev += f.revenue; e.costed++; }
       }
       const showP = !!ctx.perms.profitAny;
       const rows = [...g.values()].map((e) => ({
-        name: e.name, role: e.role, orders: e.orders, quotes: e.quotes, cancelled: e.cancelled, revenue: money(e.revenue),
+        name: e.name, role: e.role, orders: e.orders, quotes: e.quotes, cancelled: e.cancelled, pending: e.pending, revenue: money(e.revenue),
         avg: e.orders ? money(e.revenue / e.orders) : 0, profit: e.costed ? money(e.profit) : null, margin: e.costed ? pct(e.profit, e.costedRev) : null,
         paid: money(e.paid), remaining: money(e.remaining),
       })).sort((a, b) => b.revenue - a.revenue);
-      const columns = [col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات الفعلية', 'num'), col('quotes', 'عروض الأسعار', 'num'), col('cancelled', 'الملغاة', 'num'), col('revenue', 'المبيعات', 'money'), col('avg', 'متوسط الطلب', 'money')];
+      const columns = [col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات الفعلية', 'num'), col('pending', 'غير محتسبة', 'num'), col('quotes', 'عروض الأسعار', 'num'), col('cancelled', 'الملغاة', 'num'), col('revenue', 'المبيعات', 'money'), col('avg', 'متوسط الطلب', 'money')];
       if (showP) columns.push(col('profit', 'صافي الربح', 'money'), col('margin', 'الهامش ٪', 'pct'));
       columns.push(col('paid', 'المحصّل', 'money'), col('remaining', 'المتبقي', 'money'));
       const tot = { name: 'الإجمالي' };
-      ['orders', 'quotes', 'cancelled'].forEach((k) => { tot[k] = rows.reduce((s, r) => s + r[k], 0); });
+      ['orders', 'pending', 'quotes', 'cancelled'].forEach((k) => { tot[k] = rows.reduce((s, r) => s + r[k], 0); });
       ['revenue', 'paid', 'remaining'].forEach((k) => { tot[k] = sum(rows, (r) => r[k]); });
       tot.avg = tot.orders ? money(tot.revenue / tot.orders) : 0;
       if (showP) tot.profit = sum(rows.filter((r) => r.profit !== null), (r) => r.profit);
       const summary = [{ label: 'الطلبات الفعلية', value: tot.orders, kind: 'num' }, { label: 'المبيعات', value: tot.revenue, kind: 'money' }, { label: 'متوسط الطلب', value: tot.avg, kind: 'money' }];
       if (showP) summary.push({ label: 'صافي الربح', value: tot.profit, kind: 'money' });
       summary.push({ label: 'المتبقي على العملاء', value: tot.remaining, kind: 'money' });
-      return { summary, notes: [], tables: [{ title: 'الأداء حسب الشخص', columns, rows, totals: tot }] };
+      return { summary, notes: ['«الطلبات الفعلية» والمبيعات تشمل: ' + includeText(ctx) + '. «غير محتسبة» = طلبات خارج هذا الاختيار (مثل الجديدة).'], tables: [{ title: 'الأداء حسب الشخص', columns, rows, totals: tot }] };
     },
   };
 
@@ -324,9 +374,9 @@
   /* 6) المتبقي على العملاء */
   R.receivables = {
     title: 'المتبقي على العملاء',
-    desc: 'الطلبات التي عليها مبالغ غير محصّلة، مع عمر الدين بالأيام',
+    desc: 'الطلبات التي عليها مبالغ غير محصّلة، مع عمر الدين بالأيام', usesInclude: true, includeNoPaid: true,
     build(ctx) {
-      const list = byUser(ctx, scopedOrders(ctx, { statusMode: 'sales' }));
+      const list = byUser(ctx, scopedOrders(ctx, { statusMode: 'salesStatus' }));
       const rows = list.map((o) => {
         const f = orderFigures(ctx, o); const c = o.customer || {}; const d = ctx.calc.ordDate(o);
         return { number: o.number != null ? '#' + o.number : '—', date: d, customer: c.name || '—', phone: c.phone || '', status: ctx.labels.STATUS[o.status] || '', by: ctx.userName(o.createdBy, o.createdByName), total: f.total, paid: f.paid, remaining: f.remaining, age: daysBetween(ctx.today, d) };
@@ -371,7 +421,7 @@
   /* 8) المبيعات حسب العميل */
   R.customers = {
     title: 'المبيعات حسب العميل',
-    desc: 'لكل عميل: عدد طلباته ومبيعاته والمحصّل والمتبقي وآخر طلب',
+    desc: 'لكل عميل: عدد طلباته ومبيعاته والمحصّل والمتبقي وآخر طلب', usesInclude: true,
     build(ctx) {
       const list = byUser(ctx, scopedOrders(ctx, { statusMode: 'sales' }));
       const g = new Map();
@@ -485,10 +535,10 @@
     },
   };
 
-  const ORDER = ['orders', 'commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers', 'visits'];
+  const ORDER = ['orders', 'pending', 'commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers', 'visits'];
 
   function catalog(ctx) {
-    return ORDER.filter((id) => !R[id].need || R[id].need(ctx)).map((id) => ({ id, title: R[id].title, desc: R[id].desc, usesStatus: !!R[id].usesStatus }));
+    return ORDER.filter((id) => !R[id].need || R[id].need(ctx)).map((id) => ({ id, title: R[id].title, desc: R[id].desc, usesStatus: !!R[id].usesStatus, usesInclude: !!R[id].usesInclude, includeNoPaid: !!R[id].includeNoPaid }));
   }
 
   function build(id, ctx) {
@@ -497,6 +547,10 @@
     // تصفية بمستخدم آخر لمن يملك reports.view_all فقط — وإلا تُتجاهل (النطاق طلباته هو)
     if (!ctx.scopeAll && ctx.userId) ctx = { ...ctx, userId: '' };
     const out = def.build(ctx);
+    // ما يشمله التقرير يُذكر أول الملاحظات (يظهر في الشاشة وPDF وExcel) — تقرير الطلبات والأداء يذكرانه بأنفسهما
+    if (def.usesInclude && ctx.include && id !== 'orders' && id !== 'staff') {
+      out.notes = ['يشمل التقرير: ' + (def.includeNoPaid ? includeText({ ...ctx, include: { ...ctx.include, paidOnly: false } }) : includeText(ctx)) + ' (بلا عروض الأسعار والملغاة).'].concat(out.notes || []);
+    }
     return { id, title: def.title, period: periodText(ctx), from: ctx.from || '', to: ctx.to || ctx.today || '', ...out };
   }
 
@@ -539,7 +593,7 @@
     return '﻿' + lines.join('\r\n');
   }
 
-  const api = { build, catalog, tableAoa, headerAoa, summaryAoa, toCsv, cellValue, isSale, SRC_LABELS, srcLabel, _defs: R };
+  const api = { build, catalog, tableAoa, headerAoa, summaryAoa, toCsv, cellValue, isSale, counted, includeText, INCLUDE_STATUSES, DEFAULT_INCLUDE, SRC_LABELS, srcLabel, _defs: R };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Reports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

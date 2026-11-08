@@ -54,7 +54,7 @@ const ctxOf = (over = {}) => ({
 const S = (rep, label) => (rep.summary.find((s) => s.label === label) || {}).value;
 
 /* ---- الفهرس والصلاحيات ---- */
-ok(Reports.catalog(ctxOf()).map((c) => c.id).join() === 'orders,commissions,pnl,staff,payments,receivables,expenses,customers', 'catalog: كل التقارير الثمانية للمالك');
+ok(Reports.catalog(ctxOf()).map((c) => c.id).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,customers', 'catalog: كل التقارير التسعة للمالك («الطلبات الجديدة» بعد تفصيل الطلبات)');
 const noComm = Reports.catalog(ctxOf({ perms: { commAny: false, profitAny: false, expenses: false } })).map((c) => c.id);
 ok(!noComm.includes('commissions') && !noComm.includes('pnl') && !noComm.includes('expenses') && noComm.includes('orders'), 'catalog: بلا صلاحية العمولة/الربح/المصروفات تختفي تقاريرها', noComm);
 let threw = false; try { Reports.build('pnl', ctxOf({ perms: { profitAny: false } })); } catch (_) { threw = true; }
@@ -134,6 +134,51 @@ ok(csv.includes(`"'=HYPERLINK(""x"")"`), 'csv: حماية من حقن الصيغ
 ok(csv.includes(',1000,') && csv.includes('الإجمالي'), 'csv: الأرقام تبقى أرقاماً وصف الإجمالي موجود');
 const aoa = Reports.tableAoa(r.tables[0]);
 ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) => c.key === 'revenue')] === 'number', 'aoa: رأس + 3 صفوف + إجمالي، والمبالغ أرقام لـ Excel');
+
+
+/* ---- «يشمل التقرير»: الطلبات الجديدة خارج المبيعات افتراضياً ---- */
+{
+  const DEF = Reports.DEFAULT_INCLUDE;
+  ok(JSON.stringify(DEF) === JSON.stringify({ statuses: ['progress', 'done', 'delivered'], paidOnly: false }), 'include: الافتراضي بلا «جديد» وبلا شرط الدفع', DEF);
+  const inc = (statuses, paidOnly = false) => ctxOf({ include: { statuses, paidOnly } });
+  let r = Reports.build('orders', inc(DEF.statuses));
+  ok(r.tables[0].rows.length === 2 && S(r, 'المبيعات قبل الضريبة') === 2500 && !r.tables[0].rows.some((x) => x.number === '#1'), 'include/orders: الافتراضي يستبعد الطلب الجديد #1 (2000 + 500 = 2500)', r.tables[0].rows.map((x) => x.number));
+  ok(/قيد التنفيذ، اكتمال، تم التوصيل/.test(r.notes[0]) && !/جديد/.test(r.notes[0]), 'include/orders: الملاحظة تذكر ما يشمله التقرير', r.notes[0]);
+  r = Reports.build('orders', inc(['new', 'progress', 'done', 'delivered']));
+  ok(S(r, 'المبيعات قبل الضريبة') === 3500 && r.tables[0].rows.length === 3, 'include/orders: اختيار «جديد» يعيده (3500)');
+  r = Reports.build('orders', inc(DEF.statuses, true));
+  ok(S(r, 'المبيعات قبل الضريبة') === 2000 && r.tables[0].rows.length === 1 && r.tables[0].rows[0].number === '#2', 'include/orders: «المدفوعة بالكامل فقط» ← #2 وحده', r.tables[0].rows.map((x) => x.number));
+  r = Reports.build('orders', { ...inc(DEF.statuses), status: 'new' });
+  ok(r.tables[0].rows.length === 1 && r.tables[0].rows[0].number === '#1', 'include/orders: اختيار حالة محددة من القائمة يتجاوز «يشمل التقرير»');
+  r = Reports.build('pnl', inc(DEF.statuses));
+  ok(S(r, 'المبيعات قبل الضريبة') === 2500 && /^يشمل التقرير: قيد التنفيذ/.test(r.notes[0]), 'include/pnl: الأرباح بلا الجديد، وأول ملاحظة تذكر ما يشمله', { s: S(r, 'المبيعات قبل الضريبة'), n: r.notes[0] });
+  r = Reports.build('commissions', inc(DEF.statuses));
+  const det = r.tables.find((t) => /لكل طلب/.test(t.title));
+  ok(det && !det.rows.some((x) => x.number === '#1'), 'include/commissions: لا عمولة على الطلب الجديد');
+  r = Reports.build('receivables', inc(DEF.statuses, true));
+  ok(r.tables[0].rows.length === 1 && r.tables[0].rows[0].number === '#5' && !/المدفوعة بالكامل/.test(r.notes[0]), 'include/receivables: «المدفوعة بالكامل» لا يُفرغ المديونيات (#5)، والجديد مستبعد', { rows: r.tables[0].rows.map((x) => x.number), n: r.notes[0] });
+  r = Reports.build('staff', inc(DEF.statuses));
+  const s1 = r.tables[0].rows.find((x) => x.name === 'سالم');
+  ok(s1 && s1.orders === 1 && s1.pending === 1 && s1.quotes === 1 && r.tables[0].columns.some((c) => c.key === 'pending'), 'include/staff: سالم = طلب فعلي واحد + «غير محتسبة» 1 (الجديد) + عرض سعر', s1);
+  r = Reports.build('customers', inc(DEF.statuses));
+  ok(!r.tables[0].rows.some((x) => x.customer === 'عميل 1'), 'include/customers: عميل الطلب الجديد خارج المبيعات');
+  const cat = Object.fromEntries(Reports.catalog(ctxOf()).map((c) => [c.id, c]));
+  ok(cat.orders.usesInclude && cat.commissions.usesInclude && cat.pnl.usesInclude && cat.receivables.includeNoPaid && !cat.payments.usesInclude && !cat.pending.usesInclude, 'catalog: «يشمل التقرير» للتقارير المالية فقط (لا للدفعات ولا للطلبات الجديدة)', cat);
+  ok(Reports.includeText(inc(['new', 'delivered'], true)) === 'جديد، تم التوصيل — المدفوعة بالكامل فقط', 'includeText: وصف عربي مقروء', Reports.includeText(inc(['new', 'delivered'], true)));
+  // بلا include (عملاء قدامى للمحرّك): السلوك القديم
+  ok(S(Reports.build('orders', ctxOf()), 'المبيعات قبل الضريبة') === 3500, 'include: بلا اختيار ← كل الطلبات الفعلية كما كان');
+}
+
+/* ---- تقرير «الطلبات الجديدة» ---- */
+{
+  const r = Reports.build('pending', ctxOf({ include: Reports.DEFAULT_INCLUDE }));
+  const t = r.tables[0];
+  ok(t.rows.length === 1 && t.rows[0].number === '#1' && t.rows[0].total === 1150 && t.rows[0].paid === 500 && t.rows[0].remaining === 650 && t.rows[0].age === 30, 'pending: الطلب الجديد #1 في الفترة — القيمة 1150، العربون 500، ينتظر 30 يوماً', t.rows);
+  ok(S(r, 'عدد الطلبات الجديدة') === 1 && S(r, 'القيمة المتوقعة') === 1150 && S(r, 'العربون المحصّل') === 500 && S(r, 'أقدم طلب ينتظر (يوم)') === 30, 'pending: الملخص', r.summary);
+  const all = Reports.build('pending', ctxOf({ from: '', to: '2026-11-30' }));
+  ok(all.tables[0].rows.length === 2 && all.tables[0].rows[0].number === '#6', 'pending: كل الفترات ← الطلبان الجديدان، الأقدم أولاً', all.tables[0].rows.map((x) => x.number));
+  ok(/لا تُحسب في المبيعات/.test(r.notes[0]), 'pending: ملاحظة أنها خارج المبيعات');
+}
 
 console.log(`=== reports-engine: PASS=${pass}  FAIL=${fail} ===`);
 process.exit(fail ? 1 : 0);

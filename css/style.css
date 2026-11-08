@@ -3594,3 +3594,27 @@ body.portal { background: var(--bg); }
   .install-bar { flex-wrap: wrap; }
   .install-act { width: 100%; justify-content: flex-end; }
 }
+
+/* ===== «يشمل التقرير»: أي الطلبات تُحسب في المبيعات والأرباح ===== */
+.rep-include { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0 2px; }
+.rep-include[hidden] { display: none; }
+.rep-include .ri-lbl { font-size: .84rem; font-weight: 700; color: var(--ink-2); margin-inline-end: 2px; }
+.rep-include .chip { display: inline-flex; align-items: center; gap: 6px; }
+.rep-include .chip:not(.on) { opacity: .7; }
+.rep-include .chip:not(.on) .st-dot { filter: grayscale(1); }
+.rep-include .ri-sep { width: 1px; height: 22px; background: var(--line); margin-inline: 4px; }
+.rep-include .ri-hint { flex-basis: 100%; font-size: .78rem; color: var(--ink-3); }
+
+/* ===== أقسام صفحة الطلبات (تبويبات بعدد الطلبات) ===== */
+.ord-tabs { display: flex; gap: 6px; margin: 0 0 12px; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line-soft); }
+.ord-tabs::-webkit-scrollbar { display: none; }
+.ord-tabs button {
+  display: inline-flex; align-items: center; gap: 7px; flex: none; padding: 9px 14px 10px; min-height: 42px;
+  background: none; border: 0; border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+  font: inherit; font-size: .92rem; color: var(--ink-2); cursor: pointer; border-radius: 8px 8px 0 0;
+}
+.ord-tabs button:hover { background: var(--surface-2); }
+.ord-tabs button.on { color: var(--ink); font-weight: 700; border-bottom-color: var(--accent); }
+.ord-tabs .ot-n { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: .78rem; font-weight: 700; text-align: center; color: var(--ink-2); }
+.ord-tabs button.on .ot-n { background: var(--accent-soft); border-color: var(--accent-line); color: var(--ink); }
+.ord-tabs button.has-new .ot-n { background: var(--accent); border-color: var(--accent); color: #fff; }

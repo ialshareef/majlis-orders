@@ -94,9 +94,12 @@ routeDownloads(browser); // تنزيلات الاختبار إلى Documents/maj
 const pageErrors = [];
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-async function login(username) {
+async function login(username, opts = {}) {
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
+  /* الأرقام القديمة في هذا الاختبار تشمل الطلب «الجديد»: نختار كل الحالات في «يشمل التقرير»
+     إلا حين نختبر الافتراضي نفسه (opts.defaultInclude) */
+  if (!opts.defaultInclude) await page.evaluateOnNewDocument(() => { try { if (!sessionStorage.getItem('incSet')) { localStorage.setItem('majlis_rep_inc', JSON.stringify({ statuses: ['new', 'progress', 'done', 'delivered'], paidOnly: false })); sessionStorage.setItem('incSet', '1'); } } catch (_) { /* */ } });
   page.on('pageerror', (e) => pageErrors.push(username + ': ' + String(e.message).split('\n')[0]));
   // التقاط التنزيلات: browserDownload ينقر رابط blob بسمة download
   /* فحص تخطيط كل صفحة PDF لحظة تصويرها: لا صف ولا نص يتجاوز منطقة المحتوى إلى التذييل أو يُقصّ */
@@ -190,7 +193,7 @@ try {
   ok(nav.reports === true, 'owner: «التقارير» في القائمة', nav);
   await go(page, 'reports');
   ok(await page.evaluate(() => document.getElementById('page-reports').classList.contains('active')), 'owner: الصفحة تُفتح');
-  ok((await tabs(page)).join() === 'orders,commissions,pnl,staff,payments,receivables,expenses,customers,visits', 'owner: الفهرس كامل (9 تقارير مع «زيارات الموقع» للمالك)', await tabs(page));
+  ok((await tabs(page)).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,customers,visits', 'owner: الفهرس كامل (10 تقارير مع «الطلبات الجديدة» و«زيارات الموقع» للمالك)', await tabs(page));
   await pick(page, 'orders'); await range(page, 'm');
   let k = await kpis(page);
   ok(k['المبيعات قبل الضريبة'] === '3,000.00' && k['التكاليف'] === '1,600.00' && k['صافي الربح'] === '1,400.00', 'owner/orders: البيع 3000 والتكاليف 1600 والربح 1400 (هذا الشهر)', k);
@@ -269,6 +272,78 @@ try {
     f = await download(page, b);
     ok(f.name.endsWith('.xlsx') && f.buf.slice(0, 2).toString() === 'PK', `bi/${b}: ملف Excel صالح حتى دون تحميل المكتبة مسبقاً`, { name: f.name, size: f.buf.length });
   }
+  await page.browserContext().close();
+
+  /* ----- «يشمل التقرير» بالافتراضي: الطلبات الجديدة خارج المبيعات والأرباح ----- */
+  page = await login('owner', { defaultInclude: true });
+  await go(page, 'reports');
+  await pick(page, 'orders'); await range(page, 'm');
+  const incUi = () => page.evaluate(() => {
+    const b = document.getElementById('repInclude');
+    return { shown: !b.hidden, on: [...b.querySelectorAll('[data-inc].on')].map((x) => x.dataset.inc), paid: !!b.querySelector('[data-incpay].on'), hasPaid: !!b.querySelector('[data-incpay]'), hint: (b.querySelector('.ri-hint') || {}).textContent || '' };
+  });
+  let iu = await incUi();
+  ok(iu.shown && iu.on.join() === 'progress,done,delivered' && /الطلبات الجديدة خارج الأرقام/.test(iu.hint), 'include/ui: «يشمل التقرير» ظاهر وافتراضياً بلا «جديد» مع تنبيه', iu);
+  k = await kpis(page);
+  ok(k['المبيعات قبل الضريبة'] === '2,000.00' && k['عدد الطلبات'] === '1', 'include/orders: الطلب الجديد خارج المبيعات (2000 بدل 3000)', k);
+  await page.evaluate(() => document.querySelector('#repInclude [data-inc="new"]').click()); await sleep(400);
+  k = await kpis(page);
+  ok(k['المبيعات قبل الضريبة'] === '3,000.00' && (await incUi()).on.includes('new'), 'include/orders: الضغط على «جديد» يعيده (3000)', k);
+  ok(await page.evaluate(() => JSON.parse(localStorage.getItem('majlis_rep_inc')).statuses.includes('new')), 'include: الاختيار يُحفظ على الجهاز');
+  await page.evaluate(() => document.querySelector('#repInclude [data-inc="new"]').click()); await sleep(300);
+  await page.evaluate(() => document.querySelector('#repInclude [data-incpay]').click()); await sleep(400);
+  k = await kpis(page);
+  ok(k['المبيعات قبل الضريبة'] === '2,000.00' && (await incUi()).paid, 'include/orders: «المدفوعة بالكامل فقط» (الطلب #2 المدفوع كاملاً)', k);
+  await page.evaluate(() => document.querySelector('#repInclude [data-incpay]').click()); await sleep(300);
+  // آخر حالة لا تُلغى
+  await page.evaluate(() => { ['progress', 'done'].forEach((s) => document.querySelector(`#repInclude [data-inc="${s}"]`).click()); });
+  await sleep(300);
+  await page.evaluate(() => document.querySelector('#repInclude [data-inc="delivered"]').click()); await sleep(300);
+  ok((await incUi()).on.join() === 'delivered', 'include: لا يمكن إلغاء آخر حالة (يبقى «تم التوصيل»)', await incUi());
+  await page.evaluate(() => { ['progress', 'done'].forEach((s) => document.querySelector(`#repInclude [data-inc="${s}"]`).click()); }); await sleep(300);
+  await page.select('#repStatus', 'new'); await sleep(400);
+  ok(!(await incUi()).shown, 'include/ui: يختفي حين تختار حالة محددة في تقرير الطلبات');
+  await page.select('#repStatus', ''); await sleep(300);
+  await pick(page, 'receivables');
+  iu = await incUi();
+  ok(iu.shown && !iu.hasPaid, 'include/receivables: بلا «المدفوعة بالكامل فقط» (لا معنى له في المديونيات)', iu);
+  await pick(page, 'payments');
+  ok(!(await incUi()).shown, 'include/payments: لا يظهر في الدفعات (كل مبلغ مستلم يُحسب)');
+  await pick(page, 'pending');
+  k = await kpis(page);
+  const pr = await bodyRows(page);
+  ok(k['عدد الطلبات الجديدة'] === '1' && k['العربون المحصّل'] === '500.00' && pr.length === 1 && pr[0].includes('عميل 1') && !(await incUi()).shown, 'pending: تقرير «الطلبات الجديدة» — الطلب #1 بعربون 500', { k, pr });
+  await range(page, 'all');
+  ok((await kpis(page))['عدد الطلبات الجديدة'] === '71', 'pending/all: 71 طلباً جديداً في كل الفترات');
+  f = await download(page, 'btnRepPdf');
+  lay = await pdfLayout(page);
+  ok(f.name.includes('pending') && lay.n >= 2 && !lay.bad.length, 'pending/pdf: ملف PDF بصفحات سليمة', { name: f.name, n: lay.n, bad: lay.bad.slice(0, 2) });
+  await go(page, 'bi');
+  ok(await page.evaluate(() => { const b = document.getElementById('biInclude'); return !!b && !b.hidden && b.querySelectorAll('[data-inc]').length === 4 && !b.querySelector('[data-inc="new"].on'); }), 'bi: «يشمل التقرير» في ذكاء الأعمال بالاختيار نفسه');
+  // صفحة الطلبات: تبويبات بالأعداد
+  await go(page, 'orders');
+  const tabsUi = () => page.evaluate(() => ({ n: Object.fromEntries([...document.querySelectorAll('#ordTabs [data-otn]')].map((x) => [x.dataset.otn, x.textContent.trim()])), on: (document.querySelector('#ordTabs [data-otab].on') || {}).dataset?.otab || '', chips: [...document.querySelectorAll('#ordStatusChips .chip.on')].map((c) => c.dataset.stf) }));
+  let tu = await tabsUi();
+  ok(JSON.stringify(tu.n) === JSON.stringify({ new: '71', work: '0', delivered: '1', all: '73' }) && tu.on === 'all', 'orders/tabs: «جديدة 71» «قيد العمل 0» «تم التوصيل 1» «الكل 73»، والكل مختار', tu);
+  await page.evaluate(() => document.querySelector('#ordTabs [data-otab="new"]').click()); await sleep(500);
+  tu = await tabsUi();
+  const shownSt = await page.evaluate(() => [...new Set([...document.querySelectorAll('#ordersBody tr, #ordersTable tbody tr')].map((r) => r.textContent.includes('جديد') ? 'new' : 'other'))]);
+  ok(tu.on === 'new' && tu.chips.join() === 'new', 'orders/tabs: «جديدة» تعرض الطلبات الجديدة وحدها', { tu, shownSt });
+  await page.evaluate(() => document.querySelector('#ordTabs [data-otab="work"]').click()); await sleep(400);
+  ok((await tabsUi()).chips.join() === 'progress,done' || (await tabsUi()).chips.sort().join() === 'done,progress', 'orders/tabs: «قيد العمل» = قيد التنفيذ + اكتمال التنفيذ');
+  await page.evaluate(() => document.querySelector('#ordTabs [data-otab="all"]').click()); await sleep(400);
+  ok((await tabsUi()).chips.length === 0, 'orders/tabs: «الكل» يمسح فلتر الحالات');
+  if (saveDir) {
+    await page.evaluate(() => document.querySelector('#ordTabs [data-otab="new"]').click()); await sleep(400);
+    await page.screenshot({ path: path.join(saveDir, 'orders-tabs-desktop.png') });
+    await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true }); await sleep(600);
+    await page.screenshot({ path: path.join(saveDir, 'orders-tabs-mobile.png') });
+    await go(page, 'reports'); await pick(page, 'orders'); await range(page, 'm'); await sleep(300);
+    await page.screenshot({ path: path.join(saveDir, 'reports-include-mobile.png') });
+    await page.setViewport({ width: 1366, height: 900 }); await sleep(300);
+    await page.screenshot({ path: path.join(saveDir, 'reports-include-desktop.png') });
+  }
+  ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'ui: بلا تمرير أفقي');
   await page.browserContext().close();
 
   /* ----- موظف بـ reports.view_own + export: طلباته فقط، بلا عمولات ----- */

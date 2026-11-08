@@ -126,6 +126,43 @@
   const PERM_ADMIN_ONLY = ['admin.core', 'permissions.manage', 'users.create', 'users.edit', 'users.disable', 'settings.manage'];
   /** عرض السعر ليس بيعاً بعد، والملغي لم يعد بيعاً: كلاهما خارج كل مبلغ مبيعات */
   const isSale = (o) => !!o && o.status !== 'cancelled' && o.status !== 'quote';
+  /* «يشمل التقرير»: أي الطلبات تُحسب مبيعاتٍ وأرباحاً في التقارير وذكاء الأعمال (اختيار واحد مشترك يُحفظ على الجهاز).
+     افتراضياً بلا «جديد» (لم يبدأ تنفيذه بعد). */
+  const INC_KEY = 'majlis_rep_inc';
+  function getInclude() {
+    const D = (window.Reports && Reports.DEFAULT_INCLUDE) || { statuses: ['progress', 'done', 'delivered'], paidOnly: false };
+    try {
+      const v = JSON.parse(localStorage.getItem(INC_KEY) || 'null');
+      if (v && Array.isArray(v.statuses)) return { statuses: v.statuses.filter((s) => ['new', 'progress', 'done', 'delivered'].includes(s)), paidOnly: !!v.paidOnly };
+    } catch (_) { /* قيمة تالفة ← الافتراضي */ }
+    return { statuses: D.statuses.slice(), paidOnly: !!D.paidOnly };
+  }
+  function setInclude(inc) { try { localStorage.setItem(INC_KEY, JSON.stringify(inc)); } catch (_) { /* تخزين غير متاح */ } }
+  const incCounted = (o) => (window.Reports && Reports.counted ? Reports.counted({ include: getInclude() }, o) : isSale(o));
+  const includeLabel = () => (window.Reports && Reports.includeText ? Reports.includeText({ include: getInclude(), labels: { STATUS } }) : '');
+  /** أزرار «يشمل التقرير» في حاوية — opts.noPaid يخفي «المدفوعة بالكامل فقط»، وonChange بعد كل تغيير */
+  function renderIncludeChips(box, opts) {
+    if (!box) return;
+    const inc = getInclude();
+    const st = ['new', 'progress', 'done', 'delivered'];
+    box.innerHTML = '<span class="ri-lbl">يشمل التقرير:</span>'
+      + st.map((k) => { const on = inc.statuses.includes(k); return `<button type="button" class="chip${on ? ' on' : ''}" data-inc="${k}" aria-pressed="${on}"><i class="st-dot st-${k}"></i>${esc(STATUS[k])}</button>`; }).join('')
+      + (opts && opts.noPaid ? '' : `<span class="ri-sep" aria-hidden="true"></span><button type="button" class="chip${inc.paidOnly ? ' on' : ''}" data-incpay="1" aria-pressed="${inc.paidOnly}">المدفوعة بالكامل فقط</button>`)
+      + (inc.statuses.includes('new') ? '' : '<span class="ri-hint">الطلبات الجديدة خارج الأرقام — تجدها في تقرير «الطلبات الجديدة»</span>');
+    box.onclick = (e) => {
+      const b = e.target.closest ? e.target.closest('[data-inc], [data-incpay]') : null;
+      if (!b) return;
+      const cur = getInclude();
+      if (b.dataset.incpay) cur.paidOnly = !cur.paidOnly;
+      else {
+        const k = b.dataset.inc, i = cur.statuses.indexOf(k);
+        if (i >= 0) { if (cur.statuses.length === 1) { toast('اختر حالة واحدة على الأقل', true); return; } cur.statuses.splice(i, 1); }
+        else cur.statuses.push(k);
+      }
+      setInclude(cur);
+      if (opts && opts.onChange) opts.onChange();
+    };
+  }
   /** طلب مفتوح: بيع لم يُسلَّم بعد */
   const OPEN_STATUSES = ['new', 'progress', 'done'];
   const isOpen = (o) => OPEN_STATUSES.includes((o && o.status) || 'new');
@@ -3875,6 +3912,12 @@ function docTitle(order) {
   /* ---------------- صفحة الطلبات ---------------- */
   /** الحالات المختارة في الفلتر؛ فارغة = كل الحالات */
   const ordStatuses = new Set();
+  /* أقسام صفحة الطلبات (تبويبات): كل قسم مجموعة حالات جاهزة لفلتر الحالات نفسه */
+  const ORD_TABS = { new: ['new'], work: ['progress', 'done'], delivered: ['delivered'], all: [] };
+  function ordTabOf() {
+    const cur = [...ordStatuses].sort().join(',');
+    return Object.keys(ORD_TABS).find((k) => ORD_TABS[k].slice().sort().join(',') === cur) || '';
+  }
 
   /** تاريخ إنشاء الطلب بالتوقيت المحلي YYYY-MM-DD لمقارنته بمدى التاريخ */
   const ordDate = (o) => (o.createdAt ? localDate(o.createdAt) : '');
@@ -3939,6 +3982,14 @@ function docTitle(order) {
       c.classList.toggle('on', on);
       c.setAttribute('aria-pressed', on ? 'true' : 'false');
     });
+    // التبويبات: القسم المطابق للفلتر الحالي، وعدد طلبات كل قسم (من كل الطلبات الظاهرة لك)
+    const tab = ordTabOf();
+    $$('#ordTabs [data-otab]').forEach((b) => { const on = b.dataset.otab === tab; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
+    const allO = db().orders || [];
+    const cnt = { new: 0, work: 0, delivered: 0, all: allO.length };
+    allO.forEach((o) => { if (o.status === 'new') cnt.new++; else if (o.status === 'progress' || o.status === 'done') cnt.work++; else if (o.status === 'delivered') cnt.delivered++; });
+    $$('#ordTabs [data-otn]').forEach((n) => { n.textContent = cnt[n.dataset.otn]; });
+    const nb = $('#ordTabs [data-otab="new"]'); if (nb) nb.classList.toggle('has-new', cnt.new > 0);
     $('#ordClearFilters').hidden = !filtering;
     const note = $('#ordersFilterNote');
     note.hidden = !filtering;
@@ -4400,6 +4451,12 @@ function docTitle(order) {
   $$('#ordStatusChips .chip').forEach((c) => c.addEventListener('click', () => {
     const k = c.dataset.stf;
     if (ordStatuses.has(k)) ordStatuses.delete(k); else ordStatuses.add(k);
+    ordersShown = PAGE_STEP;
+    renderOrders();
+  }));
+  $$('#ordTabs [data-otab]').forEach((b) => b.addEventListener('click', () => {
+    ordStatuses.clear();
+    ORD_TABS[b.dataset.otab].forEach((s) => ordStatuses.add(s));
     ordersShown = PAGE_STEP;
     renderOrders();
   }));
@@ -6931,7 +6988,7 @@ function docTitle(order) {
     if (to) list = list.filter((o) => ordDate(o) <= to);
     if (userId) list = list.filter((o) => o.createdBy === userId);
     // البيع = ليس ملغياً ولا عرض سعر لم يتحوّل بعد
-    const live = list.filter(isSale);
+    const live = list.filter(incCounted);   // حسب «يشمل التقرير» (افتراضياً بلا الجديد)
     const costed = live.filter((o) => orderCost(o) !== null);
     const sum = (arr, f) => money(arr.reduce((s, o) => s + num(f(o)), 0));
     const revenue = sum(live, orderRevenue);
@@ -7584,6 +7641,7 @@ function docTitle(order) {
   }
 
   function renderBI() {
+    renderIncludeChips($('#biInclude'), { onChange: renderBI });
     if (!canPage('bi')) return;
     // المصروفات لا تصل مع المزامنة: تُجلب (مرة كل دقيقة على الأكثر) ثم يُعاد الرسم بها
     if (canAny('expenses.view_own', 'expenses.view_all') && Date.now() - expLoadedAt > 60000 && !expLoading) {
@@ -7760,7 +7818,7 @@ function docTitle(order) {
 /* تقارير PDF في «ذكاء الأعمال» تمرّ بمحرّك التقارير نفسه (صفحات HTML تُصوَّر)،
    بدل كتابة النص مباشرة في jsPDF التي تُخرج العربية حروفاً منفصلة ومعكوسة. */
 function biPdfMeta(p, userId) {
-  return [['المتجر', settings().shopName || 'أصالة نجد'], ['الموظف', userId ? ((Store.getUser(userId) || {}).name || '') : 'كل الموظفين'], ['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']];
+  return [['المتجر', settings().shopName || 'أصالة نجد'], ['الموظف', userId ? ((Store.getUser(userId) || {}).name || '') : 'كل الموظفين'], ['يشمل', includeLabel()], ['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']];
 }
 const biPdfFile = (base, p) => base + '-' + (p.from || 'all') + '_' + (p.to || today()) + '.pdf';
 async function biFetchReport(path, p, userId) {
@@ -7959,7 +8017,7 @@ async function exportExpensesXlsx() {
 
   function ordersReportCalc() {
     const { list, p, userId } = ordersReportRows();
-    const live = list.filter(isSale); /* عروض الأسعار والملغاة خارج القيم المالية */
+    const live = list.filter(incCounted); /* عروض الأسعار والملغاة خارج القيم المالية، والباقي حسب «يشمل التقرير» */
     const sumMoney = (arr, f) => money(arr.reduce((s, o) => s + num(f(o)), 0));
     const byStatus = {};
     for (const o of list) {
@@ -8151,6 +8209,7 @@ async function exportExpensesXlsx() {
       from: p.from, to: p.to, today: today(),
       userId: scopeAll ? $('#repUser').value : '',
       status: $('#repStatus').value,
+      include: getInclude(),
       me: currentUser && currentUser.id, scopeAll,
       perms: {
         profitAny: canAny('profit.view_own', 'profit.view_all'),
@@ -8189,7 +8248,9 @@ async function exportExpensesXlsx() {
     if (rep && rep.id === 'visits') meta.push(['النطاق', 'صفحات العملاء العامة']);
     else if (ctx.scopeAll) meta.push(['الموظف / المندوب', ctx.userId ? ctx.userName(ctx.userId) : 'الكل']);
     else meta.push(['النطاق', 'طلباتي فقط (' + ((currentUser && currentUser.name) || '') + ')']);
-    if (rep && rep.id === 'orders') meta.push(['الحالة', $('#repStatus').selectedOptions[0] ? $('#repStatus').selectedOptions[0].textContent : '']);
+    const rdef = rep && Reports._defs[rep.id];
+    if (rep && rep.id === 'orders' && $('#repStatus').value) meta.push(['الحالة', $('#repStatus').selectedOptions[0] ? $('#repStatus').selectedOptions[0].textContent : '']);
+    else if (rdef && rdef.usesInclude) meta.push(['يشمل', rdef.includeNoPaid ? Reports.includeText({ include: { ...getInclude(), paidOnly: false }, labels: { STATUS } }) : includeLabel()]);
     meta.push(['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']);
     return meta;
   }
@@ -8218,6 +8279,10 @@ async function exportExpensesXlsx() {
     }
     const def = cat.find((c) => c.id === repId);
     $('#repStatus').hidden = !def.usesStatus;
+    // «يشمل التقرير»: للتقارير المالية فقط، ويختفي حين تختار حالة محددة في تقرير الطلبات
+    const incBox = $('#repInclude');
+    incBox.hidden = !def.usesInclude || (def.usesStatus && !!$('#repStatus').value);
+    if (!incBox.hidden) renderIncludeChips(incBox, { noPaid: def.includeNoPaid, onChange: renderReports });
     // تقرير الزيارات بلا تصفية بالموظف (الزيارات لا تخص موظفاً)
     if (repId === 'visits') { $('#repUser').hidden = true; loadRepVisits(repPeriod()); }
 
