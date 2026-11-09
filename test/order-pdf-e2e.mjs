@@ -252,6 +252,25 @@ try {
   r = await exportDoc(2002, 'workshop');
   checkDoc('workshop-heavy', r, { plan: true, texts: ['أمر تصنيع', 'لا يحتوي هذا المستند على أسعار'] });
   ok(!/ر\.س/.test(r.text), 'workshop-heavy: بلا أي سعر', '');
+  // مشاركة ملف الورشة: ملف PDF حقيقي (بالمخطط) عبر قائمة المشاركة — لا نص فقط، ولا محادثة العميل
+  const ws = await page.evaluate(async () => {
+    window.__shared = null; window.__opened = [];
+    navigator.canShare = () => true;
+    navigator.share = (d) => { window.__shared = { files: (d.files || []).map((f) => ({ name: f.name, type: f.type, size: f.size })), text: d.text || '' }; return Promise.resolve(); };
+    const ow = window.open; window.open = (u) => { window.__opened.push(String(u)); return null; };
+    const btn = document.getElementById('shWa'), chat = document.getElementById('shChat');
+    const info = { shown: !!btn && !btn.hidden && !btn.disabled, label: btn ? btn.textContent.trim() : '', chatHidden: !chat || chat.hidden,
+      sw: [...document.querySelectorAll('.doc-switch [data-doc]')].map((x) => x.textContent.replace(/\s+/g, ' ').trim()) };
+    btn.click();
+    await new Promise((r) => setTimeout(r, 400));
+    window.open = ow;
+    return { ...info, shared: window.__shared, opened: window.__opened };
+  });
+  ok(ws.shown && /مشاركة ملف الورشة/.test(ws.label) && ws.chatHidden, 'workshop/share: زر «مشاركة ملف الورشة» ظاهر، ومحادثة العميل مخفية', ws);
+  const wf = ws.shared && ws.shared.files[0];
+  ok(wf && wf.type === 'application/pdf' && /^أمر-تصنيع-2002\.pdf$/.test(wf.name) && wf.size > 50000, 'workshop/share: يُرسل ملف PDF فعلياً (أمر-تصنيع-2002.pdf بالمخطط) لا نصاً فقط', ws.shared);
+  ok(ws.shared && /أمر تصنيع للطلب/.test(ws.shared.text) && !/ر\.س|الإجمالي|المتبقي/.test(ws.shared.text) && !ws.opened.length, 'workshop/share: النص المرافق بلا أي مبلغ، ولا يفتح محادثة العميل', ws.shared && ws.shared.text);
+  ok(ws.sw.length === 2 && /^للعميل/.test(ws.sw[0]) && /^للورشة\s*أمر تصنيع بلا أسعار/.test(ws.sw[1]), 'workshop/share: زرّا اختيار المستند «للعميل» و«للورشة»', ws.sw);
   r = await exportDoc(2001, 'receipt');
   checkDoc('receipt-simple', r, { paper: 'a4', texts: ['سند قبض', 'فهد سعود الدوسري'] });
 } catch (e) {

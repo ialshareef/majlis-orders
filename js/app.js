@@ -3717,6 +3717,14 @@ function docTitle(order) {
       L.push(`المبلغ: ${fmt(Math.abs(money(p.amount)))} ${cu} • المتبقي: ${fmt(total - paid)} ${cu}`);
       return L.join('\n');
     }
+    if (kind === 'workshop') {
+      // للورشة: بلا أي مبلغ — رقم الطلب والعميل وموعد التوصيل فقط، والتفاصيل في الملف
+      L.push(`أمر تصنيع للطلب *#${order.number}*`);
+      if (order.customer && order.customer.name) L.push(`العميل: ${order.customer.name}`);
+      if (order.deliveryDate) L.push(`تاريخ التوصيل المطلوب: ${fmtDate(order.deliveryDate)}`);
+      L.push('المخطط والمقاسات والمواصفات في الملف المرفق.');
+      return L.join('\n');
+    }
     L.push(order.status === 'quote' ? `عرض سعر رقم *#${order.number}*` : `أمر الشراء رقم *#${order.number}*`);
     L.push(order.status === 'quote' ? `الإجمالي: ${fmt(total)} ${cu}` : `الإجمالي: ${fmt(total)} ${cu} • المتبقي: ${fmt(total - paid)} ${cu}`);
     if (order.status === 'quote' && order.validUntil) L.push(`العرض صالح حتى: ${fmtDate(order.validUntil)}`);
@@ -3794,7 +3802,7 @@ function docTitle(order) {
         </div>
       </div>
       ${isReceipt ? '' : `<div class="segmented doc-switch" role="group" aria-label="نوع المستند">
-        ${Object.entries(ORDER_DOCS).map(([k, d]) => `<button type="button" data-doc="${k}" class="${k === kind ? 'active' : ''}" aria-pressed="${k === kind}">${esc(d.label(order))}</button>`).join('')}
+        ${Object.entries(ORDER_DOCS).map(([k, d]) => `<button type="button" data-doc="${k}" class="${k === kind ? 'active' : ''}" aria-pressed="${k === kind}"><b>${k === 'workshop' ? 'للورشة' : 'للعميل'}</b><small>${k === 'workshop' ? 'أمر تصنيع بلا أسعار' : esc(d.label(order)) + ' بالأسعار والدفعات'}</small></button>`).join('')}
       </div>`}
       <p id="pdfState" class="pdf-state" role="status">${icon('clock')}<span class="pdf-state-txt">جاري تجهيز ملف PDF…</span></p>
       <div class="share-actions">
@@ -3811,7 +3819,7 @@ function docTitle(order) {
       if (window.Capacitor) btnPrint.hidden = true;
       const note = $('#shNote', b);
       const defaultNote = () => (curKind === 'workshop'
-        ? 'أمر التصنيع للورشة: المقاسات والمواصفات والقيود بلا أي سعر. لا تُرسله للعميل.'
+        ? 'ملف PDF للورشة فيه المخطط والمقاسات والمواصفات بلا أي سعر. اضغط «مشاركة ملف الورشة» واختر محادثة الورشة — لا تُرسله للعميل.'
         : `واتساب لا يسمح للمتصفح بإرفاق ملف برقم محدد تلقائياً، لذلك ستظهر قائمة المشاركة لتختار محادثة ${cname || 'العميل'} منها.`);
 
       btnPrint.onclick = () => { keepPrintArea = true; closeModal(); setTimeout(() => window.print(), 60); };
@@ -3831,9 +3839,11 @@ function docTitle(order) {
         state.className = 'pdf-state';
         state.innerHTML = `${icon('clock')}<span class="pdf-state-txt">جاري تجهيز ملف PDF…</span>`;
         note.textContent = defaultNote();
-        // الورشة لا تُرسَل للعميل: يُخفى زرّا واتساب
+        // ملف الورشة يُشارَك ملفاً (للورشة) لكن لا تُفتح محادثة العميل أبداً
         const forCustomer = isReceipt || ORDER_DOCS[curKind].share;
-        btnWa.hidden = !forCustomer;
+        btnWa.hidden = false;
+        btnWa.innerHTML = forCustomer ? `${icon('whatsapp')} مشاركة الملف عبر واتساب` : `${icon('upload')} مشاركة ملف الورشة (واتساب أو غيره)`;
+        btnWa.classList.toggle('is-work', !forCustomer);
         if ($('#shChat', b)) $('#shChat', b).hidden = !forCustomer;
         try {
           const html = isReceipt ? buildReceiptDoc(order, payment) : await ORDER_DOCS[curKind].build(order);
@@ -3865,10 +3875,12 @@ function docTitle(order) {
                 .catch((e) => { if (e && e.name !== 'AbortError') toast('تعذّرت المشاركة: ' + e.message, true); });
               return;
             }
-            // 3) متصفح لا يدعم مشاركة الملفات: يُحفظ الملف وتُفتح محادثة العميل لإرفاقه
+            // 3) متصفح لا يدعم مشاركة الملفات: يُحفظ الملف (وتُفتح محادثة العميل لمستند العميل فقط — لا للورشة)
             downloadBlob(blob, fileName);
-            if (phone) openCustomerChat(order, curKind, payment);
-            note.innerHTML = `هذا المتصفح لا يدعم إرسال الملف مباشرة. حُفظ <b>${esc(fileName)}</b> في مجلد التنزيلات، أرفقه في محادثة ${esc(cname || 'العميل')}.`;
+            if (phone && forCustomer) openCustomerChat(order, curKind, payment);
+            note.innerHTML = forCustomer
+              ? `هذا المتصفح لا يدعم إرسال الملف مباشرة. حُفظ <b>${esc(fileName)}</b> في مجلد التنزيلات، أرفقه في محادثة ${esc(cname || 'العميل')}.`
+              : `هذا المتصفح لا يدعم إرسال الملف مباشرة. حُفظ <b>${esc(fileName)}</b> في مجلد التنزيلات، أرفقه في محادثة الورشة.`;
           };
           btnWa.onclick = sendViaWhatsapp;
           const btnChat = $('#shChat', b);
@@ -8789,7 +8801,7 @@ async function exportExpensesXlsx() {
       es.dataset.state = 'pending';
       es.innerHTML = `${icon('alert')}<span>${!cur.id ? 'احفظ الطلب أولاً: لا تُصدر أمر شراء من طلب غير محفوظ.' : dirty ? 'توجد تعديلات غير محفوظة — احفظ الطلب ثم أصدر المستند.' : 'الطلب محفوظ على هذا الجهاز بانتظار رقم من الخادم. تحقق من الاتصال.'}</span>`;
     }
-    $('#docInvoiceTitle').textContent = cur.status === 'quote' ? 'عرض السعر' : 'أمر شراء';
+    $('#docInvoiceTitle').textContent = cur.status === 'quote' ? 'عرض السعر — للعميل' : 'أمر شراء — للعميل';
   }
 
   $('#nextActionBtn').addEventListener('click', () => {

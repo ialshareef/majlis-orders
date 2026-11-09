@@ -3618,3 +3618,8 @@ body.portal { background: var(--bg); }
 .ord-tabs .ot-n { min-width: 22px; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--line-soft); font-size: .78rem; font-weight: 700; text-align: center; color: var(--ink-2); }
 .ord-tabs button.on .ot-n { background: var(--accent-soft); border-color: var(--accent-line); color: var(--ink); }
 .ord-tabs button.has-new .ot-n { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+/* أزرار «للعميل / للورشة» في نافذة التصدير: سطران (لمن + ماذا) */
+.doc-switch button { display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.35; padding-block: 7px; }
+.doc-switch button b { font-size: .92rem; }
+.doc-switch button small { font-size: .74rem; font-weight: 500; opacity: .8; }
