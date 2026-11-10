@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.99';
-// بصمة asalh-najd-1.0.99.apk (إصدار GitHub v1.0.99، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.99 وversionCode 10099، ونفس شهادة توقيع 1.0.98).
-const UPDATE_FALLBACK_SHA256 = '80808fa7e481e2ee51d5e253186881a471917165700bde6c1dcf83ddd0a69c20';
+const UPDATE_FALLBACK_VERSION = '1.1.0';
+// بصمة asalh-najd-1.1.0.apk (إصدار GitHub v1.1.0، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.0 وversionCode 10100، ونفس شهادة توقيع 1.0.99).
+const UPDATE_FALLBACK_SHA256 = '871af83f84c2b26f4c780c2cd3c3c62756ab139c90b4d5b2c07c6a336f95c2a9';
 const UPDATE_FALLBACK_NOTES = [
-  'ملف ملخص التكاليف: صفحة طولية بخط أكبر تُقرأ على الجوال بلا تكبير',
-  'تقارير PDF: لا يضيع صف ولا يبقى عنوان جدول وحده أسفل الصفحة، والتواريخ والنسب تظهر صحيحة',
+  'العمولات: رقم واحد متطابق في قائمة الطلبات وملخص الطلب وتقرير العمولات',
+  'نسبة المندوب المخصّصة لطلب تُطبَّق الآن، وتقرير العمولات يوضح «مصدر النسبة» لكل سطر',
 ];
 
 function versionCodeOfName(v) {
