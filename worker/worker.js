@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.94';
-// بصمة asalh-najd-1.0.94.apk (إصدار GitHub v1.0.94، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.94 وversionCode 10094، ونفس شهادة توقيع 1.0.93).
-const UPDATE_FALLBACK_SHA256 = '517af4c606010f773302874a127b047ba9bc573bcb1399b7540e2f6924d9d8d8';
+const UPDATE_FALLBACK_VERSION = '1.0.95';
+// بصمة asalh-najd-1.0.95.apk (إصدار GitHub v1.0.95، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.95 وversionCode 10095، ونفس شهادة توقيع 1.0.94).
+const UPDATE_FALLBACK_SHA256 = '1e9d31cf732ffe4ff1782ec69ccea24a78dc360739dbd3bcd45d6c93b6db108c';
 const UPDATE_FALLBACK_NOTES = [
-  'ملف الورشة: زر «مشاركة ملف الورشة» يرسل ملف PDF بالمخطط والمقاسات بلا أسعار (واتساب أو غيره)',
-  'تسميات أوضح عند التصدير: «للعميل» بالأسعار والدفعات، و«للورشة» بلا أسعار',
+  'ملخص الطلب: من قائمة كل طلب «ملخص الطلب والتكاليف» — المبالغ والدفعات وكل بند تكلفة وصافي الربح والعمولة',
+  'تصدير PDF للإدارة: ملف داخلي بملخص الطلب وقائمة التكاليف بنداً بنداً (لا يُرسل للعميل)',
 ];
 
 function versionCodeOfName(v) {
