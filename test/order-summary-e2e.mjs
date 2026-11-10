@@ -107,7 +107,7 @@ async function login(username, opts = {}) {
           const body = el.querySelector('.rp-body').getBoundingClientRect(), foot = el.querySelector('.rp-foot').getBoundingClientRect(), pg = el.getBoundingClientRect();
           const items = [...el.querySelectorAll('.rp-body tr, .rp-body h2, .rp-body .rp-kpis, .rp-body .rp-notes')];
           const over = items.filter((x) => x.getBoundingClientRect().bottom > body.bottom + 0.5).map((x) => x.textContent.replace(/\s+/g, ' ').trim().slice(0, 60));
-          window.__pdfPages.push({ title: (el.querySelector('.rp-head h1, .rp-head b') || {}).textContent, over, footIn: foot.bottom <= pg.bottom + 0.5 && foot.top >= body.bottom - 0.5, foot: el.querySelector('.rp-foot').textContent.trim() });
+          window.__pdfPages.push({ totOnly: [...el.querySelectorAll('.rp-table')].filter((tb) => { const r = [...tb.querySelectorAll('tbody tr')]; return r.length && r.every((tr) => tr.classList.contains('tot')) && r.length === 1 && tb.dataset.t !== '2'; }).length, emptyTables: [...el.querySelectorAll('.rp-table')].filter((tb) => !tb.querySelector('tbody tr')).length, portrait: el.classList.contains('portrait'), w: el.offsetWidth, h: el.offsetHeight, title: (el.querySelector('.rp-head h1, .rp-head b') || {}).textContent, over, footIn: foot.bottom <= pg.bottom + 0.5 && foot.top >= body.bottom - 0.5, foot: el.querySelector('.rp-foot').textContent.trim() });
         }
         const c = await real(el, o);
         if (window.__shots && el.classList && el.classList.contains('rep-page')) window.__shots.push(c.toDataURL('image/jpeg', 0.8));
@@ -147,7 +147,7 @@ const range = async (page, rr) => { await page.evaluate((r) => document.querySel
 const kpis = (page) => page.evaluate(() => Object.fromEntries([...document.querySelectorAll('#repKpis .stat')].map((s) => [s.querySelector('span').textContent.trim(), s.querySelector('b').textContent.trim()])));
 const heads = (page, i = 0) => page.evaluate((k) => { const t = document.querySelectorAll('#repTables table')[k]; return t ? [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim()) : []; }, i);
 const bodyRows = (page, i = 0) => page.evaluate((k) => { const t = document.querySelectorAll('#repTables table')[k]; return t ? [...t.querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()) : []; }, i);
-const pdfLayout = (page) => page.evaluate(() => { const p = window.__pdfPages || []; return { n: p.length, titles: p.map((x) => x.title), bad: p.filter((x) => x.over.length || !x.footIn || !/صفحة \d+ من \d+/.test(x.foot)) }; });
+const pdfLayout = (page) => page.evaluate(() => { const p = window.__pdfPages || []; return { n: p.length, titles: p.map((x) => x.title), bad: p.filter((x) => x.over.length || x.emptyTables || x.totOnly || !x.portrait || x.w !== 640 || !x.footIn || !/صفحة \d+ من \d+/.test(x.foot)) }; });
 const openSum = async (page, id) => {
   const label = await page.evaluate((i) => { const b = document.querySelector(`[data-sum="${i}"]`); if (!b) return null; const t = b.textContent.trim(); b.click(); return t; }, id);
   await sleep(1200);
@@ -155,15 +155,16 @@ const openSum = async (page, id) => {
 };
 const readSum = (page) => page.evaluate(() => {
   const m = document.getElementById('modal');
+  const T = (el) => (el.innerText || el.textContent || '').replace(/[⁦-⁩]/g, '');
   return {
     open: !!m && !m.hidden,
-    title: (document.getElementById('modalTitle') || {}).textContent || '',
-    kpis: Object.fromEntries([...m.querySelectorAll('.sum-kpis .stat')].map((s) => [s.querySelector('span').textContent.trim(), s.querySelector('b').textContent.trim()])),
+    title: ((document.getElementById('modalTitle') || {}).textContent || '').replace(/[⁦-⁩]/g, ''),
+    kpis: Object.fromEntries([...m.querySelectorAll('.sum-kpis .stat')].map((s) => [T(s.querySelector('span')).trim(), T(s.querySelector('b')).trim()])),
     heads: [...m.querySelectorAll('.sum-h')].map((h) => h.textContent.trim()),
-    tables: [...m.querySelectorAll('.sum-table')].map((t) => [...t.querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim())),
+    tables: [...m.querySelectorAll('.sum-table')].map((t) => [...t.querySelectorAll('tbody tr')].map((tr) => T(tr).replace(/\s+/g, ' ').trim())),
     notes: [...m.querySelectorAll('.sum-notes li')].map((l) => l.textContent.trim()),
     pdf: !!m.querySelector('#sumPdf'), wa: !!m.querySelector('#sumWa'), cost: !!m.querySelector('#sumCost'),
-    meta: m.querySelector('.sum-meta') ? m.querySelector('.sum-meta').innerText.replace(/\s+/g, ' ') : '',
+    meta: m.querySelector('.sum-meta') ? T(m.querySelector('.sum-meta')).replace(/\s+/g, ' ') : '',
   };
 });
 
@@ -186,7 +187,7 @@ try {
   ok(/الخصم -?100\.00|الخصم -100/.test(accTxt) && /ضريبة القيمة المضافة \(15٪\) 195\.00/.test(accTxt) && /تكاليف الأصناف -600\.00/.test(accTxt) && /التكاليف الإضافية -150\.00/.test(accTxt) && /إجمالي التكاليف -750\.00/.test(accTxt) && /صافي الربح 550\.00/.test(accTxt), 'owner: ملخص الحساب خطوة بخطوة (خصم، ضريبة، تكاليف، ربح)', accTxt);
   ok((s.tables[3] || []).some((r) => /تحويل بنكي/.test(r) && /500\.00/.test(r) && /عربون/.test(r)), 'owner: الدفعة بالطريقة والملاحظة', s.tables[3]);
   ok((s.tables[4] || []).length === 2 && /قماش إضافي/.test(s.tables[4][0]) && /80\.00/.test(s.tables[4][0]) && !(s.tables[4] || []).some((r) => /إيجار/.test(r)), 'owner: المصروف المربوط بالطلب فقط (لا الإيجار العام)', s.tables[4]);
-  ok(s.notes.some((n) => /^1 من الأصناف بلا تكلفة/.test(n)) && s.notes.some((n) => /لا يُرسل للعميل/.test(n)), 'owner: تنبيه «صنف بلا تكلفة» و«مستند داخلي»', s.notes);
+  ok(s.notes.some((n) => /^1 من الأصناف بلا تكلفة وحدة مسجّلة — التكاليف المسجّلة بنوداً إضافية \(150\.00\) محسوبة في صافي الربح/.test(n)) && s.notes.some((n) => /لا يُرسل للعميل/.test(n)), 'owner: تنبيه «صنف بلا تكلفة» و«مستند داخلي»', s.notes);
   ok(/صاحب الطلب المالك/.test(s.meta) && /عميل 1/.test(s.meta) && /قيد التنفيذ/.test(s.meta), 'owner: بيانات الطلب (العميل، الحالة، صاحب الطلب)', s.meta);
   ok(s.pdf && s.wa && s.cost, 'owner: أزرار «تنزيل PDF» و«مشاركة واتساب» و«تعديل التكاليف»', s);
 
@@ -205,7 +206,7 @@ try {
   ok(f.name === 'order-summary-1.pdf' && buf.slice(0, 5).toString() === '%PDF-' && buf.length > 20000, 'owner/pdf: ملف order-summary-1.pdf صالح', { name: f.name, size: buf.length });
   if (saveDir) (await page.evaluate(() => window.__shots || [])).forEach((d, i) => fs.writeFileSync(path.join(saveDir, `pdf-page-${i + 1}.jpg`), Buffer.from(d.split(',')[1], 'base64')));
   const lay = await pdfLayout(page);
-  ok(lay.n >= 1 && !lay.bad.length && lay.titles[0] === 'ملخص الطلب #1', 'owner/pdf: كل صفحة سليمة (لا صف تحت التذييل) والعنوان «ملخص الطلب #1»', lay);
+  ok(lay.n >= 1 && !lay.bad.length && (lay.titles[0] || '').replace(/[⁦-⁩]/g, '') === 'ملخص الطلب #1', 'owner/pdf: كل صفحة سليمة (لا صف تحت التذييل) والعنوان «ملخص الطلب #1»', lay);
   const head = await page.evaluate(() => (document.querySelector('.rep-print .rp-head p') || {}).textContent || 'removed');
   ok(head === 'removed', 'owner/pdf: صفحات الطباعة المؤقتة أُزيلت بعد التصدير', head);
 

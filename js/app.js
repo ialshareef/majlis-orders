@@ -4171,98 +4171,111 @@ function docTitle(order) {
     const seeCost = canSeeCosts(o), seeProfit = canSeeProfit(o), seeComm = canSeeComm(o);
     const info = seeCost ? computeCosts(o) : null;
     const hasCost = !!(info && info.entered);
+    // تكاليف الأصناف مسجّلة فعلاً؟ (الطلب قد تُسجَّل تكاليفه كلها بنوداً إضافية فقط)
+    const linesHave = !!(info && info.rows.some((r) => r.unitCost !== null));
     const paid = paidOf(o);
     const rem = remainingOf(o.total, paid);
     const comm = seeComm ? orderCommission(o) : null;
     const parentComm = seeComm ? orderParentCommission(o) : null;
     const parent = mandoubParentOf(o);
-    const summary = [
-      { label: 'الإجمالي شامل الضريبة', value: money(o.total), kind: 'money' },
-      { label: 'قبل الضريبة (بعد الخصم)', value: calcRevenue(L.subtotal, L.discount), kind: 'money' },
-      { label: 'المدفوع', value: paid, kind: 'money' },
-      { label: 'المتبقي', value: rem, kind: 'money' },
-    ];
+    // عزل اتجاه الأرقام والتواريخ داخل النص العربي (لا ينقلب 2026-11-03 إلى 03-11-2026، ولا «2٪» إلى «٪2»)
+    const iso = (x) => '\u2066' + x + '\u2069';
+    const pct = (n) => iso(r2(n) + '٪');
+    const day = (d) => iso(fmtDate(d));
+    // أسماء المبالغ بحسب الطلب: لا «شامل الضريبة» ولا «بعد الخصم» حيث لا ضريبة ولا خصم
+    const totalLbl = L.vatEnabled ? 'الإجمالي شامل الضريبة' : 'الإجمالي';
+    const revLbl = L.vatEnabled && L.discount ? 'قبل الضريبة (بعد الخصم)' : L.vatEnabled ? 'قبل الضريبة' : L.discount ? 'المبيعات بعد الخصم' : 'المبيعات';
+    const revenue = calcRevenue(L.subtotal, L.discount);
+    const summary = [{ label: totalLbl, value: money(o.total), kind: 'money' }];
+    if (L.vatEnabled || L.discount) summary.push({ label: revLbl, value: revenue, kind: 'money' });
+    summary.push({ label: 'المدفوع', value: paid, kind: 'money' }, { label: 'المتبقي', value: rem, kind: 'money' });
     if (seeCost) summary.push({ label: 'إجمالي التكاليف', value: hasCost ? info.costTotal : null, kind: 'money' });
     if (seeProfit) {
       summary.push({ label: 'صافي الربح', value: hasCost ? info.profit : null, kind: 'money' });
       summary.push({ label: 'هامش الربح', value: hasCost ? info.margin : null, kind: 'pct' });
     }
-    if (seeComm) summary.push({ label: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${r2(orderOwnerRate(o))}٪)`, value: comm, kind: 'money' });
+    const commLbl = `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${pct(orderOwnerRate(o))})`;
+    if (seeComm) summary.push({ label: commLbl, value: comm, kind: 'money' });
 
     const tables = [];
-    // 1) الأصناف: البيع، ومعه التكلفة والربح لمن يراها
-    const cols = [{ key: 'i', label: '#', kind: 'num' }, { key: 'name', label: 'الصنف' }, { key: 'qty', label: 'الكمية' },
-      { key: 'price', label: 'سعر البيع', kind: 'money' }, { key: 'total', label: 'إجمالي البيع', kind: 'money' }];
+    // 1) الأصناف: البيع، ومعه التكلفة والربح لمن يراها (أعمدة قليلة لتُقرأ على الجوال)
+    const cols = [{ key: 'name', label: 'الصنف' }, { key: 'qp', label: 'الكمية × السعر' }, { key: 'total', label: 'إجمالي البيع', kind: 'money' }];
     if (seeCost) cols.push({ key: 'uc', label: 'تكلفة الوحدة', kind: 'money' }, { key: 'ct', label: 'إجمالي التكلفة', kind: 'money' });
     if (seeProfit) cols.push({ key: 'pr', label: 'الربح', kind: 'money' });
     const src = seeCost ? info.rows : L.lines;
     tables.push({
       title: 'الأصناف' + (seeCost ? ' وتكاليفها' : ''), columns: cols,
-      rows: src.map((r, i) => ({
-        i: i + 1, name: r.name + (r.sub ? ' — ' + r.sub : ''),
-        qty: `${r.kind === 'sofa' ? fmtQty(r.qty) : r.qty} ${r.unit}`, price: r.price, total: r.total,
+      rows: src.map((r) => ({
+        name: r.name + (r.sub ? ' — ' + r.sub : ''),
+        qp: `${r.kind === 'sofa' ? fmtQty(r.qty) : r.qty} ${r.unit} × ${fmt(r.price)}`, total: r.total,
         uc: seeCost ? r.unitCost : undefined, ct: seeCost ? r.costTotal : undefined, pr: seeProfit ? r.profit : undefined,
       })),
-      totals: src.length ? { name: 'المجموع', total: L.subtotal, ct: seeCost ? (hasCost ? info.linesCost : null) : undefined,
-        pr: seeProfit && hasCost && !info.missing ? money(L.subtotal - info.linesCost) : undefined } : null,
+      totals: src.length ? { name: 'المجموع', total: L.subtotal, ct: seeCost ? (linesHave ? info.linesCost : null) : undefined,
+        pr: seeProfit && linesHave && !info.missing ? money(L.subtotal - info.linesCost) : undefined } : null,
       empty: 'لا توجد أصناف في هذا الطلب',
     });
     // 2) التكاليف الإضافية كما سُجّلت بنداً بنداً
     if (seeCost && info.extras.length) {
       tables.push({
-        title: 'تكاليف إضافية على الطلب', columns: [{ key: 'i', label: '#', kind: 'num' }, { key: 'name', label: 'البند' }, { key: 'amount', label: 'المبلغ', kind: 'money' }],
-        rows: info.extras.map((e, i) => ({ i: i + 1, name: e.name || '—', amount: e.amount })),
+        title: 'تكاليف إضافية على الطلب', columns: [{ key: 'name', label: 'البند' }, { key: 'amount', label: 'المبلغ', kind: 'money' }],
+        rows: info.extras.map((e) => ({ name: e.name || '—', amount: e.amount })),
         totals: { name: 'المجموع', amount: info.extrasCost },
       });
     }
     // 3) الحساب خطوة بخطوة: من مجموع الأصناف إلى صافي الربح والعمولات
     const acc = [{ k: 'مجموع الأصناف', v: L.subtotal }];
     if (L.discount) acc.push({ k: 'الخصم', v: -L.discount });
-    if (L.vatEnabled) acc.push({ k: `ضريبة القيمة المضافة (${r2(L.vatRate)}٪)`, v: L.vatAmount });
-    acc.push({ k: 'الإجمالي شامل الضريبة', v: money(o.total), b: true });
+    if (L.vatEnabled) acc.push({ k: `ضريبة القيمة المضافة (${pct(L.vatRate)})`, v: L.vatAmount });
+    acc.push({ k: totalLbl, v: money(o.total), b: true });
     acc.push({ k: 'المدفوع', v: paid }, { k: 'المتبقي على العميل', v: rem, b: true });
     if (seeCost) {
-      acc.push({ k: 'المبيعات قبل الضريبة (أساس الربح)', v: calcRevenue(L.subtotal, L.discount) });
-      acc.push({ k: 'تكاليف الأصناف', v: hasCost ? -info.linesCost : null });
+      acc.push({ k: (L.vatEnabled ? 'المبيعات قبل الضريبة' : 'المبيعات') + ' (أساس الربح)', v: revenue });
+      acc.push({ k: linesHave ? 'تكاليف الأصناف' : 'تكاليف الأصناف (لم تُسجَّل تكلفة وحدة)', v: linesHave ? -info.linesCost : null });
       if (info.extras.length) acc.push({ k: 'التكاليف الإضافية', v: -info.extrasCost });
       acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -info.costTotal : null, b: true });
     }
     if (seeProfit) acc.push({ k: 'صافي الربح', v: hasCost ? info.profit : null, b: true });
     if (seeComm) {
-      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${r2(orderOwnerRate(o))}٪ من صافي الربح)`, v: comm });
-      if (parent) acc.push({ k: `عمولة المندوب الأعلى — ${parent.name || ''} (${r2(mandoubParentRateOf(Store.getUser(o.createdBy)))}٪)`, v: parentComm });
-      if (seeProfit && hasCost && shareRateOf(o)) acc.push({ k: `حصة المشاركة (${r2(shareRateOf(o))}٪)`, v: orderShareAmount(o) });
+      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(orderOwnerRate(o))} من صافي الربح)`, v: comm });
+      if (parent) acc.push({ k: `عمولة المندوب الأعلى — ${parent.name || ''} (${pct(mandoubParentRateOf(Store.getUser(o.createdBy)))})`, v: parentComm });
+      if (seeProfit && hasCost && shareRateOf(o)) acc.push({ k: `حصة المشاركة (${pct(shareRateOf(o))})`, v: orderShareAmount(o) });
     }
     tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
     // 4) الدفعات
     const pays = (Array.isArray(o.payments) ? o.payments : []).filter((p) => p && num(p.amount));
     tables.push({
-      title: 'الدفعات', columns: [{ key: 'i', label: '#', kind: 'num' }, { key: 'at', label: 'التاريخ', kind: 'date' }, { key: 'm', label: 'الطريقة' },
+      title: 'الدفعات', columns: [{ key: 'at', label: 'التاريخ', kind: 'date' }, { key: 'm', label: 'الطريقة' },
         { key: 'amount', label: 'المبلغ', kind: 'money' }, { key: 'note', label: 'ملاحظة' }, { key: 'by', label: 'سجّلها' }],
-      rows: pays.map((p, i) => ({ i: i + 1, at: fmtDate(p.at), m: (money(p.amount) < 0 ? 'استرداد • ' : '') + (PAY_METHODS[p.method] || p.method || '—'), amount: money(p.amount), note: p.note || '', by: p.by || '' })),
+      rows: pays.map((p) => ({ at: fmtDate(p.at), m: (money(p.amount) < 0 ? 'استرداد • ' : '') + (PAY_METHODS[p.method] || p.method || '—'), amount: money(p.amount), note: p.note || '', by: p.by || '' })),
       totals: pays.length ? { at: 'المجموع', amount: paid } : null,
       empty: 'لا توجد دفعات مسجّلة',
     });
     // 5) مصروفات صفحة «المصروفات» المربوطة بهذا الطلب (للاطلاع؛ صافي الربح أعلاه من تكاليف الطلب)
     if (seeCost && linkedExp && linkedExp.length) {
       tables.push({
-        title: 'مصروفات مسجّلة على هذا الطلب (صفحة المصروفات)', columns: [{ key: 'i', label: '#', kind: 'num' }, { key: 'd', label: 'التاريخ', kind: 'date' },
+        title: 'مصروفات مسجّلة على هذا الطلب (صفحة المصروفات)', columns: [{ key: 'd', label: 'التاريخ', kind: 'date' },
           { key: 'name', label: 'البند' }, { key: 'cat', label: 'التصنيف' }, { key: 'amount', label: 'المبلغ', kind: 'money' }, { key: 'note', label: 'ملاحظة' }],
-        rows: linkedExp.map((e, i) => ({ i: i + 1, d: expDay(e), name: e.name || '—', cat: e.category || '', amount: money(e.amount), note: e.note || '' })),
+        rows: linkedExp.map((e) => ({ d: expDay(e), name: e.name || '—', cat: e.category || '', amount: money(e.amount), note: e.note || '' })),
         totals: { d: 'المجموع', amount: money(linkedExp.reduce((s, e) => s + money(e.amount), 0)) },
       });
     }
     const notes = [];
-    if (seeCost && info.missing) notes.push(`${info.missing} من الأصناف بلا تكلفة مسجّلة بعد — صافي الربح لا يشملها.`);
+    if (seeCost && info.missing) {
+      notes.push(info.extras.length
+        ? `${info.missing} من الأصناف بلا تكلفة وحدة مسجّلة — التكاليف المسجّلة بنوداً إضافية (${fmt(info.extrasCost)}) محسوبة في صافي الربح.`
+        : `${info.missing} من الأصناف بلا تكلفة وحدة مسجّلة — صافي الربح لا يشمل تكلفتها.`);
+    }
     if (seeCost && !hasCost) notes.push('لم تُسجَّل تكاليف لهذا الطلب بعد: أضفها من «تعديل التكاليف» ليظهر صافي الربح.');
     if (seeCost && linkedExp && linkedExp.length) notes.push('المصروفات المسجّلة في صفحة المصروفات تظهر للاطلاع ولا تدخل في صافي ربح الطلب (كما في التقارير).');
     if (seeCost) notes.push('مستند داخلي للإدارة: فيه التكاليف والأرباح — لا يُرسل للعميل.');
-    const meta = [['العميل', (o.customer && o.customer.name) || '—'], ['الجوال', (o.customer && o.customer.phone) || '—'],
-      ['الحالة', STATUS[o.status] || o.status || '—'], ['تاريخ الطلب', fmtDate(o.createdAt)],
-      ['التوصيل', o.deliveryDate ? fmtDate(o.deliveryDate) : '—'], ['صاحب الطلب', o.createdByName || '—']];
-    if (seeCost && o.costUpdatedByName) meta.push(['آخر تعديل للتكاليف', `${o.costUpdatedByName} ${fmtDateTime(o.costUpdatedAt)}`]);
-    return { id: 'order-summary', title: `ملخص الطلب #${o.number}`, headSub: `العميل: ${(o.customer && o.customer.name) || '—'} • ${STATUS[o.status] || o.status || ''} • ${fmtDate(o.createdAt)}`,
-      from: '', to: '', summary, tables, notes, meta, seeCost };
+    const meta = [['العميل', (o.customer && o.customer.name) || '—'], ['الجوال', (o.customer && o.customer.phone) ? iso(o.customer.phone) : '—'],
+      ['الحالة', STATUS[o.status] || o.status || '—'], ['تاريخ الطلب', day(o.createdAt)],
+      ['التوصيل', o.deliveryDate ? day(o.deliveryDate) : '—'], ['صاحب الطلب', o.createdByName || '—']];
+    if (seeCost && o.costUpdatedByName) meta.push(['آخر تعديل للتكاليف', `${o.costUpdatedByName} • ${iso(fmtDateTime(o.costUpdatedAt))}`]);
+    return { id: 'order-summary', portrait: true, title: `ملخص الطلب ${iso('#' + o.number)}`,
+      headSub: `العميل: ${(o.customer && o.customer.name) || '—'} • ${STATUS[o.status] || o.status || ''} • ${day(o.createdAt)}`,
+      from: '', to: '', summary, tables, notes, meta, seeCost,
+      nums: { total: money(o.total), cost: hasCost ? info.costTotal : null, profit: hasCost ? info.profit : null } };
   }
 
   /** نافذة ملخص الطلب المفصّل، ومنها تصدير PDF الإدارة */
@@ -4310,9 +4323,9 @@ function docTitle(order) {
     const blob = await repPdfRender(rep, meta, fileName, btn, { returnBlob: true });
     if (!blob) return;
     // نص مرافق قصير: داخلي للإدارة (لا تُفتح محادثة العميل أبداً)
-    const v = (label) => { const s = rep.summary.find((x) => x.label === label); return s && s.value !== null && s.value !== undefined ? fmt(s.value) : '—'; };
+    const v = (n) => (n === null || n === undefined ? '—' : fmt(n));
     const caption = [`ملخص الطلب *#${o.number}* — داخلي للإدارة`, `العميل: ${(o.customer && o.customer.name) || '—'}`,
-      `الإجمالي: ${v('الإجمالي شامل الضريبة')} • التكاليف: ${v('إجمالي التكاليف')}${canSeeProfit(o) ? ` • صافي الربح: ${v('صافي الربح')}` : ''}`,
+      `الإجمالي: ${v(rep.nums.total)} • التكاليف: ${v(rep.nums.cost)}${canSeeProfit(o) ? ` • صافي الربح: ${v(rep.nums.profit)}` : ''}`,
       'التفاصيل وكل بند تكلفة في الملف المرفق.'].join('\n');
     if (await sharePdfNative(blob, fileName, caption)) { toast('تمت المشاركة'); return; }
     const file = new File([blob], fileName, { type: 'application/pdf' });
@@ -8535,6 +8548,8 @@ async function exportExpensesXlsx() {
   /* PDF: صفحات HTML بحجم A4 أفقي تُصوَّر (html2canvas) — العربية تُرسم بخط الواجهة صحيحة الاتصال،
      والجدول يُقسَّم صفاً صفاً: رأس الجدول يتكرر في كل صفحة، وترقيم «صفحة N من M» في التذييل. */
   const REP_PAGE = { w: 1123, h: 794 };
+  /* صفحة طولية لمستند يُقرأ على الجوال: عرض أضيق (= خط أكبر نسبةً لعرض الشاشة) بنسبة A4 الطولية */
+  const REP_PAGE_P = { w: 640, h: 905 };
   async function repExportPdf() {
     const rep = repReady(); if (!rep) return;
     await repPdfRender(rep, repMeta(rep), repFileName(rep, 'pdf'), $('#btnRepPdf'));
@@ -8554,11 +8569,13 @@ async function exportExpensesXlsx() {
       /* التذييل يُملأ من البداية بنص بالطول نفسه («صفحة 00 من 00») حتى تُقاس مساحة المحتوى الحقيقية:
          كان فارغاً أثناء التقسيم ثم يُملأ بعده، فيأخذ سطره من آخر صف في كل صفحة فيُقصّ تحته */
       const stamp = fmtDateTime(Store.now());
+      // مستند يُقرأ على الجوال (ملخص طلب): صفحة طولية أضيق بخط أكبر، وإلا التقرير الأفقي المعتاد
+      const PG = rep.portrait ? REP_PAGE_P : REP_PAGE;
       const footHtml = (i, n) => `<span>${esc(settings().shopName || 'أصالة نجد')} • ${esc(rep.title)}</span><span>صُدِّر في <bdi>${esc(stamp)}</bdi></span><span>صفحة ${i} من ${n}</span>`;
       const newPage = (first) => {
         const pg = document.createElement('div');
-        pg.className = 'rep-page';
-        pg.style.cssText = `width:${REP_PAGE.w}px;height:${REP_PAGE.h}px`;
+        pg.className = 'rep-page' + (rep.portrait ? ' portrait' : '');
+        pg.style.cssText = `width:${PG.w}px;height:${PG.h}px`;
         pg.innerHTML = first
           ? `<div class="rp-head"><div><h1>${esc(rep.title)}</h1><p>${rep.headSub ? esc(rep.headSub) : 'الفترة: ' + repPeriodHtml(rep)}</p></div><dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl></div>`
           : `<div class="rp-head small"><b>${esc(rep.title)}</b><span>${rep.headSub ? esc(rep.headSub) : 'الفترة: ' + repPeriodHtml(rep)}</span></div>`;
@@ -8572,9 +8589,18 @@ async function exportExpensesXlsx() {
       const fits = (body) => {
         if (body.scrollHeight > body.clientHeight + 1) return false;
         const last = body.lastElementChild;
-        return !last || last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom - 2;
+        return !last || last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom - 6;
       };
       let body = newPage(true);
+      /* القياس قبل اكتمال تحميل الخط يُخطئ في الارتفاعات (الخط البديل أصغر)، فيُقصّ آخر صف تحت الصفحة
+         عند التصوير — حدث على الجوال: ضاع أول صف من «ملخص الحساب». ننتظر الخط بأوزانه أولاً */
+      try {
+        const fam = getComputedStyle(host).fontFamily;
+        await Promise.race([
+          Promise.all(['400', '600', '700'].map((w) => document.fonts.load(`${w} 16px ${fam}`, 'أبج 0123'))).then(() => document.fonts.ready),
+          new Promise((r) => setTimeout(r, 4000)),
+        ]);
+      } catch (_) { /* متصفح بلا document.fonts: نكمل بالقياس كما هو */ }
       const sum = document.createElement('div'); sum.className = 'rp-kpis';
       sum.innerHTML = rep.summary.map((s) => `<div><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : (s.kind === 'money' ? fmt(s.value) : s.kind === 'pct' ? r2(s.value) + '٪' : esc(String(s.value)))}</b></div>`).join('');
       body.appendChild(sum);
@@ -8587,18 +8613,23 @@ async function exportExpensesXlsx() {
           const tb = document.createElement('table'); tb.className = 'rp-table' + dense; tb.dataset.t = String(rep.tables.indexOf(t)); tb.innerHTML = thead + '<tbody></tbody>'; body.appendChild(tb);
           return { h, tb, tbody: tb.querySelector('tbody') };
         };
-        let cur = startTable(false);
-        if (!fits(body)) { cur.h.remove(); cur.tb.remove(); body = newPage(false); cur = startTable(false); }
-        const all = t.rows.length ? t.rows.map((r) => rowHtml(r, false)) : [`<tr><td colspan="${t.columns.length}">لا توجد بيانات في هذه الفترة</td></tr>`];
+        const all = t.rows.length ? t.rows.map((r) => rowHtml(r, false)) : [`<tr><td colspan="${t.columns.length}">${esc(t.empty || 'لا توجد بيانات في هذه الفترة')}</td></tr>`];
         if (t.totals && t.rows.length) all.push(rowHtml(t.totals, true));
-        for (const html of all) {
+        let cur = startTable(false);
+        let started = false;   // هل وُضع صف من هذا الجدول في صفحة سابقة؟
+        const hasTot = !!(t.totals && t.rows.length);
+        for (let ri = 0; ri < all.length; ri++) {
+          const html = all[ri];
           cur.tbody.insertAdjacentHTML('beforeend', html);
           if (fits(body)) continue;
           cur.tbody.lastElementChild.remove();
-          if (!cur.tbody.children.length) { cur.h.remove(); cur.tb.remove(); }
+          // صف المجموع لا ينتقل وحده إلى صفحة جديدة: يرافقه آخر صف قبله
+          const carry = [];
+          if (hasTot && ri === all.length - 1 && cur.tbody.children.length) carry.push(cur.tbody.lastElementChild.outerHTML), cur.tbody.lastElementChild.remove();
+          if (!cur.tbody.children.length) { cur.h.remove(); cur.tb.remove(); } else started = true;
           body = newPage(false);
-          cur = startTable(true);
-          cur.tbody.insertAdjacentHTML('beforeend', html);
+          cur = startTable(started);
+          carry.concat([html]).forEach((h) => cur.tbody.insertAdjacentHTML('beforeend', h));
         }
       }
       if (rep.notes && rep.notes.length) {
@@ -8619,11 +8650,11 @@ async function exportExpensesXlsx() {
       host.querySelectorAll('.rp-table').forEach((tb) => { tb.style.fontSize = minFs[tb.dataset.t] + 'px'; });
       pages.forEach((pg, i) => { pg.querySelector('.rp-foot').innerHTML = footHtml(i + 1, pages.length); });
       const { jsPDF } = window.jspdf;
-      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'landscape' });
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: rep.portrait ? 'portrait' : 'landscape' });
       for (let i = 0; i < pages.length; i++) {
-        const canvas = await window.html2canvas(pages[i], { scale: 2, backgroundColor: '#ffffff', logging: false, width: REP_PAGE.w, height: REP_PAGE.h });
+        const canvas = await window.html2canvas(pages[i], { scale: rep.portrait ? 3 : 2, backgroundColor: '#ffffff', logging: false, width: PG.w, height: PG.h });
         if (i) pdf.addPage();
-        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, rep.portrait ? 210 : 297, rep.portrait ? 297 : 210, undefined, 'FAST');
       }
       const out = pdf.output('blob');
       if (opts.returnBlob) return out;
