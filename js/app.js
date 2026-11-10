@@ -2126,11 +2126,51 @@ function canEditOrder(o) {
     const u = Store.getUser(o.createdBy);
     return (u && u.parentId) ? Store.getUser(u.parentId) : null;
   }
-  /** النسبة التي تُطبَّق على صاحب الطلب: المندوب يأخذ نسبته، والبائع نسبة البائع */
-  function orderOwnerRate(o) {
-    if (isMandoub(o)) return mandoubOwnerRateOf(Store.getUser(o.createdBy));
+  const rateSet = (v) => v !== undefined && v !== null && v !== '';
+  /** نسبة صاحب الطلب من مصادرها الحالية: نسبة مخصّصة للطلب ← نسبة المندوب الخاصة ← الافتراضي */
+  function liveOwnerRate(o) {
+    if (isMandoub(o)) return rateSet(o.mandoubRate) ? num(o.mandoubRate) : mandoubOwnerRateOf(Store.getUser(o.createdBy));
     return sellerRateOf(o);
   }
+  /**
+   * النسب الفعلية لعمولات الطلب — المصدر الوحيد لكل الشاشات والتقارير والملفات:
+   * اللقطة المحفوظة على الطلب وقت اعتماده (commRates)، أو النسب الحالية لطلب بلا لقطة،
+   * والنسبة المخصّصة لهذا الطلب من نافذة «نسبة البائع/المندوب» تغلب دائماً (قرار صريح من المدير).
+   */
+  function commRatesOf(o) {
+    const owner = Store.getUser(o && o.createdBy);
+    const isMan = !!(owner && owner.role === 'mandoub');
+    const parent = (isMan && owner.parentId) ? Store.getUser(owner.parentId) : null;
+    const base = (o && o.commRates) || {
+      ownerRate: liveOwnerRate(o),
+      parentId: parent ? parent.id : null,
+      parentRate: parent ? mandoubParentRateOf(owner) : null,
+      shareRate: shareRateOf(o),
+    };
+    const r = { ownerRate: num(base.ownerRate), parentId: base.parentId || null, parentRate: base.parentId ? num(base.parentRate) : null, shareRate: num(base.shareRate) };
+    if (isMan && rateSet(o.mandoubRate)) r.ownerRate = num(o.mandoubRate);
+    if (!isMan && rateSet(o.sellerRate)) r.ownerRate = num(o.sellerRate);
+    if (rateSet(o.shareRate !== undefined ? o.shareRate : o.othersRate)) r.shareRate = shareRateOf(o);
+    return r;
+  }
+  /** من أين جاءت كل نسبة؟ (لشرح الأرقام للإدارة في التقارير والملخص) */
+  function commRateSources(o, r) {
+    r = r || commRatesOf(o);
+    const owner = Store.getUser(o && o.createdBy);
+    const isMan = !!(owner && owner.role === 'mandoub');
+    const s = settings();
+    const eq = (a, b) => rateSet(b) && Math.abs(num(a) - num(b)) < 0.0001;
+    const SAVED = 'محفوظة على الطلب وقت اعتماده';
+    let own;
+    if (isMan) own = eq(r.ownerRate, o.mandoubRate) ? 'مخصّصة لهذا الطلب' : eq(r.ownerRate, owner.rate) ? 'نسبة المندوب الخاصة' : eq(r.ownerRate, s.mandoubRate) ? 'افتراضية (إعدادات المناديب)' : SAVED;
+    else own = eq(r.ownerRate, o.sellerRate) ? 'مخصّصة لهذا الطلب' : eq(r.ownerRate, s.sellerRate) ? 'افتراضية (الإعدادات)' : SAVED;
+    const parent = !r.parentId ? '' : (eq(r.parentRate, owner && owner.parentRate) ? 'نسبة المندوب الخاصة' : eq(r.parentRate, s.mandoubParentRate) ? 'افتراضية (إعدادات المناديب)' : SAVED);
+    const shareRaw = o && (o.shareRate !== undefined ? o.shareRate : o.othersRate);
+    const share = eq(r.shareRate, shareRaw) ? 'مخصّصة لهذا الطلب' : eq(r.shareRate, s.shareRate) ? 'افتراضية (الإعدادات)' : SAVED;
+    return { owner: own, parent, share };
+  }
+  /** النسبة الفعلية المطبّقة على صاحب الطلب */
+  function orderOwnerRate(o) { return commRatesOf(o).ownerRate; }
   /** عمولة صاحب الطلب = نسبته × صافي الربح، أو null إن لم تُدخل التكاليف */
   function orderCommission(o) {
     const p = orderProfit(o);
@@ -2138,15 +2178,15 @@ function canEditOrder(o) {
   }
   /** عمولة المندوب الأعلى المباشر من طلب تابعه، أو null */
   function orderParentCommission(o) {
-    if (!isMandoub(o) || !mandoubParentOf(o)) return null;
-    const u = Store.getUser(o.createdBy);
+    const r = commRatesOf(o);
+    if (!r.parentId) return null;
     const p = orderProfit(o);
-    return p === null ? null : money(p * mandoubParentRateOf(u) / 100);
+    return p === null ? null : money(p * r.parentRate / 100);
   }
   /** حصة موظفي المحل من الطلب (البائع والمندوب معاً) */
   function orderShareAmount(o) {
     const p = orderProfit(o);
-    return p === null ? 0 : money(p * shareRateOf(o) / 100);
+    return p === null ? 0 : money(p * commRatesOf(o).shareRate / 100);
   }
   /** لقطة نسب العمولة على الطلب عند اعتماده، حتى لا يؤثر تعديل النسب لاحقاً في الطلبات السابقة */
   function snapshotOrderCommission(o) {
@@ -2154,7 +2194,7 @@ function canEditOrder(o) {
     const isMan = !!(owner && owner.role === 'mandoub');
     const parent = (isMan && owner.parentId) ? Store.getUser(owner.parentId) : null;
     o.commRates = {
-      ownerRate: isMan ? mandoubOwnerRateOf(owner) : sellerRateOf(o),
+      ownerRate: liveOwnerRate(o),
       parentId: parent ? parent.id : null,
       parentRate: (isMan && parent) ? mandoubParentRateOf(owner) : null,
       shareRate: shareRateOf(o),
@@ -4170,7 +4210,13 @@ function docTitle(order) {
     const L = computeLines(o);
     const seeCost = canSeeCosts(o), seeProfit = canSeeProfit(o), seeComm = canSeeComm(o);
     const info = seeCost ? computeCosts(o) : null;
-    const hasCost = !!(info && info.entered);
+    // الأرقام الإجمالية من الدوال نفسها التي تعتمدها القائمة والتقارير (orderCost/orderProfit/orderRevenue):
+    // طلب قديم بإجمالي تكلفة محفوظ بلا تفصيل يظهر ربحه هنا كما يظهر هناك
+    const costAll = seeCost ? orderCost(o) : null;
+    const hasCost = costAll !== null;
+    const profitAll = hasCost ? orderProfit(o) : null;
+    const revAll = orderRevenue(o);
+    const marginAll = hasCost && revAll > 0 ? r2((profitAll / revAll) * 100) : 0;
     // تكاليف الأصناف مسجّلة فعلاً؟ (الطلب قد تُسجَّل تكاليفه كلها بنوداً إضافية فقط)
     const linesHave = !!(info && info.rows.some((r) => r.unitCost !== null));
     const paid = paidOf(o);
@@ -4185,16 +4231,17 @@ function docTitle(order) {
     // أسماء المبالغ بحسب الطلب: لا «شامل الضريبة» ولا «بعد الخصم» حيث لا ضريبة ولا خصم
     const totalLbl = L.vatEnabled ? 'الإجمالي شامل الضريبة' : 'الإجمالي';
     const revLbl = L.vatEnabled && L.discount ? 'قبل الضريبة (بعد الخصم)' : L.vatEnabled ? 'قبل الضريبة' : L.discount ? 'المبيعات بعد الخصم' : 'المبيعات';
-    const revenue = calcRevenue(L.subtotal, L.discount);
+    const revenue = revAll;
     const summary = [{ label: totalLbl, value: money(o.total), kind: 'money' }];
     if (L.vatEnabled || L.discount) summary.push({ label: revLbl, value: revenue, kind: 'money' });
     summary.push({ label: 'المدفوع', value: paid, kind: 'money' }, { label: 'المتبقي', value: rem, kind: 'money' });
-    if (seeCost) summary.push({ label: 'إجمالي التكاليف', value: hasCost ? info.costTotal : null, kind: 'money' });
+    if (seeCost) summary.push({ label: 'إجمالي التكاليف', value: costAll, kind: 'money' });
     if (seeProfit) {
-      summary.push({ label: 'صافي الربح', value: hasCost ? info.profit : null, kind: 'money' });
-      summary.push({ label: 'هامش الربح', value: hasCost ? info.margin : null, kind: 'pct' });
+      summary.push({ label: 'صافي الربح', value: profitAll, kind: 'money' });
+      summary.push({ label: 'هامش الربح', value: hasCost ? marginAll : null, kind: 'pct' });
     }
-    const commLbl = `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${pct(orderOwnerRate(o))})`;
+    const CR = commRatesOf(o), CS = commRateSources(o, CR);
+    const commLbl = `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${pct(CR.ownerRate)})`;
     if (seeComm) summary.push({ label: commLbl, value: comm, kind: 'money' });
 
     const tables = [];
@@ -4232,13 +4279,13 @@ function docTitle(order) {
       acc.push({ k: (L.vatEnabled ? 'المبيعات قبل الضريبة' : 'المبيعات') + ' (أساس الربح)', v: revenue });
       acc.push({ k: linesHave ? 'تكاليف الأصناف' : 'تكاليف الأصناف (لم تُسجَّل تكلفة وحدة)', v: linesHave ? -info.linesCost : null });
       if (info.extras.length) acc.push({ k: 'التكاليف الإضافية', v: -info.extrasCost });
-      acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -info.costTotal : null, b: true });
+      acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -costAll : null, b: true });
     }
-    if (seeProfit) acc.push({ k: 'صافي الربح', v: hasCost ? info.profit : null, b: true });
+    if (seeProfit) acc.push({ k: 'صافي الربح', v: profitAll, b: true });
     if (seeComm) {
-      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(orderOwnerRate(o))} من صافي الربح)`, v: comm });
-      if (parent) acc.push({ k: `عمولة المندوب الأعلى — ${parent.name || ''} (${pct(mandoubParentRateOf(Store.getUser(o.createdBy)))})`, v: parentComm });
-      if (seeProfit && hasCost && shareRateOf(o)) acc.push({ k: `حصة المشاركة (${pct(shareRateOf(o))})`, v: orderShareAmount(o) });
+      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من صافي الربح • ${CS.owner})`, v: comm });
+      if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; acc.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)} • ${CS.parent})`, v: parentComm }); }
+      if (seeProfit && hasCost && CR.shareRate) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
     }
     tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
     // 4) الدفعات
@@ -4275,7 +4322,7 @@ function docTitle(order) {
     return { id: 'order-summary', portrait: true, title: `ملخص الطلب ${iso('#' + o.number)}`,
       headSub: `العميل: ${(o.customer && o.customer.name) || '—'} • ${STATUS[o.status] || o.status || ''} • ${day(o.createdAt)}`,
       from: '', to: '', summary, tables, notes, meta, seeCost,
-      nums: { total: money(o.total), cost: hasCost ? info.costTotal : null, profit: hasCost ? info.profit : null } };
+      nums: { total: money(o.total), cost: costAll, profit: profitAll } };
   }
 
   /** نافذة ملخص الطلب المفصّل، ومنها تصدير PDF الإدارة */
@@ -4568,8 +4615,8 @@ function docTitle(order) {
     const isMan = isMandoub(o);
     const actor = isMan ? 'المندوب' : 'البائع';
     const ownerRate = orderOwnerRate(o);
-    const shareRate = shareRateOf(o);
-    const ownerLabel = isMan ? 'نسبة المناديب' : 'نسبة البائع';
+    const shareRate = commRatesOf(o).shareRate;
+    const ownerLabel = isMan ? 'نسبة المندوب لهذا الطلب' : 'نسبة البائع لهذا الطلب';
     const shareField = isMan ? '' : `<label>نسبة المشاركة (لباقي البائعين والإدارة) % <input id="commShare" type="number" min="0" max="100" step="0.5" value="${shareRate}"></label>`;
     openModal(`نسبة العمولة — الطلب #${o.number}`, `
       <p class="hint">العميل <b>${esc(o.customer?.name || '—')}</b> • ${actor} <b>${seller}</b> • صافي الربح ${profit === null ? 'غير محدد (أدخل التكاليف أولاً)' : `<b class="num">${fmt(profit)}</b> ${cur$}`}</p>
@@ -4608,7 +4655,7 @@ function docTitle(order) {
         const rs = inpShare ? Math.min(100, Math.max(0, num(inpShare.value))) : 0;
         const before = JSON.parse(JSON.stringify(o));
         const prevOwner = orderOwnerRate(o);
-        const prevShare = shareRateOf(o);
+        const prevShare = commRatesOf(o).shareRate;
         if (isMan) { o.mandoubRate = r; delete o.sellerRate; }
         else { o.sellerRate = r; o.shareRate = rs; }
         o.updatedAt = Store.now(); o.updatedByName = currentUser.name;
@@ -5878,19 +5925,15 @@ function docTitle(order) {
     const owner = Store.getUser(o.createdBy);
     const isMan = !!(owner && owner.role === 'mandoub');
     const parent = (isMan && owner && owner.parentId) ? Store.getUser(owner.parentId) : null;
-    const r = o.commRates || {
-      ownerRate: isMan ? mandoubOwnerRateOf(owner) : sellerRateOf(o),
-      parentId: parent ? parent.id : null,
-      parentRate: (isMan && parent) ? mandoubParentRateOf(owner) : null,
-      shareRate: shareRateOf(o),
-    };
+    const r = commRatesOf(o);
+    const src = commRateSources(o, r);
     const rows = [];
-    rows.push({ who: owner ? owner.name : 'المندوب', rate: r.ownerRate, amount: money(p * r.ownerRate / 100), userId: o.createdBy });
+    rows.push({ who: owner ? owner.name : 'المندوب', rate: r.ownerRate, amount: money(p * r.ownerRate / 100), userId: o.createdBy, src: src.owner });
     if (r.parentId) {
       const par = Store.getUser(r.parentId);
-      rows.push({ who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId });
+      rows.push({ who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId, src: src.parent });
     }
-    rows.push({ who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null });
+    rows.push({ who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null, src: src.share });
     return { profit: p, rows };
   }
 

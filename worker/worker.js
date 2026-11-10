@@ -2005,12 +2005,15 @@ function orderRevenueFromData(d) {
 }
 
 function commRateForOrder(d, user) {
+  // النسبة المخصّصة لهذا الطلب (يحددها المالك من نافذة الطلب) تغلب اللقطة — كما في الواجهة والتقارير
+  if (d && d.mandoubRate !== undefined && d.mandoubRate !== null && d.mandoubRate !== '' && Number.isFinite(Number(d.mandoubRate))) return Number(d.mandoubRate);
   if (d && d.commRates && d.commRates.ownerRate !== undefined) return Number(d.commRates.ownerRate);
   if (user && user.rate !== undefined) return Number(user.rate);
   return 0;
 }
 
 function shareRateForOrder(d) {
+  if (d && d.shareRate !== undefined && d.shareRate !== null && d.shareRate !== '' && Number.isFinite(Number(d.shareRate))) return Number(d.shareRate);
   if (d && d.commRates && d.commRates.shareRate !== undefined) return Number(d.commRates.shareRate);
   return 0;
 }
