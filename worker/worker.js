@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.96';
-// بصمة asalh-najd-1.0.96.apk (إصدار GitHub v1.0.96، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.96 وversionCode 10096، ونفس شهادة توقيع 1.0.95).
-const UPDATE_FALLBACK_SHA256 = '1afa5fdef102a15d905124b592d1b562821bb2b71e946938035172ae6399064d';
+const UPDATE_FALLBACK_VERSION = '1.0.97';
+// بصمة asalh-najd-1.0.97.apk (إصدار GitHub v1.0.97، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.97 وversionCode 10097، ونفس شهادة توقيع 1.0.96).
+const UPDATE_FALLBACK_SHA256 = '918bb00c6a99d111720f94353f249ad7595a5f842cd79ea4530bc865d6c88ddc';
 const UPDATE_FALLBACK_NOTES = [
-  'بطاقة الطلب في الجوال تعرض التكلفة وصافي الربح والعمولة قبل فتح الطلب',
-  'ملخص الطلب: زر «مشاركة PDF عبر واتساب» يرسل ملف ملخص التكاليف للإدارة',
+  'زر التحديث بالعربي ولا يخرج عن حدوده، مع شريط تقدّم وعدّاد أثناء التنزيل',
+  'ترتيب أوضح لصفّي «تطبيق أندرويد» و«تطبيق الويب» في «عن التطبيق»',
 ];
 
 function versionCodeOfName(v) {
