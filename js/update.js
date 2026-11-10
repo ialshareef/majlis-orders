@@ -323,11 +323,15 @@
     if (!els.progress || !els.bar) return;
     var lab = els.label && els.label !== els.status ? els.label : null;
     if (!loaded || loaded < 0) {
+      if (els._tick) { clearInterval(els._tick); els._tick = null; }
+      els.progress.classList.remove('indet');
       els.progress.hidden = true;
       if (lab) lab.hidden = true;
       return;
     }
     els.progress.hidden = false;
+    els.progress.classList.remove('indet');
+    if (els._tick) { clearInterval(els._tick); els._tick = null; }
     var pct = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
     els.bar.style.width = pct + '%';
     els.progress.setAttribute('aria-valuenow', String(pct));
@@ -337,6 +341,26 @@
         ? 'جارٍ التنزيل… ' + pct + '٪'
         : 'جارٍ التنزيل… ' + Math.round(loaded / 1024) + ' ك.ب';
     }
+  }
+
+  /** بداية التنزيل: شريط متحرك وعدّاد ثوانٍ حتى تصل أول نسبة حقيقية (إن وصلت) */
+  function startIndeterminate(els) {
+    if (!els.progress || !els.bar) return;
+    var lab = els.label && els.label !== els.status ? els.label : null;
+    els.progress.hidden = false;
+    els.progress.classList.add('indet');
+    els.progress.removeAttribute('aria-valuenow');
+    els.bar.style.width = '';
+    var t0 = Date.now();
+    var show = function () {
+      if (!lab) return;
+      lab.hidden = false;
+      var s = Math.round((Date.now() - t0) / 1000);
+      lab.textContent = 'جارٍ التنزيل… ' + s + ' ث — حجم التحديث نحو 4 ميجابايت، أبقِ التطبيق مفتوحاً';
+    };
+    show();
+    if (els._tick) clearInterval(els._tick);
+    els._tick = setInterval(show, 1000);
   }
 
   function initBox(opts) {
@@ -359,7 +383,7 @@
       var r = await checkForUpdate(current);
       els.check.disabled = false;
       if (r.state === 'latest') {
-        setStatus(els, 'You are using the latest version. (أنت تستخدم أحدث إصدار)', 'ok');
+        setStatus(els, 'أنت تستخدم أحدث إصدار (' + current.versionName + ').', 'ok');
         notify('latest');
       } else if (r.state === 'available') {
         pending = r.meta;
@@ -370,7 +394,7 @@
         );
         if (els.dl) {
           els.dl.hidden = false;
-          els.dl.textContent = 'Download & Install (تنزيل وتثبيت ' + r.meta.versionName + ')';
+          els.dl.textContent = 'تنزيل وتثبيت الإصدار ' + r.meta.versionName;
         }
         notify('available', r.meta);
       } else {
@@ -390,10 +414,11 @@
         els.dl.disabled = true;
         els.check.disabled = true;
         try {
-          setStatus(els, 'جارٍ التنزيل…', 'info');
+          setStatus(els, 'جارٍ تنزيل الإصدار ' + meta.versionName + '…', 'info');
+          startIndeterminate(els);
           var src = await downloadVerifiedApk(meta, function (loaded, total) { setProgress(els, loaded, total); });
           setProgress(els, -1, 0);
-          setStatus(els, 'تم التحقق من الملف — سيُفتح مثبّت النظام.', 'info');
+          setStatus(els, 'اكتمل التنزيل وتم التحقق من سلامة الملف — سيُفتح مثبّت النظام.', 'info');
           var fname = apkFileName(meta);
           var how = await installApk(src, fname);
           setStatus(

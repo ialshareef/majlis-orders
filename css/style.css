@@ -3639,3 +3639,11 @@ body.portal { background: var(--bg); }
 .sum-table td.span2 { white-space: normal; min-width: 180px; }
 .sum-table tr.sum-tot td { font-weight: 700; background: var(--surface-2); }
 .sum-notes { margin: 14px 0 0; padding-inline-start: 18px; }
+
+/* قسم التحديث: نص الزر يلتف داخل حدوده (لا يخرج عن الشاشة)، وشريط متحرك حين لا تصل نسبة التقدّم */
+#btnDownloadUpdate, #btnCheckUpdate { white-space: normal; height: auto; min-height: 44px; line-height: 1.4; padding-block: 10px; overflow-wrap: anywhere; }
+.update-box .progress.indet > span { width: 35% !important; animation: upd-indet 1.3s ease-in-out infinite; }
+@keyframes upd-indet { 0% { transform: translateX(120%); } 100% { transform: translateX(-320%); } }
+@media (prefers-reduced-motion: reduce) { .update-box .progress.indet > span { animation: none; width: 100% !important; opacity: .45; } }
+/* صفوف التطبيق: العنوان سطر كامل والوصف تحته (لا يُعصر العنوان في ثلاثة أسطر) */
+.link-head.stack { flex-direction: column; align-items: flex-start; gap: 2px; }

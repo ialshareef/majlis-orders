@@ -132,7 +132,7 @@ async function sha256hex(bytes) {
       stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10012, '1.0.12', APK_SHA) }); });
       U.initBox({ current: CUR, els: els, notify: function (e) { notes.push(e); } });
       els.check.click();
-      await waitFor(function () { return els.status.textContent.indexOf('latest version') >= 0 && !els.check.disabled; });
+      await waitFor(function () { return els.status.textContent.indexOf('أنت تستخدم أحدث إصدار') >= 0 && !els.check.disabled; });
       if (els.dl.hidden && notes[0] === 'latest') ok('T2 latest-version');
       else fail('T2 latest-version', els.status.textContent);
     } catch (e) { fail('T2 latest-version', e.message); }
@@ -149,9 +149,30 @@ async function sha256hex(bytes) {
       els3.check.click();
       await waitFor(function () { return !els3.dl.hidden && !els3.check.disabled; });
       var autoDl = fetchCalls.some(function (u) { return u.indexOf('.apk') >= 0; });
-      if (els3.status.textContent.indexOf('1.0.13') >= 0 && els3.dl.textContent.indexOf('Download') >= 0 && !autoDl) ok('T3 available-no-autodl');
+      if (els3.status.textContent.indexOf('1.0.13') >= 0 && els3.dl.textContent === 'تنزيل وتثبيت الإصدار 1.0.13' && !/[A-Za-z]/.test(els3.dl.textContent + els3.status.textContent) && !autoDl) ok('T3 available-no-autodl');
       else fail('T3 available-no-autodl', els3.status.textContent + ' autodl=' + autoDl);
     } catch (e) { fail('T3 available-no-autodl', e.message); }
+
+    // T3b: أثناء التنزيل بلا نسبة تقدّم من الجهاز: شريط متحرك + عدّاد ثوانٍ، ثم يختفي عند الانتهاء
+    try {
+      var U3b = await loadFreshUpdate(), els3b = buildBox(), release3b = null;
+      stubFetch(function (url) {
+        if (url.indexOf('.apk') >= 0) return new Promise(function (r) { release3b = function () { r(new Response(new Uint8Array([1, 2, 3]))); }; });
+        return jsonRes({ ok: true, update: META3 });
+      });
+      U3b.initBox({ current: CUR, els: els3b, notify: function () {} });
+      els3b.check.click();
+      await waitFor(function () { return !els3b.dl.hidden && !els3b.check.disabled; });
+      els3b.dl.click();
+      await waitFor(function () { return !!release3b; });
+      await new Promise(function (r) { setTimeout(r, 1200); });
+      var during = { bar: !els3b.progress.hidden && els3b.progress.classList.contains('indet'), lab: !els3b.label.hidden && /جارٍ التنزيل… \d+ ث/.test(els3b.label.textContent), st: /جارٍ تنزيل الإصدار 1\.0\.13/.test(els3b.status.textContent) };
+      release3b();
+      await waitFor(function () { return !els3b.dl.disabled; });
+      var after = els3b.progress.hidden && !els3b.progress.classList.contains('indet') && els3b.label.hidden;
+      if (during.bar && during.lab && during.st && after) ok('T3b indeterminate-progress');
+      else fail('T3b indeterminate-progress', JSON.stringify(during) + ' after=' + after + ' lab=' + els3b.label.textContent);
+    } catch (e) { fail('T3b indeterminate-progress', e.message); }
 
     // T4: الخادم غير متصل
     try {
@@ -235,7 +256,7 @@ async function sha256hex(bytes) {
       stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10010, '1.0.10', APK_SHA) }); });
       U9.initBox({ current: CUR, els: els9, notify: function () {} });
       els9.check.click();
-      await waitFor(function () { return els9.status.textContent.indexOf('latest version') >= 0 && !els9.check.disabled; });
+      await waitFor(function () { return els9.status.textContent.indexOf('أنت تستخدم أحدث إصدار') >= 0 && !els9.check.disabled; });
       if (els9.dl.hidden) ok('T9 downgrade-blocked');
       else fail('T9 downgrade-blocked', els9.status.textContent);
     } catch (e) { fail('T9 downgrade-blocked', e.message); }
@@ -265,7 +286,7 @@ async function sha256hex(bytes) {
       stubFetch(function () { return jsonRes({ ok: true, update: metaFor(10012, '1.0.12', APK_SHA) }); });
       U11.initBox({ current: CUR, els: els11, notify: function () {} });
       els11.check.click();
-      await waitFor(function () { return els11.status.textContent.indexOf('latest version') >= 0 && !els11.check.disabled; });
+      await waitFor(function () { return els11.status.textContent.indexOf('أنت تستخدم أحدث إصدار') >= 0 && !els11.check.disabled; });
       var usedStaging = fetchCalls.length === 1 && fetchCalls[0].indexOf('https://majlis-api-staging.asalh-najd.workers.dev/api/app-update') === 0;
       window.APP_CONFIG = { apiUrl: '' };
       var U12 = await loadFreshUpdate(), els12 = buildBox();
