@@ -4067,6 +4067,7 @@ function docTitle(order) {
         <td class="row-actions"><span class="ra">
           <button class="btn small" data-open="${oid}">${canEditOrder(o) ? `${icon('pen')} فتح` : `${icon('lock')} عرض`}</button>
           ${rowMenu([
+            menuItem(`data-sum="${oid}"`, 'list', 'ملخص الطلب' + (canSeeCosts(o) ? ' والتكاليف' : '')),
             menuItem(`data-print="${oid}"`, 'file', 'تصدير PDF ومشاركته'),
             (canSeeCosts(o) && canWriteCosts(o, cost !== null)) ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
             can('admin.core') ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
@@ -4086,6 +4087,7 @@ function docTitle(order) {
     }));
     $$('[data-print]', tb).forEach((b) => b.addEventListener('click', () => shareOrder(find(b.dataset.print))));
     $$('[data-cost]', tb).forEach((b) => b.addEventListener('click', () => costForm(find(b.dataset.cost))));
+    $$('[data-sum]', tb).forEach((b) => b.addEventListener('click', () => orderSummary(find(b.dataset.sum))));
     $$('[data-comm]', tb).forEach((b) => b.addEventListener('click', () => commissionForm(find(b.dataset.comm))));
     $$('[data-owner]', tb).forEach((b) => b.addEventListener('click', () => transferOwner(find(b.dataset.owner))));
     $$('[data-delo]', tb).forEach((b) => b.addEventListener('click', async () => {
@@ -4159,6 +4161,149 @@ function docTitle(order) {
         toast(`نُقلت ملكية الطلب #${o.number} إلى ${u.name}`);
       };
     }, 'drawer');
+  }
+
+  /* ---------------- ملخص الطلب (عرض + PDF داخلي للإدارة) ----------------
+     مصدر واحد للأرقام: نفس دوال الحساب (computeLines/computeCosts/orderCommission…)
+     فيطابق الملخص الجدول والتقارير. التكاليف والربح والعمولة تظهر بحسب الصلاحية فقط. */
+  function orderSummaryRep(o, linkedExp) {
+    const L = computeLines(o);
+    const seeCost = canSeeCosts(o), seeProfit = canSeeProfit(o), seeComm = canSeeComm(o);
+    const info = seeCost ? computeCosts(o) : null;
+    const hasCost = !!(info && info.entered);
+    const paid = paidOf(o);
+    const rem = remainingOf(o.total, paid);
+    const comm = seeComm ? orderCommission(o) : null;
+    const parentComm = seeComm ? orderParentCommission(o) : null;
+    const parent = mandoubParentOf(o);
+    const summary = [
+      { label: 'الإجمالي شامل الضريبة', value: money(o.total), kind: 'money' },
+      { label: 'قبل الضريبة (بعد الخصم)', value: calcRevenue(L.subtotal, L.discount), kind: 'money' },
+      { label: 'المدفوع', value: paid, kind: 'money' },
+      { label: 'المتبقي', value: rem, kind: 'money' },
+    ];
+    if (seeCost) summary.push({ label: 'إجمالي التكاليف', value: hasCost ? info.costTotal : null, kind: 'money' });
+    if (seeProfit) {
+      summary.push({ label: 'صافي الربح', value: hasCost ? info.profit : null, kind: 'money' });
+      summary.push({ label: 'هامش الربح', value: hasCost ? info.margin : null, kind: 'pct' });
+    }
+    if (seeComm) summary.push({ label: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${r2(orderOwnerRate(o))}٪)`, value: comm, kind: 'money' });
+
+    const tables = [];
+    // 1) الأصناف: البيع، ومعه التكلفة والربح لمن يراها
+    const cols = [{ key: 'i', label: '#', kind: 'num' }, { key: 'name', label: 'الصنف' }, { key: 'qty', label: 'الكمية' },
+      { key: 'price', label: 'سعر البيع', kind: 'money' }, { key: 'total', label: 'إجمالي البيع', kind: 'money' }];
+    if (seeCost) cols.push({ key: 'uc', label: 'تكلفة الوحدة', kind: 'money' }, { key: 'ct', label: 'إجمالي التكلفة', kind: 'money' });
+    if (seeProfit) cols.push({ key: 'pr', label: 'الربح', kind: 'money' });
+    const src = seeCost ? info.rows : L.lines;
+    tables.push({
+      title: 'الأصناف' + (seeCost ? ' وتكاليفها' : ''), columns: cols,
+      rows: src.map((r, i) => ({
+        i: i + 1, name: r.name + (r.sub ? ' — ' + r.sub : ''),
+        qty: `${r.kind === 'sofa' ? fmtQty(r.qty) : r.qty} ${r.unit}`, price: r.price, total: r.total,
+        uc: seeCost ? r.unitCost : undefined, ct: seeCost ? r.costTotal : undefined, pr: seeProfit ? r.profit : undefined,
+      })),
+      totals: src.length ? { name: 'المجموع', total: L.subtotal, ct: seeCost ? (hasCost ? info.linesCost : null) : undefined,
+        pr: seeProfit && hasCost && !info.missing ? money(L.subtotal - info.linesCost) : undefined } : null,
+      empty: 'لا توجد أصناف في هذا الطلب',
+    });
+    // 2) التكاليف الإضافية كما سُجّلت بنداً بنداً
+    if (seeCost && info.extras.length) {
+      tables.push({
+        title: 'تكاليف إضافية على الطلب', columns: [{ key: 'i', label: '#', kind: 'num' }, { key: 'name', label: 'البند' }, { key: 'amount', label: 'المبلغ', kind: 'money' }],
+        rows: info.extras.map((e, i) => ({ i: i + 1, name: e.name || '—', amount: e.amount })),
+        totals: { name: 'المجموع', amount: info.extrasCost },
+      });
+    }
+    // 3) الحساب خطوة بخطوة: من مجموع الأصناف إلى صافي الربح والعمولات
+    const acc = [{ k: 'مجموع الأصناف', v: L.subtotal }];
+    if (L.discount) acc.push({ k: 'الخصم', v: -L.discount });
+    if (L.vatEnabled) acc.push({ k: `ضريبة القيمة المضافة (${r2(L.vatRate)}٪)`, v: L.vatAmount });
+    acc.push({ k: 'الإجمالي شامل الضريبة', v: money(o.total), b: true });
+    acc.push({ k: 'المدفوع', v: paid }, { k: 'المتبقي على العميل', v: rem, b: true });
+    if (seeCost) {
+      acc.push({ k: 'المبيعات قبل الضريبة (أساس الربح)', v: calcRevenue(L.subtotal, L.discount) });
+      acc.push({ k: 'تكاليف الأصناف', v: hasCost ? -info.linesCost : null });
+      if (info.extras.length) acc.push({ k: 'التكاليف الإضافية', v: -info.extrasCost });
+      acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -info.costTotal : null, b: true });
+    }
+    if (seeProfit) acc.push({ k: 'صافي الربح', v: hasCost ? info.profit : null, b: true });
+    if (seeComm) {
+      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${r2(orderOwnerRate(o))}٪ من صافي الربح)`, v: comm });
+      if (parent) acc.push({ k: `عمولة المندوب الأعلى — ${parent.name || ''} (${r2(mandoubParentRateOf(Store.getUser(o.createdBy)))}٪)`, v: parentComm });
+      if (seeProfit && hasCost && shareRateOf(o)) acc.push({ k: `حصة المشاركة (${r2(shareRateOf(o))}٪)`, v: orderShareAmount(o) });
+    }
+    tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
+    // 4) الدفعات
+    const pays = (Array.isArray(o.payments) ? o.payments : []).filter((p) => p && num(p.amount));
+    tables.push({
+      title: 'الدفعات', columns: [{ key: 'i', label: '#', kind: 'num' }, { key: 'at', label: 'التاريخ', kind: 'date' }, { key: 'm', label: 'الطريقة' },
+        { key: 'amount', label: 'المبلغ', kind: 'money' }, { key: 'note', label: 'ملاحظة' }, { key: 'by', label: 'سجّلها' }],
+      rows: pays.map((p, i) => ({ i: i + 1, at: fmtDate(p.at), m: (money(p.amount) < 0 ? 'استرداد • ' : '') + (PAY_METHODS[p.method] || p.method || '—'), amount: money(p.amount), note: p.note || '', by: p.by || '' })),
+      totals: pays.length ? { at: 'المجموع', amount: paid } : null,
+      empty: 'لا توجد دفعات مسجّلة',
+    });
+    // 5) مصروفات صفحة «المصروفات» المربوطة بهذا الطلب (للاطلاع؛ صافي الربح أعلاه من تكاليف الطلب)
+    if (seeCost && linkedExp && linkedExp.length) {
+      tables.push({
+        title: 'مصروفات مسجّلة على هذا الطلب (صفحة المصروفات)', columns: [{ key: 'i', label: '#', kind: 'num' }, { key: 'd', label: 'التاريخ', kind: 'date' },
+          { key: 'name', label: 'البند' }, { key: 'cat', label: 'التصنيف' }, { key: 'amount', label: 'المبلغ', kind: 'money' }, { key: 'note', label: 'ملاحظة' }],
+        rows: linkedExp.map((e, i) => ({ i: i + 1, d: expDay(e), name: e.name || '—', cat: e.category || '', amount: money(e.amount), note: e.note || '' })),
+        totals: { d: 'المجموع', amount: money(linkedExp.reduce((s, e) => s + money(e.amount), 0)) },
+      });
+    }
+    const notes = [];
+    if (seeCost && info.missing) notes.push(`${info.missing} من الأصناف بلا تكلفة مسجّلة بعد — صافي الربح لا يشملها.`);
+    if (seeCost && !hasCost) notes.push('لم تُسجَّل تكاليف لهذا الطلب بعد: أضفها من «تعديل التكاليف» ليظهر صافي الربح.');
+    if (seeCost && linkedExp && linkedExp.length) notes.push('المصروفات المسجّلة في صفحة المصروفات تظهر للاطلاع ولا تدخل في صافي ربح الطلب (كما في التقارير).');
+    if (seeCost) notes.push('مستند داخلي للإدارة: فيه التكاليف والأرباح — لا يُرسل للعميل.');
+    const meta = [['العميل', (o.customer && o.customer.name) || '—'], ['الجوال', (o.customer && o.customer.phone) || '—'],
+      ['الحالة', STATUS[o.status] || o.status || '—'], ['تاريخ الطلب', fmtDate(o.createdAt)],
+      ['التوصيل', o.deliveryDate ? fmtDate(o.deliveryDate) : '—'], ['صاحب الطلب', o.createdByName || '—']];
+    if (seeCost && o.costUpdatedByName) meta.push(['آخر تعديل للتكاليف', `${o.costUpdatedByName} ${fmtDateTime(o.costUpdatedAt)}`]);
+    return { id: 'order-summary', title: `ملخص الطلب #${o.number}`, headSub: `العميل: ${(o.customer && o.customer.name) || '—'} • ${STATUS[o.status] || o.status || ''} • ${fmtDate(o.createdAt)}`,
+      from: '', to: '', summary, tables, notes, meta, seeCost };
+  }
+
+  /** نافذة ملخص الطلب المفصّل، ومنها تصدير PDF الإدارة */
+  async function orderSummary(o) {
+    if (!o) return;
+    let linked = [];
+    if (canSeeCosts(o) && canAny('expenses.view_own', 'expenses.view_all')) {
+      try { linked = (await loadExpenses()).filter((e) => e.order_id === o.id); } catch (_) { linked = []; }
+    }
+    const rep = orderSummaryRep(o, linked);
+    const cell = (v, kind) => repCell(v, kind);
+    const kpis = rep.summary.map((s) => `<div class="stat${/الربح/.test(s.label) && s.value !== null ? (s.value < 0 ? ' neg' : ' pos') : ''}${s.label === 'المتبقي' && s.value > 0.004 ? ' remaining' : ''}"><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : s.kind === 'pct' ? r2(s.value) + '٪' : fmt(s.value)}</b></div>`).join('');
+    const tbl = (t) => {
+      const head = `<tr>${t.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr>`;
+      const row = (r, tot) => `<tr class="${tot || r.b ? 'sum-tot' : ''}">${t.columns.map((c) => `<td data-label="${esc(c.label)}" class="${isNumKind(c.kind) ? 'num' : ''}${c.key === 'name' || c.key === 'k' ? ' span2' : ''}">${r[c.key] === undefined ? '' : cell(r[c.key], c.kind)}</td>`).join('')}</tr>`;
+      const body = t.rows.length ? t.rows.map((r) => row(r, false)).join('') + (t.totals ? row(t.totals, true) : '') : `<tr><td colspan="${t.columns.length}" class="empty no-label">${esc(t.empty || '—')}</td></tr>`;
+      return `<h4 class="sum-h">${esc(t.title)}</h4><div class="table-wrap"><table class="table responsive sum-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+    };
+    const canCostEdit = canSeeCosts(o) && canWriteCosts(o, orderCost(o) !== null);
+    openModal(rep.title, `
+      <dl class="sum-meta">${rep.meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd dir="auto">${esc(String(v))}</dd></div>`).join('')}</dl>
+      <div class="cost-sum sum-kpis">${kpis}</div>
+      ${rep.tables.map(tbl).join('')}
+      ${rep.notes.length ? `<ul class="hint sum-notes">${rep.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
+      <div class="btn-row">
+        <button class="btn" id="sumClose">إغلاق</button>
+        ${canCostEdit ? `<button class="btn" id="sumCost">${icon('wallet')} ${orderCost(o) === null ? 'إضافة التكاليف' : 'تعديل التكاليف'}</button>` : ''}
+        ${rep.seeCost ? `<button class="btn primary" id="sumPdf">${icon('file')} تصدير PDF للإدارة</button>` : ''}
+      </div>`, (b) => {
+      $('#sumClose', b).addEventListener('click', closeModal);
+      if ($('#sumCost', b)) $('#sumCost', b).addEventListener('click', () => { closeModal(); costForm(o); });
+      if ($('#sumPdf', b)) $('#sumPdf', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumPdf', b)));
+    }, 'drawer wide');
+  }
+
+  /** PDF داخلي للإدارة: ملخص الطلب + كل بند تكلفة كما سُجّل (بمحرّك التقارير نفسه) */
+  async function exportOrderSummaryPdf(o, linked, btn) {
+    if (!o || !canSeeCosts(o)) return;
+    const rep = orderSummaryRep(o, linked || []);
+    const meta = rep.meta.concat([['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']]);
+    await repPdfRender(rep, meta, `order-summary-${o.number}.pdf`, btn);
   }
 
   /** نافذة إدخال تكلفة كل صنف في الطلب مع حساب الربح مباشرة */
@@ -8396,8 +8541,8 @@ async function exportExpensesXlsx() {
         pg.className = 'rep-page';
         pg.style.cssText = `width:${REP_PAGE.w}px;height:${REP_PAGE.h}px`;
         pg.innerHTML = first
-          ? `<div class="rp-head"><div><h1>${esc(rep.title)}</h1><p>الفترة: ${repPeriodHtml(rep)}</p></div><dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl></div>`
-          : `<div class="rp-head small"><b>${esc(rep.title)}</b><span>الفترة: ${repPeriodHtml(rep)}</span></div>`;
+          ? `<div class="rp-head"><div><h1>${esc(rep.title)}</h1><p>${rep.headSub ? esc(rep.headSub) : 'الفترة: ' + repPeriodHtml(rep)}</p></div><dl>${meta.map(([k, v]) => `<div><dt>${esc(k)}</dt><dd>${esc(String(v))}</dd></div>`).join('')}</dl></div>`
+          : `<div class="rp-head small"><b>${esc(rep.title)}</b><span>${rep.headSub ? esc(rep.headSub) : 'الفترة: ' + repPeriodHtml(rep)}</span></div>`;
         const body = document.createElement('div'); body.className = 'rp-body'; pg.appendChild(body);
         const foot = document.createElement('div'); foot.className = 'rp-foot'; foot.innerHTML = footHtml('00', '00'); pg.appendChild(foot);
         host.appendChild(pg); pages.push(pg);
@@ -8417,7 +8562,7 @@ async function exportExpensesXlsx() {
       for (const t of rep.tables) {
         const dense = t.columns.length > 14 ? ' dense' : (t.columns.length > 10 ? ' mid' : '');
         const thead = `<thead><tr>${t.columns.map((c) => `<th${isNumKind(c.kind) ? ' class="n"' : ''}>${esc(c.label)}</th>`).join('')}</tr></thead>`;
-        const rowHtml = (r, bold) => `<tr${bold ? ' class="tot"' : ''}>${t.columns.map((c) => `<td${isNumKind(c.kind) ? ' class="n"' : ''}>${r[c.key] === undefined ? '' : repCell(r[c.key], c.kind)}</td>`).join('')}</tr>`;
+        const rowHtml = (r, bold) => `<tr${bold || r.b ? ' class="tot"' : ''}>${t.columns.map((c) => `<td${isNumKind(c.kind) ? ' class="n"' : ''}>${r[c.key] === undefined ? '' : repCell(r[c.key], c.kind)}</td>`).join('')}</tr>`;
         const startTable = (cont) => {
           const h = document.createElement('h2'); h.textContent = t.title + (cont ? ' (تابع)' : ''); body.appendChild(h);
           const tb = document.createElement('table'); tb.className = 'rp-table' + dense; tb.dataset.t = String(rep.tables.indexOf(t)); tb.innerHTML = thead + '<tbody></tbody>'; body.appendChild(tb);

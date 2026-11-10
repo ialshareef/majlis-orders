@@ -3623,3 +3623,18 @@ body.portal { background: var(--bg); }
 .doc-switch button { display: flex; flex-direction: column; align-items: center; gap: 1px; line-height: 1.35; padding-block: 7px; }
 .doc-switch button b { font-size: .92rem; }
 .doc-switch button small { font-size: .74rem; font-weight: 500; opacity: .8; }
+
+/* ملخص الطلب المفصّل */
+.sum-meta { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 8px 14px; margin: 0 0 12px; }
+.sum-meta div { min-width: 0; }
+.sum-meta dt { font-size: .76rem; color: var(--ink-3); }
+.sum-meta dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.sum-kpis { margin: 0 0 6px; }
+.sum-kpis .stat.pos b { color: var(--ok); }
+.sum-kpis .stat.neg b { color: var(--danger); }
+.sum-h { margin: 18px 0 8px; font-size: .95rem; }
+.sum-table { font-size: .86rem; border: 1px solid var(--line); border-radius: var(--r-lg); overflow: hidden; }
+.sum-table th, .sum-table td { padding-inline: 10px; }
+.sum-table td.span2 { white-space: normal; min-width: 180px; }
+.sum-table tr.sum-tot td { font-weight: 700; background: var(--surface-2); }
+.sum-notes { margin: 14px 0 0; padding-inline-start: 18px; }
