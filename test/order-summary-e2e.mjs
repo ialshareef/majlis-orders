@@ -39,7 +39,8 @@ const mk = (id, number, by, byName, extra = {}) => {
     payments: [{ id: 'p' + id, at: at.slice(0, 10), amount: 500, method: 'transfer', note: 'عربون', by: byName }] }, extra);
   return { id, number, status: d.status, customer_name: d.customer.name, created_by: by, created_at: at, updated_at: at, data: JSON.stringify(d) };
 };
-const orders = [mk('o1', 1, '1', 'المالك'), mk('o3', 3, '5', 'موظف بلا تكاليف')];
+const lateDay = new Date(Date.now() - 86400000 * 2).toISOString().slice(0, 10);
+const orders = [mk('o1', 1, '1', 'المالك', { deliveryDate: lateDay }), mk('o3', 3, '5', 'موظف بلا تكاليف')];
 const grant = (user_id, list, value = 1) => list.map((permission) => ({ user_id, permission, value, updated_by: '1', updated_at: past }));
 const env = envWith({
   users: [U('1', 'owner', 'المالك', 'admin'), U('5', 'staff2', 'موظف بلا تكاليف', 'staff')],
@@ -244,9 +245,18 @@ try {
   const card = await page.evaluate(() => {
     const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-sum="o1"]'));
     const vis = (sel) => { const td = tr && tr.querySelector(sel); return td && getComputedStyle(td).display !== 'none' ? td.innerText.replace(/\s+/g, ' ').trim() : null; };
-    return { cost: vis('td.c-cost:not(.c-profit)'), profit: vis('td.c-profit'), comm: vis('td.c-comm') };
+    const R = (el) => el.getBoundingClientRect();
+    const tag = tr.querySelector('.late-tag'), deliv = tr.querySelector('td.c-deliv'), comm = tr.querySelector('td.c-comm'), tot = tr.querySelector('td.c-total');
+    const inside = (a, b) => a.left >= b.left - 0.5 && a.right <= b.right + 0.5 && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5;
+    return { cost: vis('td.c-cost:not(.c-profit)'), profit: vis('td.c-profit'), comm: vis('td.c-comm'),
+      tagIn: !!tag && inside(R(tag), R(deliv)) && inside(R(deliv), R(tr)) && R(tag).top >= R(deliv.querySelector('.num')).bottom - 1,
+      tagTxt: tag ? tag.textContent : '', delivBg: getComputedStyle(deliv).backgroundColor, totBg: getComputedStyle(tot).backgroundColor,
+      commFull: R(comm).width > R(tot).width * 1.8 };
   });
   if (saveDir) { await page.evaluate(() => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-sum="o1"]')); document.querySelectorAll('.hj-tour').forEach((e) => e.remove()); tr.scrollIntoView({ block: 'start' }); }); await sleep(300); await page.screenshot({ path: path.join(saveDir, 'mobile-card.png') }); }
+  ok(card.tagIn && card.tagTxt === 'متأخر', 'mobile/card: شارة «متأخر» كاملة تحت تاريخ التوصيل وداخل البطاقة', card);
+  ok(card.delivBg === card.totBg, 'mobile/card: مربع التوصيل بنفس خلفية مربعات المبالغ', card);
+  ok(card.commFull, 'mobile/card: العمولة سطر كامل بلا فراغ بجانبها', card);
   ok(card.cost && /750\.00/.test(card.cost) && card.profit && /550\.00/.test(card.profit), 'mobile/card: بطاقة الطلب تعرض «التكلفة 750» و«صافي الربح 550» قبل الدخول', card);
   await page.browserContext().close();
 
