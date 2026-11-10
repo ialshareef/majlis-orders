@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.0.98';
-// بصمة asalh-najd-1.0.98.apk (إصدار GitHub v1.0.98، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.0.98 وversionCode 10098، ونفس شهادة توقيع 1.0.97).
-const UPDATE_FALLBACK_SHA256 = '767f0cf58b8fb4edf46a3d5cdf2dc22c94dd798f703f84b6de73ca7b106db388';
+const UPDATE_FALLBACK_VERSION = '1.0.99';
+// بصمة asalh-najd-1.0.99.apk (إصدار GitHub v1.0.99، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.0.99 وversionCode 10099، ونفس شهادة توقيع 1.0.98).
+const UPDATE_FALLBACK_SHA256 = '80808fa7e481e2ee51d5e253186881a471917165700bde6c1dcf83ddd0a69c20';
 const UPDATE_FALLBACK_NOTES = [
-  'بطاقة الطلب في الجوال: شارة «متأخر» كاملة تحت تاريخ التوصيل، ومربع التوصيل بنفس شكل المبالغ',
-  'العمولة سطر كامل في البطاقة بلا فراغ بجانبها',
+  'ملف ملخص التكاليف: صفحة طولية بخط أكبر تُقرأ على الجوال بلا تكبير',
+  'تقارير PDF: لا يضيع صف ولا يبقى عنوان جدول وحده أسفل الصفحة، والتواريخ والنسب تظهر صحيحة',
 ];
 
 function versionCodeOfName(v) {
