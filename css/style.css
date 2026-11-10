@@ -2335,7 +2335,8 @@ body.modal-open { overflow: hidden; }
      بطاقات أقصر، حالة اتصال مقروءة، وأزرار مشاركة لاصقة */
   #btnNewOrder, #btnExportPdfTop { display: none; }
   #stageNav { display: none; }
-  #ordersTable td.c-cost, #ordersTable td.c-profit, #ordersTable td.c-comm { display: none; }
+  /* التكلفة والربح والعمولة تظهر في بطاقة الجوال حين يكون لها قيمة يراها المستخدم فقط */
+  #ordersTable td.c-cost.is-empty, #ordersTable td.c-profit.is-empty, #ordersTable td.c-comm.is-empty { display: none; }
   .net-chip { width: auto; padding: 0 10px; gap: 6px; }
   .net-chip #netLabel { display: inline; font-size: .75rem; font-weight: 600; white-space: nowrap; }
   .modal-body .share-actions {

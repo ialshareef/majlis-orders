@@ -161,7 +161,7 @@ const readSum = (page) => page.evaluate(() => {
     heads: [...m.querySelectorAll('.sum-h')].map((h) => h.textContent.trim()),
     tables: [...m.querySelectorAll('.sum-table')].map((t) => [...t.querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim())),
     notes: [...m.querySelectorAll('.sum-notes li')].map((l) => l.textContent.trim()),
-    pdf: !!m.querySelector('#sumPdf'), cost: !!m.querySelector('#sumCost'),
+    pdf: !!m.querySelector('#sumPdf'), wa: !!m.querySelector('#sumWa'), cost: !!m.querySelector('#sumCost'),
     meta: m.querySelector('.sum-meta') ? m.querySelector('.sum-meta').innerText.replace(/\s+/g, ' ') : '',
   };
 });
@@ -187,7 +187,7 @@ try {
   ok((s.tables[4] || []).length === 2 && /قماش إضافي/.test(s.tables[4][0]) && /80\.00/.test(s.tables[4][0]) && !(s.tables[4] || []).some((r) => /إيجار/.test(r)), 'owner: المصروف المربوط بالطلب فقط (لا الإيجار العام)', s.tables[4]);
   ok(s.notes.some((n) => /^1 من الأصناف بلا تكلفة/.test(n)) && s.notes.some((n) => /لا يُرسل للعميل/.test(n)), 'owner: تنبيه «صنف بلا تكلفة» و«مستند داخلي»', s.notes);
   ok(/صاحب الطلب المالك/.test(s.meta) && /عميل 1/.test(s.meta) && /قيد التنفيذ/.test(s.meta), 'owner: بيانات الطلب (العميل، الحالة، صاحب الطلب)', s.meta);
-  ok(s.pdf && s.cost, 'owner: زرّا «تصدير PDF للإدارة» و«تعديل التكاليف»', s);
+  ok(s.pdf && s.wa && s.cost, 'owner: أزرار «تنزيل PDF» و«مشاركة واتساب» و«تعديل التكاليف»', s);
 
   // PDF الإدارة
   if (saveDir) {
@@ -211,11 +211,43 @@ try {
   // الجوال: الملخص بلا تمرير أفقي
   await page.evaluate(() => document.getElementById('modalClose').click());
   await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
-  await sleep(600);
-  await openSum(page, 'o1');
-  await sleep(500);
+  await page.waitForFunction(() => !document.getElementById('app').hidden, { timeout: 30000 });
+  await sleep(2500);
+  await page.evaluate(() => { const m = document.getElementById('modal'); if (m && !m.hidden) document.getElementById('modalClose').click(); document.querySelectorAll('.tour-skip, [data-tour-skip]').forEach((b) => b.click()); });
+  await go(page, 'orders');
+  await sleep(800);
+  const reopened = await openSum(page, 'o1');
+  await page.waitForSelector('#sumWa', { timeout: 8000 }).catch(() => {});
+  const st = await page.evaluate(() => ({ hidden: document.getElementById('modal').hidden, title: (document.getElementById('modalTitle') || {}).textContent, wa: !!document.getElementById('sumWa') }));
+  ok(st.wa, 'mobile: نافذة الملخص تُفتح من جديد في الجوال', { reopened, st });
   const ov = await page.evaluate(() => { const m = document.querySelector('#modal .modal-card, #modal .modal-box, #modal > div') || document.getElementById('modal'); return { doc: document.scrollingElement.scrollWidth, w: innerWidth, wide: [...document.querySelectorAll('#modal *')].filter((e) => e.getBoundingClientRect().right > innerWidth + 1 && e.offsetParent).map((e) => e.className || e.tagName).slice(0, 5) }; });
   ok(ov.doc <= ov.w + 1 && !ov.wide.length, 'mobile: نافذة الملخص بلا تمرير أفقي', ov);
+  // مشاركة PDF الملخص عبر واتساب (قائمة المشاركة): ملف فعلي + نص داخلي، ولا محادثة عميل
+  const sh = await page.evaluate(async () => {
+    window.__shared = null; window.__opened = [];
+    navigator.canShare = () => true;
+    navigator.share = (d) => { window.__shared = { files: (d.files || []).map((f) => ({ name: f.name, type: f.type, size: f.size })), text: d.text || '' }; return Promise.resolve(); };
+    const ow = window.open; window.open = (u) => { window.__opened.push(String(u)); return null; };
+    const btn = document.getElementById('sumWa');
+    const label = btn ? btn.textContent.trim() : '';
+    btn.click();
+    for (let i = 0; i < 300 && !window.__shared; i++) await new Promise((r) => setTimeout(r, 100));
+    window.open = ow;
+    return { label, shared: window.__shared, opened: window.__opened };
+  });
+  const sf = sh.shared && sh.shared.files[0];
+  ok(/مشاركة PDF عبر واتساب/.test(sh.label) && sf && sf.name === 'order-summary-1.pdf' && sf.type === 'application/pdf' && sf.size > 20000, 'whatsapp: زر «مشاركة PDF عبر واتساب» يرسل ملف PDF فعلياً', sh);
+  ok(sh.shared && /ملخص الطلب \*#1\* — داخلي للإدارة/.test(sh.shared.text) && /التكاليف: 750\.00/.test(sh.shared.text) && /صافي الربح: 550\.00/.test(sh.shared.text) && !sh.opened.length, 'whatsapp: النص المرافق بالإجمالي والتكاليف والربح، ولا يفتح محادثة العميل', sh.shared && sh.shared.text);
+  // بطاقة الطلب في الجوال: مجموع التكاليف والربح ظاهران قبل الدخول
+  await page.evaluate(() => { const c = document.getElementById('modalClose'); if (c && !document.getElementById('modal').hidden) c.click(); });
+  await sleep(500);
+  const card = await page.evaluate(() => {
+    const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-sum="o1"]'));
+    const vis = (sel) => { const td = tr && tr.querySelector(sel); return td && getComputedStyle(td).display !== 'none' ? td.innerText.replace(/\s+/g, ' ').trim() : null; };
+    return { cost: vis('td.c-cost:not(.c-profit)'), profit: vis('td.c-profit'), comm: vis('td.c-comm') };
+  });
+  if (saveDir) { await page.evaluate(() => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-sum="o1"]')); document.querySelectorAll('.hj-tour').forEach((e) => e.remove()); tr.scrollIntoView({ block: 'start' }); }); await sleep(300); await page.screenshot({ path: path.join(saveDir, 'mobile-card.png') }); }
+  ok(card.cost && /750\.00/.test(card.cost) && card.profit && /550\.00/.test(card.profit), 'mobile/card: بطاقة الطلب تعرض «التكلفة 750» و«صافي الربح 550» قبل الدخول', card);
   await page.browserContext().close();
 
   /* ----- موظف بلا صلاحية التكاليف: الملخص بلا تكاليف ولا PDF إدارة ----- */
@@ -225,7 +257,15 @@ try {
   ok(lbl2 === 'ملخص الطلب', 'staff بلا تكاليف: العنصر «ملخص الطلب» فقط', lbl2);
   s = await readSum(page);
   ok(s.open && s.kpis['الإجمالي شامل الضريبة'] === '1,495.00' && !('إجمالي التكاليف' in s.kpis) && !('صافي الربح' in s.kpis), 'staff بلا تكاليف: المبالغ دون التكاليف والربح', s.kpis);
-  ok(!s.pdf && !s.cost && !s.heads.some((h) => /تكاليف|مصروفات/.test(h)) && !(s.tables[0] || []).some((r) => /300\.00/.test(r)), 'staff بلا تكاليف: لا زر PDF الإدارة ولا أي تكلفة', s);
+  ok(!s.pdf && !s.wa && !s.cost && !s.heads.some((h) => /تكاليف|مصروفات/.test(h)) && !(s.tables[0] || []).some((r) => /300\.00/.test(r)), 'staff بلا تكاليف: لا زر PDF الإدارة ولا أي تكلفة', s);
+  await page.evaluate(() => document.getElementById('modalClose').click());
+  await page.setViewport({ width: 390, height: 844, isMobile: true, hasTouch: true });
+  await page.waitForFunction(() => !document.getElementById('app').hidden, { timeout: 30000 });
+  await sleep(2500);
+  await page.evaluate(() => { const m = document.getElementById('modal'); if (m && !m.hidden) document.getElementById('modalClose').click(); document.querySelectorAll('.tour-skip, [data-tour-skip]').forEach((b) => b.click()); });
+  await go(page, 'orders');
+  const card2 = await page.evaluate(() => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-sum="o3"]')); return [...tr.querySelectorAll('td.c-cost, td.c-profit, td.c-comm')].filter((td) => getComputedStyle(td).display !== 'none').length; });
+  ok(card2 === 0, 'staff بلا تكاليف/الجوال: لا خانة تكلفة ولا ربح فارغة في البطاقة', card2);
   await page.browserContext().close();
 } catch (e) {
   fail++; console.log('FAIL  استثناء: ' + (e && e.stack || e));

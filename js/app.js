@@ -4055,11 +4055,11 @@ function docTitle(order) {
         <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? `<span class="sub-by" title="${esc(o.createdByName)}">${esc(o.createdByName)}</span>` : ''}</span></td>
         <td data-label="العميل" class="c-cust"><b dir="auto" title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
-        <td data-label="التكلفة" class="num c-money c-cost">${canSeeCosts(o) && cost !== null ? fmt(cost) : dash}</td>
+        <td data-label="التكلفة" class="num c-money c-cost${canSeeCosts(o) && cost !== null ? '' : ' is-empty'}">${canSeeCosts(o) && cost !== null ? fmt(cost) : dash}</td>
         ${canSeeProfit(o) ? `
-        <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? '' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : `
-        <td data-label="صافي الربح" class="num c-money c-cost c-profit">${dash}</td>`}
-        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm">${canSeeComm(o) && comm !== null ? fmt(comm) : dash}</td>` : ''}
+        <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? 'is-empty' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : `
+        <td data-label="صافي الربح" class="num c-money c-cost c-profit is-empty">${dash}</td>`}
+        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm${canSeeComm(o) && comm !== null ? '' : ' is-empty'}">${canSeeComm(o) && comm !== null ? fmt(comm) : dash}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
         <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
@@ -4290,20 +4290,39 @@ function docTitle(order) {
       <div class="btn-row">
         <button class="btn" id="sumClose">إغلاق</button>
         ${canCostEdit ? `<button class="btn" id="sumCost">${icon('wallet')} ${orderCost(o) === null ? 'إضافة التكاليف' : 'تعديل التكاليف'}</button>` : ''}
-        ${rep.seeCost ? `<button class="btn primary" id="sumPdf">${icon('file')} تصدير PDF للإدارة</button>` : ''}
+        ${rep.seeCost ? `<button class="btn" id="sumPdf">${icon('download')} تنزيل PDF للإدارة</button>` : ''}
+        ${rep.seeCost ? `<button class="btn primary" id="sumWa">${icon('whatsapp')} مشاركة PDF عبر واتساب</button>` : ''}
       </div>`, (b) => {
       $('#sumClose', b).addEventListener('click', closeModal);
       if ($('#sumCost', b)) $('#sumCost', b).addEventListener('click', () => { closeModal(); costForm(o); });
       if ($('#sumPdf', b)) $('#sumPdf', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumPdf', b)));
+      if ($('#sumWa', b)) $('#sumWa', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumWa', b), true));
     }, 'drawer wide');
   }
 
   /** PDF داخلي للإدارة: ملخص الطلب + كل بند تكلفة كما سُجّل (بمحرّك التقارير نفسه) */
-  async function exportOrderSummaryPdf(o, linked, btn) {
+  async function exportOrderSummaryPdf(o, linked, btn, share) {
     if (!o || !canSeeCosts(o)) return;
     const rep = orderSummaryRep(o, linked || []);
     const meta = rep.meta.concat([['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']]);
-    await repPdfRender(rep, meta, `order-summary-${o.number}.pdf`, btn);
+    const fileName = `order-summary-${o.number}.pdf`;
+    if (!share) { await repPdfRender(rep, meta, fileName, btn); return; }
+    const blob = await repPdfRender(rep, meta, fileName, btn, { returnBlob: true });
+    if (!blob) return;
+    // نص مرافق قصير: داخلي للإدارة (لا تُفتح محادثة العميل أبداً)
+    const v = (label) => { const s = rep.summary.find((x) => x.label === label); return s && s.value !== null && s.value !== undefined ? fmt(s.value) : '—'; };
+    const caption = [`ملخص الطلب *#${o.number}* — داخلي للإدارة`, `العميل: ${(o.customer && o.customer.name) || '—'}`,
+      `الإجمالي: ${v('الإجمالي شامل الضريبة')} • التكاليف: ${v('إجمالي التكاليف')}${canSeeProfit(o) ? ` • صافي الربح: ${v('صافي الربح')}` : ''}`,
+      'التفاصيل وكل بند تكلفة في الملف المرفق.'].join('\n');
+    if (await sharePdfNative(blob, fileName, caption)) { toast('تمت المشاركة'); return; }
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: fileName, text: caption }); toast('تمت المشاركة'); }
+      catch (e) { if (e && e.name !== 'AbortError') toast('تعذّرت المشاركة: ' + e.message, true); }
+      return;
+    }
+    downloadBlob(blob, fileName);
+    toast(`هذا المتصفح لا يرسل الملفات مباشرة: حُفظ ${fileName} في التنزيلات، أرفقه في واتساب`);
   }
 
   /** نافذة إدخال تكلفة كل صنف في الطلب مع حساب الربح مباشرة */
@@ -8521,7 +8540,7 @@ async function exportExpensesXlsx() {
     await repPdfRender(rep, repMeta(rep), repFileName(rep, 'pdf'), $('#btnRepPdf'));
   }
   /** محرّك PDF المشترك: كل تقارير PDF (التقارير وذكاء الأعمال) تمرّ من هنا كي تُرسم العربية متصلة */
-  async function repPdfRender(rep, meta, fileName, btn) {
+  async function repPdfRender(rep, meta, fileName, btn, opts = {}) {
     if (btn) btn.disabled = true;
     const host = document.createElement('div');
     host.className = 'rep-print'; host.dir = 'rtl';
@@ -8606,7 +8625,10 @@ async function exportExpensesXlsx() {
         if (i) pdf.addPage();
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, 297, 210, undefined, 'FAST');
       }
-      downloadBlob(pdf.output('blob'), fileName);
+      const out = pdf.output('blob');
+      if (opts.returnBlob) return out;
+      downloadBlob(out, fileName);
+      return out;
     } catch (e) {
       toast(e.message || 'تعذّر إنشاء ملف PDF', true);
     } finally {
