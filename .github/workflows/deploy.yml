@@ -1,0 +1,138 @@
+# النشر على Cloudflare (الإنتاج) من السحابة — بلا جهاز المالك.
+# يعمل تلقائياً عند دفع commit عنوانه يبدأ بـ «Release data for v» إلى main (آخر خطوة في الإصدار)،
+# أو يدوياً من تبويب Actions. الخطوات: فحوص ← نسخة احتياطية مشفّرة (إلزامية) ← نشر ← تحقق.
+# الأسرار المطلوبة (يضيفها المالك في Settings → Secrets and variables → Actions):
+#   CLOUDFLARE_API_TOKEN  رمز Cloudflare نفسه المستخدم على جهاز المالك
+#   BACKUP_PASSPHRASE     عبارة سر لتشفير النسخة الاحتياطية (المستودع عام: لا نسخة بلا تشفير أبداً)
+# فك تشفير النسخة بعد تنزيلها من صفحة التشغيل:
+#   gpg --decrypt --output majlis-db.sql majlis-db-*.sql.gpg
+name: Deploy to Cloudflare (production)
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.head_commit.message, 'Release data for v')
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      BACKUP_PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+      SITE: https://majlis-api.asalh-najd.workers.dev
+    steps:
+      - name: Check secrets
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ]; then echo "::error::السر CLOUDFLARE_API_TOKEN غير موجود في إعدادات المستودع"; exit 1; fi
+          if [ -z "$BACKUP_PASSPHRASE" ]; then echo "::error::السر BACKUP_PASSPHRASE غير موجود — لا نشر بلا نسخة احتياطية مشفّرة"; exit 1; fi
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Release version matches worker and APK
+        id: ver
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
+        run: |
+          V=$(grep -oP "^const UPDATE_FALLBACK_VERSION = '\K[^']+" worker/worker.js)
+          SHA=$(grep -oP "^const UPDATE_FALLBACK_SHA256 = '\K[^']+" worker/worker.js)
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "worker version: $V"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            MSG_V=$(printf '%s' "$COMMIT_MSG" | head -1 | grep -oP '^Release data for v\K[0-9.]+' || true)
+            if [ "$MSG_V" != "$V" ]; then echo "::error::الإصدار في عنوان الـ commit ($MSG_V) لا يطابق UPDATE_FALLBACK_VERSION ($V)"; exit 1; fi
+          fi
+          curl -fsSL -o /tmp/app.apk "https://github.com/${GITHUB_REPOSITORY}/releases/download/v$V/asalh-najd-$V.apk" \
+            || { echo "::error::ملف APK للإصدار v$V غير موجود في Releases"; exit 1; }
+          GOT=$(sha256sum /tmp/app.apk | cut -d' ' -f1)
+          if [ "$GOT" != "$SHA" ]; then echo "::error::بصمة APK ($GOT) لا تطابق UPDATE_FALLBACK_SHA256 ($SHA)"; exit 1; fi
+          node tools/apkinfo.mjs /tmp/app.apk | tee /tmp/apkinfo.txt
+          grep -qi 'cc6b36c0' /tmp/apkinfo.txt || { echo "::error::شهادة توقيع APK ليست الشهادة المعتادة (cc6b36c0)"; exit 1; }
+
+      - name: Pre-deploy tests
+        run: |
+          node test/app-version-test.mjs
+          node test/deploy-readiness.test.mjs
+
+      - name: Production counts (before)
+        id: before
+        run: node tools/cf.mjs counts
+
+      - name: Encrypted database backup
+        run: |
+          umask 077
+          F="majlis-db-before-${{ steps.ver.outputs.version }}-$(date -u +%Y-%m-%d-%H%M).sql"
+          mkdir -p backup
+          node tools/cf.mjs backup "/tmp/$F"
+          gpg --batch --yes --pinentry-mode loopback --passphrase-fd 3 \
+            --symmetric --cipher-algo AES256 --output "backup/$F.gpg" "/tmp/$F" 3<<<"$BACKUP_PASSPHRASE"
+          shred -u "/tmp/$F" 2>/dev/null || rm -f "/tmp/$F"
+          ls -l backup/
+
+      - name: Upload encrypted backup
+        uses: actions/upload-artifact@v4
+        with:
+          name: db-backup-v${{ steps.ver.outputs.version }}
+          path: backup/*.gpg
+          retention-days: 90
+          if-no-files-found: error
+
+      - name: Deploy
+        shell: pwsh
+        run: ./deploy-cloudflare.ps1 -Environment production -Preview:$false -Confirm:$false
+
+      - name: Verify site
+        run: |
+          V="${{ steps.ver.outputs.version }}"
+          for i in 1 2 3 4 5 6; do
+            GOT=$(curl -fsS "$SITE/api/app-update" | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>console.log(JSON.parse(s).update.versionName))") || GOT=""
+            [ "$GOT" = "$V" ] && break
+            sleep 10
+          done
+          if [ "$GOT" != "$V" ]; then echo "::error::الموقع يعرض الإصدار '$GOT' بدل $V"; exit 1; fi
+          CODE=$(curl -s -o /dev/null -w '%{http_code}' "$SITE/api/bootstrap")
+          if [ "$CODE" != "401" ]; then echo "::error::/api/bootstrap أعاد $CODE بدل 401"; exit 1; fi
+          echo "app-update=$V  bootstrap=$CODE"
+
+      - name: Production counts (after) — no loss
+        id: after
+        env:
+          B_users: ${{ steps.before.outputs.users }}
+          B_orders: ${{ steps.before.outputs.orders }}
+          B_designs: ${{ steps.before.outputs.designs }}
+        run: |
+          node tools/cf.mjs counts
+          for k in users orders designs; do
+            B_var="B_$k"; B="${!B_var}"
+            A=$(grep -oP "^$k=\K\d+" "$GITHUB_OUTPUT" | tail -1)
+            echo "$k: before=$B after=$A"
+            if [ "$A" -lt "$B" ]; then echo "::error::نقص في $k بعد النشر ($B → $A)"; exit 1; fi
+          done
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## نشر الإصدار v${{ steps.ver.outputs.version }}"
+            echo "- قبل النشر: مستخدمون ${{ steps.before.outputs.users }}، طلبات ${{ steps.before.outputs.orders }}، تصاميم ${{ steps.before.outputs.designs }}"
+            echo "- النتيجة: ${{ job.status }}"
+            echo "- النسخة الاحتياطية المشفّرة: في Artifacts أسفل هذه الصفحة (90 يوماً)، وتُفتح بعبارة BACKUP_PASSPHRASE"
+          } >> "$GITHUB_STEP_SUMMARY"
