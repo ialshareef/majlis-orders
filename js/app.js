@@ -4334,12 +4334,21 @@ function docTitle(order) {
     }
     const rep = orderSummaryRep(o, linked);
     const cell = (v, kind) => repCell(v, kind);
-    const kpis = rep.summary.map((s) => `<div class="stat${/الربح/.test(s.label) && s.value !== null ? (s.value < 0 ? ' neg' : ' pos') : ''}${s.label === 'المتبقي' && s.value > 0.004 ? ' remaining' : ''}"><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : s.kind === 'pct' ? r2(s.value) + '٪' : fmt(s.value)}</b></div>`).join('');
+    const cur$ = esc(currency());
+    const kpis = rep.summary.map((s) => `<div class="stat${/الربح/.test(s.label) && s.value !== null ? (s.value < 0 ? ' neg' : ' pos') : ''}${s.label === 'المتبقي' && s.value > 0.004 ? ' remaining' : ''}"><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : s.kind === 'pct' ? r2(s.value) + '٪' : fmt(s.value)}${s.kind === 'money' && s.value !== null && s.value !== undefined ? ` <small class="sum-cur">${cur$}</small>` : ''}</b></div>`).join('');
     const tbl = (t) => {
+      /* جدول بعمودين (بند ← مبلغ): أسطر مدمجة «الاسم ……… المبلغ» بلا رأس ولا بطاقات (لا تتكرر «البند/المبلغ» في الجوال).
+         الجداول الأعرض: بطاقة مدمجة لكل صف، والعنوان (الصنف/التاريخ) سطر بارز والحقول «اسم ← قيمة» في سطر واحد */
+      const list = t.columns.length === 2;
       const head = `<tr>${t.columns.map((c) => `<th>${esc(c.label)}</th>`).join('')}</tr>`;
-      const row = (r, tot) => `<tr class="${tot || r.b ? 'sum-tot' : ''}">${t.columns.map((c) => `<td data-label="${esc(c.label)}" class="${isNumKind(c.kind) ? 'num' : ''}${c.key === 'name' || c.key === 'k' ? ' span2' : ''}">${r[c.key] === undefined ? '' : cell(r[c.key], c.kind)}</td>`).join('')}</tr>`;
+      const lead = t.columns[0].key;
+      const row = (r, tot) => `<tr class="${tot || r.b ? 'sum-tot' : ''}">${t.columns.map((c) => {
+        const v = r[c.key] === undefined || r[c.key] === '' ? '' : cell(r[c.key], c.kind);
+        const cls = [isNumKind(c.kind) ? 'num' : '', c.key === lead ? 'sum-lead no-label' : '', v ? '' : 'is-blank'].filter(Boolean).join(' ');
+        return `<td data-label="${esc(c.label)}" class="${cls}">${v}</td>`;
+      }).join('')}</tr>`;
       const body = t.rows.length ? t.rows.map((r) => row(r, false)).join('') + (t.totals ? row(t.totals, true) : '') : `<tr><td colspan="${t.columns.length}" class="empty no-label">${esc(t.empty || '—')}</td></tr>`;
-      return `<h4 class="sum-h">${esc(t.title)}</h4><div class="table-wrap"><table class="table responsive sum-table"><thead>${head}</thead><tbody>${body}</tbody></table></div>`;
+      return `<h4 class="sum-h">${esc(t.title)}</h4><div class="table-wrap"><table class="table ${list ? 'sum-list' : 'responsive'} sum-table">${list ? '' : `<thead>${head}</thead>`}<tbody>${body}</tbody></table></div>`;
     };
     const canCostEdit = canSeeCosts(o) && canWriteCosts(o, orderCost(o) !== null);
     openModal(rep.title, `
@@ -4347,13 +4356,11 @@ function docTitle(order) {
       <div class="cost-sum sum-kpis">${kpis}</div>
       ${rep.tables.map(tbl).join('')}
       ${rep.notes.length ? `<ul class="hint sum-notes">${rep.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>` : ''}
-      <div class="btn-row">
-        <button class="btn" id="sumClose">إغلاق</button>
-        ${canCostEdit ? `<button class="btn" id="sumCost">${icon('wallet')} ${orderCost(o) === null ? 'إضافة التكاليف' : 'تعديل التكاليف'}</button>` : ''}
-        ${rep.seeCost ? `<button class="btn" id="sumPdf">${icon('download')} تنزيل PDF للإدارة</button>` : ''}
+      ${(canCostEdit || rep.seeCost) ? `<div class="btn-row sum-actions${(rep.seeCost ? 1 : 0) + (canCostEdit ? 1 : 0) === 1 ? ' one-small' : ''}">
         ${rep.seeCost ? `<button class="btn primary" id="sumWa">${icon('whatsapp')} مشاركة PDF عبر واتساب</button>` : ''}
-      </div>`, (b) => {
-      $('#sumClose', b).addEventListener('click', closeModal);
+        ${rep.seeCost ? `<button class="btn small" id="sumPdf">${icon('download')} تنزيل PDF</button>` : ''}
+        ${canCostEdit ? `<button class="btn small" id="sumCost">${icon('wallet')} ${orderCost(o) === null ? 'إضافة التكاليف' : 'تعديل التكاليف'}</button>` : ''}
+      </div>` : ''}`, (b) => {
       if ($('#sumCost', b)) $('#sumCost', b).addEventListener('click', () => { closeModal(); costForm(o); });
       if ($('#sumPdf', b)) $('#sumPdf', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumPdf', b)));
       if ($('#sumWa', b)) $('#sumWa', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumWa', b), true));

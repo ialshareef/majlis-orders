@@ -3674,3 +3674,28 @@ body.portal { background: var(--bg); }
 .rep-page.portrait .rp-table th, .rep-page.portrait .rp-table td { padding: 6px 6px; }
 .rep-page.portrait .rp-notes { font-size: 13.5px; }
 .rep-page.portrait .rp-foot { font-size: 11.5px; }
+
+/* ملخص الطلب — جداول البند والمبلغ أسطر مدمجة، وسطر المجموع بارز */
+.sum-list { width: 100%; border-collapse: collapse; }
+.sum-list td { padding: 9px 12px; border-bottom: 1px solid var(--line-soft); vertical-align: top; }
+.sum-list td.num { text-align: end; white-space: nowrap; font-variant-numeric: tabular-nums; width: 1%; }
+.sum-list tr:last-child td { border-bottom: 0; }
+.sum-list tr.sum-tot td { font-weight: 700; background: var(--surface-2); border-top: 2px solid var(--line); }
+.sum-kpis .sum-cur { font-size: .7em; font-weight: 500; color: var(--ink-3); }
+/* الأزرار: المشاركة زر رئيسي كامل العرض، والتنزيل وتعديل التكاليف صغيران متجاوران (الإغلاق من ✕) */
+.modal-body .btn-row.sum-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.sum-actions #sumWa { grid-column: 1 / -1; }
+.sum-actions .btn { flex: none; justify-content: center; }
+.sum-actions.one-small .btn { grid-column: 1 / -1; }
+@media (max-width: 960px) {
+  /* بطاقة صف مدمجة: العنوان سطر بارز، وكل حقل «اسم ……… قيمة» في سطر واحد، وبلا خانات فارغة */
+  .sum-table.responsive tbody tr { grid-template-columns: minmax(0, 1fr); gap: 3px; padding: 10px 12px; }
+  .sum-table.responsive td { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+  .sum-table.responsive td::before { display: inline; margin: 0; flex: none; }
+  .sum-table.responsive td.num { text-align: end; }
+  .sum-table.responsive td.sum-lead { display: block; font-weight: 700; margin-bottom: 2px; }
+  .sum-table.responsive td.is-blank { display: none; }
+  .sum-table.responsive tr.sum-tot { background: var(--surface-2); border-top: 2px solid var(--line); }
+  .sum-table.responsive tr.sum-tot td { font-weight: 700; }
+  .sum-table.responsive tr.sum-tot td.sum-lead { margin-bottom: 0; }
+}

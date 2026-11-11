@@ -159,7 +159,7 @@ const readSum = (page) => page.evaluate(() => {
   return {
     open: !!m && !m.hidden,
     title: ((document.getElementById('modalTitle') || {}).textContent || '').replace(/[⁦-⁩]/g, ''),
-    kpis: Object.fromEntries([...m.querySelectorAll('.sum-kpis .stat')].map((s) => [T(s.querySelector('span')).trim(), T(s.querySelector('b')).trim()])),
+    kpis: Object.fromEntries([...m.querySelectorAll('.sum-kpis .stat')].map((s) => [T(s.querySelector('span')).trim(), (s.querySelector('b').firstChild || {}).textContent.trim()])),
     heads: [...m.querySelectorAll('.sum-h')].map((h) => h.textContent.trim()),
     tables: [...m.querySelectorAll('.sum-table')].map((t) => [...t.querySelectorAll('tbody tr')].map((tr) => T(tr).replace(/\s+/g, ' ').trim())),
     notes: [...m.querySelectorAll('.sum-notes li')].map((l) => l.textContent.trim()),
@@ -224,6 +224,16 @@ try {
   ok(st.wa, 'mobile: نافذة الملخص تُفتح من جديد في الجوال', { reopened, st });
   const ov = await page.evaluate(() => { const m = document.querySelector('#modal .modal-card, #modal .modal-box, #modal > div') || document.getElementById('modal'); return { doc: document.scrollingElement.scrollWidth, w: innerWidth, wide: [...document.querySelectorAll('#modal *')].filter((e) => e.getBoundingClientRect().right > innerWidth + 1 && e.offsetParent).map((e) => e.className || e.tagName).slice(0, 5) }; });
   ok(ov.doc <= ov.w + 1 && !ov.wide.length, 'mobile: نافذة الملخص بلا تمرير أفقي', ov);
+  const btns = await page.evaluate(() => { const R = (id) => document.getElementById(id).getBoundingClientRect(); const w = R('sumWa'), p = R('sumPdf'), c = R('sumCost'); return { waFull: w.width > p.width * 1.8, side: Math.abs(p.top - c.top) < 2 && p.top > w.top, close: !!document.getElementById('sumClose') }; });
+  ok(btns.waFull && btns.side && !btns.close, 'mobile: «مشاركة واتساب» زر كامل، و«تنزيل PDF» و«تعديل التكاليف» متجاوران، بلا زر إغلاق مكرر', btns);
+  if (saveDir) {
+    await page.evaluate(() => document.querySelectorAll('.hj-tour').forEach((e) => e.remove()));
+    for (const [i, nm] of [[0, 'm-sum-1'], [1, 'm-sum-2'], [3, 'm-sum-3']]) {
+      await page.evaluate((k) => { const h = document.querySelectorAll('#modal .sum-h')[k]; if (h) h.scrollIntoView({ block: 'start' }); }, i);
+      await sleep(300); await page.screenshot({ path: path.join(saveDir, nm + '.png') });
+    }
+    await page.evaluate(() => { const m = document.querySelector('#modal .modal-body'); if (m) m.scrollTop = 0; }); await sleep(300); await page.screenshot({ path: path.join(saveDir, 'm-sum-0.png') });
+  }
   // مشاركة PDF الملخص عبر واتساب (قائمة المشاركة): ملف فعلي + نص داخلي، ولا محادثة عميل
   const sh = await page.evaluate(async () => {
     window.__shared = null; window.__opened = [];
