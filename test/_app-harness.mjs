@@ -45,7 +45,7 @@ export async function startApp(users, tag) {
   });
   await new Promise((r) => server.listen(0, '127.0.0.1', r));
   origin = 'http://127.0.0.1:' + server.address().port; env.ALLOWED_ORIGIN = origin;
-  const CHROME = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => fs.existsSync(p));
+  const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe', 'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', 'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => p && fs.existsSync(p));
   if (!CHROME) { console.log('لا يوجد Chrome/Edge — تخطّي'); server.close(); process.exit(2); }
   const puppeteer = (await import('puppeteer-core')).default;
   const browser = await puppeteer.launch({ downloadBehavior: TEST_DL, executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-gpu'] });

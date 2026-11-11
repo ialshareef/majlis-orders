@@ -12,7 +12,9 @@
     "prep": "node prepare-web.js",
     "add:android": "npm run prep && cap add android",
     "sync": "npm run prep && cap sync android",
-    "open": "cap open android"
+    "open": "cap open android",
+    "test": "node tools/run-tests.mjs",
+    "test:quick": "node tools/run-tests.mjs --quick"
   },
   "dependencies": {
     "@capacitor/core": "^6.1.0",
@@ -23,6 +25,9 @@
   },
   "devDependencies": {
     "@capacitor/assets": "^3.0.5",
-    "@capacitor/cli": "^6.1.0"
+    "@capacitor/cli": "^6.1.0",
+    "jspdf": "4.2.1",
+    "puppeteer-core": "24.43.1",
+    "sql.js": "1.15.1"
   }
 }

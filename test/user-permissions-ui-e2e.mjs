@@ -139,10 +139,10 @@ ok((await bootPerms('admin')).includes('permissions.manage'), 'bootstrap: الم
 ok(!(await bootPerms('admin2')).includes('permissions.manage') && !(await bootPerms('admin2')).includes('users.edit') && (await bootPerms('admin2')).includes('orders.view_all'), 'bootstrap: المدير العادي بلا الإدارة الكاملة ومعه التشغيلي');
 
 /* ---------------- 2) الواجهة ---------------- */
-const CHROME = ['C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+const CHROME = [process.env.CHROME_PATH, '/usr/bin/google-chrome', '/usr/bin/google-chrome-stable', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/snap/bin/chromium', 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
   'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
-  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => fs.existsSync(p));
+  'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe'].find((p) => p && fs.existsSync(p));
 if (!CHROME) { console.log('لا يوجد Chrome/Edge — تخطّي اختبار الواجهة'); server.close(); process.exit(fail ? 1 : 2); }
 const puppeteer = (await import('puppeteer-core')).default;
 const browser = await puppeteer.launch({ downloadBehavior: TEST_DL, executablePath: CHROME, headless: true, args: ['--no-sandbox', '--disable-gpu', '--mute-audio'] });

@@ -96,13 +96,13 @@ Write-Host ("  + {0,-18} {1,8:N0} bytes (generated)" -f '/config.js', $cfg.Lengt
 
 $assets = 'const ASSETS = {' + ($entries -join ',') + '};'
 
-$workerPath = Join-Path $root 'worker\worker.js'
+$workerPath = [IO.Path]::Combine($root, 'worker', 'worker.js')
 $worker = [IO.File]::ReadAllText($workerPath, [Text.Encoding]::UTF8)
 $marker = 'const ASSETS = null; /* __ASSETS__ */'
 if ($worker -notmatch [regex]::Escape($marker)) { throw 'Marker not found in worker/worker.js' }
 $bundle = $worker.Replace($marker, $assets)
 
-$outPath = Join-Path $root 'worker\worker.bundle.js'
+$outPath = [IO.Path]::Combine($root, 'worker', 'worker.bundle.js')
 [IO.File]::WriteAllText($outPath, $bundle, (New-Object Text.UTF8Encoding($false)))
 Write-Host ""
 Write-Host ("Built worker/worker.bundle.js  ({0:N0} bytes)" -f $bundle.Length) -ForegroundColor Green

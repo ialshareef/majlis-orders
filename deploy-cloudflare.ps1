@@ -47,12 +47,17 @@ function ErrText($errors) {
 }
 
 # --------------------------------------------------- token
-$tf = if ([IO.Path]::IsPathRooted($TokenFile)) { $TokenFile } else { Join-Path $root $TokenFile }
-if (-not (Test-Path -LiteralPath $tf)) {
-  Fail "Token file not found: $tf
-    Create a Cloudflare API token and save it into that file."
+# في السحابة (GitHub Actions / Claude Code على الويب): الرمز من متغير البيئة CLOUDFLARE_API_TOKEN، وإلا من الملف
+if ($env:CLOUDFLARE_API_TOKEN) {
+  $token = ('' + $env:CLOUDFLARE_API_TOKEN).Trim()
+} else {
+  $tf = if ([IO.Path]::IsPathRooted($TokenFile)) { $TokenFile } else { Join-Path $root $TokenFile }
+  if (-not (Test-Path -LiteralPath $tf)) {
+    Fail "Token file not found: $tf
+    Create a Cloudflare API token and save it into that file (or set CLOUDFLARE_API_TOKEN)."
+  }
+  $token = ([IO.File]::ReadAllText($tf)).Trim()
 }
-$token = ([IO.File]::ReadAllText($tf)).Trim()
 if ($token.Length -lt 20) { Fail 'Token file content looks invalid.' }
 $H = @{ Authorization = "Bearer $token" }
 
@@ -178,7 +183,7 @@ if (-not $dbId -or $dbId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4
 
 # --------------------------------------------------- 3) schema
 Step 'Creating tables and seed data'
-$schemaPath = Join-Path $root 'worker\schema.sql'
+$schemaPath = [IO.Path]::Combine($root, 'worker', 'schema.sql')
 if (-not (Test-Path -LiteralPath $schemaPath)) { Fail 'worker\schema.sql not found' }
 $sql = [IO.File]::ReadAllText($schemaPath, [Text.Encoding]::UTF8)
 $q = CF POST "/accounts/$AccountId/d1/database/$dbId/query" @{ sql = $sql }
@@ -209,8 +214,9 @@ OK 'permission_audit and expenses definitions are current'
 
 # --------------------------------------------------- 4) build + upload worker
 Step 'Building worker bundle'
-& powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'build-worker.ps1') | Out-Host
-$bundle = Join-Path $root 'worker\worker.bundle.js'
+$psExe = if (Get-Command powershell -ErrorAction SilentlyContinue) { 'powershell' } else { 'pwsh' }
+& $psExe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $root 'build-worker.ps1') | Out-Host
+$bundle = [IO.Path]::Combine($root, 'worker', 'worker.bundle.js')
 if (-not (Test-Path -LiteralPath $bundle)) { Fail 'worker.bundle.js was not produced' }
 
 Step 'Uploading worker'
@@ -235,15 +241,17 @@ foreach ($b in $metaObj.bindings) {
   }
 }
 $meta = $metaObj | ConvertTo-Json -Depth 10 -Compress
-$metaFile = Join-Path $env:TEMP 'majlis-worker-metadata.json'
+$tmpDir = [IO.Path]::GetTempPath()
+$metaFile = Join-Path $tmpDir 'majlis-worker-metadata.json'
 [IO.File]::WriteAllText($metaFile, $meta, (New-Object Text.UTF8Encoding($false)))
 
-if (-not (Get-Command curl.exe -ErrorAction SilentlyContinue)) { Fail 'curl.exe not found on this machine.' }
+$curlExe = if (Get-Command curl.exe -ErrorAction SilentlyContinue) { 'curl.exe' } elseif (Get-Command curl -CommandType Application -ErrorAction SilentlyContinue) { 'curl' } else { '' }
+if (-not $curlExe) { Fail 'curl not found on this machine.' }
 $uploadUrl = "$API/accounts/$AccountId/workers/scripts/$WorkerName"
 # التخويل عبر ملف مؤقت بدل سطر الأوامر حتى لا يظهر الرمز في قائمة العمليات
-$headerFile = Join-Path $env:TEMP 'majlis-worker-auth.txt'
+$headerFile = Join-Path $tmpDir 'majlis-worker-auth.txt'
 [IO.File]::WriteAllText($headerFile, "Authorization: Bearer $token", (New-Object Text.UTF8Encoding($false)))
-$resp = & curl.exe -s -X PUT $uploadUrl -H "@$headerFile" -F "metadata=@$metaFile;filename=metadata.json;type=application/json" -F "worker.js=@$bundle;filename=worker.js;type=application/javascript+module"
+$resp = & $curlExe -s -X PUT $uploadUrl -H "@$headerFile" -F "metadata=@$metaFile;filename=metadata.json;type=application/json" -F "worker.js=@$bundle;filename=worker.js;type=application/javascript+module"
 Remove-Item -LiteralPath $metaFile -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath $headerFile -Force -ErrorAction SilentlyContinue
 try { $r = $resp | ConvertFrom-Json } catch { Fail "Unexpected response from Cloudflare:
