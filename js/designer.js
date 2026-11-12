@@ -413,7 +413,8 @@
                      هذا هو السلوك التاريخي (تغيير len فقط) فاحتفظ به افتراضياً.
           'first'  ⇒ الطرف الأول (t=0) هو المتحرك ⇒ الطرف الثاني مثبّت.
           'even'   ⇒ الطرفان يتحرّكان بالتساوي. */
-    static WALL_ANCHORS = ['second', 'first', 'even'];
+    // getter لا حقل ثابت (static x = …): الحقول الثابتة تحتاج Safari 14.1+ وتعطّل الملف كله على آيفون أقدم
+    static get WALL_ANCHORS() { return ['second', 'first', 'even']; }
 
     static normAnchor(a) { return Designer.WALL_ANCHORS.includes(a) ? a : 'second'; }
 

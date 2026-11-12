@@ -274,6 +274,10 @@
     if (/401|session|انتهت الجلسة|غير مسجّل/.test(s)) return 'انتهت الجلسة. سجّل الدخول مرة أخرى.';
     if (/409|conflict|تعارض/.test(s)) return 'وصل تغيير أحدث من جهاز آخر. حدّث الصفحة وحاول مجدداً.';
     if (/network|fetch|Network|اتصال|غير متصل|offline|ENOTFOUND|timed?\s*out/i.test(s)) return 'لا يوجد اتصال بالإنترنت. تحقق من الاتصال وحاول مجدداً.';
+    // رسائل الخادم العربية مكتوبة للمستخدم (صلاحية، قيمة غير صالحة…): تُعرض كما هي —
+    // كانت تُستبدل بـ«تحقق من الاتصال» فيبدو رفض الصلاحية مشكلة إنترنت
+    if (/^غير مصرح$/.test(s.trim())) return 'لا تملك صلاحية هذا الإجراء (غير مصرح).';
+    if (/[؀-ۿ]/.test(s) && s.length <= 200) return s.trim();
     return fallback;
   }
 
@@ -3144,7 +3148,17 @@ function canEditOrder(o) {
     el.dataset.state = state;
     const labels = { ok: 'محدّث', sync: 'يزامن…', off: 'غير متصل', err: 'تعذّر التحديث' };
     $('#netLabel').textContent = labels[state] || '';
-    el.title = state === 'ok' && lastSyncAt ? `آخر تحديث ${fmtDateTimeUi(new Date(lastSyncAt).toISOString())}` : (labels[state] || '');
+    // «تعذّر التحديث» مع سببه الفعلي من الخادم (كان بلا سبب فلا يُعرف ما الخطأ)
+    el.title = state === 'ok' && lastSyncAt ? `آخر تحديث ${fmtDateTimeUi(new Date(lastSyncAt).toISOString())}`
+      : state === 'err' && Store.lastError ? `تعذّر التحديث: ${humanError(Store.lastError)} — اضغط لإعادة المحاولة` : (labels[state] || '');
+    if (state !== 'sync') announceRejected();
+  }
+  /** تغيير محلي رفضه الخادم (لا صلاحية / بيانات غير صالحة): أُعيدت نسخة الخادم، ويُبلَّغ المستخدم مرة واحدة */
+  function announceRejected() {
+    const list = Store.takeRejected ? Store.takeRejected() : [];
+    if (!list.length) return;
+    const what = list.map((r) => (r.coll === 'orders' ? `الطلب${r.number != null ? ' #' + r.number : ''}` : r.coll === 'items' ? 'صنف' : r.coll === 'settings' ? 'الإعدادات' : 'سجل')).filter((v, i, a) => a.indexOf(v) === i).join('، ');
+    toast(`لم يقبل الخادم تعديلاً على ${what}: ${humanError(list[0].error)}. أُعيدت النسخة المحفوظة على الخادم، والمزامنة تعمل الآن.`, true);
   }
   function refreshNetAge() {
     const el = $('#netState');
@@ -8896,7 +8910,11 @@ async function exportExpensesXlsx() {
     window.addEventListener('online', () => { setNetState('sync'); syncFromServer(); });
     window.addEventListener('offline', () => setNetState('off'));
     $('#netState').hidden = false;
-    $('#netState').addEventListener('click', () => syncFromServer());
+    $('#netState').addEventListener('click', () => {
+      // عند الخطأ: يظهر السبب فوراً (على الجوال لا يظهر title)، ثم تُعاد المحاولة
+      if ($('#netState').dataset.state === 'err' && Store.lastError) toast('تعذّر التحديث: ' + humanError(Store.lastError) + ' — جارٍ إعادة المحاولة…', true);
+      syncFromServer();
+    });
     setNetState(navigator.onLine ? 'ok' : 'off');
   }
 

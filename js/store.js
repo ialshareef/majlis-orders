@@ -47,6 +47,23 @@
     return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, sellerRate: 10, shareRate: 5, mandoubRate: 5, mandoubParentRate: 5, commBase: 'profit', lastBackupAt: '' };
   }
 
+  /* لقطة مخزّنة من إصدار أقدم: تُطبَّع بقواعد هذا الإصدار نفسها (normalizeSettings/normalizeItems)،
+     وإلا ظهر حقل افتراضي جديد (مثل commBase في 1.1.2) فرقاً «محلياً» يُرفع للخادم — والموظف لا يملك
+     صلاحية الإعدادات فيُرفض الرفع وتتوقف المزامنة على جهازه كلياً. */
+  function normSnapSettings(str) {
+    if (typeof str !== 'string') return null;
+    try { return JSON.stringify(normalizeSettings(JSON.parse(str))); } catch (_) { return null; }
+  }
+  function normSnapItems(map) {
+    if (!(map instanceof Map) || !map.size) return;
+    try {
+      const list = [...map.values()].map((v) => JSON.parse(v));
+      const norm = normalizeItems(list);
+      map.clear();
+      norm.forEach((it) => { if (it && it.id) map.set(it.id, JSON.stringify(it)); });
+    } catch (_) { /* لقطة تالفة: تبقى كما هي */ }
+  }
+
   function normalizeSettings(s) {
     const st = Object.assign(defaultSettings(), s || {});
     // هجرة الحقل القديم othersRate إلى shareRate
@@ -255,7 +272,8 @@
         // إحياء آمن: مخازن قديمة بصيغة {} تُقرأ كخرائط فارغة (إعادة دفع كاملة آمنة الاتجاه)
         const deMap = (v) => new Map(Array.isArray(v) ? v : []);
         const cs = (c.snap && typeof c.snap === 'object') ? c.snap : {};
-        this.snap = { items: deMap(cs.items), orders: deMap(cs.orders), activity: deMap(cs.activity), settings: (typeof cs.settings === 'string' ? cs.settings : null) };
+        this.snap = { items: deMap(cs.items), orders: deMap(cs.orders), activity: deMap(cs.activity), settings: normSnapSettings(cs.settings) };
+        normSnapItems(this.snap.items);
         this.features = c.features || {};
         if (c.user) this.user = c.user;
         // صلاحيات مخزّنة لمستخدم آخر على نفس الجهاز لا تُستعمل أبداً
@@ -407,17 +425,28 @@
       if (!this.user) { this.lastError = 'غير مسجّل الدخول'; return false; }
       this.saveCache();   // التغييرات تُحفظ محلياً فوراً قبل محاولة المزامنة
       const payload = {};
-      const it = this._diff('items'); if (it.upsert.length || it.delete.length) payload.items = it;
+      // الأصناف والإعدادات لمن يملك صلاحيتها فقط: غيره لا يعدّلها من الواجهة، فأي فرق عنده مشتق
+      // (تطبيع أو حقل جديد) والخادم يرفضه حتماً — كان الرفض يوقف مزامنة الجهاز كلها
+      const may = (p) => Array.isArray(this.myPermissions) && this.myPermissions.includes(p);
+      const it = may('items.manage') ? this._diff('items') : { upsert: [], delete: [] };
+      if (it.upsert.length || it.delete.length) payload.items = it;
       const od = this._diff('orders'); if (od.upsert.length || od.delete.length) payload.orders = od;
       const ac = this._diff('activity');
       // الحذف من السجل لا يكون إلا مسحاً كاملاً صريحاً. ما يسقط من الذاكرة بسبب
       // سقف الـ 3000 حدث لا يعني حذفه من الخادم (كان يُحذف منه بصمت).
-      if (!this.db.activity.length && ac.delete.length) payload.activity = { upsert: [], clear: true };
+      // المسح الكامل لمن يملكه فقط (الموظف لا يستلم السجل أصلاً، فسجله الفارغ ليس «مسحاً»)
+      if (!this.db.activity.length && ac.delete.length) { if (may('orders.delete_all')) payload.activity = { upsert: [], clear: true }; }
       else if (ac.upsert.length) payload.activity = { upsert: ac.upsert, delete: [] };
-      if (JSON.stringify(this.db.settings) !== this.snap.settings) payload.settings = this.db.settings;
+      if (may('settings.manage') && JSON.stringify(this.db.settings) !== this.snap.settings) payload.settings = this.db.settings;
       if (!Object.keys(payload).length) return true;
       try {
-        const r = await this.api('POST', '/api/sync', payload);
+        let r;
+        try { r = await this.api('POST', '/api/sync', payload); }
+        catch (e) {
+          // رفض نهائي (400/403) لحمولة فيها أكثر من تغيير: يُعزل التغيير المرفوض وحده ويُرفع الباقي
+          if (e.status === 400 || e.status === 403) return await this._isolate(payload, e);
+          throw e;
+        }
         // أرقام الطلبات الجديدة يمنحها الخادم عند أول حفظ ناجح — على الحيّ وعلى المُرسَل معاً
         const nums = (r && r.numbers) || {};
         const applyNums = (o) => { if (o && nums[o.id] !== undefined) o.number = nums[o.id]; };
@@ -445,13 +474,85 @@
       }
     },
 
+    /** تقسيم حمولة المزامنة إلى أجزاء مستقلة: كل طلب/صنف/حذف وحده، والسجل والإعدادات جزءاً لكل منهما */
+    _partsOf(payload) {
+      const parts = [];
+      for (const coll of ['items', 'orders']) {
+        const c = payload[coll];
+        if (!c) continue;
+        (c.upsert || []).forEach((r) => parts.push({ [coll]: { upsert: [r], delete: [] } }));
+        (c.delete || []).forEach((id) => parts.push({ [coll]: { upsert: [], delete: [id] } }));
+      }
+      if (payload.activity) parts.push({ activity: payload.activity });
+      if (payload.settings) parts.push({ settings: payload.settings });
+      return parts;
+    },
+
+    /** رفع جزءاً جزءاً: المقبول يُعتمد، والمرفوض نهائياً (400/403) يُحفظ نسخة منه على الجهاز
+        (majlis_rejected) ثم تُستعاد نسخة الخادم — فلا يتعطل الجهاز إلى الأبد بسبب تغيير واحد
+        لن يقبله الخادم أبداً. التعارض (409) وانقطاع الشبكة يوقفان العملية كالمعتاد. */
+    async _isolate(payload, firstErr) {
+      const rejected = [];
+      const parts = this._partsOf(payload);
+      // جزء واحد: رفضه معروف من المحاولة الأولى، فلا يُعاد إرساله
+      if (parts.length === 1 && firstErr) {
+        const coll = Object.keys(parts[0])[0];
+        const rec = parts[0][coll] && parts[0][coll].upsert && parts[0][coll].upsert[0];
+        const id = rec ? rec.id : (parts[0][coll] && parts[0][coll].delete && parts[0][coll].delete[0]);
+        rejected.push({ at: now(), coll, id: id || null, number: rec && rec.number != null ? rec.number : null, error: firstErr.message || '', data: rec || (coll === 'settings' ? parts[0].settings : null) });
+        parts.length = 0;
+      }
+      for (const part of parts) {
+        try {
+          const r = await this.api('POST', '/api/sync', part);
+          const nums = (r && r.numbers) || {};
+          Object.keys(nums).forEach((id) => {
+            const o = this.db.orders.find((x) => x.id === id);
+            if (o) o.number = nums[id];
+            ((part.orders && part.orders.upsert) || []).forEach((x) => { if (x.id === id) x.number = nums[id]; });
+          });
+          this._snapshotSent(part);
+          emitWa(r);
+        } catch (e) {
+          if (e.status !== 400 && e.status !== 403) throw e;
+          const coll = Object.keys(part)[0];
+          const rec = part[coll] && part[coll].upsert && part[coll].upsert[0];
+          const id = rec ? rec.id : (part[coll] && part[coll].delete && part[coll].delete[0]);
+          rejected.push({ at: now(), coll, id: id || null, number: rec && rec.number != null ? rec.number : null, error: e.message || '', data: rec || (coll === 'settings' ? part.settings : null) });
+        }
+      }
+      if (rejected.length) {
+        try {
+          const old = JSON.parse(localStorage.getItem('majlis_rejected') || '[]');
+          localStorage.setItem('majlis_rejected', JSON.stringify((Array.isArray(old) ? old : []).concat(rejected).slice(-30)));
+        } catch (_) { /* مساحة التخزين ممتلئة: يبقى الإشعار */ }
+        this.rejected = (this.rejected || []).concat(rejected.map(({ coll, id, number, error }) => ({ coll, id, number, error })));
+        // نسخة الخادم تحل محل التغييرات المرفوضة (والمقبولة صارت على الخادم أصلاً)
+        await this.loadAll();
+        // الحفظ نفسه فشل (لمن طلبه صراحة: نافذة الطلب تبقي تعديله وتعرض السبب)،
+        // لكن الجهاز عاد متزامناً: refresh() يكمل ولا يعلق
+        this._recovered = true;
+        this.lastError = rejected[0].error || 'رفض الخادم التعديل';
+        this.lastStatus = 403;
+        return false;
+      }
+      this.lastError = '';
+      this.lastStatus = 0;
+      return true;
+    },
+    /** التغييرات التي رفضها الخادم منذ آخر سؤال (لتنبيه المستخدم مرة واحدة) */
+    takeRejected() { const r = this.rejected || []; this.rejected = []; return r; },
+
     async refresh() {
       if (!this.user) return false;
       // دفع أي تغييرات معلّقة أولاً، ولا يُجلَب فوقها شيء إن فشل الدفع (C1):
       // شبكة مقطوعة أو 409 أو أي خطأ يُبقي النسخة المحلية ولا يعتبرها متزامنة
+      this._recovered = false;
       const ok = await this.save();
-      if (!ok) return false;
-      try { await this.loadAll(); }
+      // فشل عادي (شبكة/تعارض): لا جلب فوق التعديلات المعلّقة. أما «رُفض واستُعيدت نسخة الخادم» فالجهاز سليم
+      if (!ok && !this._recovered) return false;
+      this._recovered = false;
+      try { await this.loadAll(); this.lastError = ''; this.lastStatus = 0; }
       catch (e) {
         console.error(e);
         this.lastError = e.message;
@@ -590,6 +691,8 @@
     get serverNumbers() { return remote && !!(Remote.features && Remote.features.serverNumbers); },
     /** هل أملك هذه الصلاحية؟ للعرض فقط — الخادم يفرضها. الوضع المحلي أو قبل التحميل: لا. */
     can: (p) => remote && Array.isArray(Remote.myPermissions) && Remote.myPermissions.includes(p),
+    /** تغييرات محلية رفضها الخادم نهائياً فاستُعيدت نسخته (تُعاد مرة واحدة ثم تُفرَّغ) */
+    takeRejected: () => (remote && Remote.takeRejected ? Remote.takeRejected() : []),
     /** هل حُدِّد مالك النظام؟ (للتنبيه فقط — الفرض في الخادم) */
     get ownerConfigured() { return remote ? (Remote.ownerConfigured === undefined ? null : Remote.ownerConfigured) : null; },
     /** رمز الجلسة ومفتاح تخزينه: تحتاجهما خطوة تغيير كلمة المرور الإجبارية لحفظ الجلسة بعد نجاحها */
