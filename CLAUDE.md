@@ -27,6 +27,9 @@
 داخل مهمة وافق عليها المالك نفّذ الخطوات كلها دون الرجوع إليه:
 1. ارفع `CACHE` في `sw.js` عند تغيير ملفات الواجهة، وشغّل `npm test` حتى ينجح كله.
 2. commit لملفات المهمة بأسمائها، ثم وسم `vX.Y.Z` (آخر وسم + 1) وادفع main والوسم.
+   - **في السحابة** دفع الوسوم ممنوع (403): ادفع main ثم شغّل `build-apk.yml` يدوياً على `main` بالمدخل
+     `version` = `X.Y.Z` (أداة GitHub `actions_run_trigger` / `run_workflow`). سير العمل يتحقق أن الرقم
+     أكبر من آخر وسم، ويبني APK، ثم ينشئ الوسم `vX.Y.Z` والإصدار بنفسه — بلا خطوة يدوية من المالك.
 3. انتظر ملف APK من GitHub Actions (`build-apk.yml`) على
    `https://github.com/ialshareef/majlis-orders/releases/download/vX.Y.Z/asalh-najd-X.Y.Z.apk`.
 4. تحقق منه: `node tools/apkinfo.mjs <الملف>` — versionName وversionCode صحيحان، وشهادة التوقيع v2 تبدأ بـ `cc6b36c0`.

@@ -1,7 +1,15 @@
 name: Build Android APK & AAB
 
 on:
+  # تشغيل يدوي (من تبويب Actions أو من جلسة Claude Code في السحابة): بلا رقم = بناء تجريبي بلا إصدار؛
+  # برقم (مثل 1.1.3) = إصدار كامل: يُنشأ الوسم vX.Y.Z على هذا الـ commit هنا داخل GitHub ثم يُبنى APK
+  # ويُنشر في Releases — بديل دفع الوسم من الجهاز (بيئة السحابة لا تسمح بدفع الوسوم).
   workflow_dispatch:
+    inputs:
+      version:
+        description: 'رقم الإصدار X.Y.Z (فارغ = بناء تجريبي بلا إصدار). يجب أن يكون أكبر من آخر وسم.'
+        required: false
+        default: ''
   push:
     branches: [ main ]
     tags: [ 'v*' ]
@@ -15,14 +23,35 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # كل الوسوم: للتحقق من أن الإصدار اليدوي جديد وأكبر من آخر وسم
 
       - name: Set version
         id: ver
+        env:
+          INPUT_VERSION: ${{ github.event.inputs.version }}
         run: |
+          IN="${INPUT_VERSION#v}"
           if [[ "${GITHUB_REF}" == refs/tags/* ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+          elif [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ] && [ -n "$IN" ]; then
+            if ! [[ "$IN" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then echo "::error::رقم الإصدار يجب أن يكون X.Y.Z (مثل 1.1.3)، وصل: $IN"; exit 1; fi
+            if [ "${GITHUB_REF}" != "refs/heads/main" ]; then echo "::error::الإصدار يُنشأ من main فقط (وصل ${GITHUB_REF})"; exit 1; fi
+            if git rev-parse -q --verify "refs/tags/v$IN" >/dev/null; then echo "::error::الوسم v$IN موجود مسبقاً"; exit 1; fi
+            LAST=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' | sed 's/^v//' | sort -V | tail -1)
+            if [ -n "$LAST" ] && [ "$(printf '%s\n%s\n' "$LAST" "$IN" | sort -V | tail -1)" != "$IN" ]; then
+              echo "::error::الإصدار $IN ليس أكبر من آخر وسم v$LAST"; exit 1
+            fi
+            echo "version=$IN" >> "$GITHUB_OUTPUT"
+            echo "tag=v$IN" >> "$GITHUB_OUTPUT"
+            echo "release=true" >> "$GITHUB_OUTPUT"
+            echo "create_tag=true" >> "$GITHUB_OUTPUT"
+            echo "release v$IN (last tag: v$LAST)"
           else
             echo "version=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+            echo "release=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Setup Node
@@ -116,16 +145,24 @@ jobs:
           path: android/app/build/outputs/bundle/release/asalh-najd-${{ steps.ver.outputs.version }}.aab
           if-no-files-found: warn
 
+      # الوسم يُنشأ بعد نجاح البناء فقط: بناء فاشل لا يترك وسماً بلا APK
+      - name: Create release tag (manual release)
+        if: steps.ver.outputs.create_tag == 'true'
+        run: |
+          git tag "${{ steps.ver.outputs.tag }}" "$GITHUB_SHA"
+          git push origin "refs/tags/${{ steps.ver.outputs.tag }}"
+
       - name: Delete old release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.ver.outputs.release == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release delete "${{ github.ref_name }}" --yes 2>/dev/null || true
+        run: gh release delete "${{ steps.ver.outputs.tag }}" --yes 2>/dev/null || true
 
       - name: Create GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+        if: steps.ver.outputs.release == 'true'
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ steps.ver.outputs.tag }}
           files: |
             android/app/build/outputs/apk/release/asalh-najd-${{ steps.ver.outputs.version }}.apk
             android/app/build/outputs/bundle/release/asalh-najd-${{ steps.ver.outputs.version }}.aab
