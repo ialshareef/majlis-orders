@@ -692,6 +692,9 @@
   const Store = {
     get mode() { return backend.mode; },
     get isRemote() { return remote; },
+    /** عنوان الخادم بلا شرطة أخيرة (لطلبات fetch المباشرة). داخل تطبيق أندرويد المنشأ https://localhost
+        فالمسار النسبي يذهب للتطبيق نفسه لا للخادم — لذا يُستعمل هذا دائماً */
+    get apiBase() { return remote ? String((Remote.cfg && Remote.cfg.apiUrl) || '').replace(/\/+$/, '') : ''; },
     /** رقم الطلب يمنحه الخادم عند أول حفظ — إن كان الخادم المنشور يدعم ذلك.
         خادم أقدم (لم يُعَد نشره) لا يمنح أرقاماً، فيُحجز الرقم قبل الحفظ كما كان. */
     get serverNumbers() { return remote && !!(Remote.features && Remote.features.serverNumbers); },

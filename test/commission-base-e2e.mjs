@@ -148,6 +148,10 @@ try {
   await go(page, 'settings');
   const opts = await page.evaluate(() => { const s = document.getElementById('sCommBase'); return s ? [...s.options].map((o) => o.value + ':' + (o.selected ? 1 : 0)) : null; });
   ok(opts && opts.join() === 'profit:1,total:0', 'settings: خيار «تُحسب كل النسب من» وافتراضيه صافي الربح', opts);
+  // رابط البوابة للعملاء: عنوان عام يفتح عند العميل، لا عنوان داخلي (كان https://localhost داخل تطبيق أندرويد)
+  const portal = await page.evaluate(() => { const h = [...document.querySelectorAll('.hint')].find((x) => /رابط البوابة للعملاء/.test(x.textContent)); return h ? h.textContent : ''; });
+  ok(/https:\/\/majlis-api\.asalh-najd\.workers\.dev\/customer-design/.test(portal) && !/localhost|127\.0\.0\.1/.test(portal), 'settings: رابط البوابة عنوان عام لا localhost', portal);
+  ok(await page.evaluate(() => Store.apiBase) === origin, 'store: Store.apiBase = عنوان الخادم (للتقارير المباشرة)');
   await page.select('#sCommBase', 'total');
   await page.evaluate(() => document.getElementById('sSave').click());
   await sleep(2500);

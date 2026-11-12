@@ -480,6 +480,15 @@
     } catch (_) { /* noop */ }
     return window.location.origin + '/customer-design';
   }
+  /** رابط بوابة العميل للمشاركة: عنوان الموقع الحقيقي. داخل تطبيق أندرويد المنشأ https://localhost
+      (عنوان داخلي لا يفتح عند العميل)، فيُستعمل عنوان الخادم، وإلا الرابط الرسمي الثابت */
+  function publicPortalUrl() {
+    const isPublic = (u) => /^https?:\/\//i.test(u || '') && !/^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(u);
+    const o = window.location.origin;
+    if (isPublic(o)) return o + '/customer-design';
+    if (isPublic(Store.apiBase)) return Store.apiBase + '/customer-design';
+    return 'https://majlis-api.asalh-najd.workers.dev/customer-design';
+  }
   { const lc = $('#loginCustomer');
     if (lc) {
       const url = customerDesignUrl();
@@ -6342,7 +6351,7 @@ function docTitle(order) {
         </span></td>
       </tr>`;
     }).join('');
-    $('#desPortalUrl').textContent = window.location.origin + '/customer-design';
+    $('#desPortalUrl').textContent = publicPortalUrl();
     $('#desEmpty').hidden = list.length > 0;
     $$('[data-desopen]', tb).forEach((b) => b.addEventListener('click', () => openDesign(b.dataset.desopen)));
     $$('[data-desconv]', tb).forEach((b) => b.addEventListener('click', () => convertDesignFlow(b.dataset.desconv)));
@@ -6977,7 +6986,7 @@ function docTitle(order) {
             <label>TikTok <input id="sTik" dir="ltr" value="${esc(s.tiktok || '')}" placeholder="https://tiktok.com/…"></label>
             <label>Snapchat <input id="sSnap" dir="ltr" value="${esc(s.snapchat || '')}" placeholder="https://snapchat.com/…"></label>
           </div>
-          <p class="hint">رابط البوابة للعملاء: <bdi class="num url-line">${esc(window.location.origin + '/customer-design')}</bdi></p>
+          <p class="hint">رابط البوابة للعملاء: <bdi class="num url-line">${esc(publicPortalUrl())}</bdi></p>
         </div>
       </section>
       <section class="set-section">
