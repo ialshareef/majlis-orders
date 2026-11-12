@@ -2592,6 +2592,13 @@ function canEditOrder(o) {
     return o.payments;
   }
   const paidOf = (o) => (Array.isArray(o.payments) ? money(o.payments.reduce((s, p) => s + money(p.amount), 0)) : money(o.paid));
+  /** كم دُفع زيادة على إجمالي الطلب (0 إن لم يُدفع زائد). عروض الأسعار والملغية خارج الحساب —
+      الملغي المدفوع يحتاج استرداداً لا تنبيه «زيادة». سببها الشائع: «كامل المبلغ» القديم بعد دفعة سابقة */
+  const overpaidBy = (o) => {
+    if (!o || o.status === 'quote' || o.status === 'cancelled') return 0;
+    const over = money(paidOf(o) - num(o.total));
+    return over > 0.004 ? over : 0;
+  };
   /** المتبقي = الإجمالي − المدفوع، بلا تقييد بالصفر: السالب دفعة زائدة تُظهرها الشارة والحالة.
       الدفع الزائد مسموح (دفعة مقدمة) ولا يُمنع هنا — التعريف الوحيد المعتمد (F4). */
   const remainingOf = (total, paid) => money(num(total) - num(paid));
@@ -4109,6 +4116,7 @@ function docTitle(order) {
   /* ---------------- صفحة الطلبات ---------------- */
   /** الحالات المختارة في الفلتر؛ فارغة = كل الحالات */
   const ordStatuses = new Set();
+  let ordOverOnly = false;   // فلتر «مدفوع زائد»
   /* أقسام صفحة الطلبات (تبويبات): كل قسم مجموعة حالات جاهزة لفلتر الحالات نفسه */
   const ORD_TABS = { new: ['new'], work: ['progress', 'done'], delivered: ['delivered'], all: [] };
   function ordTabOf() {
@@ -4133,6 +4141,7 @@ function docTitle(order) {
     const f = ordFilters();
     let list = db().orders.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     if (f.statuses.size) list = list.filter((o) => f.statuses.has(o.status));
+    if (ordOverOnly) list = list.filter((o) => overpaidBy(o) > 0);
     if (f.from) list = list.filter((o) => ordDate(o) >= f.from);
     if (f.to) list = list.filter((o) => ordDate(o) <= f.to);
     if (f.q) list = list.filter((o) => [o.number, o.customer?.name, o.customer?.phone, o.createdByName].some((v) => String(v || '').toLowerCase().includes(f.q)));
@@ -4170,9 +4179,17 @@ function docTitle(order) {
 
   function renderOrders() {
     const f = ordFilters();
-    const filtering = !!(f.q || f.from || f.to || f.statuses.size);
+    const filtering = !!(f.q || f.from || f.to || f.statuses.size || ordOverOnly);
     let list = filteredOrders();
     renderOrdCols();
+    // شارة «مدفوع زائد»: تظهر ما دام هناك طلب مدفوعه أكبر من إجماليه (أو الفلتر مفعّل)
+    { const nOver = (db().orders || []).filter((o) => overpaidBy(o) > 0).length;
+      const chip = $('#ordOverChip');
+      if (!nOver && ordOverOnly) ordOverOnly = false;
+      chip.hidden = !nOver;
+      $('#ordOverN').textContent = nOver;
+      chip.classList.toggle('on', ordOverOnly);
+      chip.setAttribute('aria-pressed', ordOverOnly ? 'true' : 'false'); }
 
     $$('#ordStatusChips .chip').forEach((c) => {
       const on = ordStatuses.has(c.dataset.stf);
@@ -4237,7 +4254,7 @@ function docTitle(order) {
       const st = esc(o.status || 'new');
       return `
       <tr data-status="${st}" class="${late ? 'is-late' : ''}">
-        <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? `<span class="sub-by" title="${esc(o.createdByName)}">${esc(o.createdByName)}</span>` : ''}</span></td>
+        <td data-label="رقم الطلب" class="c-no"><b class="num">#${esc(o.number || '—')}</b>${o.status === 'quote' ? ' <span class="badge st-quote">عرض سعر</span>' : ''}${overpaidBy(o) ? ` <span class="badge over" title="المدفوع أكبر من الإجمالي — راجع الدفعات">زيادة ${fmt(overpaidBy(o))}</span>` : ''}<span class="sub"><bdi class="num" title="${esc(fmtDateTime(o.createdAt))}">${fmtDate(o.createdAt)}</bdi>${o.createdByName ? `<span class="sub-by" title="${esc(o.createdByName)}">${esc(o.createdByName)}</span>` : ''}</span></td>
         <td data-label="العميل" class="c-cust"><b dir="auto" title="${esc(o.customer?.name) || ''}">${esc(o.customer?.name) || '—'}</b>${o.customer?.phone ? `<span class="sub num">${esc(o.customer.phone)}</span>` : ''}</td>
         <td data-label="المجموع" class="num c-money c-total">${fmt(o.total)}</td>
         <td data-label="التكلفة" class="num c-money c-cost${canSeeCosts(o) && cost !== null ? '' : ' is-empty'}">${canSeeCosts(o) && cost !== null ? fmt(cost) : dash}</td>
@@ -4848,8 +4865,10 @@ function docTitle(order) {
     ordersShown = PAGE_STEP;
     renderOrders();
   }));
+  $('#ordOverChip').addEventListener('click', () => { ordOverOnly = !ordOverOnly; ordersShown = PAGE_STEP; renderOrders(); });
   $('#ordClearFilters').addEventListener('click', () => {
     ordStatuses.clear();
+    ordOverOnly = false;
     $('#ordSearch').value = ''; $('#ordFrom').value = ''; $('#ordTo').value = '';
     ordersShown = PAGE_STEP;
     renderOrders();
@@ -7100,7 +7119,7 @@ function docTitle(order) {
   const NOTIF_MAX = 60;        // أقصى عدد تنبيهات معروضة
   const NOTIF_DAYS = 45;       // لا تُعرض أحداث أقدم من هذه المدة
   const DUE_AHEAD = 3;         // التذكير بموعد التوصيل قبله بثلاثة أيام
-  const NOTIF_ICON = { create: 'plus', progress: 'rotate', done: 'check', delivered: 'pin', due: 'calendar', quote: 'file', backup: 'download' };
+  const NOTIF_ICON = { create: 'plus', progress: 'rotate', done: 'check', delivered: 'pin', due: 'calendar', quote: 'file', backup: 'download', overpay: 'alert' };
   const DAY_MS = 86400000;
 
   /* تمييز العدد في العربية: مفرد للواحد، مثنّى للاثنين، جمع للثلاثة حتى العشرة،
@@ -7192,6 +7211,17 @@ function docTitle(order) {
         }
       }
 
+      // مدفوع أكبر من الإجمالي: يبقى ظاهراً حتى تُصحَّح الدفعات (المعرّف يتغيّر بتغيّر المبالغ)
+      const over = overpaidBy(o);
+      if (over) {
+        out.push({
+          id: `over:${o.id}:${paidOf(o)}:${money(o.total)}`, kind: 'overpay', at: o.updatedAt || o.createdAt || Store.now(), orderId: o.id, orderNo: o.number, late: true,
+          title: `الطلب #${o.number || ''} مدفوعه أكبر من إجماليه`,
+          text: `${who} • المدفوع ${fmt(paidOf(o))} والإجمالي ${fmt(o.total)} — زيادة ${fmt(over)} ${cur$}. راجع الدفعات`,
+          when: 'يحتاج مراجعة',
+        });
+      }
+
       // 3) تذكير قبل موعد التوصيل بثلاثة أيام (ويبقى ظاهراً إن فات الموعد ولم يُسلَّم)
       if (o.deliveryDate && isOpen(o)) {
         const left = daysUntil(o.deliveryDate);
@@ -7272,6 +7302,7 @@ function docTitle(order) {
     closeNotifPanel();
     if (dirty && !(await confirmDlg('فتح طلب', 'سيتم تجاهل التغييرات غير المحفوظة في الطلب الحالي. متابعة؟'))) { renderNotifications(); return; }
     loadOrder(o);
+    if (nid.startsWith('over:')) showStage('pay');
     renderNotifications();
   }
 

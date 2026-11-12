@@ -40,7 +40,12 @@ const env = envWith({
   sessions: [{ token: 'tok-asim', user_id: '2', created_at: past, expires_at: future }],
   counters: [{ key: 'order_no', value: 1030 }],
   settings: [{ id: 1, data: JSON.stringify({ shopName: 'أصالة نجد', depositPct: 25 }), updated_at: past }],
-  items: [], orders: [ord('o1', 1021), ord('o2', 1022), ord('o3', 1023)],
+  items: [], orders: [ord('o1', 1021), ord('o2', 1022), ord('o3', 1023), (() => {
+    // طلب قديم دُفع مرتين بالزر القديم: نصف الإجمالي ثم «كامل المبلغ» = 575 + 1150
+    const r = ord('o4', 1024); const d = JSON.parse(r.data);
+    d.payments = [{ id: 'h1', at: '2026-10-01', amount: 575, method: 'cash', by: 'عاصم', createdAt: at }, { id: 'h2', at: '2026-10-05', amount: 1150, method: 'transfer', by: 'عاصم', createdAt: at }];
+    d.paid = 1725; d.remaining = 0; d.status = 'delivered'; r.status = 'delivered'; r.data = JSON.stringify(d); return r;
+  })()],
 });
 for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses', 'user_permissions']) env.DB.tables.set(t, []);
 env.ADMIN_INIT_PASSWORD = '';
@@ -125,6 +130,24 @@ try {
   };
   const toastTxt = () => page.evaluate(() => (document.getElementById('toast') || {}).textContent || '');
   const paidOf = () => page.evaluate(() => window.MajlisApp.order.payments.reduce((s, p) => s + Number(p.amount), 0));
+
+  /* ----- 0) تنبيه «مدفوع زائد» للطلبات القديمة المدفوعة مرتين ----- */
+  await page.evaluate(() => { const b = [...document.querySelectorAll('[data-page="orders"]')].find((x) => x.offsetParent !== null); b.click(); });
+  await sleep(900);
+  const chip = await page.evaluate(() => { const c = document.getElementById('ordOverChip'); return { hidden: c.hidden, n: document.getElementById('ordOverN').textContent }; });
+  ok(!chip.hidden && chip.n === '1', 'overpaid: شارة «مدفوع زائد» في قائمة الطلبات بعدد 1', chip);
+  const rowBadge = await page.evaluate(() => { const b = document.querySelector('#ordersTable [data-open="o4"]'); const tr = b && b.closest('tr'); const g = tr && tr.querySelector('.badge.over'); return g ? g.textContent : ''; });
+  ok(/زيادة 575\.00/.test(rowBadge), 'overpaid: صف الطلب #1024 عليه «زيادة 575.00»', rowBadge);
+  await page.evaluate(() => document.getElementById('ordOverChip').click()); await sleep(500);
+  const rows = await page.evaluate(() => [...document.querySelectorAll('#ordersTable [data-open]')].map((b) => b.dataset.open));
+  ok(rows.length === 1 && rows[0] === 'o4', 'overpaid: الضغط على الشارة يعرض الطلبات المدفوعة زيادة فقط', rows);
+  await page.evaluate(() => document.getElementById('ordOverChip').click()); await sleep(400);
+  await page.evaluate(() => document.getElementById('btnNotif').click()); await sleep(600);
+  const nt = await page.evaluate(() => { const n = document.querySelector('#notifList [data-kind="overpay"]'); return n ? n.textContent.replace(/\s+/g, ' ') : ''; });
+  ok(/الطلب #1024 مدفوعه أكبر من إجماليه/.test(nt) && /زيادة 575\.00/.test(nt), 'overpaid: تنبيه في مركز التنبيهات بالطلب والزيادة', nt);
+  await page.evaluate(() => document.querySelector('#notifList [data-kind="overpay"]').click()); await sleep(1500);
+  ok(await page.evaluate(() => window.MajlisApp.order.id === 'o4' && !document.getElementById('m-pay').hidden), 'overpaid: التنبيه يفتح الطلب على صفحة الدفعات');
+  await closeModal();
 
   /* ----- 1) الدفع السريع: نصف الإجمالي ثم «المتبقي» = الإجمالي بالضبط (لا ضعفه) ----- */
   await openOrder('o1');

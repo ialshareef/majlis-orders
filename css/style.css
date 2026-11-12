@@ -368,6 +368,11 @@ button[data-del].del-danger:hover,
 .st-delivered { --dot: var(--st-delivered); }
 .st-cancelled { --dot: var(--st-cancelled); }
 .badge.st-cancelled { color: var(--danger); background: var(--danger-soft); }
+/* مدفوع أكبر من الإجمالي */
+.badge.over { color: var(--danger); background: var(--danger-soft); font-weight: 600; }
+.chip.chip-over { color: var(--danger); border-color: var(--danger); gap: 6px; }
+.chip.chip-over svg { width: 15px; height: 15px; }
+.chip.chip-over.on { background: var(--danger-soft); color: var(--danger); }
 .st-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-3)); flex: none; }
 
 /* المؤشر النابض — علامة «غير محفوظ» */
