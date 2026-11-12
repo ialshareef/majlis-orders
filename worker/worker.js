@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.1.5';
-// بصمة asalh-najd-1.1.5.apk (إصدار GitHub v1.1.5، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.5 وversionCode 10105، ونفس شهادة توقيع 1.1.4).
-const UPDATE_FALLBACK_SHA256 = 'c3306fa074d11e89e6dbdb992793b0961b336c30dc4a35536f749f22d451eb79';
+const UPDATE_FALLBACK_VERSION = '1.1.6';
+// بصمة asalh-najd-1.1.6.apk (إصدار GitHub v1.1.6، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.6 وversionCode 10106، ونفس شهادة توقيع 1.1.5).
+const UPDATE_FALLBACK_SHA256 = '49bccb80c800936f67a0e5c6fb5615274f18092db83370904302c4f8d590dca3';
 const UPDATE_FALLBACK_NOTES = [
-  'الدفعات: زر «المتبقي» بدل «كامل المبلغ» فلا يُدفع الطلب مرتين، وتنبيه عند دفعة أكبر من المتبقي',
-  'تعارض التعديل: زر «ادمج التعديلين» يجمع تعديلك وتعديل الموظف الآخر ودفعاته دون أن يُمحى شيء',
+  'تنبيه «مدفوع زائد»: شارة في قائمة الطلبات تعرض الطلبات التي مدفوعها أكبر من إجماليها',
+  'تنبيه في مركز التنبيهات لكل طلب مدفوع زيادة، يفتح صفحة الدفعات مباشرة للتصحيح',
 ];
 
 function versionCodeOfName(v) {
