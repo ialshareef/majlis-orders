@@ -2516,6 +2516,12 @@ body.modal-open { overflow: hidden; }
 .inv-totals .pay { font-size: 9pt; color: #6B5A4A; padding-top: .5mm; padding-bottom: .5mm; }
 .inv-totals .pay + .pay { border-top: 0; }
 .inv-totals .pay bdi { margin-inline-start: 1.5mm; color: #8A7866; }
+/* نافذة التعارض: اختيار القيمة لكل حقل غيّره الطرفان */
+.cf-choices .cf-choice { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line, #E3D9CA); }
+.cf-choices .cf-choice:first-of-type { border-top: 0; }
+.cf-choices .cf-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.cf-choices .cf-choice input { width: 18px; height: 18px; flex: none; }
+.conflict-actions .hint { margin: -4px 0 4px; }
 .inv-totals .rem { background: #FBF1DF; color: #7F520F; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .inv-qr { flex: none; width: 30mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1mm; }
 .inv-qr img { width: 28mm; height: 28mm; image-rendering: pixelated; }

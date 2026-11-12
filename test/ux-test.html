@@ -43,11 +43,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     var html = parts[0], css = parts[1], app = parts[2];
     // A1: زر طلب جديد وPDF خارج شريط الجوال
     t('A1-hide-new-pdf', /#btnNewOrder,\s*#btnExportPdfTop\s*\{\s*display:\s*none/.test(css), 'css rule');
-    // A2: كامل المبلغ يملأ الحقل فقط، ومنع التسجيل المزدوج ما زال موجوداً
-    t('A2-full-chip', html.indexOf('data-pay="1"') >= 0 && html.indexOf('كامل المبلغ') >= 0, 'full chip');
+    // A2: «المتبقي» (لا «كامل المبلغ») يملأ الحقل فقط، ومنع التسجيل المزدوج ما زال موجوداً
+    t('A2-rem-chip', html.indexOf('data-pay="rem"') >= 0 && html.indexOf('data-pay="1"') < 0 && html.indexOf('كامل المبلغ') < 0, 'remaining chip');
     t('A2-no-payrem-btn', html.indexOf('id="btnPayRem"') < 0 && html.indexOf('تسجيل المتبقي كاملاً') < 0, 'direct-reminder button removed');
     t('A2-fill-hint', html.indexOf('تملأ المبلغ فقط') >= 0, 'hint');
-    t('A2-no-rem-chip', html.indexOf('data-pay="rem"') < 0, 'rem chip gone');
     t('A2-paying-guard', app.indexOf('let paying = false') >= 0 && app.indexOf('if (readOnly || paying) return;') >= 0, 'guard');
     // A3: تأكيد النهائيات
     t('A3-final-confirm', app.indexOf('تأكيد الإلغاء') >= 0 && app.indexOf('let asked = false') >= 0, 'confirm');
@@ -200,7 +199,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // مرحلة الدفع: زر التسجيل المباشر
     document.querySelector('#stepNav a[data-stage="pay"]').click();
     await waitFor(function () { return !document.querySelector('#m-pay').hidden; });
-    t('B-A2-live', !!document.querySelector('[data-pay="1"]') && !document.querySelector('#btnPayRem') && !document.querySelector('[data-pay="rem"]'), 'full chip');
+    t('B-A2-live', !!document.querySelector('[data-pay="rem"]') && !document.querySelector('#btnPayRem') && !document.querySelector('[data-pay="1"]'), 'remaining chip');
     // مبلغ فارغ → خطأ حقلي بلا تسجيل
     document.querySelector('#payAmount').value = '';
     document.querySelector('#btnAddPay').click();
@@ -265,6 +264,10 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
       var n0 = payCount();
       for (var a = 0; a < 8; a++) {
         if (payCount() === n0) document.querySelector(btnSel).click();
+        // دفعة أكبر من المتبقي تطلب تأكيداً صريحاً: يُؤكَّد هنا (الاختبار يقصد الزيادة)
+        await new Promise(function (r) { setTimeout(r, 400); });
+        var cy = document.querySelector('#modal:not([hidden]) #cYes');
+        if (cy && /المتبقي/.test(document.querySelector('#modalTitle').textContent)) cy.click();
         try { await waitFor(function () { return toastTxt().indexOf(expectToast) >= 0; }, 45000); return payCount() === n0 + 1; }
         catch (e) { /* مشغول — إعادة المحاولة */ }
         if (payCount() > n0) { log('clickPay: payment added but no confirm toast: ' + toastTxt().slice(0, 120) + ' raw=' + window.Store.lastError + ' st=' + window.Store.lastStatus); return false; }
@@ -275,10 +278,9 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     t('B-pay-second', await clickPay('#btnAddPay', '50', 'دفعة 50.00') && paidTxt().indexOf('550.00') >= 0, paidTxt());
     t('B-pay-refund', await clickPay('#btnRefund', '100', 'استرداد 100.00') && paidTxt().indexOf('450.00') >= 0, paidTxt());
     t('B-pay-over', await clickPay('#btnAddPay', '5000', '5,000.00') && paidTxt().indexOf('5450.00') >= 0, paidTxt());
-    document.querySelector('[data-pay="1"]').click();
-    var expectedTotal = String(window.MajlisApp.order.total);
-    await waitFor(function () { return document.querySelector('#payAmount').value === expectedTotal; }, 240000);
-    t('B-pay-full-chip', true);
+    // المدفوع تجاوز الإجمالي: «المتبقي» معطّل ولا يقترح مبلغاً (كان «كامل المبلغ» يضيف الإجمالي مرة أخرى)
+    var remBtn = document.querySelector('[data-pay="rem"]');
+    t('B-pay-rem-disabled', remBtn && remBtn.disabled, remBtn && remBtn.textContent);
     document.querySelector('button[data-page="orders"]').click();
     await waitFor(function () { return document.querySelector('#page-orders').classList.contains('active'); });
     await waitFor(function () { return document.querySelector('#ordersTable [data-open]'); }, 120000);

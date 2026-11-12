@@ -540,6 +540,12 @@
       this.lastStatus = 0;
       return true;
     },
+    /** آخر نسخة أقرّها الخادم لهذا السجل على هذا الجهاز (أصل الدمج عند التعارض)، أو null */
+    baseOf(coll, id) {
+      const m = this.snap && this.snap[coll];
+      const v = m instanceof Map ? m.get(id) : null;
+      try { return v ? JSON.parse(v) : null; } catch (_) { return null; }
+    },
     /** التغييرات التي رفضها الخادم منذ آخر سؤال (لتنبيه المستخدم مرة واحدة) */
     takeRejected() { const r = this.rejected || []; this.rejected = []; return r; },
 
@@ -693,6 +699,7 @@
     can: (p) => remote && Array.isArray(Remote.myPermissions) && Remote.myPermissions.includes(p),
     /** تغييرات محلية رفضها الخادم نهائياً فاستُعيدت نسخته (تُعاد مرة واحدة ثم تُفرَّغ) */
     takeRejected: () => (remote && Remote.takeRejected ? Remote.takeRejected() : []),
+    baseOf: (coll, id) => (remote && Remote.baseOf ? Remote.baseOf(coll, id) : null),
     /** هل حُدِّد مالك النظام؟ (للتنبيه فقط — الفرض في الخادم) */
     get ownerConfigured() { return remote ? (Remote.ownerConfigured === undefined ? null : Remote.ownerConfigured) : null; },
     /** رمز الجلسة ومفتاح تخزينه: تحتاجهما خطوة تغيير كلمة المرور الإجبارية لحفظ الجلسة بعد نجاحها */

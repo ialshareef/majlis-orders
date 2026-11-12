@@ -2644,6 +2644,9 @@ function canEditOrder(o) {
     const dep = Math.max(0, num(settings().depositPct));
     $('#payDepBtn').hidden = !dep;
     $('#payDepBtn').textContent = `عربون ${dep}٪`;
+    // «المتبقي» = الإجمالي ناقص كل الدفعات السابقة (كان «كامل المبلغ» = الإجمالي كله فيُدفع الطلب مرتين)
+    $('#payRemBtn').textContent = rem > 0.004 ? `المتبقي ${fmt(rem)}` : 'لا متبقٍّ';
+    $('#payRemBtn').disabled = !(rem > 0.004) || readOnly;
     renderPaymentsList();
   }
 
@@ -2682,8 +2685,12 @@ function canEditOrder(o) {
     const btn = e.target.closest('button[data-pay]');
     if (!btn || readOnly) return;
     const total = cur.total || 0;
+    const rem = Math.max(0, remainingOf(total, paidOf(cur)));
     const k = btn.dataset.pay;
-    const v = k === 'dep' ? money(total * num(settings().depositPct) / 100) : money(total * num(k));
+    // كل اختيار سريع بحد أقصى المتبقي: لا يُقترح أبداً مبلغ يجعل المدفوع أكبر من الإجمالي
+    const raw = k === 'rem' ? rem : k === 'dep' ? total * num(settings().depositPct) / 100 : total * num(k);
+    const v = money(Math.min(raw, rem));
+    if (!(v > 0.004)) { toast('لا يوجد مبلغ متبقٍّ على هذا الطلب', 'info'); $('#payAmount').value = ''; return; }
     $('#payAmount').value = v || '';
     $('#payAmount').focus();
   });
@@ -2700,6 +2707,17 @@ function canEditOrder(o) {
     if (!amt || amt < 0) { setFieldError(el, 'أدخل مبلغاً أكبر من صفر'); el.focus(); return; }
     if (refund && amt > paidOf(cur)) { setFieldError(el, `لا يمكن استرداد أكثر من المدفوع (${fmt(paidOf(cur))})`); el.focus(); return; }
     setFieldError(el, '');
+    // دفعة أكبر من المتبقي: تأكيد صريح بالمبلغ الزائد (قد يكون مقصوداً، لكنه غالباً خطأ إدخال)
+    if (!refund) {
+      const remNow = remainingOf(cur.total || 0, paidOf(cur));
+      if (amt - remNow > 0.004) {
+        const over = money(amt - Math.max(0, remNow));
+        const ok = await confirmDlg('المبلغ أكبر من المتبقي',
+          `المتبقي على الطلب ${fmt(Math.max(0, remNow))} ${currency()} بعد الدفعات السابقة، والدفعة ${fmt(amt)}. سيصبح المدفوع أكبر من الإجمالي بـ ${fmt(over)} ${currency()}. هل تريد تسجيلها كما هي؟`,
+          'تسجيلها كما هي');
+        if (!ok) { el.focus(); return; }
+      }
+    }
     normalizePayments(cur);
     const p = {
       id: Store.uid(), at: $('#payDate').value || today(), amount: refund ? -amt : amt,
@@ -3090,8 +3108,60 @@ function canEditOrder(o) {
   });
 
   /* تعارض: عُدِّل الطلب من جهاز آخر بعد فتحنا له. نعرض الفروق ونترك القرار للموظف. */
-  async function resolveConflict(localCopy) {
+  /* دمج ثلاثي لطلب متعارض: الأصل (ما فتحه هذا الجهاز) ونسختي ونسخة الخادم.
+     الحقل الذي غيّرتُه وحدي يأخذ قيمتي، وما غيّره الآخر وحده يبقى كما على الخادم، وما غيّره
+     الاثنان بقيمتين مختلفتين «تعارض» يختار فيه المستخدم. الدفعات بالمعرّف: تُجمع من الطرفين،
+     ولا تُحذف دفعة إلا إن حذفتُها أنا (كانت في الأصل وليست عندي). المجاميع تُحسب عند الحفظ. */
+  const MERGE_SKIP = new Set(['id', 'number', 'createdAt', 'createdBy', 'createdByName', 'updatedAt', 'updatedByName', 'payments', 'paid', 'remaining',
+    'subtotal', 'vatAmount', 'vatRate', 'total', 'costTotal', 'statusAt', 'statusByName', 'commRates', 'sellerRate', 'mandoubRate', 'shareRate', 'othersRate', '_base']);
+  const MERGE_LABELS = { status: 'الحالة', deliveryDate: 'تاريخ التوصيل', notes: 'الملاحظات', discount: 'الخصم', vat: 'الضريبة', design: 'التصميم', manualRows: 'الأصناف الإضافية',
+    priceOverrides: 'الأسعار', attachments: 'المرفقات', costs: 'التكاليف', extraCosts: 'التكاليف الإضافية', validUntil: 'صلاحية العرض',
+    'customer.name': 'اسم العميل', 'customer.phone': 'الجوال', 'customer.address': 'مكان التوصيل', 'customer.mapsUrl': 'رابط الموقع' };
+  const mergeVal = (k, v) => {
+    if (k === 'status') return STATUS[v || 'new'] || v || '—';
+    if (k === 'discount') return fmt(v || 0);
+    if (v === undefined || v === null || v === '') return '—';
+    return typeof v === 'string' ? (v.length > 40 ? v.slice(0, 40) + '…' : v) : 'نسخة مختلفة';
+  };
+  function mergeOrders(base, mine, theirs) {
+    const J = (v) => JSON.stringify(v === undefined ? null : v);
+    const out = JSON.parse(JSON.stringify(theirs));
+    const conflicts = [];
+    const take = (k, get, set) => {
+      const b = get(base), m = get(mine), t = get(theirs);
+      if (J(m) === J(b) || J(m) === J(t)) return;            // لم أغيّره، أو غيّرناه للقيمة نفسها
+      if (J(t) === J(b)) { set(out, m === undefined ? undefined : JSON.parse(J(m))); return; }   // غيّرتُه وحدي
+      conflicts.push({ key: k, label: MERGE_LABELS[k] || k, mine: m, theirs: t, apply: (o) => set(o, m === undefined ? undefined : JSON.parse(J(m))) });
+    };
+    const keys = new Set([...Object.keys(base || {}), ...Object.keys(mine || {}), ...Object.keys(theirs || {})]);
+    keys.forEach((k) => {
+      if (MERGE_SKIP.has(k) || k === 'customer') return;
+      take(k, (o) => (o || {})[k], (o, v) => {
+        if (v === undefined) delete o[k]; else o[k] = v;
+        // الحالة ووقتها ومن غيّرها تتبع بعضها
+        if (k === 'status') { o.statusAt = mine.statusAt; o.statusByName = mine.statusByName; }
+      });
+    });
+    ['name', 'phone', 'address', 'mapsUrl'].forEach((f) => take('customer.' + f, (o) => ((o || {}).customer || {})[f], (o, v) => { o.customer = o.customer || {}; o.customer[f] = v === undefined ? '' : v; }));
+    // الدفعات
+    const ids = (o) => new Map(((o && o.payments) || []).filter((p) => p && p.id && p.id !== 'legacy').map((p) => [p.id, p]));
+    const B = ids(base), M = ids(mine), T = ids(theirs);
+    const pays = new Map(T);
+    M.forEach((p, id) => {
+      if (!B.has(id) && !T.has(id)) pays.set(id, p);                                   // أضفتُها
+      else if (B.has(id) && T.has(id) && J(p) !== J(B.get(id)) && J(T.get(id)) === J(B.get(id))) pays.set(id, p);   // عدّلتُها وحدي
+    });
+    B.forEach((p, id) => { if (!M.has(id) && T.has(id) && J(T.get(id)) === J(p)) pays.delete(id); });   // حذفتُها ولم يعدّلها الآخر
+    out.payments = [...pays.values()];
+    out.paid = money(out.payments.reduce((s, p) => s + num(p.amount), 0));
+    return { merged: out, conflicts };
+  }
+
+  async function resolveConflict(localCopy, keepBase) {
     let remote = null;
+    // الأصل الذي فتحه هذا الجهاز (قبل جلب نسخة الخادم الجديدة) — أساس الدمج الثلاثي.
+    // يُمرَّر عند إعادة فتح النافذة (بعد جلبٍ صارت فيه اللقطة = الخادم فلم تعد أصلاً)
+    const base = keepBase || (Store.baseOf ? Store.baseOf('orders', localCopy.id) : null);
     // جلب فقط (بلا دفع): الدفع هنا مرفوض أصلاً (409)، وrefresh() الجديد يُجهض الجلب عند فشله
     if (!(await Store.fetchLatest())) {
       toast(humanError(Store.lastError, 'تعذّر جلب نسخة الخادم. تحقق من الاتصال وحاول مجدداً.'), true);
@@ -3102,17 +3172,56 @@ function canEditOrder(o) {
     const who = (remote && remote.updatedByName) || 'موظف آخر';
     const when = remote && remote.updatedAt ? fmtDateTimeUi(remote.updatedAt) : '';
     const ch = remote ? diffOrder(remote, localCopy) : [];
+    // صياغة واضحة: أي القيمتين على الخادم وأيهما عندك (كانت «من … إلى» ملتبسة)
+    const side = (c) => {
+      if (/^حذف /.test(c)) return `على الخادم فقط (ليست عندك): ${c.replace(/^حذف /, '')}`;
+      if (/^(دفعة|استرداد) /.test(c)) return `عندك فقط (ليست على الخادم): ${c}`;
+      return c.replace(/: من "?(.+?)"? إلى "?(.+?)"?$/, ': على الخادم «$1» • عندك «$2»');
+    };
+    const mg = remote && base ? mergeOrders(base, localCopy, remote) : null;
+    // ما ستحذفه الكتابة فوق نسخة الخادم من مال: دفعات على الخادم ليست في نسختك
+    const lost = remote ? (remote.payments || []).filter((p) => p && p.id && p.id !== 'legacy' && !(localCopy.payments || []).some((q) => q.id === p.id)) : [];
+    const payTxt = (p) => `${money(p.amount) < 0 ? 'استرداد' : 'دفعة'} ${fmt(Math.abs(money(p.amount)))} ${PAY_METHODS[p.method] || ''} (${fmtDate(p.at)})`;
     openModal('تعارض في التعديل', `
       <p class="conflict-lead">عُدِّل الطلب ${localCopy.number ? '#' + localCopy.number : ''} على الخادم بواسطة <b>${esc(who)}</b>${when ? ' • ' + esc(when) : ''} بعد أن فتحتَه.
       <b>لم يُحفظ تعديلك</b> حتى لا يُمحى عملهم.</p>
       ${ch.length ? `<div class="field-group"><span class="field-label">ما يختلف بين نسختك ونسخة الخادم</span>
-        <ul class="conflict-list">${ch.slice(0, 8).map((c) => `<li>${esc(c)}</li>`).join('')}</ul>
+        <ul class="conflict-list">${ch.slice(0, 8).map((c) => `<li>${esc(side(c))}</li>`).join('')}</ul>
         ${ch.length > 8 ? `<p class="hint">و${ch.length - 8} فرقاً آخر.</p>` : ''}</div>` : '<p class="hint">لا فروق ظاهرة في الحقول الأساسية.</p>'}
+      ${mg && mg.conflicts.length ? `<div class="field-group cf-choices"><span class="field-label">غيّرتَ أنت و${esc(who)} الحقل نفسه — اختر القيمة لكل حقل قبل الدمج</span>
+        ${mg.conflicts.map((c, i) => `<div class="cf-choice"><b>${esc(c.label)}</b>
+          <label class="check"><input type="radio" name="cf${i}" value="theirs" checked> على الخادم: ${esc(mergeVal(c.key, c.theirs))}</label>
+          <label class="check"><input type="radio" name="cf${i}" value="mine"> عندك: ${esc(mergeVal(c.key, c.mine))}</label></div>`).join('')}</div>` : ''}
       <div class="conflict-actions">
-        <button id="cfKeep" class="btn primary block lg">احتفظ بتعديلي واكتب فوق نسخة الخادم</button>
-        <button id="cfTake" class="btn block">افتح نسخة الخادم وألغِ تعديلي</button>
+        ${mg ? `<button id="cfMerge" class="btn primary block lg">ادمج التعديلين</button>
+        <p class="hint">يبقى ما غيّره ${esc(who)}، ويُضاف ما غيّرتَه أنت، والدفعات تُجمع من النسختين (لا تُحذف إلا دفعة حذفتَها أنت).</p>` : ''}
+        <button id="cfTake" class="btn block${mg ? '' : ' primary lg'}">افتح نسخة الخادم وألغِ تعديلي</button>
+        <button id="cfKeep" class="btn ghost block">اكتب نسختي فوق نسخة الخادم</button>
       </div>`, () => {
+      if ($('#cfMerge')) $('#cfMerge').addEventListener('click', async () => {
+        const merged = JSON.parse(JSON.stringify(mg.merged));
+        mg.conflicts.forEach((c, i) => { const r = document.querySelector(`input[name="cf${i}"]:checked`); if (r && r.value === 'mine') c.apply(merged); });
+        closeModal();
+        merged.updatedAt = Store.now();
+        merged.updatedByName = currentUser.name;
+        clearDraft();
+        // نسخة الخادم صارت معروفة (أساس الحفظ التالي)، والنسخة المدموجة تُحمَّل ثم تُحفظ بمجاميع محسوبة من جديد
+        loadOrder(merged, false);   // يصفّر النسخ المعروفة، فتُضاف بعده
+        ownVersion(remote.updatedAt);
+        cur.updatedAt = merged.updatedAt;
+        ownVersion(cur.updatedAt);
+        setDirty(true);
+        if (await saveOrder(true)) {
+          const d = diffOrder(remote, cur);
+          if (d.length) { logActivity('update', cur, d.concat(`دمج تعديلين متعارضين (مع ${who})`)); await Store.save(); }
+          toast('دُمج التعديلان وحُفظ الطلب');
+        } else toast(humanError(Store.lastError) + ' — النسخة المدموجة مفتوحة، راجعها ثم احفظ', true);
+      });
       $('#cfKeep').addEventListener('click', async () => {
+        // الكتابة فوق نسخة الخادم تمحو عمل الآخر كله: تأكيد صريح بما سيُحذف من مال
+        const warn = lost.length ? `سيُحذف من الخادم: ${lost.map(payTxt).join('، ')}.` : '';
+        const ok = await confirmDlg('الكتابة فوق نسخة الخادم', `ستحل نسختك محل نسخة ${who} بالكامل، ويضيع كل ما غيّره. ${warn} هل أنت متأكد؟`, 'اكتب نسختي فوقها');
+        if (!ok) { resolveConflict(localCopy, base); return; }
         closeModal();
         // بعد التحديث صارت اللقطة تساوي نسخة الخادم، فالحفظ التالي أساسه صحيح ويمرّ
         const idx = db().orders.findIndex((o) => o.id === cur.id);
