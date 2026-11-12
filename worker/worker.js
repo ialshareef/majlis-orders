@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.1.6';
-// بصمة asalh-najd-1.1.6.apk (إصدار GitHub v1.1.6، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.6 وversionCode 10106، ونفس شهادة توقيع 1.1.5).
-const UPDATE_FALLBACK_SHA256 = '49bccb80c800936f67a0e5c6fb5615274f18092db83370904302c4f8d590dca3';
+const UPDATE_FALLBACK_VERSION = '1.1.7';
+// بصمة asalh-najd-1.1.7.apk (إصدار GitHub v1.1.7، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.7 وversionCode 10107، ونفس شهادة توقيع 1.1.6).
+const UPDATE_FALLBACK_SHA256 = '2d799924b1e877f2904f80b3ef9702ccfbe851f973edfd2549d0c77dfe3e8bf9';
 const UPDATE_FALLBACK_NOTES = [
-  'تنبيه «مدفوع زائد»: شارة في قائمة الطلبات تعرض الطلبات التي مدفوعها أكبر من إجماليها',
-  'تنبيه في مركز التنبيهات لكل طلب مدفوع زيادة، يفتح صفحة الدفعات مباشرة للتصحيح',
+  'رابط بوابة العملاء في الإعدادات والتصاميم صار الرابط الصحيح للموقع بدل localhost داخل التطبيق',
+  'تقارير المناديب وملخص المصروفات وتصدير ذكاء الأعمال تعمل الآن داخل تطبيق أندرويد',
 ];
 
 function versionCodeOfName(v) {
