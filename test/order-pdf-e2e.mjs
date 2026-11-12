@@ -203,6 +203,7 @@ async function exportDoc(number, kind) {
       atts: [...inv.querySelectorAll('.inv-atts figure')].map((f) => ({ inSide: !!f.closest('.inv-dside'), w: +(f.querySelector('.imgbox').getBoundingClientRect().width / k).toFixed(1), h: +(f.querySelector('.imgbox').getBoundingClientRect().height / k).toFixed(1), cap: f.querySelector('figcaption').textContent.trim() })),
       attsAfterAreas: (() => { const a = inv.querySelector('.inv-dside .ds-areas-wrap'), b = inv.querySelector('.inv-dside .inv-atts'); return !!(a && b && a.getBoundingClientRect().bottom <= b.getBoundingClientRect().top + 0.5); })(),
       rows: inv.querySelectorAll('.inv-items tbody tr').length,
+      payTxt: [...inv.querySelectorAll('.inv-totals .pay')].map((x) => x.textContent.replace(/\s+/g, ' ').trim()).join(' | '),
       text: inv.innerText,
       plan: (() => { const i = inv.querySelector('.inv-dplan .ds-img'); return i ? [+(i.getBoundingClientRect().width / k).toFixed(1), +(i.getBoundingClientRect().height / k).toFixed(1)] : null; })(),
       pages: (txt.match(/\/Type \/Page(?!s)/g) || []).length,
@@ -241,10 +242,12 @@ try {
   ok(r.attsAfterAreas, 'invoice-simple: المرفقات أسفل ملخص المساحات');
   ok(r.atts.every((a) => a.w >= 60 && a.h >= 40), 'invoice-simple: المرفقات بحجم كبير (≥ 60×40مم)', r.atts.map((a) => a.w + '×' + a.h));
   ok(r.atts.some((a) => a.cap === 'صورة المجلس الحالي — Living room (before)'), 'invoice-simple: اسم المرفق كاملاً', r.atts.map((a) => a.cap));
+  ok(/نقداً/.test(r.payTxt) && /500\.00/.test(r.payTxt), 'invoice-simple: سطر الدفعة بطريقتها (نقداً) ومبلغها تحت «المدفوع»', r.payTxt);
   checkDoc('invoice-simple', r, { rows: 4, plan: true, texts: ['فهد سعود الدوسري', 'التسليم بعد أسبوعين.', 'توصيل وتركيب', 'جداول الأثاث', SETTINGS.invoiceNote, 'جميع القياسات بالسنتيمتر', 'تواصل معنا', 'للاستفسار عن طلبك اذكر رقمه'] });
   r = await exportDoc(2002, 'invoice');
   checkDoc('invoice-heavy', r, { bigger: true, rows: 26 + 3 + 1, plan: true,
     texts: ['عبدالرحمن بن عبدالعزيز بن محمد آل الشيخ القحطاني', 'Mohammed Al-Otaibi (VIP)', 'فيلا 14 (بجوار مسجد الإمام)', 'gate code 4471', 'الألوان حسب العينة رقم 7', heavyRows[25].name, 'Walnut Serving Table'] });
+  ok(/تحويل بنكي/.test(r.payTxt) && /نقداً/.test(r.payTxt) && /2,500\.00/.test(r.payTxt) && /1,500\.00/.test(r.payTxt), 'invoice-heavy: دفعتان: تحويل بنكي 2500 ونقداً 1500', r.payTxt);
   ok(/ملاءمة للصفحة/.test(r.note), 'invoice-heavy: نافذة التصدير تشرح الطباعة على A4 (ملاءمة للصفحة)', r.note.slice(-120));
   ok(/صفحة واحدة/.test(r.state), 'invoice-heavy: الحالة تذكر «صفحة واحدة» والمقاس', r.state);
   r = await exportDoc(2003, 'invoice');

@@ -2512,6 +2512,10 @@ body.modal-open { overflow: hidden; }
 .inv-totals div > .num { white-space: nowrap; }
 .inv-totals div + div { border-top: 1px solid #EFE9DF; }
 .inv-totals .total { background: #2E231C; color: #F7EEDF; font-weight: 700; font-size: 12.5pt; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+/* سطور الدفعات تحت «المدفوع»: أصغر وأخفّ، بلا فاصل بينها */
+.inv-totals .pay { font-size: 9pt; color: #6B5A4A; padding-top: .5mm; padding-bottom: .5mm; }
+.inv-totals .pay + .pay { border-top: 0; }
+.inv-totals .pay bdi { margin-inline-start: 1.5mm; color: #8A7866; }
 .inv-totals .rem { background: #FBF1DF; color: #7F520F; font-weight: 700; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
 .inv-qr { flex: none; width: 30mm; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1mm; }
 .inv-qr img { width: 28mm; height: 28mm; image-rendering: pixelated; }

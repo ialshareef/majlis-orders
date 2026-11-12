@@ -3388,6 +3388,15 @@ function docTitle(order) {
     const attsHtml = atts.length ? `<div class="inv-atts"><h3>المرفقات</h3>${atts.map((a, i) => `
           <figure><div class="imgbox"><img src="${a.src}" alt="مرفق ${i + 1}"></div><figcaption dir="auto">${(window.DesignSheet && DesignSheet.mixed ? DesignSheet.mixed(a.name) : esc(a.name)) || `مرفق ${i + 1}`}</figcaption></figure>`).join('')}</div>` : '';
     const nPays = (order.payments || []).filter((p) => money(p.amount) > 0).length;
+    /* تفصيل الدفعات تحت «المدفوع»: طريقة كل دفعة وتاريخها ومبلغها (الاسترداد بإشارة سالبة)،
+       فلا يُحتاج الرجوع إلى التطبيق لمعرفة كيف دُفع الطلب */
+    const payList = quote ? [] : (Array.isArray(order.payments) ? order.payments : []).filter((p) => p && Math.abs(money(p.amount)) > 0.004);
+    const payRows = payList.map((p) => {
+      const amt = money(p.amount);
+      const how = esc(PAY_METHODS[p.method] || p.method || 'غير محدد');
+      const when = p.at ? ` <bdi class="num">${esc(fmtDate(p.at))}</bdi>` : '';
+      return `<div class="pay"><span>${amt < 0 ? 'استرداد • ' : ''}${how}${when}</span><span class="num">${amt < 0 ? '- ' : ''}${fmt(Math.abs(amt))} ${cur$}</span></div>`;
+    }).join('');
     const notes = String(order.notes || '').trim();
     // النص المختلط (عربي + إنجليزي بأقواس) يُعزل اتجاهياً فلا تنقلب الأقواس عند الالتفاف
     const mx = (v) => (window.DesignSheet && DesignSheet.mixed ? DesignSheet.mixed(v) : esc(v));
@@ -3429,6 +3438,7 @@ function docTitle(order) {
           ${vatEnabled ? `<div><span>ضريبة القيمة المضافة ${num(vatRate)}%</span><span class="num">${fmt(vatAmount)} ${cur$}</span></div>` : ''}
           <div class="total"><span>الإجمالي${vatEnabled ? ' شامل الضريبة' : ''}</span><span class="num">${fmt(total)} ${cur$}</span></div>
           ${quote ? '' : `<div><span>المدفوع${nPays > 1 ? ` (${nPays} دفعات)` : ''}</span><span class="num">${fmt(paid)} ${cur$}</span></div>
+          ${payRows}
           <div class="rem"><span>المتبقي</span><span class="num">${fmt(remainingOf(total, paid))} ${cur$}</span></div>`}
         </div>
       </div>
