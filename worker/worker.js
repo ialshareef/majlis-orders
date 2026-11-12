@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.1.2';
-// بصمة asalh-najd-1.1.2.apk (إصدار GitHub v1.1.2، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.2 وversionCode 10102، ونفس شهادة توقيع 1.1.1).
-const UPDATE_FALLBACK_SHA256 = 'c475a71f741728468a1de2421f27947dde0cb1294154e920fc5fa2c8c7d594d9';
+const UPDATE_FALLBACK_VERSION = '1.1.3';
+// بصمة asalh-najd-1.1.3.apk (إصدار GitHub v1.1.3، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.3 وversionCode 10103، ونفس شهادة توقيع 1.1.2).
+const UPDATE_FALLBACK_SHA256 = '7c81d3a70246e95beedec67ccb37ddc3cd8a206fbd968002bce04a3277c35633';
 const UPDATE_FALLBACK_NOTES = [
-  'العمولات: خيار في الإعدادات لاحتساب كل النسب من صافي الربح أو من الإجمالي شامل الضريبة',
-  'تقرير العمولات: عمود «النسبة ٪» لكل شخص، وزر «الأعمدة» تختار به ما يظهر في التقرير والملفات المصدّرة',
+  'أمر الشراء (PDF): سطر لكل دفعة تحت «المدفوع» بطريقتها (نقداً، تحويل، مدى…) وتاريخها ومبلغها',
+  'لا حاجة للرجوع إلى التطبيق لمعرفة كيف دُفع الطلب',
 ];
 
 function versionCodeOfName(v) {
