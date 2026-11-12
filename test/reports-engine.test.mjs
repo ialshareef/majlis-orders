@@ -169,6 +169,35 @@ ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) =
   ok(S(Reports.build('orders', ctxOf()), 'المبيعات قبل الضريبة') === 3500, 'include: بلا اختيار ← كل الطلبات الفعلية كما كان');
 }
 
+/* ---- أساس العمولة: صافي الربح (افتراضي) أو الإجمالي شامل الضريبة ---- */
+{
+  // الأساس الافتراضي: عمود «النسبة ٪» لكل شخص، ولا عمود «أساس العمولة» (هو صافي الربح نفسه)
+  const rp = Reports.build('commissions', ctxOf());
+  const keys = rp.tables[0].columns.map((c) => c.key);
+  const salem = rp.tables[0].rows.find((x) => x.name === 'سالم');
+  ok(keys.includes('rate') && !keys.includes('base') && eq(salem.rate, 10), 'commBase/profit: عمود النسبة ٪ (سالم 10٪) بلا عمود الأساس', { keys, salem });
+  // أساس «الإجمالي»: breakdown يحسب من o.total، ولا يلزم إدخال التكاليف
+  const bdTotal = (o) => {
+    const r = o.commRates || { ownerRate: 10, parentId: null, parentRate: null, shareRate: 5 }; const p = o.total;
+    const rows = [{ kind: 'owner', userId: o.createdBy, who: o.createdByName, rate: r.ownerRate, amount: p * r.ownerRate / 100 }];
+    if (r.parentId) rows.push({ kind: 'parent', userId: r.parentId, who: users.find((u) => u.id === r.parentId).name, rate: r.parentRate, amount: p * r.parentRate / 100 });
+    rows.push({ kind: 'share', userId: null, who: 'موظفو المحل', rate: r.shareRate, amount: p * r.shareRate / 100 });
+    return { profit: o._cost == null ? null : o.subtotal - o.discount - o._cost, base: p, rows };
+  };
+  const tctx = ctxOf();
+  tctx.calc = { ...tctx.calc, breakdown: bdTotal, commBase: 'total' };
+  const rt = Reports.build('commissions', tctx);
+  const by = Object.fromEntries(rt.tables[0].rows.map((x) => [x.name, x]));
+  ok(rt.tables[0].columns.some((c) => c.key === 'base' && /الإجمالي شامل الضريبة/.test(c.label)), 'commBase/total: عمود «أساس العمولة (الإجمالي شامل الضريبة)»');
+  ok(eq(by['سالم'].base, 1725) && eq(by['سالم'].ownComm, 172.5) && eq(by['سالم'].rate, 10), 'commBase/total: سالم 10٪ من 1150 + 575 (طلب بلا تكاليف يُحسب) = 172.5', by['سالم']);
+  ok(eq(by['مندوب تابع'].ownComm, 460) && eq(by['مندوب تابع'].rate, 20) && eq(by['مندوب أعلى'].subsComm, 115) && by['مندوب أعلى'].rate === null, 'commBase/total: المندوب 460 (20٪) والأعلى 115 بلا نسبة طلبات خاصة', [by['مندوب تابع'], by['مندوب أعلى']]);
+  ok(eq(S(rt, 'حصص المشاركة'), 201.25) && eq(S(rt, 'إجمالي المستحق'), 172.5 + 460 + 115 + 201.25), 'commBase/total: الحصص 201.25 وإجمالي المستحق', rt.summary);
+  ok(!rt.notes.some((n) => /بلا تكاليف مُدخلة لم تُحسب/.test(n)) && /إجمالي الطلب شامل الضريبة/.test(rt.notes[0]), 'commBase/total: الملاحظات تذكر الأساس ولا «لم تُحسب» للطلب بلا تكاليف', rt.notes);
+  const ro = Reports.build('orders', tctx);
+  const o5 = ro.tables[0].rows.find((x) => x.number === '#5');
+  ok(o5.profit === null && eq(o5.ownerComm, 57.5), 'commBase/total: تفصيل الطلبات — طلب بلا تكاليف بلا ربح وبعمولة 57.5', o5);
+}
+
 /* ---- تقرير «الطلبات الجديدة» ---- */
 {
   const r = Reports.build('pending', ctxOf({ include: Reports.DEFAULT_INCLUDE }));

@@ -2169,23 +2169,35 @@ function canEditOrder(o) {
     const share = eq(r.shareRate, shareRaw) ? 'مخصّصة لهذا الطلب' : eq(r.shareRate, s.shareRate) ? 'افتراضية (الإعدادات)' : SAVED;
     return { owner: own, parent, share };
   }
+  /* أساس احتساب كل النسب (البائع، المندوب، المندوب الأعلى، حصة المشاركة) — إعداد عام من الإعدادات:
+     'profit' = صافي الربح (البيع قبل الضريبة − التكاليف) ويحتاج إدخال التكاليف،
+     'total'  = إجمالي الطلب شامل الضريبة بعد الخصم (لا يحتاج تكاليف).
+     يُطبَّق على كل الطلبات القديمة والجديدة (قرار المالك: إعادة الحساب لا لقطة). */
+  const COMM_BASES = { profit: 'صافي الربح', total: 'الإجمالي شامل الضريبة' };
+  function commBaseMode() { return settings().commBase === 'total' ? 'total' : 'profit'; }
+  const commBaseLabel = () => COMM_BASES[commBaseMode()];
+  /** المبلغ الذي تُحسب منه النسب لهذا الطلب، أو null إن لم يتوفر (صافي ربح بلا تكاليف) */
+  function commBaseAmount(o) {
+    if (commBaseMode() === 'total') return money(num(o && o.total));
+    return orderProfit(o);
+  }
   /** النسبة الفعلية المطبّقة على صاحب الطلب */
   function orderOwnerRate(o) { return commRatesOf(o).ownerRate; }
-  /** عمولة صاحب الطلب = نسبته × صافي الربح، أو null إن لم تُدخل التكاليف */
+  /** عمولة صاحب الطلب = نسبته × أساس العمولة، أو null إن لم يتوفر الأساس */
   function orderCommission(o) {
-    const p = orderProfit(o);
+    const p = commBaseAmount(o);
     return p === null ? null : money(p * orderOwnerRate(o) / 100);
   }
   /** عمولة المندوب الأعلى المباشر من طلب تابعه، أو null */
   function orderParentCommission(o) {
     const r = commRatesOf(o);
     if (!r.parentId) return null;
-    const p = orderProfit(o);
+    const p = commBaseAmount(o);
     return p === null ? null : money(p * r.parentRate / 100);
   }
   /** حصة موظفي المحل من الطلب (البائع والمندوب معاً) */
   function orderShareAmount(o) {
-    const p = orderProfit(o);
+    const p = commBaseAmount(o);
     return p === null ? 0 : money(p * commRatesOf(o).shareRate / 100);
   }
   /** لقطة نسب العمولة على الطلب عند اعتماده، حتى لا يؤثر تعديل النسب لاحقاً في الطلبات السابقة */
@@ -4283,9 +4295,9 @@ function docTitle(order) {
     }
     if (seeProfit) acc.push({ k: 'صافي الربح', v: profitAll, b: true });
     if (seeComm) {
-      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من صافي الربح • ${CS.owner})`, v: comm });
+      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()} • ${CS.owner})`, v: comm });
       if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; acc.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)} • ${CS.parent})`, v: parentComm }); }
-      if (seeProfit && hasCost && CR.shareRate) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
+      if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
     }
     tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
     // 4) الدفعات
@@ -5927,7 +5939,7 @@ function docTitle(order) {
 
   /** تفصيل عمولات طلب من لقطة نسبه (أو النسب الحالية إن لم تكن هناك لقطة) */
   function orderCommBreakdown(o) {
-    const p = orderProfit(o);
+    const p = commBaseAmount(o);
     if (p === null) return null;
     const owner = Store.getUser(o.createdBy);
     const isMan = !!(owner && owner.role === 'mandoub');
@@ -5941,7 +5953,7 @@ function docTitle(order) {
       rows.push({ who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId, src: src.parent });
     }
     rows.push({ who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null, src: src.share });
-    return { profit: p, rows };
+    return { profit: orderProfit(o), base: p, baseMode: commBaseMode(), rows };
   }
 
   function renderMandoubs() {
@@ -5986,22 +5998,22 @@ function docTitle(order) {
       : '<p class="hint">لا يوجد هيكل بعد — أسند مندوباً للمحل (مستوى أول) أو لمندوب آخر.</p>';
 
     // سجل العمولات (طلبات المناديب فقط، المرتبة بالأحدث)
-    const manOrders = db().orders.filter((o) => isMandoub(o) && orderProfit(o) !== null).slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+    const manOrders = db().orders.filter((o) => isMandoub(o) && commBaseAmount(o) !== null).slice().sort((a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || ''));
     const logTb = $('#mandoubLogTable tbody');
     const logRows = [];
     manOrders.slice(0, 200).forEach((o) => {
       const bd = orderCommBreakdown(o);
-      bd.rows.forEach((r) => logRows.push({ order: o, ...r }));
+      bd.rows.forEach((r) => logRows.push({ order: o, base: bd.base, ...r }));
     });
     logTb.innerHTML = logRows.length ? logRows.map((r) => `
       <tr>
         <td data-label="الطلب" class="num">#${esc(r.order.number || '—')}</td>
-        <td data-label="صافي الربح" class="num">${fmt(r.profit)}</td>
+        <td data-label="أساس العمولة" class="num">${fmt(r.base)}</td>
         <td data-label="المستفيد">${esc(r.who)}</td>
         <td data-label="النسبة" class="num">${fmtQty(r.rate)}٪</td>
         <td data-label="المبلغ" class="num">${fmt(r.amount)}</td>
-      </tr>`).join('') : '<tr><td colspan="5" class="empty">لا توجد عمولات محسوبة بعد (تحتاج طلبات مناديب بتكاليف مسجّلة).</td></tr>';
-    $('#mandoubLogNote').textContent = manOrders.length ? `يعرض آخر 200 سطر من عمولات ${manOrders.length} طلب مناديب. النسب مأخوذة من لقطة كل طلب عند اعتماده.` : '';
+      </tr>`).join('') : `<tr><td colspan="5" class="empty">لا توجد عمولات محسوبة بعد${commBaseMode() === 'profit' ? ' (تحتاج طلبات مناديب بتكاليف مسجّلة)' : ''}.</td></tr>`;
+    $('#mandoubLogNote').textContent = manOrders.length ? `يعرض آخر 200 سطر من عمولات ${manOrders.length} طلب مناديب. النسب مأخوذة من لقطة كل طلب عند اعتماده، وأساس العمولة: ${commBaseLabel()}.` : '';
   }
 
   function mandoubForm(m) {
@@ -6843,6 +6855,9 @@ function docTitle(order) {
           </div>
           <div class="row2">
             <label>نسبة المشاركة (باقي البائعين والإدارة) % <input id="sShareRate" type="number" min="0" max="100" step="0.5" value="${num(s.shareRate ?? 5)}"><small class="hint">تُخصم من مبيعات البائع وتُوزَّع بالتساوي على الفريق الداخلي آخر الشهر.</small></label>
+            <label>تُحسب كل النسب من
+              <select id="sCommBase"><option value="profit" ${s.commBase !== 'total' ? 'selected' : ''}>صافي الربح (البيع قبل الضريبة − التكاليف)</option><option value="total" ${s.commBase === 'total' ? 'selected' : ''}>الإجمالي شامل الضريبة (السعر الشامل)</option></select>
+              <small class="hint">ينطبق على عمولة البائع والمندوب والمندوب الأعلى وحصة المشاركة، في كل الطلبات القديمة والجديدة. «الإجمالي» لا يحتاج إدخال التكاليف.</small></label>
           </div>
         </div>
       </section>
@@ -6911,6 +6926,7 @@ function docTitle(order) {
         vatNumber: $('#sVatNo', b).value.trim(), vatRate: Math.min(100, Math.max(0, num($('#sVatRate', b).value))), vatEnabled: $('#sVatOn', b).checked,
         depositPct: Math.min(100, Math.max(0, num($('#sDeposit', b).value))), quoteDays: Math.min(90, Math.max(1, Math.round(num($('#sQuoteDays', b).value) || 7))),
         sellerRate: Math.min(100, Math.max(0, num($('#sSellerRate', b).value))), mandoubRate: Math.min(100, Math.max(0, num($('#sMandoubRate', b).value))), shareRate: Math.min(100, Math.max(0, num($('#sShareRate', b).value))),
+        commBase: $('#sCommBase', b).value === 'total' ? 'total' : 'profit',
         tagline: mRaw.tagline, logoUrl: mRaw.logoUrl, mapsUrl: mRaw.mapsUrl, whatsapp: mRaw.whatsapp,
         instagram: mRaw.instagram, tiktok: mRaw.tiktok, snapchat: mRaw.snapchat,
       });
@@ -7229,6 +7245,8 @@ function docTitle(order) {
     // البيع = ليس ملغياً ولا عرض سعر لم يتحوّل بعد
     const live = list.filter(incCounted);   // حسب «يشمل التقرير» (افتراضياً بلا الجديد)
     const costed = live.filter((o) => orderCost(o) !== null);
+    // الطلبات التي تُحسب لها عمولة: كلها إن كان الأساس «الإجمالي»، والمسجّلة تكاليفها إن كان «صافي الربح»
+    const commOrders = live.filter((o) => commBaseAmount(o) !== null);
     const sum = (arr, f) => money(arr.reduce((s, o) => s + num(f(o)), 0));
     const revenue = sum(live, orderRevenue);
     const profit = sum(costed, orderProfit);
@@ -7243,7 +7261,7 @@ function docTitle(order) {
     const expenses = sum(biExp, (e) => num(e.amount));
 
     return {
-      list, live, costed,
+      list, live, costed, commOrders,
       count: live.length,
       cancelled: list.filter((o) => o.status === 'cancelled').length,
       quotes: list.filter((o) => o.status === 'quote').length,
@@ -7253,8 +7271,8 @@ function docTitle(order) {
       remaining: sum(live, (o) => remainingOf(o.total, o.paid)),
       cost: sum(costed, orderCost),
       profit, costedRevenue,
-      commission: sum(costed, orderCommission),
-      share: sum(costed, orderShareAmount),
+      commission: sum(commOrders, orderCommission),
+      share: sum(commOrders, orderShareAmount),
       margin: costedRevenue > 0 ? r2((profit / costedRevenue) * 100) : 0,
       avg: live.length ? money(revenue / live.length) : 0,
       meters: r2(live.reduce((s, o) => s + biMeters(o), 0)),
@@ -7423,7 +7441,7 @@ function docTitle(order) {
     // المشاركة: حصة متساوية لكل داخلي نشط (موظف أو مدير) من مجموع مبالغ المشاركة
     const internal = db().users.filter((u) => u.active !== false && (u.role === 'staff' || u.role === 'admin'));
     let sharePool = 0;
-    a.costed.forEach((o) => { sharePool += orderShareAmount(o); });
+    a.commOrders.forEach((o) => { sharePool += orderShareAmount(o); });
     const perShare = internal.length ? money(sharePool / internal.length) : 0;
 
     // صف لكل داخلي نشط حتى لو لم يُنشئ طلبات في الفترة
@@ -7954,7 +7972,7 @@ function docTitle(order) {
 
     $('#biKpisSub').innerHTML = `
       <div class="stat profit"><span>صافي الربح</span><b class="${a.costed.length ? (a.profit < 0 ? 'neg' : 'pos') : 'is-na'}">${a.costed.length ? fmt(a.profit) : '—'}</b><small class="${a.costed.length ? '' : 'na-note'}">${a.costed.length ? `هامش ${fmtQty(a.margin)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>
-      <div class="stat"><span>إجمالي العمولات</span><b class="${a.costed.length ? 'pos' : 'is-na'}">${a.costed.length ? fmt(money(a.commission + a.share)) : '—'}</b><small>${a.costed.length ? `عمولات ${fmt(a.commission)} + مشاركة ${fmt(a.share)}` : ''}</small></div>
+      <div class="stat"><span>إجمالي العمولات</span><b class="${a.commOrders.length ? 'pos' : 'is-na'}">${a.commOrders.length ? fmt(money(a.commission + a.share)) : '—'}</b><small>${a.commOrders.length ? `من ${commBaseLabel()}: عمولات ${fmt(a.commission)} + مشاركة ${fmt(a.share)}` : ''}</small></div>
       <div class="stat"><span>متوسط قيمة الطلب</span><b>${fmt(a.avg)}</b>${biDeltaTag(a.avg, pv && pv.avg)}</div>
       <div class="stat"><span>أمتار الكنب</span><b>${fmtQty(a.meters)}</b><small>${a.count ? `${fmtQty(r2(a.meters / a.count))} م لكل طلب` : '—'}</small></div>
       <div class="stat"><span>عملاء جدد</span><b>${fresh}</b><small>من ${inPeriod.length} عميل في الفترة</small></div>`;
@@ -8031,7 +8049,7 @@ function docTitle(order) {
     push('قيمة الطلبات مع الضريبة', a.gross);
     push('إجمالي التكاليف', a.costed.length ? a.cost : '');
     push('صافي الربح', a.costed.length ? a.profit : '');
-    push('إجمالي العمولات', a.costed.length ? money(a.commission + a.share) : '');
+    push('إجمالي العمولات', a.commOrders.length ? money(a.commission + a.share) : '');
     push('هامش الربح ٪', a.costed.length ? a.margin : '');
     push('المحصّل', a.paid);
     push('المتبقي على العملاء', a.remaining);
@@ -8085,7 +8103,7 @@ async function biExportPdf() {
       { label: 'عدد الطلبات', value: a.count, kind: 'num' },
       { label: 'إجمالي التكاليف', value: has ? a.cost : null, kind: 'money' },
       { label: 'صافي الربح', value: has ? a.profit : null, kind: 'money' },
-      { label: 'إجمالي العمولات', value: has ? money(a.commission + a.share) : null, kind: 'money' },
+      { label: 'إجمالي العمولات', value: a.commOrders.length ? money(a.commission + a.share) : null, kind: 'money' },
       { label: 'إجمالي المصروفات', value: a.expenses, kind: 'money' },
       { label: 'صافي النتيجة بعد المصروفات', value: a.net, kind: 'money' },
     ],
@@ -8125,7 +8143,7 @@ async function biExportXlsx() {
     ['عروض الأسعار', a.quotes],
     ['إجمالي التكاليف', a.costed.length ? a.cost : ''],
     ['صافي الربح', a.costed.length ? a.profit : ''],
-    ['إجمالي العمولات', a.costed.length ? money(a.commission + a.share) : ''],
+    ['إجمالي العمولات', a.commOrders.length ? money(a.commission + a.share) : ''],
     ['هامش الربح %', a.costed.length ? a.margin : ''],
     ['أمتار الكنب', a.meters],
     ['عملاء جدد', a.fresh],
@@ -8420,7 +8438,7 @@ async function exportExpensesXlsx() {
     const b = orderCommBreakdown(o);
     if (!b) return null;
     const hasParent = b.rows.length === 3;
-    return { profit: b.profit, rows: b.rows.map((r, i) => ({ ...r, kind: i === 0 ? 'owner' : (hasParent && i === 1 ? 'parent' : 'share') })) };
+    return { profit: b.profit, base: b.base, rows: b.rows.map((r, i) => ({ ...r, kind: i === 0 ? 'owner' : (hasParent && i === 1 ? 'parent' : 'share') })) };
   }
 
   /* تقرير «زيارات الموقع»: بيانات الخادم للفترة المختارة (لا تصل مع المزامنة). تُجلب عند فتح التقرير
@@ -8461,7 +8479,7 @@ async function exportExpensesXlsx() {
       calc: {
         revenue: orderRevenue, cost: orderCost, breakdown: repBreakdown, ordDate,
         payDay: (pm) => String((pm && (pm.at || pm.date || pm.createdAt)) || '').slice(0, 10),
-        expDay,
+        expDay, commBase: commBaseMode(),
       },
       labels: { STATUS, PAY_METHOD: PAY_METHODS, ROLES },
       userName: (id, fb) => { const u = id && Store.getUser(id); return (u && u.name) || fb || 'غير محدد'; },
@@ -8492,6 +8510,37 @@ async function exportExpensesXlsx() {
     else if (rdef && rdef.usesInclude) meta.push(['يشمل', rdef.includeNoPaid ? Reports.includeText({ include: { ...getInclude(), paidOnly: false }, labels: { STATUS } }) : includeLabel()]);
     meta.push(['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']);
     return meta;
+  }
+
+  /* اختيار أعمدة التقرير: تفضيل لهذا الجهاز (لكل تقرير ولكل جدول فيه)، يُطبَّق على الشاشة وعلى
+     ملفات PDF وExcel وCSV معاً — لأن التصدير يأخذ آخر تقرير معروض (repLast) بعد التصفية.
+     عمود واحد على الأقل يبقى ظاهراً، والأعمدة المحجوبة بالصلاحيات لا تظهر في القائمة أصلاً. */
+  function repColsHidden(id) {
+    try { const v = JSON.parse(repStore.get('cols_' + id, '{}')); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (_) { return {}; }
+  }
+  function repApplyCols(rep) {
+    const hid = repColsHidden(rep.id);
+    rep.allTables = rep.tables;
+    rep.tables = rep.tables.map((t, i) => {
+      const h = Array.isArray(hid[i]) ? hid[i] : [];
+      const cols = t.columns.filter((c) => h.indexOf(c.key) < 0);
+      return cols.length ? { ...t, columns: cols } : t;
+    });
+    return rep;
+  }
+  function repToggleCol(id, ti, key) {
+    const hid = repColsHidden(id);
+    const h = Array.isArray(hid[ti]) ? hid[ti] : [];
+    hid[ti] = h.indexOf(key) >= 0 ? h.filter((k) => k !== key) : h.concat(key);
+    repStore.set('cols_' + id, JSON.stringify(hid));
+  }
+  function repColsMenuHtml(rep, ti) {
+    const all = rep.allTables[ti].columns, shown = new Set(rep.tables[ti].columns.map((c) => c.key));
+    return all.map((c) => {
+      const on = shown.has(c.key);
+      const last = on && shown.size === 1;   // لا يُخفى آخر عمود ظاهر
+      return `<button type="button" role="menuitemcheckbox" aria-checked="${on}" aria-pressed="${on}" data-repcol="${esc(c.key)}" data-ti="${ti}"${last ? ' disabled' : ''}>${icon('check')}<span>${esc(c.label)}</span></button>`;
+    }).join('');
   }
 
   function renderReports() {
@@ -8530,14 +8579,18 @@ async function exportExpensesXlsx() {
     $$('#repRangeChips .chip').forEach((c) => { const on = c.dataset.rr === repRange; c.classList.toggle('on', on); c.setAttribute('aria-pressed', on); });
 
     let rep;
-    try { rep = Reports.build(repId, repCtx()); } catch (e) { toast(e.message || 'تعذّر إعداد التقرير', true); return; }
+    try { rep = repApplyCols(Reports.build(repId, repCtx())); } catch (e) { toast(e.message || 'تعذّر إعداد التقرير', true); return; }
     repLast = rep;
     $('#repNote').innerHTML = `${esc(rep.title)} • ${esc(REP_RANGES[repRange] || '')} • ${repPeriodHtml(rep)}${ctx.scopeAll ? '' : ' • طلباتي فقط'}`;
     $('#repKpis').innerHTML = rep.summary.map((s) => `<div class="stat"><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : (s.kind === 'money' ? fmt(s.value) : s.kind === 'pct' ? r2(s.value) + '٪' : esc(String(s.value)))}</b></div>`).join('');
     const MAX = 300;
-    $('#repTables').innerHTML = rep.tables.map((t) => `
+    $('#repTables').innerHTML = rep.tables.map((t, ti) => `
       <section class="card module rep-table">
-        <div class="module-head"><h3>${esc(t.title)}</h3><span class="hint">${t.rows.length} صف</span></div>
+        <div class="module-head"><h3>${esc(t.title)}</h3><span class="hint">${t.rows.length} صف</span>
+          <span class="rmenu cols-menu" style="margin-inline-start:auto">
+            <button type="button" class="btn small ghost rmenu-btn" aria-haspopup="menu" aria-expanded="false" title="اختر الأعمدة التي تظهر في التقرير وفي ملفات التصدير" data-repcols="${ti}">${icon('list')}<span>الأعمدة</span></button>
+            <span class="rmenu-list" role="menu" data-keep hidden>${repColsMenuHtml(rep, ti)}</span>
+          </span></div>
         <div class="table-wrap"><table class="table compact">
           <thead><tr>${t.columns.map((c) => `<th${isNumKind(c.kind) ? ' class="ta-end"' : ''}>${esc(c.label)}</th>`).join('')}</tr></thead>
           <tbody>${t.rows.length ? t.rows.slice(0, MAX).map((r) => `<tr>${t.columns.map((c) => `<td${isNumKind(c.kind) ? ' class="ta-end"' : ''}>${repCell(r[c.key], c.kind)}</td>`).join('')}</tr>`).join('')
@@ -8547,6 +8600,21 @@ async function exportExpensesXlsx() {
         ${t.rows.length > MAX ? `<p class="hint">يُعرض أول ${MAX} من ${t.rows.length} صفاً — الملف المُصدَّر يحوي الكل.</p>` : ''}
       </section>`).join('');
     $('#repNotes').innerHTML = (rep.notes || []).map((n) => `<li>${esc(n)}</li>`).join('');
+    $$('#repTables [data-repcol]').forEach((b) => b.addEventListener('click', () => {
+      const ti = b.dataset.ti, key = b.dataset.repcol;
+      repToggleCol(rep.id, ti, key);
+      // بعد انتهاء معالج النقر العام (يترك قوائم data-keep مفتوحة): إعادة الرسم ثم فتح القائمة نفسها
+      // ليُبدَّل أكثر من عمود بفتحة واحدة
+      setTimeout(() => {
+        closeRowMenu();
+        renderReports();
+        const btn = $(`#repTables [data-repcols="${ti}"]`);
+        if (!btn) return;
+        openRowMenu(btn);
+        const again = [...btn.nextElementSibling.querySelectorAll('[data-repcol]')].find((x) => x.dataset.repcol === key);
+        if (again) again.focus({ preventScroll: true });
+      }, 0);
+    }));
   }
 
   const repFileName = (rep, ext) => `report-${rep.id}-${repPeriod().from || 'all'}_${repPeriod().to || today()}.${ext}`;

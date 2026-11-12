@@ -14,8 +14,9 @@
      today                              'YYYY-MM-DD'
      me, scopeAll                       المستخدم الحالي، وهل يرى تقارير الجميع (reports.view_all)
      perms: { profitAny, commAny, expenses, profit(o), comm(o) }
-     calc:  { revenue(o), cost(o)→number|null, breakdown(o)→{profit, rows:[{kind,userId,who,rate,amount}]}|null,
-              ordDate(o), payDay(p), expDay(e) }
+     calc:  { revenue(o), cost(o)→number|null, breakdown(o)→{profit, base, rows:[{kind,userId,who,rate,amount}]}|null,
+              ordDate(o), payDay(p), expDay(e),
+              commBase: 'profit' | 'total' }   أساس احتساب النسب (صافي الربح أو الإجمالي شامل الضريبة)
      labels:{ STATUS, PAY_METHOD, ROLES }
      userName(id, fallback), userRole(id)
    ============================================================================= */
@@ -55,6 +56,8 @@
   };
   const sum = (arr, f) => money(arr.reduce((s, x) => s + num(f(x)), 0));
   const col = (key, label, kind = 'text') => ({ key, label, kind });
+  const byTotal = (ctx) => !!(ctx.calc && ctx.calc.commBase === 'total');
+  const baseLabel = (ctx) => (byTotal(ctx) ? 'الإجمالي شامل الضريبة' : 'صافي الربح');
 
   /* ---------------- الطلبات ضمن الفترة والنطاق ---------------- */
   function scopedOrders(ctx, { byDate = true, statusMode = 'filter' } = {}) {
@@ -84,7 +87,8 @@
     const hasCost = rawCost !== null && rawCost !== undefined;
     const rawProfit = hasCost ? money(revenue - rawCost) : null;
     const profit = canProfit ? rawProfit : null;
-    const bd = (canComm && rawProfit !== null) ? ctx.calc.breakdown(o) : null;
+    // العمولة تحتاج الربح إن كان أساسها صافي الربح؛ وأساس «الإجمالي» لا يحتاج تكاليف
+    const bd = (canComm && (rawProfit !== null || byTotal(ctx))) ? ctx.calc.breakdown(o) : null;
     const part = (k) => (bd ? money(bd.rows.filter((r) => r.kind === k).reduce((s, r) => s + num(r.amount), 0)) : null);
     const ownerComm = part('owner'), parentComm = part('parent'), share = part('share');
     return {
@@ -155,7 +159,7 @@
       summary.push({ label: 'المحصّل', value: tot.paid || 0, kind: 'money' }, { label: 'المتبقي على العملاء', value: tot.remaining || 0, kind: 'money' });
       const notes = ['المبالغ الإجمالية تشمل: ' + includeText(ctx) + ' (بلا عروض الأسعار والملغاة).'];
       const noCost = sales.filter((r) => showP && r.profit === null).length;
-      if (noCost) notes.push(`${noCost} طلب بلا تكاليف مُدخلة: لا يُحسب له ربح ولا عمولة.`);
+      if (noCost) notes.push(byTotal(ctx) ? `${noCost} طلب بلا تكاليف مُدخلة: لا يُحسب له ربح (العمولة محسوبة من الإجمالي شامل الضريبة).` : `${noCost} طلب بلا تكاليف مُدخلة: لا يُحسب له ربح ولا عمولة.`);
       return { summary, tables: [{ title: 'الطلبات', columns, rows, totals: tot }], notes };
     },
   };
@@ -196,7 +200,7 @@
       const people = new Map();
       const person = (id, name) => {
         const k = id || 'none';
-        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, ownComm: 0, subsComm: 0, share: 0 });
+        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, share: 0 });
         return people.get(k);
       };
       const detail = [];
@@ -207,7 +211,9 @@
         owner.orders++; owner.revenue += f.revenue;
         if (!f.bd) { if (ctx.perms.comm(o) && !f.hasCost) uncosted++; continue; }
         if (f.profit !== null) owner.profit += f.profit;
-        const base = { number: o.number != null ? '#' + o.number : '—', date: ctx.calc.ordDate(o), customer: (o.customer || {}).name || '—', profit: f.profit };
+        const bAmt = f.bd.base !== undefined && f.bd.base !== null ? money(f.bd.base) : f.profit;
+        owner.base += num(bAmt);
+        const base = { number: o.number != null ? '#' + o.number : '—', date: ctx.calc.ordDate(o), customer: (o.customer || {}).name || '—', profit: f.profit, base: bAmt };
         for (const r of f.bd.rows) {
           if (r.kind === 'owner') { owner.ownComm += num(r.amount); detail.push({ ...base, _uid: owner.id, who: owner.name, type: 'عمولة طلبه', rate: num(r.rate), src: r.src || '', amount: money(r.amount) }); }
           else if (r.kind === 'parent') { const p = person(r.userId, r.who); p.subsComm += num(r.amount); detail.push({ ...base, _uid: p.id, who: p.name, type: 'عمولة من طلب تابع', rate: num(r.rate), src: r.src || '', amount: money(r.amount) }); }
@@ -220,7 +226,9 @@
       if (ctx.scopeAll) internal.forEach((u) => { person(u.id, u.name).share = perShare; });
       else if (internal.some((u) => u.id === ctx.me)) person(ctx.me).share = perShare;
       let rows = [...people.values()].map((p) => ({
-        name: p.name, role: p.role, orders: p.orders, revenue: money(p.revenue), profit: money(p.profit),
+        name: p.name, role: p.role, orders: p.orders, revenue: money(p.revenue), profit: money(p.profit), base: money(p.base),
+        // نسبة عمولة طلباته: هي نسبته إن كانت واحدة، ومتوسطها المرجّح بالمبالغ إن اختلفت بين الطلبات
+        rate: p.base ? pct(p.ownComm, p.base) : null,
         ownComm: money(p.ownComm), subsComm: money(p.subsComm), share: money(p.share),
         total: money(p.ownComm + p.subsComm + p.share), _id: p.id,
       }));
@@ -230,24 +238,27 @@
       const keepIds = new Set(rows.map((r) => r._id));
       const det = (ctx.userId || !ctx.scopeAll) ? detail.filter((d) => d._uid && keepIds.has(d._uid)) : detail;
       const tot = { name: 'الإجمالي' };
-      ['orders', 'revenue', 'profit', 'ownComm', 'subsComm', 'share', 'total'].forEach((k) => { tot[k] = k === 'orders' ? rows.reduce((s, r) => s + r[k], 0) : sum(rows, (r) => r[k]); });
+      ['orders', 'revenue', 'profit', 'base', 'ownComm', 'subsComm', 'share', 'total'].forEach((k) => { tot[k] = k === 'orders' ? rows.reduce((s, r) => s + r[k], 0) : sum(rows, (r) => r[k]); });
+      tot.rate = tot.base ? pct(tot.ownComm, tot.base) : null;
       const summary = [
         { label: 'عمولات الطلبات', value: tot.ownComm, kind: 'money' },
         { label: 'عمولات المناديب الأعلى', value: tot.subsComm, kind: 'money' },
         { label: 'حصص المشاركة', value: ctx.scopeAll && !ctx.userId ? money(sharePool) : tot.share, kind: 'money' },
         { label: 'إجمالي المستحق', value: ctx.scopeAll && !ctx.userId ? money(tot.ownComm + tot.subsComm + sharePool) : tot.total, kind: 'money' },
       ];
-      const notes = ['العمولة = نسبة المستفيد × صافي ربح الطلب (البيع قبل الضريبة − التكاليف)، بالنسب المحفوظة على الطلب وقت اعتماده؛ والنسبة المخصّصة لطلب بعينه (من «نسبة البائع/المندوب») تغلب.',
+      const notes = [(byTotal(ctx) ? 'العمولة = نسبة المستفيد × إجمالي الطلب شامل الضريبة (بعد الخصم)' : 'العمولة = نسبة المستفيد × صافي ربح الطلب (البيع قبل الضريبة − التكاليف)') + '، بالنسب المحفوظة على الطلب وقت اعتماده؛ والنسبة المخصّصة لطلب بعينه (من «نسبة البائع/المندوب») تغلب.',
         'مصدر النسبة: «مخصّصة لهذا الطلب» من نافذة الطلب، «نسبة المندوب الخاصة» من صفحة المناديب، «افتراضية» من الإعدادات، «محفوظة على الطلب وقت اعتماده» = نسبة سابقة تغيّر مصدرها بعد ذلك.',
         `حصة المشاركة تُقسم بالتساوي على موظفي المحل النشطين (${internal.length}).`];
       if (uncosted) notes.push(`${uncosted} طلب بلا تكاليف مُدخلة لم تُحسب له عمولة.`);
       const showP = !!ctx.perms.profitAny;
-      const noP = (cols) => (showP ? cols : cols.filter((c) => c.key !== 'profit'));
+      // صافي الربح لمن يملك صلاحيته فقط؛ وعمود «أساس العمولة» يظهر حين يختلف عن صافي الربح (أساس الإجمالي)
+      const noP = (cols) => cols.filter((c) => (c.key !== 'profit' || showP) && (c.key !== 'base' || byTotal(ctx)));
+      const BL = 'أساس العمولة (' + baseLabel(ctx) + ')';
       return {
         summary, notes,
         tables: [
-          { title: 'المستحقات حسب الشخص', columns: noP([col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات', 'num'), col('revenue', 'المبيعات', 'money'), col('profit', 'صافي ربح طلباته', 'money'), col('ownComm', 'عمولة طلباته', 'money'), col('subsComm', 'من طلبات تابعيه', 'money'), col('share', 'حصة المشاركة', 'money'), col('total', 'إجمالي المستحق', 'money')]), rows, totals: tot },
-          { title: 'تفصيل العمولات لكل طلب', columns: noP([col('number', 'رقم الطلب'), col('date', 'التاريخ', 'date'), col('customer', 'العميل'), col('who', 'المستفيد'), col('type', 'النوع'), col('rate', 'النسبة ٪', 'pct'), col('src', 'مصدر النسبة'), col('profit', 'صافي ربح الطلب', 'money'), col('amount', 'المبلغ', 'money')]), rows: det, totals: { number: 'الإجمالي', amount: sum(det, (d) => d.amount) } },
+          { title: 'المستحقات حسب الشخص', columns: noP([col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات', 'num'), col('revenue', 'المبيعات', 'money'), col('profit', 'صافي ربح طلباته', 'money'), col('base', BL, 'money'), col('rate', 'النسبة ٪', 'pct'), col('ownComm', 'عمولة طلباته', 'money'), col('subsComm', 'من طلبات تابعيه', 'money'), col('share', 'حصة المشاركة', 'money'), col('total', 'إجمالي المستحق', 'money')]), rows, totals: tot },
+          { title: 'تفصيل العمولات لكل طلب', columns: noP([col('number', 'رقم الطلب'), col('date', 'التاريخ', 'date'), col('customer', 'العميل'), col('who', 'المستفيد'), col('type', 'النوع'), col('rate', 'النسبة ٪', 'pct'), col('src', 'مصدر النسبة'), col('profit', 'صافي ربح الطلب', 'money'), col('base', BL, 'money'), col('amount', 'المبلغ', 'money')]), rows: det, totals: { number: 'الإجمالي', amount: sum(det, (d) => d.amount) } },
         ],
       };
     },

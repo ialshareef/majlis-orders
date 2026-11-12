@@ -252,6 +252,14 @@ await ta('المالك يمنح مديراً عادياً صلاحية محمي�
   assert.strictEqual((await call(env, '/api/users/2/permissions', '1', { overrides: { 'settings.manage': 1 } })).s, 400);
 });
 
+await ta('أساس العمولة commBase: يُحفظ «profit» أو «total» فقط، وأي قيمة أخرى تُرفض', async () => {
+  const env = mk();
+  assert.strictEqual((await call(env, '/api/sync', '1', { settings: { commBase: 'total' } })).s, 200);
+  assert.strictEqual((await call(env, '/api/sync', '1', { settings: { commBase: 'profit' } })).s, 200);
+  assert.strictEqual((await call(env, '/api/sync', '1', { settings: { commBase: 'all' } })).s, 400);
+  assert.strictEqual((await call(env, '/api/sync', '1', { settings: { commBase: 5 } })).s, 400);
+});
+
 /* ---------- الفشل المُغلق ---------- */
 await ta('بلا OWNER_USER_ID: لا مالك — لا أحد يملك الإدارة الكاملة أو ينشئ مديراً', async () => {
   const env = mk({ owner: null });

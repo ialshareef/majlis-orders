@@ -42,8 +42,9 @@
 
   function defaultSettings() {
     // depositPct: نسبة العربون قبل بدء التنفيذ (0 = بلا تنبيه) • quoteDays: صلاحية عرض السعر
+    // commBase: أساس احتساب كل النسب — 'profit' صافي الربح، 'total' الإجمالي شامل الضريبة
     // sellerRate: نسبة البائع • shareRate: نسبة المشاركة (لباقي البائعين والإدارة) • mandoubRate: نسبة المناديب
-    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, sellerRate: 10, shareRate: 5, mandoubRate: 5, mandoubParentRate: 5, lastBackupAt: '' };
+    return { shopName: 'أصالة نجد', phone: '', address: '', currency: 'ر.س', vatEnabled: true, vatRate: 15, vatNumber: '', invoiceNote: '', cornerMode: 'deduct', depositPct: 25, quoteDays: 7, sellerRate: 10, shareRate: 5, mandoubRate: 5, mandoubParentRate: 5, commBase: 'profit', lastBackupAt: '' };
   }
 
   function normalizeSettings(s) {

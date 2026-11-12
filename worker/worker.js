@@ -2050,6 +2050,9 @@ async function mandoubsReport(env, user, query) {
   if (from) { sql += ' AND date(created_at) >= ?'; binds.push(from); }
   if (to) { sql += ' AND date(created_at) <= ?'; binds.push(to); }
   const rows = await env.DB.prepare(sql).bind(...binds).all();
+  // أساس العمولة من الإعدادات (كما في الواجهة): صافي الربح أو الإجمالي شامل الضريبة
+  const srow = await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+  const byTotal = (safeParse(srow && srow.data, {}) || {}).commBase === 'total';
 
   const ordersByOwner = new Map(); // ownerId -> orders[]
   for (const r of (rows.results || [])) {
@@ -2059,12 +2062,13 @@ async function mandoubsReport(env, user, query) {
     if (!ordersByOwner.has(createdBy)) ordersByOwner.set(createdBy, []);
     const revenue = orderRevenueFromData(d);
     const cost = computeOrderCost(d);
+    const base = byTotal ? (Number.isFinite(Number(d.total)) ? Number(d.total) : 0) : (revenue > 0 ? revenue - cost : 0);
     ordersByOwner.get(createdBy).push({
       id: r.id, number: r.number, status: r.status,
       revenue, cost,
       profit: revenue - cost,
-      commission: revenue > 0 ? (revenue - cost) * commRateForOrder(d, { rate: 0 }) / 100 : 0,
-      share: revenue > 0 ? (revenue - cost) * shareRateForOrder(d) / 100 : 0,
+      commission: base * commRateForOrder(d, { rate: 0 }) / 100,
+      share: base * shareRateForOrder(d) / 100,
     });
   }
 
@@ -2489,6 +2493,8 @@ async function sync(env, user, body) {
       const v = body.settings[f];
       if (v !== undefined && v !== null && !(isFinNum(v) && v >= 0)) finErr('settings.' + f);
     }
+    // أساس احتساب النسب: قيمتان فقط
+    if (body.settings.commBase !== undefined && body.settings.commBase !== null && body.settings.commBase !== 'profit' && body.settings.commBase !== 'total') finErr('settings.commBase');
     // روابط التسويق لبوابة العميل: HTTPS فقط بلا مسافات ولا أقواس، والوصف نص قصير
     for (const f of ['mapsUrl', 'whatsapp', 'tiktok', 'instagram', 'snapchat', 'logoUrl']) {
       const v = body.settings[f];
