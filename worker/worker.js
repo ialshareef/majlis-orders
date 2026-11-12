@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.1.1';
-// بصمة asalh-najd-1.1.1.apk (إصدار GitHub v1.1.1، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.1 وversionCode 10101، ونفس شهادة توقيع 1.1.0).
-const UPDATE_FALLBACK_SHA256 = 'f06f50235e4c552b027cab6e0f5104f20a31254fc7c69477dc10336a30316f61';
+const UPDATE_FALLBACK_VERSION = '1.1.2';
+// بصمة asalh-najd-1.1.2.apk (إصدار GitHub v1.1.2، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.2 وversionCode 10102، ونفس شهادة توقيع 1.1.1).
+const UPDATE_FALLBACK_SHA256 = 'c475a71f741728468a1de2421f27947dde0cb1294154e920fc5fa2c8c7d594d9';
 const UPDATE_FALLBACK_NOTES = [
-  'ملخص الطلب على الجوال: أسطر مدمجة «البند ……… المبلغ» بدل البطاقات الطويلة، وسطر مجموع واضح',
-  'أزرار الملخص أصغر: المشاركة عبر واتساب زر رئيسي، والتنزيل وتعديل التكاليف متجاوران',
+  'العمولات: خيار في الإعدادات لاحتساب كل النسب من صافي الربح أو من الإجمالي شامل الضريبة',
+  'تقرير العمولات: عمود «النسبة ٪» لكل شخص، وزر «الأعمدة» تختار به ما يظهر في التقرير والملفات المصدّرة',
 ];
 
 function versionCodeOfName(v) {
