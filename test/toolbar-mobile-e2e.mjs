@@ -1,4 +1,4 @@
-/* شريط أدوات التصميم على الجوال: لا زر يخرج عن حدود البطاقة مهما ضاقت الشاشة أو كُبّر خط النظام.
+/* الجوال بشاشة ضيقة أو خط نظام مكبَّر: أزرار شريط التصميم داخل البطاقة، ومبالغ ملخص الدفع غير مقصوصة.
    حالة حقيقية: جوال أندرويد بخط مكبَّر — «تلفاز» آخر سطر الأزرار يُقصّ خارج الشاشة.
    الاستخدام: node test/toolbar-mobile-e2e.mjs */
 import { startApp, sleep } from './_app-harness.mjs';
@@ -27,6 +27,14 @@ try {
     ok(r.cut.length === 0, `${tag}: لا اسم زر مقصوص`, r.cut);
     ok(r.small.length === 0, `${tag}: كل زر بارتفاع لمس ≥ 44px`, r.small);
     ok(!r.hscroll, `${tag}: لا تمرير أفقي للصفحة`);
+    // ملخص الدفع: الإجمالي والمدفوع والمتبقي كاملة بلا «…» (كانت «7,7…» على جوال بخط مكبَّر)
+    await page.evaluate(() => document.querySelector('#stepNav a[data-stage="pay"]').click());
+    await sleep(400);
+    const pay = await page.evaluate(() => {
+      document.getElementById('payTotal').textContent = '1,277,772.20'; document.getElementById('payPaidSum').textContent = '1,943.07'; document.getElementById('payRemaining').textContent = '1,275,829.13';
+      return ['payTotal', 'payPaidSum', 'payRemaining'].filter((id) => { const b = document.getElementById(id); const box = b.parentElement.getBoundingClientRect(), x = b.getBoundingClientRect(); return b.scrollWidth > b.clientWidth + 1 || x.left < box.left - 0.5 || x.right > box.right + 0.5; });
+    });
+    ok(pay.length === 0, `${tag}: مبالغ ملخص الدفع كاملة غير مقصوصة (حتى 1,277,772.20)`, pay);
     await page.browserContext().close();
   }
   ok(app.errs.length === 0, 'ui: لا أخطاء JavaScript', app.errs);

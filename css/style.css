@@ -2281,10 +2281,17 @@ body.modal-open { overflow: hidden; }
 
   .fields { grid-template-columns: minmax(0, 1fr); gap: 10px; }
   .pay { grid-template-columns: minmax(0, 1fr); gap: 18px; }
-  .pay-fig { padding: 11px 12px; }
-  .pay-fig > span { font-size: .77rem; }
-  .pay-fig > b { font-size: 1.14rem; }
-  .pay-fig > small { font-size: .74rem; }
+  /* الإجمالي والمدفوع والمتبقي: سطر لكل رقم بعرض الصندوق (الاسم يميناً والمبلغ يساراً).
+     كانت ثلاثة أعمدة ضيقة تقصّ المبالغ «7,7…» على جوال بخط مكبَّر — والمبلغ لا يُقصّ أبداً */
+  .pay-figs { grid-template-columns: minmax(0, 1fr); }
+  .pay-fig {
+    display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; column-gap: 12px;
+    padding: 10px 14px; box-shadow: 0 -1px 0 var(--line-soft);
+  }
+  .pay-fig:first-child { box-shadow: none; }
+  .pay-fig > span { grid-column: 1; grid-row: 1; font-size: .82rem; }
+  .pay-fig > small { grid-column: 1; grid-row: 2; font-size: .74rem; margin-top: 0; }
+  .pay-fig > b { grid-column: 2; grid-row: 1 / span 2; margin-top: 0; font-size: 1.2rem; overflow: visible; text-overflow: clip; }
   .pay-add .pay-quick { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .pay-add .pay-quick .chip { justify-content: center; padding: 0 4px; }
   .pay-row-actions .btn span { display: none; }
