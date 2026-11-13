@@ -2205,10 +2205,17 @@ body.modal-open { overflow: hidden; }
   .canvas-toolbar { gap: 8px; margin-bottom: 8px; }
   .canvas-toolbar .tb-group { width: 100%; justify-content: space-between; }
   .tb-insert { flex-wrap: wrap; }
-  .tb-insert .tb-row { display: flex; flex: 1 1 100%; gap: 6px; }
+  /* أزرار الإضافة: شبكة تلتف بدل سطر واحد يخرج عن البطاقة (جوال ضيق أو خط النظام مكبَّر)،
+     والأيقونة فوق الاسم بإطار ظاهر — كانت نصوصاً عائمة بفراغات كبيرة، وآخرها «تلفاز» يُقصّ خارج الشاشة */
+  .tb-insert .tb-row { display: grid; flex: 1 1 100%; grid-template-columns: repeat(auto-fit, minmax(50px, 1fr)); gap: 5px; }
   .tb-insert .tb-row + .tb-row { margin-top: 6px; }
-  .tb-insert .tb-btn { flex: 1; min-height: 44px; padding: 0 4px; gap: 5px; font-size: .8rem; white-space: nowrap; }
-  .tb-insert .tb-btn span { overflow: visible; }
+  .tb-insert .tb-btn {
+    flex-direction: column; gap: 3px; min-height: 54px; min-width: 0; padding: 6px 2px;
+    font-size: .74rem; line-height: 1.2; white-space: normal; text-align: center;
+    border: 1px solid var(--line); background: var(--surface-2);
+  }
+  .tb-insert .tb-btn svg { width: 19px; height: 19px; }
+  .tb-insert .tb-btn span { overflow: visible; overflow-wrap: anywhere; }
   .tb-history { width: auto !important; }
   .tb-history .tb-btn:not(.icon) { flex: 1; }
   .canvas-mode {
