@@ -416,13 +416,13 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
-const UPDATE_FALLBACK_VERSION = '1.1.7';
-// بصمة asalh-najd-1.1.7.apk (إصدار GitHub v1.1.7، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.7 وversionCode 10107، ونفس شهادة توقيع 1.1.6).
-const UPDATE_FALLBACK_SHA256 = '2d799924b1e877f2904f80b3ef9702ccfbe851f973edfd2549d0c77dfe3e8bf9';
+const UPDATE_FALLBACK_VERSION = '1.1.8';
+// بصمة asalh-najd-1.1.8.apk (إصدار GitHub v1.1.8، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.8 وversionCode 10108، ونفس شهادة توقيع 1.1.7).
+const UPDATE_FALLBACK_SHA256 = '9205af0a7f40104356c64a54b826ae8caf99db62243902dcbc75864e963633cd';
 const UPDATE_FALLBACK_NOTES = [
-  'رابط بوابة العملاء في الإعدادات والتصاميم صار الرابط الصحيح للموقع بدل localhost داخل التطبيق',
-  'تقارير المناديب وملخص المصروفات وتصدير ذكاء الأعمال تعمل الآن داخل تطبيق أندرويد',
+  'الجوال: أزرار إضافة الكنبة والباب والتلفاز داخل الشاشة دائماً حتى مع خط الجوال المكبَّر',
+  'الدفع: الإجمالي والمدفوع والمتبقي تظهر كاملة بلا «…» — كل مبلغ في سطر مستقل',
 ];
 
 function versionCodeOfName(v) {
