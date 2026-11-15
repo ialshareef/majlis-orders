@@ -2543,9 +2543,9 @@ body.modal-open { overflow: hidden; }
 /* «عن التطبيق»: سطر الملف التعريفي مميَّز أعلى روابط الوصول */
 .link-row.profile-row { background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--r); padding: 10px 12px; }
 /* صرف العمولة: شارة/زر تحت مبلغ العمولة في القائمة، ونافذة الصرف */
-.comm-pay { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 9px; min-height: 28px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--accent); font: inherit; font-size: .74rem; font-weight: 600; cursor: pointer; white-space: nowrap; direction: rtl; }
+.comm-pay { display: inline-flex; align-items: center; gap: 3px; margin-top: 4px; padding: 2px 7px; min-height: 32px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--accent); font: inherit; font-size: .72rem; font-weight: 600; cursor: pointer; white-space: nowrap; direction: rtl; }
 .c-comm .comm-pay { display: flex; width: max-content; margin-inline-start: auto; }
-.comm-pay svg { width: 13px; height: 13px; }
+.comm-pay svg { width: 12px; height: 12px; flex: none; }
 .comm-pay.is-paid { border-color: var(--ok-line); background: var(--ok-soft); color: var(--ok); }
 .comm-pay.ro { cursor: default; }
 .comm-pay.due { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn); }

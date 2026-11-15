@@ -4280,7 +4280,7 @@ function docTitle(order) {
         ${canSeeProfit(o) ? `
         <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? 'is-empty' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : `
         <td data-label="صافي الربح" class="num c-money c-cost c-profit is-empty">${dash}</td>`}
-        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm${canSeeComm(o) && comm !== null ? '' : ' is-empty'}">${canSeeComm(o) && comm !== null ? fmt(comm) + commPayBadge(o, comm) : dash}</td>` : ''}
+        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm${canSeeComm(o) && comm !== null ? '' : ' is-empty'}">${canSeeComm(o) && comm !== null ? `<span class="comm-amt">${fmt(comm)}</span>` + commPayBadge(o, comm) : dash}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
         <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>

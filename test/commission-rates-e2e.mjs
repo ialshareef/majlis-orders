@@ -131,7 +131,7 @@ async function login(username, opts = {}) {
   return page;
 }
 const go = async (page, name) => { await page.evaluate((n) => (document.querySelector(`#mainNav button[data-page="${n}"]`) || document.querySelector(`.page-tabs [data-goto="${n}"]`)).click(), name); await sleep(900); };
-const commCell = (page, id) => page.evaluate((i) => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector(`[data-open="${i}"]`)); const td = tr && tr.querySelector('td.c-comm'); return td ? td.textContent.trim() : null; }, id);
+const commCell = (page, id) => page.evaluate((i) => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector(`[data-open="${i}"]`)); const td = tr && tr.querySelector('td.c-comm'); const amt = td && (td.querySelector('.comm-amt') || td); return amt ? amt.textContent.trim() : null; }, id);
 async function setRate(page, id, val) {
   await page.evaluate((i) => document.querySelector(`[data-comm="${i}"]`).click(), id);
   await sleep(700);
@@ -162,7 +162,7 @@ try {
   await page.evaluate(() => document.querySelector('[data-sum="oa"]').click());
   await sleep(1200);
   const sm = await page.evaluate(() => [...document.querySelectorAll('#modal .sum-table tbody tr')].map((tr) => tr.innerText.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').trim()).join(' || '));
-  ok(/عمولة البائع — سالم البائع \(20٪ من صافي الربح • مخصّصة لهذا الطلب\) 200\.00/.test(sm) && /حصة المشاركة \(5٪ • مخصّصة لهذا الطلب\) 50\.00/.test(sm) && /صافي الربح 1,000\.00/.test(sm), 'ملخص الطلب: 20٪ «مخصّصة لهذا الطلب» = 200، والمشاركة 5٪ «افتراضية»', sm);
+  ok(/عمولة البائع — سالم البائع \(20٪ من صافي الربح • مخصّصة لهذا الطلب\)( — لم تُصرف)? 200\.00/.test(sm) && /حصة المشاركة \(5٪ • مخصّصة لهذا الطلب\) 50\.00/.test(sm) && /صافي الربح 1,000\.00/.test(sm), 'ملخص الطلب: 20٪ «مخصّصة لهذا الطلب» = 200، والمشاركة 5٪ «افتراضية»', sm);
   await page.evaluate(() => document.getElementById('modalClose').click());
   await sleep(400);
 
