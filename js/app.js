@@ -2097,6 +2097,9 @@ function canEditOrder(o) {
   function sellerRateOf(o) {
     const v = o && o.sellerRate;
     if (v !== undefined && v !== null && v !== '') return num(v);
+    // نسبة الموظف الخاصة (من صفحة المستخدمين) قبل الافتراضي — المالك وحده يراها ويضبطها
+    const u = o && Store.getUser(o.createdBy);
+    if (u && u.role !== 'mandoub' && u.rate !== undefined && u.rate !== null && u.rate !== '') return num(u.rate);
     return num(settings().sellerRate);
   }
   /** نسبة المشاركة (لباقي البائعين والإدارة): قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
@@ -2176,7 +2179,7 @@ function canEditOrder(o) {
     const SAVED = 'محفوظة على الطلب وقت اعتماده';
     let own;
     if (isMan) own = eq(r.ownerRate, o.mandoubRate) ? 'مخصّصة لهذا الطلب' : eq(r.ownerRate, owner.rate) ? 'نسبة المندوب الخاصة' : eq(r.ownerRate, s.mandoubRate) ? 'افتراضية (إعدادات المناديب)' : SAVED;
-    else own = eq(r.ownerRate, o.sellerRate) ? 'مخصّصة لهذا الطلب' : eq(r.ownerRate, s.sellerRate) ? 'افتراضية (الإعدادات)' : SAVED;
+    else own = eq(r.ownerRate, o.sellerRate) ? 'مخصّصة لهذا الطلب' : eq(r.ownerRate, owner && owner.rate) ? 'نسبة الموظف الخاصة' : eq(r.ownerRate, s.sellerRate) ? 'افتراضية (الإعدادات)' : SAVED;
     const parent = !r.parentId ? '' : (eq(r.parentRate, owner && owner.parentRate) ? 'نسبة المندوب الخاصة' : eq(r.parentRate, s.mandoubParentRate) ? 'افتراضية (إعدادات المناديب)' : SAVED);
     const shareRaw = o && (o.shareRate !== undefined ? o.shareRate : o.othersRate);
     const share = eq(r.shareRate, shareRaw) ? 'مخصّصة لهذا الطلب' : eq(r.shareRate, s.shareRate) ? 'افتراضية (الإعدادات)' : SAVED;
@@ -5229,6 +5232,9 @@ function docTitle(order) {
 
   /* ---------------- صفحة المستخدمين ---------------- */
   function renderUsers() {
+    { const hr = document.querySelector('#usersTable thead tr'); const has = hr && hr.querySelector('.th-rate');
+      if (hr && can('admin.core') && !has) { const th = document.createElement('th'); th.className = 'th-rate'; th.textContent = 'نسبة العمولة'; hr.insertBefore(th, hr.lastElementChild); }
+      if (hr && !can('admin.core') && has) has.remove(); }
     const tb = $('#usersTable tbody');
     // الصفحة لمن يملك users.view؛ الإضافة والتعديل والحذف للمدير وحده (صلاحيات لا تُمنح لغيره)
     $('#btnAddUser').hidden = !can('users.create');
@@ -5251,6 +5257,7 @@ function docTitle(order) {
         <td data-label="الدور">${ROLES[u.role] || u.role}</td>
         <td data-label="الحالة"><span class="badge ${u.active === false ? 'st-quote' : 'st-delivered'}">${u.active === false ? 'موقوف' : 'نشط'}</span></td>
         <td data-label="عدد الطلبات" class="num">${db().orders.filter((o) => o.createdBy === u.id).length}</td>
+        ${can('admin.core') ? `<td data-label="نسبة العمولة" class="u-rate">${userRateText(u)}</td>` : ''}
         <td class="row-actions"><span class="ra">
           ${canEditU(u) ? `<button class="btn small" data-edit="${u.id}">${icon('pen')} تعديل</button>` : ''}
           ${canDelU(u) ? rowMenu([menuItem(`data-del="${u.id}"`, 'trash', 'حذف المستخدم', true)], `إجراءات المستخدم ${esc(u.name)}`) : ''}
@@ -5409,6 +5416,15 @@ function docTitle(order) {
     return { isDirty };
   }
 
+  /** نسبة عمولة المستخدم في جدول المستخدمين: الخاصة أو الافتراضية (للمالك) */
+  function userRateText(u) {
+    if (u.role === 'mandoub') {
+      const own = u.rate != null ? `${fmtQty(num(u.rate))}٪ <small class="hint">خاصة</small>` : `${fmtQty(num(settings().mandoubRate))}٪ <small class="hint">افتراضية</small>`;
+      return own + (u.parentId ? ` <small class="hint">• للأعلى ${fmtQty(num(u.parentRate != null ? u.parentRate : settings().mandoubParentRate))}٪</small>` : '');
+    }
+    return u.rate != null ? `<b>${fmtQty(num(u.rate))}٪</b> <small class="hint">خاصة</small>` : `${fmtQty(num(settings().sellerRate))}٪ <small class="hint">افتراضية</small>`;
+  }
+
   function userForm(user) {
     const u = user || { name: '', username: '', role: 'staff', active: true };
     // قسم الصلاحيات لمن يملك permissions.manage فقط (الخادم يرفض غيره بـ 403 على أي حال)
@@ -5440,6 +5456,17 @@ function docTitle(order) {
         <label>الحالة <select id="uActive"${u.isOwner ? ' disabled' : ''}><option value="1" ${u.active !== false ? 'selected' : ''}>نشط</option><option value="0" ${u.active === false ? 'selected' : ''}>موقوف</option></select></label>
       </div>
       ${u.isOwner ? '<p class="hint">حساب <b>مالك النظام</b>: دوره «مدير» ونشِط دائماً — لا يُخفَّض ولا يُعطَّل ولا يُحذف.</p>' : ''}
+      ${can('admin.core') ? `<fieldset class="u-rates" id="uRates">
+        <legend>نسب العمولة</legend>
+        <div class="u-rate-seller">
+          <label>نسبة العمولة من البيع % <input id="uRate" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${u.role !== 'mandoub' && u.rate != null ? esc(u.rate) : ''}" placeholder="الافتراضي ${fmtQty(num(settings().sellerRate))}٪"></label>
+          <p class="hint">فارغ = نسبة البائع الافتراضية من الإعدادات. تُطبَّق على طلباته الجديدة، ونسبة طلب بعينه (من «نسبة البائع») تغلبها.</p>
+        </div>
+        <div class="u-rate-mandoub row2">
+          <label>نسبة المندوب % <input id="uMRate" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${u.role === 'mandoub' && u.rate != null ? esc(u.rate) : ''}" placeholder="الافتراضي ${fmtQty(num(settings().mandoubRate))}٪"></label>
+          <label>نسبة مندوبه الأعلى % <input id="uMPRate" type="number" min="0" max="100" step="0.5" inputmode="decimal" value="${u.parentRate != null ? esc(u.parentRate) : ''}" placeholder="الافتراضي ${fmtQty(num(settings().mandoubParentRate))}٪"${u.parentId ? '' : ' disabled title="لا مندوب أعلى له — يُحدَّد من صفحة المناديب"'}></label>
+        </div>
+      </fieldset>` : ''}
       ${(!can('admin.core') && !u.isOwner) ? '<p class="hint">إنشاء المديرين وتعديل حساباتهم لمالك النظام وحده.</p>' : ''}
       ${waSec}
       ${canPerms ? `<div class="perm-section" id="uPermSection">
@@ -5459,6 +5486,9 @@ function docTitle(order) {
       <p id="uErr" class="error"></p>
       <div class="btn-row"><button class="btn" id="uCancel">إلغاء</button><button class="btn primary" id="uSave">حفظ</button></div>`, (b) => {
       $('#uCancel', b).onclick = closeModal;
+      // قسم النسب يتبع الدور المختار: البائع (موظف/مدير) أو المندوب
+      const syncRates = () => { const box = $('#uRates', b); if (!box) return; const man = $('#uRole', b).value === 'mandoub'; $('.u-rate-seller', box).hidden = man; $('.u-rate-mandoub', box).hidden = !man; };
+      $('#uRole', b).addEventListener('change', syncRates); syncRates();
       const perms = (user && canPerms) ? setupUserPermissions(b, user) : { isDirty: () => false };
       let dirtyAck = false;
       $('#uSave', b).onclick = async () => {
@@ -5505,7 +5535,13 @@ function docTitle(order) {
         const saveBtn = $('#uSave', b);
         saveBtn.disabled = true; saveBtn.setAttribute('aria-busy', 'true');
         try {
-          await Store.saveUser({ id: user ? user.id : null, name, username, role, active, wa: waBody }, pass);
+          /* النسب وشجرة المناديب تُرسل دائماً بقيمها الحالية (أو المعدّلة من قسم النسب): كان إغفالها يمسح نسبة
+             المندوب ومندوبه الأعلى عند تعديل اسمه من هذه الصفحة. الخادم يقبلها من المالك وحده */
+          const rv = (sel, cur0) => { const el = $(sel, b); if (!el) return cur0 == null ? null : cur0; const t = el.value.trim(); return t === '' ? null : Math.min(100, Math.max(0, num(t))); };
+          const man = role === 'mandoub';
+          const rate = man ? rv('#uMRate', u.role === 'mandoub' ? u.rate : null) : rv('#uRate', u.role !== 'mandoub' ? u.rate : null);
+          const parentRate = man ? rv('#uMPRate', u.parentRate) : null;
+          await Store.saveUser({ id: user ? user.id : null, name, username, role, active, wa: waBody, parentId: man ? (u.parentId || null) : null, rate, parentRate }, pass);
         } catch (e) {
           saveBtn.disabled = false; saveBtn.removeAttribute('aria-busy');
           err.textContent = (e && e.message) || 'تعذّر حفظ المستخدم. تحقق من الاتصال وحاول مرة أخرى.'; return;
@@ -7108,7 +7144,7 @@ function docTitle(order) {
             <label>صلاحية عرض السعر (أيام) <input id="sQuoteDays" type="number" min="1" max="90" step="1" value="${num(s.quoteDays) || 7}"></label>
           </div>
           <div class="row2">
-            <label>نسبة عمولة البائع % <input id="sSellerRate" type="number" min="0" max="100" step="0.5" value="${num(s.sellerRate ?? 10)}"><small class="hint">تُطبَّق افتراضياً على طلبات البائع، ويمكن تغييرها لكل طلب من زر «نسبة البائع».</small></label>
+            <label>نسبة عمولة البائع % <input id="sSellerRate" type="number" min="0" max="100" step="0.5" value="${num(s.sellerRate ?? 10)}"><small class="hint">تُطبَّق افتراضياً على طلبات البائع. ولكل موظف نسبة خاصة من صفحة المستخدمين، ولكل طلب من زر «نسبة البائع».</small></label>
             <label>نسبة عمولة المناديب % <input id="sMandoubRate" type="number" min="0" max="100" step="0.5" value="${num(s.mandoubRate ?? 5)}"><small class="hint">نسبة مستقلة للمناديب (خارج الشركة)، لا تُشارك مع الفريق الداخلي.</small></label>
           </div>
           <div class="row2">

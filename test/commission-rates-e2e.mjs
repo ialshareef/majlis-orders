@@ -181,6 +181,34 @@ try {
   ok(/محفوظة على الطلب وقت اعتماده/.test(r3) && /80\.00/.test(r3), 'التقرير: طلب #3 بنسبة 8٪ «محفوظة على الطلب وقت اعتماده» (الافتراضي الآن 10٪)', rows);
   ok(/مخصّصة لهذا الطلب/.test(find(/#1 .*حصة المشاركة/)) && /افتراضية \(الإعدادات\)/.test(find(/#3 .*حصة المشاركة/)), 'التقرير: مشاركة #1 «مخصّصة» (حُفظت من النافذة) و#3 «افتراضية (الإعدادات)»', rows);
 
+  /* ----- نسبة كل موظف من صفحة المستخدمين ----- */
+  await page.evaluate(() => { const b = [...document.querySelectorAll('[data-page="users"]')].find((x) => x.offsetParent !== null); b.click(); });
+  await sleep(800);
+  const usrRow = (name) => page.evaluate((n) => { const tr = [...document.querySelectorAll('#usersTable tbody tr')].find((r) => r.textContent.includes(n)); const td = tr && tr.querySelector('.u-rate'); return td ? td.textContent.replace(/\s+/g, ' ').trim() : null; }, name);
+  ok(await page.evaluate(() => [...document.querySelectorAll('#usersTable thead th')].some((th) => th.textContent === 'نسبة العمولة')), 'users: عمود «نسبة العمولة» للمالك');
+  ok(/10(\.00)?٪ افتراضية/.test(await usrRow('سالم البائع')), 'users: سالم بلا نسبة خاصة ← «10٪ افتراضية»', await usrRow('سالم البائع'));
+  ok(/6(\.00)?٪ خاصة/.test(await usrRow('مندوب تابع')) && /للأعلى 3(\.00)?٪/.test(await usrRow('مندوب تابع')), 'users: المندوب التابع «6٪ خاصة • للأعلى 3٪»', await usrRow('مندوب تابع'));
+  // ضبط نسبة سالم 7٪
+  await page.evaluate(() => document.querySelector('#usersTable [data-edit="2"]').click());
+  await page.waitForFunction(() => !!document.getElementById('uRate'), { timeout: 10000 });
+  const vis = await page.evaluate(() => ({ seller: !document.querySelector('.u-rate-seller').hidden, man: !document.querySelector('.u-rate-mandoub').hidden }));
+  ok(vis.seller && !vis.man, 'users: نافذة الموظف تعرض «نسبة العمولة من البيع» لا نسب المندوب', vis);
+  await page.evaluate(() => { const i = document.getElementById('uRate'); i.value = '7'; document.getElementById('uSave').click(); });
+  await page.waitForFunction(() => document.getElementById('modal').hidden, { timeout: 15000 });
+  await sleep(500);
+  ok(Number(env.DB.tables.get('users').find((u) => u.id === '2').rate) === 7, 'users: نسبة سالم 7٪ محفوظة على الخادم');
+  ok(/7(\.00)?٪ خاصة/.test(await usrRow('سالم البائع')), 'users: الجدول يعرض «7٪ خاصة»', await usrRow('سالم البائع'));
+  // تعديل اسم المندوب من صفحة المستخدمين لا يمسح نسبه ولا مندوبه الأعلى (كان يمسحها)
+  await page.evaluate(() => document.querySelector('#usersTable [data-edit="3"]').click());
+  await page.waitForFunction(() => !!document.getElementById('uMRate'), { timeout: 10000 });
+  const mv = await page.evaluate(() => ({ man: !document.querySelector('.u-rate-mandoub').hidden, r: document.getElementById('uMRate').value, pr: document.getElementById('uMPRate').value }));
+  ok(mv.man && mv.r === '6' && mv.pr === '3', 'users: نافذة المندوب تعرض نسبته 6 ونسبة الأعلى 3', mv);
+  await page.evaluate(() => { const n = document.getElementById('uName'); n.value = 'مندوب تابع (معدّل)'; document.getElementById('uSave').click(); });
+  await page.waitForFunction(() => document.getElementById('modal').hidden, { timeout: 15000 });
+  await sleep(500);
+  const m3 = env.DB.tables.get('users').find((u) => u.id === '3');
+  ok(m3.name === 'مندوب تابع (معدّل)' && Number(m3.rate) === 6 && Number(m3.parent_rate) === 3 && String(m3.parent_id) === '4', 'users: تعديل اسم المندوب أبقى نسبته 6 ونسبة الأعلى 3 ومندوبه الأعلى', { rate: m3.rate, pr: m3.parent_rate, p: m3.parent_id });
+
   // الخادم حفظ النسب المخصّصة (المالك)
   const stored = (id) => JSON.parse(env.DB.tables.get('orders').find((o) => o.id === id).data);
   ok(Number(stored('oa').sellerRate) === 20 && Number(stored('ob').mandoubRate) === 12, 'الخادم: حُفظت النسبتان المخصّصتان', { a: stored('oa').sellerRate, b: stored('ob').mandoubRate });

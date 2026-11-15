@@ -2556,6 +2556,10 @@ body.modal-open { overflow: hidden; }
 .cp-who small { color: var(--ink-3); font-size: .78rem; }
 .cp-who .cp-paid { color: var(--ok); font-weight: 600; }
 .cp-who .cp-due { color: var(--warn); font-weight: 600; }
+/* نسب العمولة في نافذة المستخدم */
+.u-rates { margin: 6px 0 4px; padding: 10px 12px 4px; border: 1px solid var(--accent-line); border-radius: var(--r); background: var(--accent-soft); }
+.u-rates legend { padding: 0 6px; font-weight: 700; color: var(--accent); }
+.u-rate small.hint { font-size: .74rem; }
 .cf-choices .cf-choice { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line, #E3D9CA); }
 .cf-choices .cf-choice:first-of-type { border-top: 0; }
 .cf-choices .cf-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }

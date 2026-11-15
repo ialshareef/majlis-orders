@@ -2799,7 +2799,8 @@ function serverCommSnapshot(o, owner, s) {
   const isMan = !!(owner && owner.role === 'mandoub');
   const parentId = isMan && owner.parent_id ? String(owner.parent_id) : null;
   return {
-    ownerRate: isMan ? (rateOrNull(owner.rate) ?? rateOrNull(s.mandoubRate) ?? 0) : (rateOrNull(o.sellerRate) ?? rateOrNull(s.sellerRate) ?? 0),
+    // البائع: نسبة الطلب ← نسبة الموظف الخاصة (صفحة المستخدمين) ← الافتراضي — نفس sellerRateOf في الواجهة
+    ownerRate: isMan ? (rateOrNull(owner.rate) ?? rateOrNull(s.mandoubRate) ?? 0) : (rateOrNull(o.sellerRate) ?? rateOrNull(owner && owner.rate) ?? rateOrNull(s.sellerRate) ?? 0),
     parentId,
     parentRate: parentId ? (rateOrNull(owner.parent_rate) ?? rateOrNull(s.mandoubParentRate) ?? 0) : null,
     shareRate: rateOrNull(o.shareRate !== undefined ? o.shareRate : o.othersRate) ?? rateOrNull(s.shareRate) ?? 0,

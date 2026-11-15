@@ -349,6 +349,23 @@ await ta('commRates: المدير العادي لا يغيّرها، والما�
   await call(env, '/api/sync', '5', { orders: { upsert: [o] } });
   assert.strictEqual(stored(env, 'n4').commRates.ownerRate, 10, 'المدير العادي لا يغيّر');
 });
+await ta('نسبة الموظف الخاصة: المالك يضبطها من المستخدمين، وتدخل لقطة طلبات الموظف الجديدة؛ والمدير العادي لا يغيّرها', async () => {
+  const env = mk();
+  assert.strictEqual((await call(env, '/api/users', '1', editUser(env, '2', { rate: 7.5 }))).s, 200);
+  assert.strictEqual(Number(userRow(env, '2').rate), 7.5, 'المالك يضبط النسبة');
+  await call(env, '/api/sync', '2', { orders: { upsert: [order('ur1', '2')] } });
+  assert.strictEqual(stored(env, 'ur1').commRates.ownerRate, 7.5, 'لقطة الطلب الجديد بنسبة الموظف الخاصة لا الافتراضي (2)');
+  // نسبة الطلب المخصّصة يحددها المالك فتغلب نسبة الموظف
+  await call(env, '/api/sync', '1', { orders: { upsert: [order('ur2', '2', { sellerRate: 12 })] } });
+  assert.strictEqual(stored(env, 'ur2').sellerRate, 12);
+  // المدير العادي لا يغيّر نسبة موظف
+  await call(env, '/api/users', '5', editUser(env, '2', { rate: 50 }));
+  assert.strictEqual(Number(userRow(env, '2').rate), 7.5, 'المدير العادي لا يغيّر النسبة');
+  // إزالة النسبة الخاصة (فارغ) ← يعود الافتراضي
+  assert.strictEqual((await call(env, '/api/users', '1', editUser(env, '2', { rate: null }))).s, 200);
+  await call(env, '/api/sync', '2', { orders: { upsert: [order('ur3', '2')] } });
+  assert.strictEqual(stored(env, 'ur3').commRates.ownerRate, 2, 'بلا نسبة خاصة ← الافتراضي من الإعدادات');
+});
 await ta('commPaid (صرف العمولة): المالك يسجّله، والموظف والمدير العادي لا يغيّرانه، والصيغة الفاسدة تُرفض', async () => {
   const env = mk();
   await call(env, '/api/sync', '2', { orders: { upsert: [order('cp1', '2')] } });
