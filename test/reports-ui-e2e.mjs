@@ -54,6 +54,8 @@ const env = envWith({
 });
 for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses']) env.DB.tables.set(t, []);
 env.DB.tables.set('expenses', [{ id: 'e1', name: 'إيجار', amount: 100, category: 'إيجار', note: '', created_by: '1', created_at: thisMonth(1) + 'T08:00:00Z', updated_at: thisMonth(1) + 'T08:00:00Z', expense_date: thisMonth(1), order_id: null }]);
+// عهدة المالك: استلام قبل المصروف e1 فيُخصم منه (لتصدير تقرير «حركة العهدة»)
+env.DB.tables.set('custody_receipts', [{ id: 'c1', user_id: '1', amount: 1500, note: 'عهدة', created_by: '1', created_at: thisMonth(1) + 'T07:00:00Z', updated_at: thisMonth(1) + 'T07:00:00Z' }]);
 env.DB.tables.set('user_permissions', [
   ...grant('2', ['reports.view_own', 'reports.export']),
   ...grant('3', ['reports.view_own']),
