@@ -427,13 +427,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.12';
-// بصمة asalh-najd-1.1.12.apk (إصدار GitHub v1.1.12، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.12 وversionCode 10112، ونفس شهادة توقيع 1.1.11).
-const UPDATE_FALLBACK_SHA256 = '5f7d83d57ddd67feaa1041f098b19cd6c57ecda323b98e548304bffba202fc4f';
+const UPDATE_FALLBACK_VERSION = '1.1.13';
+// بصمة asalh-najd-1.1.13.apk (إصدار GitHub v1.1.13، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.13 وversionCode 10113، ونفس شهادة توقيع 1.1.12).
+const UPDATE_FALLBACK_SHA256 = '3bf1930ab6cc0839209e0a4235367c0cd3d32c11a260d35263ed2f1990449290';
 const UPDATE_FALLBACK_NOTES = [
-  'صرف العمولة: زر «تم الصرف» تحت العمولة في قائمة الطلبات، وتقرير العمولات يعرض المصروف وغير المصروف',
-  'نسبة عمولة خاصة لكل موظف من صفحة المستخدمين، تُطبَّق على طلباته الجديدة',
+  'شراكة العمولة بين موظفَين: حين يبيع أحدهما يأخذ شريكه نسبة من قيمة البيع (تُضبط من الإعدادات)',
+  'حصة الشريك تظهر في ملخص الطلب وتقرير العمولات ونافذة صرف العمولة',
 ];
 
 function versionCodeOfName(v) {
