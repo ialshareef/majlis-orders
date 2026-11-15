@@ -68,7 +68,8 @@ $files = @(
   @{ url = '/profile/img/najdi-tassels.jpg'; path = 'profile\img\najdi-tassels.jpg' },
   @{ url = '/profile/img/carved-wood-seats.jpg'; path = 'profile\img\carved-wood-seats.jpg' },
   @{ url = '/profile/img/outdoor-aluminum-sadu.jpg'; path = 'profile\img\outdoor-aluminum-sadu.jpg' },
-  @{ url = '/profile/img/warm-heritage.jpg'; path = 'profile\img\warm-heritage.jpg' }
+  @{ url = '/profile/img/warm-heritage.jpg'; path = 'profile\img\warm-heritage.jpg' },
+  @{ url = '/profile/img/video-poster.jpg'; path = 'profile\img\video-poster.jpg' }
 )
 
 $entries = New-Object System.Collections.Generic.List[string]

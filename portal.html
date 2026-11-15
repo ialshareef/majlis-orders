@@ -59,6 +59,18 @@
     </span>
     <span class="p-profile-go" aria-hidden="true">←</span>
   </a>
+  <!-- الفيديو التعريفي: لا يُنزَّل إلا إذا ضغط العميل (لا يستهلك باقته ولا يبطئ الصفحة) -->
+  <button type="button" class="p-video-btn" id="pVideoBtn" aria-label="شاهد الفيديو التعريفي — 30 ثانية">
+    <img src="https://majlis-api.asalh-najd.workers.dev/profile/img/video-poster.jpg" alt="" aria-hidden="true" loading="lazy" width="54" height="96">
+    <span class="p-video-play" aria-hidden="true">▶</span>
+    <span class="p-profile-body"><small>فيديو 30 ثانية</small><b>شاهد أصالة نجد</b></span>
+  </button>
+  <div class="p-video-modal" id="pVideoBox" hidden role="dialog" aria-modal="true" aria-label="الفيديو التعريفي">
+    <div class="p-video-frame">
+      <video id="pVideo" playsinline controls preload="none" poster="https://majlis-api.asalh-najd.workers.dev/profile/img/video-poster.jpg"></video>
+      <button type="button" class="p-video-close" id="pVideoClose" aria-label="إغلاق">✕</button>
+    </div>
+  </div>
   <nav class="p-links" id="pLinks" aria-label="تواصل مع المحل">
     <a id="plMaps" class="p-link" target="_blank" rel="noopener"><svg><use href="#p-pin"/></svg><span>موقعنا</span></a>
     <a id="plTiktok" class="p-link" target="_blank" rel="noopener"><svg><use href="#p-music"/></svg><span>TikTok</span></a>

@@ -64,12 +64,23 @@ const iRow = index.indexOf('id="profileRow"'), iBox = index.indexOf('id="linksBo
 ok(iRow > iBox && iRow < iCust, '«عن التطبيق»: سطر الملف التعريفي أول روابط الوصول السريع');
 ok(['btnOpenProfile', 'btnPdfProfile', 'btnCopyProfile', 'btnShareProfile'].every((b) => index.includes(`id="${b}"`) && app.includes(`bind('${b}'`)) && app.includes(`profile: '${PROFILE}'`) && app.includes(`profilePdf: '${PROFILE}.pdf'`), '«عن التطبيق»: فتح وPDF ونسخ ومشاركة مربوطة بالروابط الرسمية');
 
+// الفيديو التعريفي: في الملف التعريفي (ويب فقط)، وفي البوابة عند الضغط، وفي «عن التطبيق»
+const vfile = path.join(root, 'marketing', 'video', 'asalh-najd-promo.mp4');
+const vbytes = fs.existsSync(vfile) ? fs.readFileSync(vfile) : Buffer.alloc(0);
+ok(vbytes.length > 500 * 1024 && vbytes.length < 20 * 1024 * 1024 && vbytes.subarray(4, 8).toString() === 'ftyp', 'ملف الفيديو MP4 موجود وحجمه ضمن حد jsDelivr (20MB)', vbytes.length);
+ok(/<section class="sheet no-print" id="video">/.test(html) && /<video id="promoVideo" src="\/video\.mp4"[^>]*muted[^>]*playsinline[^>]*preload="none"/.test(html), 'الملف التعريفي: فيديو صامت لا يُنزَّل قبل ظهوره، ولا يدخل ملف PDF');
+const iVid = portal.indexOf('id="pVideoBtn"');
+ok(iVid > iCard && iVid < iLinks && /<video id="pVideo"[^>]*preload="none"/.test(portal) && !/<video id="pVideo"[^>]*\ssrc=/.test(portal) && read('js/portal.js').includes(`'${PROFILE.replace('/profile', '')}/video.mp4'`), 'البوابة: زر الفيديو بعد بطاقة الملف التعريفي، والفيديو يُحمَّل عند الضغط فقط');
+ok(index.includes('id="videoRow"') && ['btnOpenVideo', 'btnCopyVideo', 'btnShareVideo'].every((b) => index.includes(`id="${b}"`) && app.includes(`bind('${b}'`)) && app.includes(`video: '${PROFILE.replace('/profile', '')}/video.mp4'`), '«عن التطبيق»: سطر الفيديو بتشغيل ونسخ ومشاركة');
+
 // مسار /profile.pdf في الـ Worker
 const wsrc = read('worker/worker.js');
 const ver = (wsrc.match(/^const UPDATE_FALLBACK_VERSION = '([^']+)'/m) || [])[1];
 const { default: worker } = await import('data:text/javascript;base64,' + Buffer.from(wsrc).toString('base64'));
 const r = await worker.fetch(new Request('https://majlis-api.asalh-najd.workers.dev/profile.pdf'), {});
 ok(r.status === 302 && r.headers.get('location') === `https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@v${ver}/profile/asalh-najd-profile.pdf`, '/profile.pdf يحوّل إلى ملف وسم الإصدار المنشور على jsDelivr', r.headers.get('location'));
+const rv = await worker.fetch(new Request('https://majlis-api.asalh-najd.workers.dev/video.mp4'), {});
+ok(rv.status === 302 && rv.headers.get('location') === `https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@v${ver}/marketing/video/asalh-najd-promo.mp4`, '/video.mp4 يحوّل إلى فيديو وسم الإصدار على jsDelivr', rv.headers.get('location'));
 
 // الحزمة المبنية (كما في visit-test.mjs): الصفحة وصورها تُخدَم فعلاً من الـ Worker
 const bundlePath = path.join(root, 'worker', 'worker.bundle.js');

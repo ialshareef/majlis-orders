@@ -171,6 +171,23 @@
     });
   }
 
+  /* الفيديو التعريفي: يُنزَّل ويعمل عند الضغط فقط، ويتوقف عند الإغلاق. رابط مطلق (يعمل داخل تطبيق أندرويد) */
+  (function () {
+    var btn = $('#pVideoBtn'), box = $('#pVideoBox'), v = $('#pVideo'), x = $('#pVideoClose');
+    if (!btn || !box || !v) return;
+    var close = function () { v.pause(); box.hidden = true; document.removeEventListener('keydown', onKey); btn.focus(); };
+    var onKey = function (e) { if (e.key === 'Escape') close(); };
+    btn.addEventListener('click', function () {
+      if (!v.getAttribute('src')) v.setAttribute('src', 'https://majlis-api.asalh-najd.workers.dev/video.mp4');
+      box.hidden = false;
+      document.addEventListener('keydown', onKey);
+      var p = v.play(); if (p && p.catch) p.catch(function () { /* المتصفح منع التشغيل التلقائي: يبقى زر التشغيل */ });
+      x.focus();
+    });
+    x.addEventListener('click', close);
+    box.addEventListener('click', function (e) { if (e.target === box) close(); });
+  })();
+
   $('#pStart').addEventListener('click', startNew);
   $('#pResume').addEventListener('click', resume);
   $('#pLookStart').addEventListener('click', function () { window.location.href = '/customer-design'; });

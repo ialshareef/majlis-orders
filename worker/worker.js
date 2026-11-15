@@ -270,6 +270,10 @@ export default {
     if (url.pathname === '/profile.pdf') {
       return Response.redirect(PROFILE_PDF_BASE + 'v' + UPDATE_FALLBACK_VERSION + '/profile/asalh-najd-profile.pdf', 302);
     }
+    // الفيديو التعريفي (5.5MB): من المستودع عبر jsDelivr مثبَّتاً على وسم الإصدار، مثل ملف PDF
+    if (url.pathname === '/video.mp4') {
+      return Response.redirect(PROFILE_PDF_BASE + 'v' + UPDATE_FALLBACK_VERSION + '/marketing/video/asalh-najd-promo.mp4', 302);
+    }
     if (!url.pathname.startsWith('/api/')) {
       if (ASSETS) return serveAsset(url.pathname);
       return json({ ok: true, service: 'majlis-api', hint: 'ضع هذا الرابط في config.js (apiUrl)' }, 200, cors);

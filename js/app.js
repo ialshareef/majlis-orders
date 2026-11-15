@@ -6684,6 +6684,7 @@ function docTitle(order) {
     staff: 'https://majlis-api.asalh-najd.workers.dev/',
     profile: 'https://majlis-api.asalh-najd.workers.dev/profile',
     profilePdf: 'https://majlis-api.asalh-najd.workers.dev/profile.pdf',
+    video: 'https://majlis-api.asalh-najd.workers.dev/video.mp4',
   };
   const APK_RELEASES_URL = 'https://github.com/ialshareef/majlis-orders/releases/latest';
 
@@ -6696,6 +6697,7 @@ function docTitle(order) {
       customerLink: ACCESS_LINKS.customer,
       staffLink: ACCESS_LINKS.staff,
       profileLink: ACCESS_LINKS.profile,
+      videoLink: ACCESS_LINKS.video,
     };
     Object.entries(urls).forEach(([id, url]) => {
       const inp = document.getElementById(id);
@@ -6738,6 +6740,10 @@ function docTitle(order) {
     bind('btnPdfProfile', () => window.open(ACCESS_LINKS.profilePdf, '_blank', 'noopener'));
     bind('btnCopyProfile', () => copy('profileLink'));
     bind('btnShareProfile', () => share('profileLink', 'الملف التعريفي — شركة أصالة نجد للأثاث'));
+    // الفيديو التعريفي
+    bind('btnOpenVideo', () => open('videoLink'));
+    bind('btnCopyVideo', () => copy('videoLink'));
+    bind('btnShareVideo', () => share('videoLink', 'فيديو تعريفي — شركة أصالة نجد للأثاث'));
     bind('btnOpenStaff', () => open('staffLink'), 'staff');
     bind('btnCopyStaff', () => copy('staffLink'), 'staff');
     bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'), 'staff');
