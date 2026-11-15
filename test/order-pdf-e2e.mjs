@@ -70,6 +70,10 @@ const orders = [
     notes: Array(5).join(LONG) + '\nملاحظة أخيرة: الألوان حسب العينة رقم 7.',
   }),
   orderRow('o-empty', 2003, { customer: { name: 'عميل بلا بيانات', phone: '', address: '' }, vat: { enabled: false, rate: 15 } }),
+  // أصناف إضافية فقط (سجاد، مكيف) بلا كنب ولا قطع على المخطط — لا مخطط غرفة في الملفات
+  orderRow('o-items', 2004, { customer: { name: 'عميل أصناف فقط', phone: '0549955622', address: 'الرياض' },
+    manualRows: [{ name: 'سجاد يدوي 3×4', qty: 1, unit: 'قطعة', price: 1800 }, { name: 'مكيف سبليت 24 ألف', qty: 2, unit: 'قطعة', price: 2400 }],
+    attachments: [ATT('صورة السجاد المطلوب')] }),
 ];
 const SETTINGS = { shopName: 'أصالة نجد للمجالس العربية والديكور', phone: '0549955622', whatsapp: 'https://wa.me/966549955622', instagram: 'https://www.instagram.com/asalanajd_vip', mapsUrl: 'https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8?g_st=ac', address: 'الرياض', vatNumber: '300000000000003', invoiceNote: 'الأسعار شاملة التركيب داخل الرياض. يُستلم الطلب خلال 21 يوم عمل من اعتماد التصميم.' };
 const U = (id, username, name, role) => ({ id, username, name, role, active: 1, created_at: past, must_change_password: 0, password_hash: H });
@@ -251,7 +255,14 @@ try {
   ok(/ملاءمة للصفحة/.test(r.note), 'invoice-heavy: نافذة التصدير تشرح الطباعة على A4 (ملاءمة للصفحة)', r.note.slice(-120));
   ok(/صفحة واحدة/.test(r.state), 'invoice-heavy: الحالة تذكر «صفحة واحدة» والمقاس', r.state);
   r = await exportDoc(2003, 'invoice');
-  checkDoc('invoice-empty', r, { paper: 'a4', rows: 1, texts: ['عميل بلا بيانات', 'لا توجد أصناف', 'لا توجد قطع على المخطط'] });
+  checkDoc('invoice-empty', r, { paper: 'a4', rows: 1, texts: ['عميل بلا بيانات', 'لا توجد أصناف'] });
+  ok(!r.plan && !/مقاس الغرفة|طريقة القياس|لا توجد قطع على المخطط/.test(r.text), 'invoice-empty: بلا تصميم — لا مخطط غرفة ولا مقاسها', r.text.slice(0, 120));
+  r = await exportDoc(2004, 'invoice');
+  checkDoc('invoice-items', r, { paper: 'a4', rows: 2, texts: ['عميل أصناف فقط', 'سجاد يدوي 3×4', 'مكيف سبليت 24 ألف', 'المرفقات', 'صورة السجاد المطلوب'] });
+  ok(!r.plan && !/مقاس الغرفة|طريقة القياس|التصميم والمقاسات/.test(r.text), 'invoice-items: أصناف إضافية فقط — لا مخطط ولا مقاس غرفة، والمرفقات باقية', r.text.slice(0, 160));
+  r = await exportDoc(2004, 'workshop');
+  checkDoc('workshop-items', r, { paper: 'a4', texts: ['أمر تصنيع', 'بنود إضافية', 'سجاد يدوي 3×4'] });
+  ok(!r.plan && !/قطع الكنب|مقاس الغرفة|أمتار الكنب/.test(r.text), 'workshop-items: لا مخطط ولا جدول كنب فارغ', r.text.slice(0, 160));
   r = await exportDoc(2002, 'workshop');
   checkDoc('workshop-heavy', r, { plan: true, texts: ['أمر تصنيع', 'لا يحتوي هذا المستند على أسعار'] });
   ok(!/ر\.س/.test(r.text), 'workshop-heavy: بلا أي سعر', '');

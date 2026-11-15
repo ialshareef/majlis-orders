@@ -3493,7 +3493,15 @@ function docTitle(order) {
     try { return DesignSheet.plan(order.design, { getItem, pieceStyle: (typeof pieceStyle === 'function' ? pieceStyle : undefined) }, 2800); }
     catch (_) { return null; }
   }
+  /** هل في تصميم الطلب ما يُرسم؟ طلب أصناف إضافية فقط (سجاد، مكيف…) بلا كنب ولا قطع: لا مخطط في ملفاته */
+  const hasDesign = (order) => !!(order && order.design && Array.isArray(order.design.pieces) && order.design.pieces.length);
+
   function designSection(order, title, extraSide = '') {
+    // بلا قطع على المخطط: لا مساحة فارغة للغرفة — تبقى المرفقات وحدها (إن وُجدت) بعرض الصفحة
+    if (!hasDesign(order)) {
+      docPlan = null; docNote = '';
+      return extraSide ? `<section class="inv-dsec inv-atts-only" aria-label="المرفقات">${extraSide}</section>` : '';
+    }
     const pl = sheetPlan(order);
     docPlan = pl;
     docNote = '';
@@ -3551,9 +3559,9 @@ function docTitle(order) {
           ? `<div><span>العرض صالح حتى</span><b class="num">${order.validUntil ? esc(fmtDate(order.validUntil)) : '—'}</b></div>`
           : `<div><span>التوصيل المتوقع</span><b class="num">${order.deliveryDate ? esc(fmtDate(order.deliveryDate)) : 'غير محدد'}</b></div>`}
         <div><span>الموظف</span><b dir="auto">${mx(emp) || '—'}</b></div>
-        <div><span>مقاس الغرفة (داخلي)</span><b>${roomSummary(order.design)}</b></div>
+        ${hasDesign(order) ? `<div><span>مقاس الغرفة (داخلي)</span><b>${roomSummary(order.design)}</b></div>` : ''}
         <div><span>الحالة</span><b>${esc(quote ? 'عرض سعر' : (STATUS[order.status] || order.status || '—'))}</b></div>
-        <div><span>طريقة القياس</span><b>${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>
+        ${hasDesign(order) ? `<div><span>طريقة القياس</span><b>${order.design.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>` : ''}
       </div>
       ${designSection(order, 'التصميم والمقاسات', attsHtml)}
 
@@ -3596,7 +3604,7 @@ function docTitle(order) {
     const img = designImage(order, W);
     const aspect = printDesigner.aspect();
     const H = Math.round(Math.min(1500, Math.max(650, W / aspect)));   // نفس حساب designImage
-    docPlan = { img, W, H, relabel: (k) => { printDesigner.setState(order.design); return printDesigner.toImage(W, H, { labelScale: k }); } };
+    docPlan = hasDesign(order) ? { img, W, H, relabel: (k) => { printDesigner.setState(order.design); return printDesigner.toImage(W, H, { labelScale: k }); } } : null;
     const d = order.design || {};
     const pieces = d.pieces || [];
     const c = order.customer || {};
@@ -3626,20 +3634,20 @@ function docTitle(order) {
       <div class="inv-info">
         <div><span>العميل</span><b>${esc(c.name) || '—'}</b></div>
         <div><span>تاريخ التوصيل المطلوب</span><b class="num">${order.deliveryDate ? esc(fmtDate(order.deliveryDate)) : 'غير محدد'}</b></div>
-        <div><span>مقاس الغرفة (داخلي)</span><b>${roomSummary(d)}</b></div>
-        <div><span>إجمالي أمتار الكنب</span><b class="num">${meters} م</b></div>
+        ${hasDesign(order) ? `<div><span>مقاس الغرفة (داخلي)</span><b>${roomSummary(d)}</b></div>
+        <div><span>إجمالي أمتار الكنب</span><b class="num">${meters} م</b></div>` : ''}
         <div class="span2"><span>مكان التوصيل</span><b>${esc(c.address) || '—'}</b></div>
         <div><span>الموظف</span><b>${esc(orderEmployee(order))}</b></div>
-        <div><span>طريقة القياس</span><b>${d.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>
+        ${hasDesign(order) ? `<div><span>طريقة القياس</span><b>${d.cornerMode === 'deduct' ? 'بدون تكرار الزوايا' : 'بطول الجدار كامل'}</b></div>` : ''}
       </div>
-      <section class="inv-dsec"><h2>المخطط</h2><div class="ds-plan inv-dplan"><span class="ds-img"><img src="${img}" alt="المخطط"></span></div></section>
-      <div class="inv-items">
+      ${hasDesign(order) ? `<section class="inv-dsec"><h2>المخطط</h2><div class="ds-plan inv-dplan"><span class="ds-img"><img src="${img}" alt="المخطط"></span></div></section>` : ''}
+      ${sofas.length ? `<div class="inv-items">
         <h2>قطع الكنب</h2>
         <table>
           <thead><tr><th class="c-idx">#</th><th>القطعة</th><th>الموضع</th><th class="c-qty">الطول × العمق (م)</th><th>الخشب</th><th>القماش</th><th>الإسفنج</th><th>ملاحظة</th></tr></thead>
-          <tbody>${rows || '<tr><td colspan="8">لا توجد قطع كنب</td></tr>'}</tbody>
+          <tbody>${rows}</tbody>
         </table>
-      </div>
+      </div>` : ''}
       <div class="inv-bottom">
         <div class="inv-notes">
           ${accTxt ? `<b>الإكسسوارات:</b> ${accTxt}<br>` : ''}
