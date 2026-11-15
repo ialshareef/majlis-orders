@@ -54,6 +54,16 @@ const wantPdf = [...new Set(qrs.map((m) => m[1]))];
 const noLink = wantPdf.filter((u) => !pdfUris.has(u));
 ok(noLink.length === 0, 'ملف PDF: كل رمز QR رابط قابل للضغط', noLink);
 
+// الوصول إلى الملف التعريفي: بطاقة بارزة في بوابة العميل، وسطر في «عن التطبيق» لدى الموظفين
+const portal = read('portal.html'), index = read('index.html'), app = read('js/app.js');
+const PROFILE = 'https://majlis-api.asalh-najd.workers.dev/profile';
+const iCard = portal.indexOf('id="pProfile"'), iStart = portal.indexOf('id="pStart"'), iLinks = portal.indexOf('id="pLinks"');
+ok(iCard > iStart && iCard < iLinks && portal.includes(`href="${PROFILE}"`), 'بوابة العميل: بطاقة الملف التعريفي بعد زر التصميم وقبل روابط التواصل (رابط مطلق يعمل في أندرويد)');
+ok(portal.includes('id="pProfileDone"'), 'بوابة العميل: رابط الملف التعريفي في صفحة «تم الانتهاء من التصميم»');
+const iRow = index.indexOf('id="profileRow"'), iBox = index.indexOf('id="linksBox"'), iCust = index.indexOf('id="customerLink"');
+ok(iRow > iBox && iRow < iCust, '«عن التطبيق»: سطر الملف التعريفي أول روابط الوصول السريع');
+ok(['btnOpenProfile', 'btnPdfProfile', 'btnCopyProfile', 'btnShareProfile'].every((b) => index.includes(`id="${b}"`) && app.includes(`bind('${b}'`)) && app.includes(`profile: '${PROFILE}'`) && app.includes(`profilePdf: '${PROFILE}.pdf'`), '«عن التطبيق»: فتح وPDF ونسخ ومشاركة مربوطة بالروابط الرسمية');
+
 // مسار /profile.pdf في الـ Worker
 const wsrc = read('worker/worker.js');
 const ver = (wsrc.match(/^const UPDATE_FALLBACK_VERSION = '([^']+)'/m) || [])[1];

@@ -2536,6 +2536,8 @@ body.modal-open { overflow: hidden; }
 .inv-totals .pay + .pay { border-top: 0; }
 .inv-totals .pay bdi { margin-inline-start: 1.5mm; color: #8A7866; }
 /* نافذة التعارض: اختيار القيمة لكل حقل غيّره الطرفان */
+/* «عن التطبيق»: سطر الملف التعريفي مميَّز أعلى روابط الوصول */
+.link-row.profile-row { background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--r); padding: 10px 12px; }
 .cf-choices .cf-choice { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line, #E3D9CA); }
 .cf-choices .cf-choice:first-of-type { border-top: 0; }
 .cf-choices .cf-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -2905,6 +2907,21 @@ body.portal { background: var(--bg); }
 }
 .p-link svg { width: 24px; height: 24px; color: var(--accent); }
 .p-foot { text-align: center; margin-top: 22px; }
+/* بطاقة «الملف التعريفي» في بوابة العميل: صورة من الأعمال + عنوان + سهم — بارزة دون أن تنافس زر التصميم */
+.p-profile {
+  display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px;
+  margin-top: 22px; padding: 10px; text-align: start; text-decoration: none; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--accent-line); border-radius: var(--r-lg);
+  box-shadow: 0 4px 16px rgba(46, 35, 28, .08); transition: transform .15s, box-shadow .15s;
+}
+.p-profile:hover, .p-profile:focus-visible { transform: translateY(-1px); box-shadow: 0 8px 22px rgba(46, 35, 28, .14); outline: none; }
+.p-profile img { width: 76px; height: 76px; border-radius: calc(var(--r-lg) - 4px); object-fit: cover; background: var(--sand); }
+.p-profile-body { display: grid; gap: 2px; min-width: 0; }
+.p-profile-body small { color: var(--accent); font-weight: 600; font-size: .78rem; }
+.p-profile-body b { font-size: 1.02rem; }
+.p-profile-body span { color: var(--ink-2); font-size: .82rem; line-height: 1.5; }
+.p-profile-go { width: 34px; height: 34px; border-radius: 50%; display: grid; place-items: center; background: var(--accent-fill); color: #fff; font-weight: 700; }
+.p-profile.compact { grid-template-columns: minmax(0, 1fr) auto; margin: 16px 0 6px; padding: 12px 14px; }
 .p-bar {
   position: sticky; top: 0; z-index: 40;
   display: flex; align-items: center; gap: 10px;

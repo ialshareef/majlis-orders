@@ -6682,6 +6682,8 @@ function docTitle(order) {
   const ACCESS_LINKS = {
     customer: 'https://majlis-api.asalh-najd.workers.dev/customer-design',
     staff: 'https://majlis-api.asalh-najd.workers.dev/',
+    profile: 'https://majlis-api.asalh-najd.workers.dev/profile',
+    profilePdf: 'https://majlis-api.asalh-najd.workers.dev/profile.pdf',
   };
   const APK_RELEASES_URL = 'https://github.com/ialshareef/majlis-orders/releases/latest';
 
@@ -6693,6 +6695,7 @@ function docTitle(order) {
     const urls = {
       customerLink: ACCESS_LINKS.customer,
       staffLink: ACCESS_LINKS.staff,
+      profileLink: ACCESS_LINKS.profile,
     };
     Object.entries(urls).forEach(([id, url]) => {
       const inp = document.getElementById(id);
@@ -6730,6 +6733,11 @@ function docTitle(order) {
     bind('btnOpenCustomer', () => open('customerLink'), 'customer');
     bind('btnCopyCustomer', () => copy('customerLink'), 'customer');
     bind('btnShareCustomer', () => share('customerLink', 'واجهة العميل — مصمم المجالس'), 'customer');
+    // الملف التعريفي للشركة: صفحة /profile وملف PDF
+    bind('btnOpenProfile', () => open('profileLink'));
+    bind('btnPdfProfile', () => window.open(ACCESS_LINKS.profilePdf, '_blank', 'noopener'));
+    bind('btnCopyProfile', () => copy('profileLink'));
+    bind('btnShareProfile', () => share('profileLink', 'الملف التعريفي — شركة أصالة نجد للأثاث'));
     bind('btnOpenStaff', () => open('staffLink'), 'staff');
     bind('btnCopyStaff', () => copy('staffLink'), 'staff');
     bind('btnShareStaff', () => share('staffLink', 'واجهة الموظفين والمناديب'), 'staff');
