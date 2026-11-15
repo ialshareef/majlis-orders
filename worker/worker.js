@@ -432,13 +432,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.14';
-// بصمة asalh-najd-1.1.14.apk (إصدار GitHub v1.1.14، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.14 وversionCode 10114، ونفس شهادة توقيع 1.1.13).
-const UPDATE_FALLBACK_SHA256 = 'd68b7fd6fefac50bb05cafe76383a56d577541b15fd885513d3fa48583d12ecc';
+const UPDATE_FALLBACK_VERSION = '1.1.15';
+// بصمة asalh-najd-1.1.15.apk (إصدار GitHub v1.1.15، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.15 وversionCode 10115، ونفس شهادة توقيع 1.1.14).
+const UPDATE_FALLBACK_SHA256 = 'c9fb180a98866e3701a2638910d9055ad34694e282eb7a86db8b0a29a4bfbbad';
 const UPDATE_FALLBACK_NOTES = [
-  'عهدة الموظف: سجّل المبلغ المستلم، وكل مصروف بعده يُخصم منه تلقائياً ويظهر المتبقي',
-  'تقرير PDF لحركة الاستلام والصرف بالتاريخ والوقت من صفحة المصروفات والتقارير',
+  'زر «مشاركة واتساب» بجانب كل تصدير PDF لإرسال الملف مباشرة',
+  'العهدة: سطر واضح «استلمت − صرفت = المتبقي» وكشف الحركة بالرصيد بعد كل حركة',
 ];
 
 function versionCodeOfName(v) {
