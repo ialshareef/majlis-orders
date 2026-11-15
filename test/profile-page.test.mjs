@@ -41,6 +41,19 @@ ok(pdf.length > 200 * 1024 && pdf.length < 3 * 1024 * 1024, 'حجم PDF مناس
 const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
 ok(pages === 7, 'PDF من 7 صفحات A4', pages);
 
+// رموز QR قابلة للضغط: كل رمز رابط إلى وجهته نفسها — في الصفحة وفي ملف PDF (روابط PDF حقيقية)
+const qrs = [...html.matchAll(/<a class="qr-card" href="([^"]+)"[^>]*><span class="qr" data-qr="([^"]+)"/g)];
+const allQr = (html.match(/data-qr="/g) || []).length;
+ok(qrs.length === allQr && allQr >= 7 && qrs.every((m) => m[1] === m[2]), 'كل رمز QR رابط يفتح الوجهة نفسها التي يحملها الرمز', { links: qrs.length, all: allQr });
+const zlib = await import('node:zlib');
+const pdfUris = new Set();
+const grab = (txt) => { for (const m of txt.matchAll(/\/URI\s*\(([^)]*)\)/g)) pdfUris.add(m[1]); };
+grab(pdf.toString('latin1'));
+for (const m of pdf.toString('latin1').matchAll(/stream\r?\n([\s\S]*?)endstream/g)) { try { grab(zlib.inflateSync(Buffer.from(m[1], 'latin1')).toString('latin1')); } catch (_) { /* تيار غير مضغوط أو صورة */ } }
+const wantPdf = [...new Set(qrs.map((m) => m[1]))];
+const noLink = wantPdf.filter((u) => !pdfUris.has(u));
+ok(noLink.length === 0, 'ملف PDF: كل رمز QR رابط قابل للضغط', noLink);
+
 // مسار /profile.pdf في الـ Worker
 const wsrc = read('worker/worker.js');
 const ver = (wsrc.match(/^const UPDATE_FALLBACK_VERSION = '([^']+)'/m) || [])[1];

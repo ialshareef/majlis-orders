@@ -118,6 +118,9 @@
   .digital ul { margin: 12px 0 18px; padding-inline-start: 1.1em; color: #EBDDC6; }
   .qr-card { background: #fff; color: var(--night); border-radius: 16px; padding: 14px; width: 200px; justify-self: center; text-align: center; }
   .qr-card small { display: block; font-weight: 600; margin-top: 6px; }
+  a.qr-card { display: block; text-decoration: none; transition: transform .15s, box-shadow .15s; }
+  a.qr-card:hover, a.qr-card:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(46,35,28,.18); outline: none; }
+  a.qr-card small::after { content: ' ↗'; color: var(--bronze); }
   .qr { width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
   .qr svg, .qr img { width: 100%; height: 100%; }
 
@@ -330,7 +333,7 @@
       </ul>
       <a class="btn light no-print" href="/customer-design?src=profile"><svg><use href="#i-pen"/></svg>ابدأ التصميم</a>
     </div>
-    <div class="qr-card"><div class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" aria-label="رمز QR لصفحة تصميم المجلس"></div><small>امسح وصمّم مجلسك</small></div>
+    <a class="qr-card" href="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" role="img" aria-label="رمز QR لصفحة تصميم المجلس"></span><small>امسح وصمّم مجلسك</small></a>
   </div>
   <div class="print-only" style="margin-top:10mm">
     <span class="eyebrow">من أعمالنا</span>
@@ -386,12 +389,12 @@
       </div>
     </div>
     <div class="qrs">
-      <div class="qr-card"><div class="qr" data-qr="https://wa.me/966533724290" aria-label="رمز QR للواتساب"></div><small>واتساب</small></div>
-      <div class="qr-card"><div class="qr" data-qr="https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8" aria-label="رمز QR لموقع المعرض"></div><small>موقع المعرض</small></div>
-      <div class="qr-card"><div class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" aria-label="رمز QR لتصميم المجلس"></div><small>صمّم مجلسك</small></div>
-      <div class="qr-card"><div class="qr" data-qr="https://www.instagram.com/asalanajd_vip" aria-label="رمز QR لإنستقرام"></div><small>إنستقرام</small></div>
-      <div class="qr-card"><div class="qr" data-qr="https://www.tiktok.com/@asalahnajed" aria-label="رمز QR لتيك توك"></div><small>تيك توك</small></div>
-      <div class="qr-card"><div class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/profile" aria-label="رمز QR لهذا الملف"></div><small>الملف التعريفي</small></div>
+      <a class="qr-card" href="https://wa.me/966533724290" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://wa.me/966533724290" role="img" aria-label="رمز QR للواتساب"></span><small>واتساب</small></a>
+      <a class="qr-card" href="https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8" role="img" aria-label="رمز QR لموقع المعرض"></span><small>موقع المعرض</small></a>
+      <a class="qr-card" href="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" role="img" aria-label="رمز QR لتصميم المجلس"></span><small>صمّم مجلسك</small></a>
+      <a class="qr-card" href="https://www.instagram.com/asalanajd_vip" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://www.instagram.com/asalanajd_vip" role="img" aria-label="رمز QR لإنستقرام"></span><small>إنستقرام</small></a>
+      <a class="qr-card" href="https://www.tiktok.com/@asalahnajed" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://www.tiktok.com/@asalahnajed" role="img" aria-label="رمز QR لتيك توك"></span><small>تيك توك</small></a>
+      <a class="qr-card" href="https://majlis-api.asalh-najd.workers.dev/profile" target="_blank" rel="noopener" title="اضغط لفتح الرابط أو امسح الرمز"><span class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/profile" role="img" aria-label="رمز QR لهذا الملف"></span><small>الملف التعريفي</small></a>
     </div>
   </div>
   <div class="pg print-only"><span>شركة أصالة نجد للأثاث — الرياض</span><span class="num">+966 53 372 4290</span></div>
