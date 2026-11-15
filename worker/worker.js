@@ -423,13 +423,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.9';
-// بصمة asalh-najd-1.1.9.apk (إصدار GitHub v1.1.9، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.9 وversionCode 10109، ونفس شهادة توقيع 1.1.8).
-const UPDATE_FALLBACK_SHA256 = '813cb6c93ea245810110f9d856cfd9940ce066445e0016cda3e64106d2c2321a';
+const UPDATE_FALLBACK_VERSION = '1.1.10';
+// بصمة asalh-najd-1.1.10.apk (إصدار GitHub v1.1.10، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.10 وversionCode 10110، ونفس شهادة توقيع 1.1.9).
+const UPDATE_FALLBACK_SHA256 = 'cd5188050f6ce67b9d8e6b134d4e9264e72ab691ee9261fd176bd29137793ea8';
 const UPDATE_FALLBACK_NOTES = [
-  'الملف التعريفي للشركة: صفحة على /profile تعرض أعمالنا وخدماتنا، مع ملف PDF للتنزيل والإرسال',
-  'روابط مباشرة للواتساب وتصميم المجلس وموقع المعرض، ورموز QR لحساباتنا',
+  'الملف التعريفي للشركة: في صفحة تصميم العملاء، وفي «عن التطبيق» مع فتح وPDF ونسخ ومشاركة',
+  'رموز QR في الملف التعريفي قابلة للضغط في الصفحة وملف PDF',
 ];
 
 function versionCodeOfName(v) {
