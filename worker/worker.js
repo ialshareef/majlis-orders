@@ -432,13 +432,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.13';
-// بصمة asalh-najd-1.1.13.apk (إصدار GitHub v1.1.13، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.13 وversionCode 10113، ونفس شهادة توقيع 1.1.12).
-const UPDATE_FALLBACK_SHA256 = '3bf1930ab6cc0839209e0a4235367c0cd3d32c11a260d35263ed2f1990449290';
+const UPDATE_FALLBACK_VERSION = '1.1.14';
+// بصمة asalh-najd-1.1.14.apk (إصدار GitHub v1.1.14، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.14 وversionCode 10114، ونفس شهادة توقيع 1.1.13).
+const UPDATE_FALLBACK_SHA256 = 'd68b7fd6fefac50bb05cafe76383a56d577541b15fd885513d3fa48583d12ecc';
 const UPDATE_FALLBACK_NOTES = [
-  'شراكة العمولة بين موظفَين: حين يبيع أحدهما يأخذ شريكه نسبة من قيمة البيع (تُضبط من الإعدادات)',
-  'حصة الشريك تظهر في ملخص الطلب وتقرير العمولات ونافذة صرف العمولة',
+  'عهدة الموظف: سجّل المبلغ المستلم، وكل مصروف بعده يُخصم منه تلقائياً ويظهر المتبقي',
+  'تقرير PDF لحركة الاستلام والصرف بالتاريخ والوقت من صفحة المصروفات والتقارير',
 ];
 
 function versionCodeOfName(v) {
