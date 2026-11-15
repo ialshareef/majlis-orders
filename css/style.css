@@ -749,6 +749,19 @@ body.syncing .sync-bar { opacity: 1; animation: sync-load 1.2s var(--ease) infin
 .owner-note { margin: 0 0 12px; padding: 10px 14px; border: 1px solid var(--line-soft); border-radius: var(--r); background: var(--surface-2); }
 .owner-note code { direction: ltr; unicode-bidi: embed; }
 /* شاشة المصروفات: شريط تصفية يلتف في الجوال */
+/* عهدة الموظف (الاستلام) في صفحة المصروفات */
+.cust-box { padding: 12px 14px; margin-bottom: 12px; }
+.cust-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+.cust-head b { display: inline-flex; align-items: center; gap: 6px; }
+.cust-head svg { width: 18px; height: 18px; }
+.cust-stats { margin: 0 0 8px; }
+.cust-bal b { color: var(--ok, #15803d); }
+.cust-bal.neg b, .cust-table .neg, .cust-hint .neg { color: var(--danger, #b91c1c); }
+.cust-recv { display: grid; gap: 4px; margin: 6px 0; }
+.cust-r { display: flex; align-items: center; gap: 8px; padding: 4px 0; border-top: 1px solid var(--line); }
+.cust-r span { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.cust-actions { justify-content: flex-start; margin-top: 8px; }
+.cust-hint { margin: 0 0 8px; }
 .exp-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 12px 14px; margin-bottom: 12px; }
 .exp-filters select { min-height: var(--tb-h); margin: 0; width: auto; }
 @media (max-width: 560px) { .exp-filters .date-f, .exp-filters select { flex: 1 1 100%; } .exp-filters .date-f input { width: 100%; } }

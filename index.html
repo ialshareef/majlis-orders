@@ -795,8 +795,9 @@
     <section id="page-expenses" class="page">
       <header class="page-head">
         <div class="ph-title"><h2>المصروفات</h2><p>مصروفات المحل التشغيلية (نقل، مشتريات، أجور…)، مستقلة عن تكاليف أصناف الطلبات.</p></div>
-        <div class="actions"><button id="btnAddExpense" class="btn primary" hidden><svg><use href="#i-plus"/></svg> إضافة مصروف</button></div>
+        <div class="actions"><button id="btnAddReceipt" class="btn" hidden><svg><use href="#i-wallet"/></svg> تسجيل استلام</button><button id="btnAddExpense" class="btn primary" hidden><svg><use href="#i-plus"/></svg> إضافة مصروف</button></div>
       </header>
+      <div class="card cust-box" id="custBox" hidden></div>
       <div class="card exp-filters">
         <label class="date-f">من <input id="expFrom" type="date" aria-label="من تاريخ"></label>
         <label class="date-f">إلى <input id="expTo" type="date" aria-label="إلى تاريخ"></label>

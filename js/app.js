@@ -5658,12 +5658,15 @@ function docTitle(order) {
   async function renderExpenses() {
     if (!canPage('expenses')) return;
     $('#btnAddExpense').hidden = !canAny('expenses.add_own', 'expenses.add_all');
+    $('#btnAddReceipt').hidden = !canAny('expenses.add_own', 'expenses.add_all');
+    loadCustody().then(() => { if (document.body.dataset.page === 'expenses') renderCustodyBox(); }).catch(() => {});
     const err = $('#expErr');
     err.hidden = true;
     if (!expLoadedAt) { $('#expensesTable tbody').innerHTML = ''; $('#expEmpty').hidden = true; $('#expStats').innerHTML = '<p class="hint">جارٍ تحميل المصروفات…</p>'; }
     try { await loadExpenses(); }
     catch (e) { err.textContent = humanError(e && e.message, 'تعذّر تحميل المصروفات. تحقق من الاتصال.'); err.hidden = false; }
     renderExpensesTable();
+    renderCustodyBox();
   }
 
   /** نافذة إضافة/تعديل مصروف: التاريخ والبيان والتصنيف والمبلغ والملاحظة وطلب مرتبط اختياري */
@@ -5680,6 +5683,7 @@ function docTitle(order) {
         <label>التاريخ <input id="exDate" type="date" value="${esc(expDay(x) || today())}" required></label>
         <label>المبلغ (${esc(currency())}) <input id="exAmount" type="text" inputmode="decimal" class="num" value="${x.amount === '' ? '' : esc(x.amount)}" placeholder="0" autocomplete="off"></label>
       </div>
+      ${isNew ? '<p class="hint cust-hint" id="exCustHint" hidden></p>' : ''}
       <label>البيان <input id="exName" value="${esc(x.name)}" maxlength="200" placeholder="مثال: نقل وتركيب"></label>
       <label>التصنيف <input id="exCat" value="${esc(x.category || '')}" maxlength="60" list="exCatList" placeholder="مثال: نقل، مشتريات، أجور عمال"><datalist id="exCatList">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></label>
       <label>ملاحظة <input id="exNote" value="${esc(x.note || '')}" maxlength="500"></label>
@@ -5692,6 +5696,21 @@ function docTitle(order) {
       <p id="exErr" class="error"></p>
       <div class="btn-row"><button class="btn" id="exCancel">إلغاء</button><button class="btn primary" id="exSave">${icon('save')} حفظ</button></div>`, (b) => {
       $('#exCancel', b).onclick = closeModal;
+      // رصيد العهدة: الحالي وما يصير إليه بعد هذا المصروف (لصاحب المصروف)
+      const hint = $('#exCustHint', b);
+      if (hint) {
+        const upd = () => {
+          const who = ($('#exUser', b) && $('#exUser', b).value) || currentUser.id;
+          const c = custodyOf(who);
+          if (!c) { hint.hidden = true; return; }
+          const a = readAmount($('#exAmount', b).value) || 0;
+          hint.hidden = false;
+          hint.innerHTML = `رصيد العهدة الآن <b>${fmt(c.balance)}</b>${a > 0 ? ` ← بعد هذا المصروف <b class="${c.balance - a < 0 ? 'neg' : ''}">${fmt(money(c.balance - a))}</b>` : ''} ${esc(currency())}`;
+        };
+        $('#exAmount', b).addEventListener('input', upd);
+        if ($('#exUser', b)) $('#exUser', b).addEventListener('change', upd);
+        upd();
+      }
       $('#exSave', b).onclick = async () => {
         const err = $('#exErr', b);
         const amount = readAmount($('#exAmount', b).value);
@@ -5732,6 +5751,136 @@ function docTitle(order) {
   }
 
   $('#btnAddExpense').addEventListener('click', () => expenseForm(null));
+
+  /* ---------------- عهدة الموظف (الاستلام) ----------------
+     الموظف يستلم مبلغاً (يسجّله هو أو المالك)، وكل مصروف يسجّله بعد أول استلام يُخصم منه — الرصيد = المستلم − المصروف.
+     التاريخ والوقت وقت التسجيل تلقائياً (من الخادم). من الخادم مباشرة (/api/custody) بصلاحيات المصروفات. */
+  let custList = [];
+  let custLoadedAt = 0;
+  let custErr = '';
+  let custLoading = null;
+  async function loadCustody() {
+    if (!Store.isRemote || !canAny('expenses.view_own', 'expenses.view_all')) { custList = []; custLoadedAt = Date.now(); return custList; }
+    if (custLoading) return custLoading;
+    custLoading = (async () => {
+      try {
+        const r = await Store.api('GET', '/api/custody');
+        custList = (r && Array.isArray(r.receipts)) ? r.receipts : [];
+        custErr = '';
+        custLoadedAt = Date.now();
+        return custList;
+      } catch (e) { custErr = humanError(e && e.message, 'تعذّر تحميل العهدة. تحقق من الاتصال.'); throw e; }
+      finally { custLoading = null; }
+    })();
+    return custLoading;
+  }
+  const custLedger = () => Reports.custodyLedger(custList, expList);
+  /** عهدة موظف واحد (أو null إن لم يستلم شيئاً) */
+  const custodyOf = (userId) => custLedger().find((p) => p.userId === userId) || null;
+  const custName = (id, fb) => { const u = Store.getUser(id); return (u && u.name) || fb || '—'; };
+
+  function renderCustodyBox() {
+    const box = $('#custBox');
+    if (!box || !canAny('expenses.view_own', 'expenses.view_all')) { if (box) box.hidden = true; return; }
+    const L = custLedger();
+    const all = can('expenses.view_all');
+    const sel = $('#expUser') ? $('#expUser').value : '';
+    const focus = all ? (sel || '') : currentUser.id;
+    const canAdd = canAny('expenses.add_own', 'expenses.add_all');
+    if (!L.length && !canAdd) { box.hidden = true; return; }
+    box.hidden = false;
+    const cu = esc(currency());
+    let body;
+    if (focus) {
+      const c = L.find((p) => p.userId === focus);
+      const name = custName(focus, c && c.name);
+      const recent = custList.filter((r) => r.user_id === focus).slice(0, 5);
+      body = `<div class="cust-head"><b>${icon('wallet')} ${focus === currentUser.id ? 'عهدتي' : 'عهدة ' + esc(name)}</b></div>
+        ${c ? `<div class="stats-row cust-stats">
+          <div class="stat"><span>المستلم</span><b>${fmt(c.received)}</b><small>${cu}</small></div>
+          <div class="stat"><span>المصروف منه</span><b>${fmt(c.spent)}</b><small>${cu}</small></div>
+          <div class="stat cust-bal${c.balance < 0 ? ' neg' : ''}"><span>المتبقي</span><b>${fmt(c.balance)}</b><small>${c.balance < 0 ? 'صرف أكثر من المستلم' : cu}</small></div>
+        </div>` : '<p class="hint">لا يوجد استلام مسجّل بعد. سجّل المبلغ المستلم، وكل مصروف بعده يُخصم منه تلقائياً.</p>'}
+        ${recent.length ? `<div class="cust-recv"><small class="hint">آخر الاستلامات</small>${recent.map((r) => `<div class="cust-r"><span><bdi>${esc(fmtDate(localDate(r.created_at)))} ${esc(localTime(r.created_at))}</bdi> — ${esc(r.note || 'استلام مبلغ')}</span><b>${fmt(r.amount)}</b>
+          ${r.can_edit ? `<button class="icon-btn" data-custedit="${esc(r.id)}" title="تعديل الاستلام" aria-label="تعديل الاستلام">${icon('pen')}</button>` : ''}
+          ${r.can_delete ? `<button class="icon-btn" data-custdel="${esc(r.id)}" title="حذف الاستلام" aria-label="حذف الاستلام">${icon('trash')}</button>` : ''}</div>`).join('')}</div>` : ''}`;
+    } else {
+      body = `<div class="cust-head"><b>${icon('wallet')} عهد الموظفين</b><small class="hint">اختر موظفاً من التصفية لعرض حركته</small></div>
+        ${L.length ? `<div class="table-wrap"><table class="table cust-table"><thead><tr><th>الموظف</th><th class="ta-end">المستلم</th><th class="ta-end">المصروف</th><th class="ta-end">المتبقي</th></tr></thead><tbody>
+          ${L.map((p) => `<tr><td>${esc(custName(p.userId, p.name))}</td><td class="num">${fmt(p.received)}</td><td class="num">${fmt(p.spent)}</td><td class="num${p.balance < 0 ? ' neg' : ''}"><b>${fmt(p.balance)}</b></td></tr>`).join('')}
+        </tbody></table></div>` : '<p class="hint">لا توجد عهد مسجّلة بعد.</p>'}`;
+    }
+    box.innerHTML = body + `<div class="btn-row cust-actions">
+        ${canAdd ? `<button class="btn small" id="custAdd">${icon('plus')} تسجيل استلام</button>` : ''}
+        ${L.length ? `<button class="btn small" id="custPdf">${icon('file')} تصدير PDF لحركة العهدة</button>` : ''}
+      </div>${custErr ? `<p class="error">${esc(custErr)}</p>` : ''}`;
+    const add = $('#custAdd', box); if (add) add.onclick = () => receiptForm(null, focus);
+    const pdf = $('#custPdf', box); if (pdf) pdf.onclick = () => exportCustodyPdf(focus, pdf);
+    $$('[data-custedit]', box).forEach((x) => { x.onclick = () => receiptForm(custList.find((r) => r.id === x.dataset.custedit)); });
+    $$('[data-custdel]', box).forEach((x) => { x.onclick = () => deleteReceiptFlow(custList.find((r) => r.id === x.dataset.custdel)); });
+  }
+
+  /** نافذة تسجيل/تعديل استلام: المبلغ وملاحظة (ممن أو لماذا) — التاريخ والوقت تلقائياً */
+  function receiptForm(r, forUser) {
+    const isNew = !r;
+    if (isNew ? !canAny('expenses.add_own', 'expenses.add_all') : !r.can_edit) return;
+    const others = (isNew && can('expenses.add_all')) ? db().users.filter((u) => u.active !== false && u.id !== currentUser.id) : [];
+    const pre = forUser && forUser !== currentUser.id ? forUser : '';
+    openModal(isNew ? 'تسجيل استلام مبلغ' : 'تعديل الاستلام', `
+      <label>المبلغ المستلم (${esc(currency())}) <input id="rcAmount" type="text" inputmode="decimal" class="num" value="${r ? esc(r.amount) : ''}" placeholder="مثال: 1500" autocomplete="off"></label>
+      <label>ملاحظة (ممن استلمته أو لأي غرض) <input id="rcNote" value="${r ? esc(r.note || '') : ''}" maxlength="200" placeholder="مثال: من المدير — مصاريف تركيب"></label>
+      ${others.length ? `<label>المستلِم
+        <select id="rcUser"><option value="">أنا (${esc(currentUser.name)})</option>${others.map((u) => `<option value="${esc(u.id)}"${u.id === pre ? ' selected' : ''}>${esc(u.name)} — ${ROLES[u.role] || u.role}</option>`).join('')}</select>
+      </label>` : ''}
+      <p class="hint">${isNew ? 'التاريخ والوقت يُسجَّلان تلقائياً الآن. كل مصروف يسجّله المستلِم بعد ذلك يُخصم من هذا الرصيد.' : 'سُجِّل في ' + esc(fmtDateTime(r.created_at))}</p>
+      <p id="rcErr" class="error"></p>
+      <div class="btn-row"><button class="btn" id="rcCancel">إلغاء</button><button class="btn primary" id="rcSave">${icon('save')} حفظ</button></div>`, (b) => {
+      $('#rcCancel', b).onclick = closeModal;
+      $('#rcSave', b).onclick = async () => {
+        const err = $('#rcErr', b);
+        const amount = readAmount($('#rcAmount', b).value);
+        if (amount === null || !(amount > 0)) { err.textContent = 'أدخل مبلغاً أكبر من صفر (أرقام فقط)'; return; }
+        const body = { amount: money(amount), note: $('#rcNote', b).value.trim() };
+        const u = $('#rcUser', b);
+        if (u && u.value) body.user_id = u.value;
+        const btn = $('#rcSave', b);
+        btn.disabled = true; btn.setAttribute('aria-busy', 'true');
+        try {
+          if (isNew) await Store.api('POST', '/api/custody', body);
+          else await Store.api('PUT', '/api/custody/' + encodeURIComponent(r.id), body);
+        } catch (ex) {
+          err.textContent = humanError(ex && ex.message, 'تعذّر حفظ الاستلام. تحقق من الاتصال وحاول مرة أخرى.');
+          btn.disabled = false; btn.removeAttribute('aria-busy');
+          return;
+        }
+        closeModal();
+        try { await loadCustody(); } catch (_) { /* يظهر الخطأ في البطاقة */ }
+        renderCustodyBox();
+        toast(isNew ? 'سُجِّل الاستلام' : 'حُفظ الاستلام');
+      };
+    });
+  }
+
+  async function deleteReceiptFlow(r) {
+    if (!r || !r.can_delete) return;
+    if (!(await confirmDlg('حذف استلام', `حذف استلام ${fmt(r.amount)} ${currency()} (${r.note || 'بلا ملاحظة'})؟ يتغيّر رصيد العهدة. لا يمكن التراجع.`))) return;
+    try { await Store.api('DELETE', '/api/custody/' + encodeURIComponent(r.id)); }
+    catch (ex) { toast(humanError(ex && ex.message, 'تعذّر حذف الاستلام.'), true); return; }
+    try { await loadCustody(); } catch (_) { /* */ }
+    renderCustodyBox();
+    toast('حُذف الاستلام');
+  }
+
+  /** PDF حركة العهدة مباشرة من صفحة المصروفات (فترة التصفية الحالية، والموظف المحدد أو الكل) */
+  async function exportCustodyPdf(userId, btn) {
+    const ctx = { ...repCtx(), from: $('#expFrom').value || '', to: $('#expTo').value || today(), userId: userId || '', scopeAll: can('expenses.view_all'),
+      custody: { ready: true, receipts: custList } };
+    const rep = Reports.build('custody', ctx);
+    const meta = [['المتجر', settings().shopName || 'أصالة نجد'], ['الموظف', userId ? custName(userId) : 'كل الموظفين'], ['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']];
+    await repPdfRender(rep, meta, 'custody-' + (userId ? custName(userId).replace(/[^\p{L}\p{N}]+/gu, '-') + '-' : '') + (ctx.from || 'all') + '_' + ctx.to + '.pdf', btn);
+  }
+  $('#btnAddReceipt').addEventListener('click', () => receiptForm(null, can('expenses.view_all') ? $('#expUser').value : ''));
+  $('#expUser').addEventListener('change', renderCustodyBox);
   ['#expFrom', '#expTo', '#expCat', '#expUser'].forEach((s) => $(s).addEventListener('change', renderExpensesTable));
 
   /* ---------------- إشعارات واتساب اليدوية (wa.me — مجاني، الإرسال بيد المستخدم) ----------------
@@ -8833,6 +8982,7 @@ async function exportExpensesXlsx() {
     return {
       orders: db().orders || [], expenses: db().expenses || [], users: db().users || [],
       visits: repVisits.key === repVisitsKey(p) ? repVisits.data : null,
+      custody: { ready: custLoadedAt > 0, error: custErr, receipts: custList },
       from: p.from, to: p.to, today: today(),
       userId: scopeAll ? $('#repUser').value : '',
       status: $('#repStatus').value,
@@ -8850,7 +9000,7 @@ async function exportExpensesXlsx() {
       calc: {
         revenue: orderRevenue, cost: orderCost, breakdown: repBreakdown, ordDate,
         payDay: (pm) => String((pm && (pm.at || pm.date || pm.createdAt)) || '').slice(0, 10),
-        expDay, commBase: commBaseMode(),
+        expDay, commBase: commBaseMode(), dtDay: localDate, dtTime: localTime,
       },
       labels: { STATUS, PAY_METHOD: PAY_METHODS, ROLES },
       userName: (id, fb) => { const u = id && Store.getUser(id); return (u && u.name) || fb || 'غير محدد'; },
@@ -8919,6 +9069,9 @@ async function exportExpensesXlsx() {
     // المصروفات لا تصل مع المزامنة: تُجلب (مرة كل دقيقة على الأكثر) ثم يُعاد الرسم
     if (canAny('expenses.view_own', 'expenses.view_all') && Date.now() - expLoadedAt > 60000 && !expLoading) {
       loadExpenses().then(() => { if (document.body.dataset.page === 'reports') renderReports(); }).catch(() => {});
+    }
+    if (repId === 'custody' && canAny('expenses.view_own', 'expenses.view_all') && Date.now() - custLoadedAt > 60000 && !custLoading) {
+      loadCustody().catch(() => {}).finally(() => { if (document.body.dataset.page === 'reports') renderReports(); });
     }
     const ctx = repCtx();
     const cat = Reports.catalog(ctx);

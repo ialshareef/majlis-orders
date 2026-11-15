@@ -55,7 +55,7 @@ const ctxOf = (over = {}) => ({
 const S = (rep, label) => (rep.summary.find((s) => s.label === label) || {}).value;
 
 /* ---- الفهرس والصلاحيات ---- */
-ok(Reports.catalog(ctxOf()).map((c) => c.id).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,customers', 'catalog: كل التقارير التسعة للمالك («الطلبات الجديدة» بعد تفصيل الطلبات)');
+ok(Reports.catalog(ctxOf()).map((c) => c.id).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,custody,customers', 'catalog: كل التقارير العشرة للمالك («الطلبات الجديدة» بعد تفصيل الطلبات)');
 const noComm = Reports.catalog(ctxOf({ perms: { commAny: false, profitAny: false, expenses: false } })).map((c) => c.id);
 ok(!noComm.includes('commissions') && !noComm.includes('pnl') && !noComm.includes('expenses') && noComm.includes('orders'), 'catalog: بلا صلاحية العمولة/الربح/المصروفات تختفي تقاريرها', noComm);
 let threw = false; try { Reports.build('pnl', ctxOf({ perms: { profitAny: false } })); } catch (_) { threw = true; }
@@ -233,6 +233,29 @@ ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) =
   const ro = Reports.build('orders', c);
   const o1 = ro.tables[0].rows.find((x) => x.number === '#1');
   ok(eq(o1.partnerComm, 23) && eq(o1.afterComm, 400 - 40 - 20 - 23), 'partner: تفصيل الطلبات يخصم حصة الشريك من الربح', o1);
+}
+
+/* ---- عهدة الموظف: الاستلام − المصروفات المسجّلة بعد أول استلام ---- */
+{
+  const rec = [{ id: 'r1', user_id: 's1', amount: 1500, note: 'من المدير', created_at: '2026-10-10T08:00:00.000Z', created_by_name: 'المالك' },
+    { id: 'r2', user_id: 's1', amount: 500, note: '', created_at: '2026-11-02T09:00:00.000Z' }];
+  const exps = [
+    { id: 'x0', name: 'قديم قبل العهدة', amount: 999, category: 'نقل', created_by: 's1', created_at: '2026-10-01T10:00:00.000Z', expense_date: '2026-10-01' },
+    { id: 'x1', name: 'بنزين', amount: 100, category: 'نقل', created_by: 's1', created_at: '2026-10-10T12:00:00.000Z', expense_date: '2026-10-10' },
+    { id: 'x2', name: 'مسامير', amount: 200, category: 'مشتريات', created_by: 's1', created_at: '2026-10-20T13:30:00.000Z', expense_date: '2026-10-20' },
+    { id: 'x3', name: 'لغيره', amount: 50, category: 'نقل', created_by: 's2', created_at: '2026-10-20T13:30:00.000Z', expense_date: '2026-10-20' }];
+  const L = Reports.custodyLedger(rec, exps);
+  ok(L.length === 1 && eq(L[0].received, 2000) && eq(L[0].spent, 300) && eq(L[0].balance, 1700), 'custody: 1500+500 − (100+200) = 1700 (المصروف الأقدم لا يُخصم، وموظف بلا عهدة لا يظهر)', L);
+  ok(L[0].moves.map((m) => m.balance).join() === '1500,1400,1200,1700', 'custody: الرصيد بعد كل حركة', L[0].moves.map((m) => m.balance));
+  const c = ctxOf({ expenses: exps, custody: { ready: true, receipts: rec }, from: '2026-10-15', to: '2026-11-30' });
+  const r = Reports.build('custody', c);
+  ok(eq(S(r, 'رصيد سابق (قبل الفترة)'), 1400) && eq(S(r, 'المستلم'), 500) && eq(S(r, 'المصروف من العهدة'), 200) && eq(S(r, 'المتبقي من العهدة'), 1700), 'custody: الفترة — رصيد سابق 1400 + 500 − 200 = 1700', r.summary);
+  const mv = r.tables[1].rows;
+  ok(mv.length === 2 && mv[0].type === 'صرف' && mv[0].text === 'مسامير' && mv[0].category === 'مشتريات' && eq(mv[0].outAmt, 200) && eq(mv[0].balance, 1200) && mv[1].type === 'استلام' && eq(mv[1].inAmt, 500), 'custody: جدول الحركة (النوع والبيان ونوع الصرف والرصيد)', mv);
+  ok(mv[0].date === '2026-10-20' && /^\d{2}:\d{2}$/.test(mv[0].time), 'custody: التاريخ والوقت لكل حركة', mv[0]);
+  ok(Reports.catalog(ctxOf()).some((x) => x.id === 'custody') && !Reports.catalog(ctxOf({ perms: { expenses: false } })).some((x) => x.id === 'custody'), 'custody: في الفهرس لمن يرى المصروفات فقط');
+  const r2 = Reports.build('custody', ctxOf({ custody: { ready: false } }));
+  ok(r2.summary[0].value === 'جارٍ تحميل العهدة…', 'custody: حالة التحميل');
 }
 
 /* ---- تقرير «الطلبات الجديدة» ---- */

@@ -193,7 +193,7 @@ try {
   ok(nav.reports === true, 'owner: «التقارير» في القائمة', nav);
   await go(page, 'reports');
   ok(await page.evaluate(() => document.getElementById('page-reports').classList.contains('active')), 'owner: الصفحة تُفتح');
-  ok((await tabs(page)).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,customers,visits', 'owner: الفهرس كامل (10 تقارير مع «الطلبات الجديدة» و«زيارات الموقع» للمالك)', await tabs(page));
+  ok((await tabs(page)).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,custody,customers,visits', 'owner: الفهرس كامل (11 تقريراً مع «حركة العهدة»، مع «الطلبات الجديدة» و«زيارات الموقع» للمالك)', await tabs(page));
   await pick(page, 'orders'); await range(page, 'm');
   let k = await kpis(page);
   ok(k['المبيعات قبل الضريبة'] === '3,000.00' && k['التكاليف'] === '1,600.00' && k['صافي الربح'] === '1,400.00', 'owner/orders: البيع 3000 والتكاليف 1600 والربح 1400 (هذا الشهر)', k);
@@ -243,7 +243,7 @@ try {
   let lay = await pdfLayout(page);
   ok(lay.n === pagesN && !lay.bad.length, 'export/pdf/layout: كل صفوف الطلبات داخل الصفحة ولا شيء تحت التذييل (' + lay.n + ' صفحات)', lay.bad.slice(0, 3));
   // كل تقارير الفهرس بالفترة الكاملة: نفس الفحص لكل صفحة
-  for (const id of ['commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers', 'visits']) {
+  for (const id of ['commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'custody', 'customers', 'visits']) {
     await pick(page, id); await range(page, 'all'); await sleep(id === 'visits' ? 1500 : 300);
     f = await download(page, 'btnRepPdf');
     const n = (f.buf.toString('latin1').match(/\/Type \/Page\b(?!s)/g) || []).length;

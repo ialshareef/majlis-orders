@@ -477,6 +477,90 @@
     },
   };
 
+  /* عهدة الموظف: ما استلمه (custody_receipts) ناقص مصروفاته المسجّلة بعد أول استلام له (المصروفات الأقدم لا تُخصم).
+     يعيد لكل موظف حركته مرتبة بوقت التسجيل مع الرصيد بعد كل حركة. */
+  function custodyLedger(receipts, expenses) {
+    const by = new Map();
+    (receipts || []).forEach((r) => {
+      if (!r || !r.user_id) return;
+      if (!by.has(r.user_id)) by.set(r.user_id, { userId: r.user_id, name: r.user_name || '', start: '', moves: [] });
+      const p = by.get(r.user_id);
+      const at = String(r.created_at || '');
+      if (!p.start || at < p.start) p.start = at;
+      p.moves.push({ kind: 'in', at, amount: money(r.amount), text: r.note || 'استلام مبلغ', category: '', by: r.created_by_name || '', id: r.id });
+    });
+    (expenses || []).forEach((e) => {
+      const p = e && by.get(e.created_by);
+      const at = String((e && e.created_at) || '');
+      if (!p || !p.start || at < p.start) return;
+      p.moves.push({ kind: 'out', at, amount: money(e.amount), text: e.name || '', category: e.category || '', by: e.created_by_name || '', id: e.id });
+    });
+    const out = [];
+    for (const p of by.values()) {
+      p.moves.sort((a, b) => a.at.localeCompare(b.at) || (a.kind === 'in' ? -1 : 1));
+      let bal = 0, rec = 0, spent = 0;
+      p.moves.forEach((m) => { if (m.kind === 'in') { bal += m.amount; rec += m.amount; } else { bal -= m.amount; spent += m.amount; } m.balance = money(bal); });
+      out.push({ ...p, received: money(rec), spent: money(spent), balance: money(bal) });
+    }
+    return out;
+  }
+
+  /* 8ب) حركة العهدة (الاستلام والصرف) — ctx.custody = { ready, error, receipts } من /api/custody */
+  R.custody = {
+    title: 'حركة العهدة',
+    desc: 'ما استلمه كل موظف وما صرفه منه والمتبقي، حركة بحركة بالتاريخ والوقت',
+    need: (ctx) => ctx.perms.expenses,
+    build(ctx) {
+      const c = ctx.custody;
+      if (!c || !c.ready) {
+        return { summary: [{ label: 'الحالة', value: c && c.error ? 'تعذّر تحميل العهدة' : 'جارٍ تحميل العهدة…', kind: 'text' }], tables: [], notes: [c && c.error ? c.error : 'تُجلب العهدة من الخادم.'] };
+      }
+      const dDay = (ctx.calc && ctx.calc.dtDay) || ((x) => String(x).slice(0, 10));
+      const dTime = (ctx.calc && ctx.calc.dtTime) || ((x) => String(x).slice(11, 16));
+      let L = custodyLedger(c.receipts, ctx.expenses);
+      if (!ctx.scopeAll) L = L.filter((p) => p.userId === ctx.me);
+      if (ctx.userId) L = L.filter((p) => p.userId === ctx.userId);
+      const people = [], moves = [];
+      for (const p of L) {
+        const name = ctx.userName(p.userId, p.name);
+        let opening = 0, rec = 0, spent = 0, n = 0;
+        for (const m of p.moves) {
+          const d = dDay(m.at);
+          const v = m.kind === 'in' ? m.amount : -m.amount;
+          if (ctx.from && d < ctx.from) { opening += v; continue; }
+          if (ctx.to && d > ctx.to) continue;
+          n++;
+          if (m.kind === 'in') rec += m.amount; else spent += m.amount;
+          moves.push({ date: d, time: dTime(m.at), who: name, type: m.kind === 'in' ? 'استلام' : 'صرف', text: m.text, category: m.category || '',
+            inAmt: m.kind === 'in' ? m.amount : null, outAmt: m.kind === 'out' ? m.amount : null, balance: m.balance, _at: m.at, _kind: m.kind });
+        }
+        if (!n && !opening) continue;
+        people.push({ name, opening: money(opening), received: money(rec), spent: money(spent), balance: money(opening + rec - spent), moves: n });
+      }
+      moves.sort((a, b) => (L.length > 1 ? a.who.localeCompare(b.who, 'ar') : 0) || a._at.localeCompare(b._at));
+      const T = (k) => money(people.reduce((s, r) => s + num(r[k]), 0));
+      const tot = { name: 'الإجمالي', opening: T('opening'), received: T('received'), spent: T('spent'), balance: T('balance'), moves: people.reduce((s, r) => s + r.moves, 0) };
+      return {
+        summary: [
+          ...(tot.opening ? [{ label: 'رصيد سابق (قبل الفترة)', value: tot.opening, kind: 'money' }] : []),
+          { label: 'المستلم', value: tot.received, kind: 'money' },
+          { label: 'المصروف من العهدة', value: tot.spent, kind: 'money' },
+          { label: 'المتبقي من العهدة', value: tot.balance, kind: 'money' },
+          { label: 'عدد الحركات', value: tot.moves, kind: 'num' },
+        ],
+        notes: [
+          'العهدة = ما استلمه الموظف ناقص ما صرفه منه. تُخصم مصروفات الموظف المسجّلة بعد أول استلام له؛ والمصروفات الأقدم تبقى في تقرير المصروفات ولا تمس العهدة.',
+          'التاريخ والوقت وقت تسجيل الحركة في التطبيق تلقائياً. «الرصيد» هو المتبقي بعد كل حركة.',
+        ],
+        tables: [
+          { title: 'أرصدة العهدة', columns: [col('name', 'الموظف'), col('opening', 'رصيد سابق', 'money'), col('received', 'المستلم', 'money'), col('spent', 'المصروف', 'money'), col('balance', 'المتبقي', 'money'), col('moves', 'الحركات', 'num')].filter((x) => x.key !== 'opening' || tot.opening), rows: people, totals: tot },
+          { title: 'حركة الاستلام والصرف', columns: [col('date', 'التاريخ', 'date'), col('time', 'الوقت'), ...(L.length > 1 ? [col('who', 'الموظف')] : []), col('type', 'النوع'), col('text', 'البيان'), col('category', 'نوع الصرف'), col('inAmt', 'استلام', 'money'), col('outAmt', 'صرف', 'money'), col('balance', 'الرصيد', 'money')], rows: moves,
+            totals: { date: 'الإجمالي', inAmt: tot.received, outAmt: tot.spent, balance: tot.balance } },
+        ],
+      };
+    },
+  };
+
   /* 9) زيارات الموقع — لمالك النظام فقط (البيانات من الخادم: /api/owner-analytics، والحماية هناك)
      ctx.visits = { ready, error, visitsDaily:[{day,link,n}], visitorsDaily:[{day,u}], visitorsKeptFrom, funnel, links }
      كل رقم مجموع فعلي من السجلات — لا تقدير ولا أرقام وهمية، واليوم بلا زيارات صفر. */
@@ -568,7 +652,7 @@
     },
   };
 
-  const ORDER = ['orders', 'pending', 'commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'customers', 'visits'];
+  const ORDER = ['orders', 'pending', 'commissions', 'pnl', 'staff', 'payments', 'receivables', 'expenses', 'custody', 'customers', 'visits'];
 
   function catalog(ctx) {
     return ORDER.filter((id) => !R[id].need || R[id].need(ctx)).map((id) => ({ id, title: R[id].title, desc: R[id].desc, usesStatus: !!R[id].usesStatus, usesInclude: !!R[id].usesInclude, includeNoPaid: !!R[id].includeNoPaid }));
@@ -626,7 +710,7 @@
     return '﻿' + lines.join('\r\n');
   }
 
-  const api = { build, catalog, tableAoa, headerAoa, summaryAoa, toCsv, cellValue, isSale, counted, includeText, INCLUDE_STATUSES, DEFAULT_INCLUDE, SRC_LABELS, srcLabel, _defs: R };
+  const api = { build, catalog, custodyLedger, tableAoa, headerAoa, summaryAoa, toCsv, cellValue, isSale, counted, includeText, INCLUDE_STATUSES, DEFAULT_INCLUDE, SRC_LABELS, srcLabel, _defs: R };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Reports = api;
 })(typeof window !== 'undefined' ? window : globalThis);

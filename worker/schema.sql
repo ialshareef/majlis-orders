@@ -307,3 +307,17 @@ CREATE TABLE IF NOT EXISTS staff_visits (
   last_at  TEXT NOT NULL,
   PRIMARY KEY (day, user_id)
 );
+
+-- عهدة الموظف (008): كل مبلغ يستلمه موظف (user_id) ليصرف منه. created_by من سجّله (هو أو المالك)،
+-- وcreated_at وقت التسجيل تلقائياً. مصروفات الموظف المسجّلة بعد أول استلام تُخصم من الرصيد.
+CREATE TABLE IF NOT EXISTS custody_receipts (
+  id         TEXT PRIMARY KEY,
+  user_id    TEXT NOT NULL,
+  amount     REAL NOT NULL DEFAULT 0,
+  note       TEXT,
+  created_by TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS custody_receipts_user_idx ON custody_receipts(user_id);

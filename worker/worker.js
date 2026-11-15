@@ -374,6 +374,11 @@ async function route(request, env, url) {
   const mExp = path.match(/^\/api\/expenses\/([^/]+)$/);
   if (mExp && method === 'PUT') { requireAnyPerm(user, ['expenses.edit_own', 'expenses.edit_all']); return updateExpense(env, user, decodeURIComponent(mExp[1]), body); }
   if (mExp && method === 'DELETE') { requireAnyPerm(user, ['expenses.delete_own', 'expenses.delete_all']); return deleteExpense(env, user, decodeURIComponent(mExp[1])); }
+  if (path === '/api/custody' && method === 'GET') { requireAnyPerm(user, ['expenses.view_own', 'expenses.view_all']); return listCustody(env, user); }
+  if (path === '/api/custody' && method === 'POST') { requireAnyPerm(user, ['expenses.add_own', 'expenses.add_all']); return saveCustody(env, user, body); }
+  const mCus = path.match(/^\/api\/custody\/([^/]+)$/);
+  if (mCus && method === 'PUT') { requireAnyPerm(user, ['expenses.edit_own', 'expenses.edit_all']); return updateCustody(env, user, decodeURIComponent(mCus[1]), body); }
+  if (mCus && method === 'DELETE') { requireAnyPerm(user, ['expenses.delete_own', 'expenses.delete_all']); return deleteCustody(env, user, decodeURIComponent(mCus[1])); }
   if (path === '/api/reports/expenses-summary' && method === 'GET') {
     requireAnyPerm(user, ['expenses.view_own', 'expenses.view_all']);
     return expensesSummary(env, user, new URL(request.url).searchParams);
@@ -1256,6 +1261,82 @@ async function listExpenses(env, user, query) {
     created_at: e.created_at, updated_at: e.updated_at,
     can_edit: expPerm(user, 'edit', e), can_delete: expPerm(user, 'delete', e),
   })) };
+}
+
+/* عهدة الموظف (الاستلام): custody_receipts — مبلغ يستلمه موظف ليصرف منه، يسجّله هو أو من يملك expenses.add_all.
+   الصلاحيات صلاحيات المصروفات نفسها على صاحب العهدة (user_id): ‎_own لعهدتك و‎_all لعهدة غيرك.
+   الرصيد يُحسب في الواجهة: مجموع الاستلام − مصروفات صاحبها المسجّلة بعد أول استلام له. */
+const CUSTODY_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS custody_receipts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, amount REAL NOT NULL DEFAULT 0, note TEXT, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)';
+const custodyReady = new WeakSet();
+async function ensureCustody(env) {
+  if (custodyReady.has(env.DB)) return;
+  await env.DB.prepare(CUSTODY_TABLE_SQL).run().catch(ignoreExistsObject);
+  custodyReady.add(env.DB);
+}
+const custPerm = (user, action, row) => hasPerm(user, 'expenses.' + action + (row && row.user_id === user.id ? '_own' : '_all'), user.permissions);
+const CUSTODY_MAX = 10000000;
+function cleanCustody(body, row) {
+  const b = body && typeof body === 'object' ? body : {};
+  const amount = Number(b.amount !== undefined ? b.amount : (row ? row.amount : NaN));
+  const note = String((b.note !== undefined ? b.note : (row ? row.note : '')) || '').trim().slice(0, 200) || null;
+  if (!Number.isFinite(amount) || amount <= 0 || amount > CUSTODY_MAX) throw new HttpError(400, 'مبلغ غير صحيح — أدخل مبلغاً أكبر من صفر');
+  return { amount: Math.round(amount * 100) / 100, note };
+}
+const custodyOut = (user, r, names) => ({
+  id: r.id, user_id: r.user_id, user_name: names.get(r.user_id) || '', amount: Number(r.amount) || 0, note: r.note || '',
+  created_by: r.created_by, created_by_name: names.get(r.created_by) || '', created_at: r.created_at, updated_at: r.updated_at,
+  can_edit: custPerm(user, 'edit', r), can_delete: custPerm(user, 'delete', r),
+});
+
+async function listCustody(env, user) {
+  await ensureCustody(env);
+  const all = hasPerm(user, 'expenses.view_all', user.permissions);
+  if (!all && !hasPerm(user, 'expenses.view_own', user.permissions)) throw new HttpError(403, 'غير مصرح');
+  const r = all
+    ? await env.DB.prepare('SELECT * FROM custody_receipts ORDER BY created_at DESC').all()
+    : await env.DB.prepare('SELECT * FROM custody_receipts WHERE user_id = ? ORDER BY created_at DESC').bind(user.id).all();
+  const names = new Map(((await env.DB.prepare('SELECT id, name FROM users').all()).results || []).map((u) => [u.id, u.name]));
+  return { ok: true, receipts: (r.results || []).map((x) => custodyOut(user, x, names)) };
+}
+
+async function saveCustody(env, user, body) {
+  await ensureCustody(env);
+  const f = cleanCustody(body, null);
+  let owner = user.id;
+  const want = body && body.user_id ? String(body.user_id) : '';
+  if (want && want !== user.id) {
+    // استلام باسم موظف آخر: لمن يملك add_all فقط، والموظف موجود
+    if (!hasPerm(user, 'expenses.add_all', user.permissions)) throw new HttpError(403, 'غير مصرح');
+    const u = await env.DB.prepare('SELECT id FROM users WHERE id = ?').bind(want).first();
+    if (!u) throw new HttpError(400, 'الموظف غير موجود');
+    owner = u.id;
+  } else if (!hasPerm(user, 'expenses.add_own', user.permissions)) {
+    throw new HttpError(403, 'غير مصرح');
+  }
+  const id = uid();
+  const t = now();
+  await env.DB.prepare('INSERT INTO custody_receipts (id, user_id, amount, note, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .bind(id, owner, f.amount, f.note, user.id, t, t).run();
+  return { ok: true, receipt: { id, user_id: owner, amount: f.amount, note: f.note || '', created_by: user.id, created_at: t, updated_at: t } };
+}
+
+async function updateCustody(env, user, id, body) {
+  await ensureCustody(env);
+  const row = await env.DB.prepare('SELECT * FROM custody_receipts WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'الاستلام غير موجود');
+  if (!custPerm(user, 'edit', row)) throw new HttpError(403, 'غير مصرح');
+  const f = cleanCustody(body, row);
+  await env.DB.prepare('UPDATE custody_receipts SET amount = ?, note = ?, updated_at = ? WHERE id = ?').bind(f.amount, f.note, now(), id).run();
+  return { ok: true };
+}
+
+async function deleteCustody(env, user, id) {
+  await ensureCustody(env);
+  const row = await env.DB.prepare('SELECT * FROM custody_receipts WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'الاستلام غير موجود');
+  if (!custPerm(user, 'delete', row)) throw new HttpError(403, 'غير مصرح');
+  await env.DB.prepare('DELETE FROM custody_receipts WHERE id = ?').bind(id).run();
+  return { ok: true };
 }
 
 /** التحقق من حقول المصروف (جديد أو تعديل فوق صف قائم) */
