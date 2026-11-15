@@ -260,6 +260,18 @@ await ta('أساس العمولة commBase: يُحفظ «profit» أو «total»
   assert.strictEqual((await call(env, '/api/sync', '1', { settings: { commBase: 5 } })).s, 400);
 });
 
+await ta('شراكات العمولة settings.partners: تُقبل الصحيحة وتُرفض المشوّهة، وcommPaid.partner مقبول', async () => {
+  const env = mk();
+  const ok1 = (P) => call(env, '/api/sync', '1', { settings: { partners: P } });
+  assert.strictEqual((await ok1([{ a: '2', b: '3', rate: 2, since: '2026-11-15' }])).s, 200);
+  assert.strictEqual((await ok1([])).s, 200);
+  assert.strictEqual((await ok1([{ a: '2', b: '2', rate: 2 }])).s, 400);
+  assert.strictEqual((await ok1([{ a: '2', b: '3', rate: 150 }])).s, 400);
+  assert.strictEqual((await ok1([{ a: '2', b: '3', rate: 2, since: 'أمس' }])).s, 400);
+  assert.strictEqual((await ok1('x')).s, 400);
+  assert.strictEqual((await ok1(Array.from({ length: 21 }, () => ({ a: '2', b: '3', rate: 1 })))).s, 400);
+});
+
 /* ---------- الفشل المُغلق ---------- */
 await ta('بلا OWNER_USER_ID: لا مالك — لا أحد يملك الإدارة الكاملة أو ينشئ مديراً', async () => {
   const env = mk({ owner: null });

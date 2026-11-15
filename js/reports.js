@@ -87,17 +87,18 @@
     const hasCost = rawCost !== null && rawCost !== undefined;
     const rawProfit = hasCost ? money(revenue - rawCost) : null;
     const profit = canProfit ? rawProfit : null;
-    // العمولة تحتاج الربح إن كان أساسها صافي الربح؛ وأساس «الإجمالي» لا يحتاج تكاليف
-    const bd = (canComm && (rawProfit !== null || byTotal(ctx))) ? ctx.calc.breakdown(o) : null;
+    // العمولة تحتاج الربح إن كان أساسها صافي الربح؛ وأساس «الإجمالي» وحصة شريك الفرع (من قيمة البيع) لا تحتاج تكاليف —
+    // breakdown يعيد null إن لم يكن هناك ما يُحسب
+    const bd = canComm ? ctx.calc.breakdown(o) : null;
     const part = (k) => (bd ? money(bd.rows.filter((r) => r.kind === k).reduce((s, r) => s + num(r.amount), 0)) : null);
-    const ownerComm = part('owner'), parentComm = part('parent'), share = part('share');
+    const ownerComm = part('owner'), parentComm = part('parent'), share = part('share'), partnerComm = part('partner');
     return {
       revenue, total, paid, vat: money(total - revenue), discount: money(o.discount),
       remaining: money(total - paid), hasCost,
       cost: canProfit && hasCost ? money(rawCost) : null,
       profit, margin: profit === null ? null : pct(profit, revenue),
-      ownerComm, parentComm, share, bd,
-      afterComm: (profit !== null && bd) ? money(profit - ownerComm - parentComm - share) : null,
+      ownerComm, parentComm, share, partnerComm, bd,
+      afterComm: (profit !== null && bd) ? money(profit - ownerComm - parentComm - share - partnerComm) : null,
     };
   }
 
@@ -128,7 +129,7 @@
           parent: parent ? parent.who : '',
           revenue: f.revenue, discount: f.discount, vat: f.vat, total: f.total,
           cost: f.cost, profit: f.profit, margin: f.margin,
-          ownerComm: f.ownerComm, parentComm: f.parentComm, share: f.share, afterComm: f.afterComm,
+          ownerComm: f.ownerComm, parentComm: f.parentComm, partnerComm: f.partnerComm, share: f.share, afterComm: f.afterComm,
           paid: f.paid, remaining: f.remaining, _sale: counted(ctx, o),
         };
       });
@@ -137,13 +138,13 @@
       if (showC) columns.push(col('parent', 'المندوب الأعلى'));
       columns.push(col('revenue', 'البيع قبل الضريبة', 'money'), col('discount', 'الخصم', 'money'), col('vat', 'الضريبة', 'money'), col('total', 'الإجمالي', 'money'));
       if (showP) columns.push(col('cost', 'التكاليف', 'money'), col('profit', 'صافي الربح', 'money'), col('margin', 'الهامش ٪', 'pct'));
-      if (showC) columns.push(col('ownerComm', 'عمولة صاحب الطلب', 'money'), col('parentComm', 'عمولة المندوب الأعلى', 'money'), col('share', 'حصة موظفي المحل', 'money'));
+      if (showC) columns.push(col('ownerComm', 'عمولة صاحب الطلب', 'money'), col('parentComm', 'عمولة المندوب الأعلى', 'money'), col('partnerComm', 'حصة شريك الفرع', 'money'), col('share', 'حصة موظفي المحل', 'money'));
       if (showP && showC) columns.push(col('afterComm', 'الربح بعد العمولات', 'money'));
       columns.push(col('paid', 'المحصّل', 'money'), col('remaining', 'المتبقي', 'money'));
 
       const sales = rows.filter((r) => r._sale);
       const tot = {};
-      ['revenue', 'discount', 'vat', 'total', 'cost', 'profit', 'ownerComm', 'parentComm', 'share', 'afterComm', 'paid', 'remaining']
+      ['revenue', 'discount', 'vat', 'total', 'cost', 'profit', 'ownerComm', 'parentComm', 'partnerComm', 'share', 'afterComm', 'paid', 'remaining']
         .forEach((k) => { const v = sales.filter((r) => r[k] !== null && r[k] !== undefined); tot[k] = v.length ? sum(v, (r) => r[k]) : null; });
       const costedRev = sum(sales.filter((r) => r.profit !== null), (r) => r.revenue);
       tot.margin = tot.profit !== null ? pct(tot.profit, costedRev) : null;
@@ -155,12 +156,14 @@
         { label: 'الإجمالي شامل الضريبة', value: tot.total || 0, kind: 'money' },
       ];
       if (showP) summary.push({ label: 'التكاليف', value: tot.cost || 0, kind: 'money' }, { label: 'صافي الربح', value: tot.profit || 0, kind: 'money' });
-      if (showC) summary.push({ label: 'إجمالي العمولات والحصص', value: money((tot.ownerComm || 0) + (tot.parentComm || 0) + (tot.share || 0)), kind: 'money' });
+      if (showC) summary.push({ label: 'إجمالي العمولات والحصص', value: money((tot.ownerComm || 0) + (tot.parentComm || 0) + (tot.partnerComm || 0) + (tot.share || 0)), kind: 'money' });
       summary.push({ label: 'المحصّل', value: tot.paid || 0, kind: 'money' }, { label: 'المتبقي على العملاء', value: tot.remaining || 0, kind: 'money' });
       const notes = ['المبالغ الإجمالية تشمل: ' + includeText(ctx) + ' (بلا عروض الأسعار والملغاة).'];
       const noCost = sales.filter((r) => showP && r.profit === null).length;
       if (noCost) notes.push(byTotal(ctx) ? `${noCost} طلب بلا تكاليف مُدخلة: لا يُحسب له ربح (العمولة محسوبة من الإجمالي شامل الضريبة).` : `${noCost} طلب بلا تكاليف مُدخلة: لا يُحسب له ربح ولا عمولة.`);
-      return { summary, tables: [{ title: 'الطلبات', columns, rows, totals: tot }], notes };
+      // عمود حصة الشريك فقط حين توجد شراكة في الفترة
+      const cols2 = tot.partnerComm ? columns : columns.filter((c) => c.key !== 'partnerComm');
+      return { summary, tables: [{ title: 'الطلبات', columns: cols2, rows, totals: tot }], notes };
     },
   };
 
@@ -200,7 +203,7 @@
       const people = new Map();
       const person = (id, name) => {
         const k = id || 'none';
-        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, share: 0, paid: 0, due: 0 });
+        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, partnerComm: 0, share: 0, paid: 0, due: 0 });
         return people.get(k);
       };
       const detail = [];
@@ -210,9 +213,10 @@
         const owner = person(o.createdBy, ctx.userName(o.createdBy, o.createdByName));
         owner.orders++; owner.revenue += f.revenue;
         if (!f.bd) { if (ctx.perms.comm(o) && !f.hasCost) uncosted++; continue; }
+        if (!f.bd.rows.some((r) => r.kind === 'owner') && ctx.perms.comm(o) && !f.hasCost) uncosted++;   // حصة الشريك وحدها: عمولة البائع تنتظر التكاليف
         if (f.profit !== null) owner.profit += f.profit;
         const bAmt = f.bd.base !== undefined && f.bd.base !== null ? money(f.bd.base) : f.profit;
-        owner.base += num(bAmt);
+        if (f.bd.rows.some((r) => r.kind === 'owner')) owner.base += num(bAmt);
         const base = { number: o.number != null ? '#' + o.number : '—', date: ctx.calc.ordDate(o), customer: (o.customer || {}).name || '—', profit: f.profit, base: bAmt };
         // حالة الصرف (عمولة صاحب الطلب والمندوب الأعلى): المصروف بمبلغه وقت الصرف، وغير المصروف بمبلغه الحالي
         const payInfo = (r, p) => {
@@ -222,6 +226,7 @@
         for (const r of f.bd.rows) {
           if (r.kind === 'owner') { owner.ownComm += num(r.amount); detail.push({ ...base, _uid: owner.id, who: owner.name, type: 'عمولة طلبه', rate: num(r.rate), src: r.src || '', amount: money(r.amount), ...payInfo(r, owner) }); }
           else if (r.kind === 'parent') { const p = person(r.userId, r.who); p.subsComm += num(r.amount); detail.push({ ...base, _uid: p.id, who: p.name, type: 'عمولة من طلب تابع', rate: num(r.rate), src: r.src || '', amount: money(r.amount), ...payInfo(r, p) }); }
+          else if (r.kind === 'partner') { const p = person(r.userId, r.who); p.partnerComm += num(r.amount); detail.push({ ...base, base: money(o.total), _uid: p.id, who: p.name, type: 'حصة شريك الفرع', rate: num(r.rate), src: r.src || '', amount: money(r.amount), ...payInfo(r, p) }); }
           else if (r.kind === 'share') { sharePool += num(r.amount); detail.push({ ...base, _uid: null, who: 'موظفو المحل', type: 'حصة المشاركة', rate: num(r.rate), src: r.src || '', amount: money(r.amount), paidTxt: '—' }); }
         }
       }
@@ -234,8 +239,8 @@
         name: p.name, role: p.role, orders: p.orders, revenue: money(p.revenue), profit: money(p.profit), base: money(p.base),
         // نسبة عمولة طلباته: هي نسبته إن كانت واحدة، ومتوسطها المرجّح بالمبالغ إن اختلفت بين الطلبات
         rate: p.base ? pct(p.ownComm, p.base) : null,
-        ownComm: money(p.ownComm), subsComm: money(p.subsComm), share: money(p.share),
-        total: money(p.ownComm + p.subsComm + p.share), paid: money(p.paid), due: money(p.due), _id: p.id,
+        ownComm: money(p.ownComm), subsComm: money(p.subsComm), partnerComm: money(p.partnerComm), share: money(p.share),
+        total: money(p.ownComm + p.subsComm + p.partnerComm + p.share), paid: money(p.paid), due: money(p.due), _id: p.id,
       }));
       if (!ctx.scopeAll) rows = rows.filter((r) => r._id === ctx.me);
       if (ctx.userId) rows = rows.filter((r) => r._id === ctx.userId);
@@ -248,30 +253,32 @@
       let det = (ctx.userId || !ctx.scopeAll || cpf) ? detail.filter((d) => d._uid && keepIds.has(d._uid)) : detail;
       if (cpf) det = det.filter((d) => d._paid === (cpf === 'paid'));
       const tot = { name: 'الإجمالي' };
-      ['orders', 'revenue', 'profit', 'base', 'ownComm', 'subsComm', 'share', 'total', 'paid', 'due'].forEach((k) => { tot[k] = k === 'orders' ? rows.reduce((s, r) => s + r[k], 0) : sum(rows, (r) => r[k]); });
+      ['orders', 'revenue', 'profit', 'base', 'ownComm', 'subsComm', 'partnerComm', 'share', 'total', 'paid', 'due'].forEach((k) => { tot[k] = k === 'orders' ? rows.reduce((s, r) => s + r[k], 0) : sum(rows, (r) => r[k]); });
       tot.rate = tot.base ? pct(tot.ownComm, tot.base) : null;
       const summary = [
         { label: 'عمولات الطلبات', value: tot.ownComm, kind: 'money' },
         { label: 'عمولات المناديب الأعلى', value: tot.subsComm, kind: 'money' },
+        ...(tot.partnerComm ? [{ label: 'حصص شراكة الفرع', value: tot.partnerComm, kind: 'money' }] : []),
         { label: 'حصص المشاركة', value: ctx.scopeAll && !ctx.userId ? money(sharePool) : tot.share, kind: 'money' },
-        { label: 'إجمالي المستحق', value: ctx.scopeAll && !ctx.userId ? money(tot.ownComm + tot.subsComm + sharePool) : tot.total, kind: 'money' },
+        { label: 'إجمالي المستحق', value: ctx.scopeAll && !ctx.userId ? money(tot.ownComm + tot.subsComm + tot.partnerComm + sharePool) : tot.total, kind: 'money' },
         { label: 'عمولات صُرفت', value: tot.paid, kind: 'money' },
         { label: 'عمولات لم تُصرف بعد', value: tot.due, kind: 'money' },
       ];
       const notes = [(byTotal(ctx) ? 'العمولة = نسبة المستفيد × إجمالي الطلب شامل الضريبة (بعد الخصم)' : 'العمولة = نسبة المستفيد × صافي ربح الطلب (البيع قبل الضريبة − التكاليف)') + '، بالنسب المحفوظة على الطلب وقت اعتماده؛ والنسبة المخصّصة لطلب بعينه (من «نسبة البائع/المندوب») تغلب.',
         'مصدر النسبة: «مخصّصة لهذا الطلب» من نافذة الطلب، «نسبة المندوب الخاصة» من صفحة المناديب، «افتراضية» من الإعدادات، «محفوظة على الطلب وقت اعتماده» = نسبة سابقة تغيّر مصدرها بعد ذلك.',
         `حصة المشاركة تُقسم بالتساوي على موظفي المحل النشطين (${internal.length}).`,
+        'حصة شريك الفرع: نسبة من قيمة البيع (الإجمالي شامل الضريبة) يأخذها شريك البائع المحدد في الإعدادات، فوق عمولة البائع.',
         'الصرف: «صُرفت» = سجّل المالك صرفها من قائمة الطلبات (بمبلغها وقت الصرف). «متبقٍ للصرف» عمولات الطلبات والتابعين غير المصروفة — حصص المشاركة خارجه لأنها تُوزَّع آخر الشهر.'];
       if (cpf) notes.push(cpf === 'due' ? 'معروض: العمولات غير المصروفة فقط.' : 'معروض: العمولات المصروفة فقط.');
       if (uncosted) notes.push(`${uncosted} طلب بلا تكاليف مُدخلة لم تُحسب له عمولة.`);
       const showP = !!ctx.perms.profitAny;
       // صافي الربح لمن يملك صلاحيته فقط؛ وعمود «أساس العمولة» يظهر حين يختلف عن صافي الربح (أساس الإجمالي)
-      const noP = (cols) => cols.filter((c) => (c.key !== 'profit' || showP) && (c.key !== 'base' || byTotal(ctx)));
+      const noP = (cols) => cols.filter((c) => (c.key !== 'profit' || showP) && (c.key !== 'base' || byTotal(ctx)) && (c.key !== 'partnerComm' || tot.partnerComm));
       const BL = 'أساس العمولة (' + baseLabel(ctx) + ')';
       return {
         summary, notes,
         tables: [
-          { title: 'المستحقات حسب الشخص', columns: noP([col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات', 'num'), col('revenue', 'المبيعات', 'money'), col('profit', 'صافي ربح طلباته', 'money'), col('base', BL, 'money'), col('rate', 'النسبة ٪', 'pct'), col('ownComm', 'عمولة طلباته', 'money'), col('subsComm', 'من طلبات تابعيه', 'money'), col('share', 'حصة المشاركة', 'money'), col('total', 'إجمالي المستحق', 'money'), col('paid', 'صُرف', 'money'), col('due', 'متبقٍ للصرف', 'money')]), rows, totals: tot },
+          { title: 'المستحقات حسب الشخص', columns: noP([col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات', 'num'), col('revenue', 'المبيعات', 'money'), col('profit', 'صافي ربح طلباته', 'money'), col('base', BL, 'money'), col('rate', 'النسبة ٪', 'pct'), col('ownComm', 'عمولة طلباته', 'money'), col('subsComm', 'من طلبات تابعيه', 'money'), col('partnerComm', 'شراكة الفرع', 'money'), col('share', 'حصة المشاركة', 'money'), col('total', 'إجمالي المستحق', 'money'), col('paid', 'صُرف', 'money'), col('due', 'متبقٍ للصرف', 'money')]), rows, totals: tot },
           { title: 'تفصيل العمولات لكل طلب', columns: noP([col('number', 'رقم الطلب'), col('date', 'التاريخ', 'date'), col('customer', 'العميل'), col('who', 'المستفيد'), col('type', 'النوع'), col('rate', 'النسبة ٪', 'pct'), col('src', 'مصدر النسبة'), col('profit', 'صافي ربح الطلب', 'money'), col('base', BL, 'money'), col('amount', 'المبلغ', 'money'), col('paidTxt', 'الصرف')]), rows: det, totals: { number: 'الإجمالي', amount: sum(det, (d) => d.amount) } },
         ],
       };
@@ -299,7 +306,7 @@
         b.orders++; b.revenue += f.revenue;
         if (f.profit === null) { b.uncostedRev += f.revenue; continue; }
         b.cost += f.cost; b.profit += f.profit;
-        if (f.bd) b.comm += num(f.ownerComm) + num(f.parentComm) + num(f.share);
+        if (f.bd) b.comm += num(f.ownerComm) + num(f.parentComm) + num(f.partnerComm) + num(f.share);
       }
       for (const e of exps) bucket(ctx.calc.expDay(e).slice(0, 7)).expenses += num(e.amount);
       const rows = [...months.values()].sort((a, b) => a.month.localeCompare(b.month)).map((b) => ({

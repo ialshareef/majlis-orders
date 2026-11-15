@@ -2422,7 +2422,7 @@ function checkOrderFin(o) {
   if (o.commPaid !== undefined && o.commPaid !== null) {
     if (typeof o.commPaid !== 'object' || Array.isArray(o.commPaid)) finErr('order.commPaid');
     for (const [k, v] of Object.entries(o.commPaid)) {
-      if (k !== 'owner' && k !== 'parent') finErr('order.commPaid');
+      if (k !== 'owner' && k !== 'parent' && k !== 'partner') finErr('order.commPaid');
       if (!v || typeof v !== 'object' || typeof v.at !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(v.at) || !(isFinNum(v.amount) && v.amount >= 0)) finErr('order.commPaid.' + k);
     }
   }
@@ -2511,6 +2511,15 @@ async function sync(env, user, body) {
     for (const f of ['vatRate', 'depositPct', 'quoteDays', 'sellerRate', 'shareRate', 'mandoubRate', 'mandoubParentRate']) {
       const v = body.settings[f];
       if (v !== undefined && v !== null && !(isFinNum(v) && v >= 0)) finErr('settings.' + f);
+    }
+    // شراكات العمولة: [{ a, b, rate, since }] — حتى 20 شراكة، موظفان مختلفان، ونسبة 0–100
+    if (body.settings.partners !== undefined && body.settings.partners !== null) {
+      const P = body.settings.partners;
+      if (!Array.isArray(P) || P.length > 20) finErr('settings.partners');
+      for (const p of P) {
+        if (!p || typeof p !== 'object' || typeof p.a !== 'string' || typeof p.b !== 'string' || !p.a || !p.b || p.a === p.b
+          || !(isFinNum(p.rate) && p.rate >= 0 && p.rate <= 100) || (p.since !== undefined && p.since !== '' && !(typeof p.since === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(p.since)))) finErr('settings.partners');
+      }
     }
     // أساس احتساب النسب: قيمتان فقط
     if (body.settings.commBase !== undefined && body.settings.commBase !== null && body.settings.commBase !== 'profit' && body.settings.commBase !== 'total') finErr('settings.commBase');

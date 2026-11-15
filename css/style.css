@@ -2560,6 +2560,12 @@ body.modal-open { overflow: hidden; }
 .u-rates { margin: 6px 0 4px; padding: 10px 12px 4px; border: 1px solid var(--accent-line); border-radius: var(--r); background: var(--accent-soft); }
 .u-rates legend { padding: 0 6px; font-weight: 700; color: var(--accent); }
 .u-rate small.hint { font-size: .74rem; }
+/* شراكات العمولة في الإعدادات */
+.partners-box { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
+.partner-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 92px auto; align-items: center; gap: 8px; margin: 8px 0; }
+.partner-row .pr { display: flex; align-items: center; gap: 4px; margin: 0; }
+.partner-row .pr input { min-width: 0; }
+@media (max-width: 560px) { .partner-row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); } .partner-row .pr { grid-column: 1 / 3; } }
 .cf-choices .cf-choice { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line, #E3D9CA); }
 .cf-choices .cf-choice:first-of-type { border-top: 0; }
 .cf-choices .cf-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }

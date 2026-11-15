@@ -2197,7 +2197,36 @@ function canEditOrder(o) {
     if (commBaseMode() === 'total') return money(num(o && o.total));
     return orderProfit(o);
   }
-  /** صرف العمولة: o.commPaid = { owner|parent: { at, amount, byId, byName, note } } — يسجّله المالك وحده (والخادم يفرضه) */
+  /* شراكة العمولة بين موظفَين (مثل فرع واحد): settings.partners = [{ a, b, rate, since }].
+     حين يبيع أحدهما يأخذ الآخر rate٪ من قيمة البيع (الإجمالي شامل الضريبة) فوق عمولة البائع — من ربح المحل.
+     تُحسب حيّةً من الإعدادات على كل طلب لم تُصرف عمولته؛ وطلب صُرفت عمولة بائعه قبل بدء الشراكة (since) لا تدخله. */
+  function partnerOf(userId) {
+    const list = Array.isArray(settings().partners) ? settings().partners : [];
+    for (const p of list) {
+      if (!p || !(num(p.rate) > 0)) continue;
+      if (p.a === userId && p.b && p.b !== userId) return { userId: p.b, rate: num(p.rate), since: p.since || '' };
+      if (p.b === userId && p.a && p.a !== userId) return { userId: p.a, rate: num(p.rate), since: p.since || '' };
+    }
+    return null;
+  }
+  /** سطر حصة الشريك لهذا الطلب، أو null */
+  function orderPartnerRow(o) {
+    if (!o || o.status === 'quote' || o.status === 'cancelled') return null;
+    const owner = Store.getUser(o.createdBy);
+    if (owner && owner.role === 'mandoub') return null;
+    const pp = partnerOf(o.createdBy);
+    if (!pp) return null;
+    const paid = commPaidOf(o, 'partner');
+    const ownerPaid = commPaidOf(o, 'owner');
+    // «كل الطلبات غير المصروفة»: طلب صُرفت عمولة بائعه قبل بدء الشراكة يبقى كما صُرف
+    if (!paid && ownerPaid && pp.since && String(ownerPaid.at) < pp.since && String(ordDate(o)) < pp.since) return null;
+    const amount = money(num(o.total) * pp.rate / 100);
+    if (!(amount > 0.004) && !paid) return null;
+    const pu = Store.getUser(pp.userId);
+    return { kind: 'partner', who: pu ? pu.name : 'الشريك', rate: pp.rate, amount: paid ? money(paid.amount) : amount, userId: pp.userId, src: 'شراكة الفرع (من قيمة البيع)', paid };
+  }
+  const orderPartnerCommission = (o) => { const r = orderPartnerRow(o); return r ? r.amount : 0; };
+  /** صرف العمولة: o.commPaid = { owner|parent|partner: { at, amount, byId, byName, note } } — يسجّله المالك وحده (والخادم يفرضه) */
   const commPaidOf = (o, kind) => { const p = o && o.commPaid && o.commPaid[kind]; return p && p.at ? p : null; };
   /** النسبة الفعلية المطبّقة على صاحب الطلب */
   function orderOwnerRate(o) { return commRatesOf(o).ownerRate; }
@@ -4295,7 +4324,7 @@ function docTitle(order) {
             menuItem(`data-print="${oid}"`, 'file', 'تصدير PDF ومشاركته'),
             (canSeeCosts(o) && canWriteCosts(o, cost !== null)) ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
             can('admin.core') ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
-            (can('admin.core') && comm !== null) ? menuItem(`data-commpay="${oid}"`, 'wallet', commPaidOf(o, 'owner') ? 'العمولة صُرفت — عرض أو إلغاء' : 'تسجيل صرف العمولة') : '',
+            (can('admin.core') && (comm !== null || orderPartnerRow(o))) ? menuItem(`data-commpay="${oid}"`, 'wallet', commPaidOf(o, 'owner') ? 'العمولة صُرفت — عرض أو إلغاء' : 'تسجيل صرف العمولة') : '',
             can('admin.core') ? menuItem(`data-owner="${oid}"`, 'swap', 'نقل ملكية الطلب') : '',
             canFor(o, 'orders.delete') ? '<hr>' + menuItem(`data-delo="${oid}"`, 'trash', 'حذف الطلب', true) : '',
           ], `إجراءات الطلب ${esc(o.number || '')}`)}
@@ -4472,6 +4501,7 @@ function docTitle(order) {
       const op = commPaidOf(o, 'owner');
       acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()} • ${CS.owner})${comm ? (op ? ` — صُرفت ${day(op.at)}` : ' — لم تُصرف') : ''}`, v: comm });
       if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; acc.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)} • ${CS.parent})`, v: parentComm }); }
+      { const pr = orderPartnerRow(o); if (pr) acc.push({ k: `حصة شريك الفرع — ${pr.who} (${pct(pr.rate)} من قيمة البيع)${pr.paid ? ` — صُرفت ${day(pr.paid.at)}` : ' — لم تُصرف'}`, v: pr.amount }); }
       if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
     }
     tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
@@ -4826,7 +4856,7 @@ function docTitle(order) {
       <div class="cp-list">${rows.map((r) => `
         <label class="cp-row">
           <input type="checkbox" data-k="${r.kind}" checked>
-          <span class="cp-who"><b>${esc(r.who)}</b><small>${r.kind === 'owner' ? (isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع') : 'عمولة المندوب الأعلى'} • ${fmtQty(r.rate)}٪</small>
+          <span class="cp-who"><b>${esc(r.who)}</b><small>${r.kind === 'owner' ? (isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع') : r.kind === 'partner' ? 'حصة شريك الفرع (من قيمة البيع)' : 'عمولة المندوب الأعلى'} • ${fmtQty(r.rate)}٪</small>
             ${r.paid ? `<small class="cp-paid">صُرفت ${esc(fmtDate(r.paid.at))}${r.paid.byName ? ' — ' + esc(r.paid.byName) : ''}${Math.abs(num(r.paid.amount) - r.amount) > 0.004 ? ` • المصروف ${fmt(r.paid.amount)} والحالي ${fmt(r.amount)}` : ''}</small>` : '<small class="cp-due">لم تُصرف بعد</small>'}</span>
           <b class="num">${fmt(r.amount)} ${cur$}</b>
         </label>`).join('')}</div>
@@ -6220,7 +6250,9 @@ function docTitle(order) {
   /** تفصيل عمولات طلب من لقطة نسبه (أو النسب الحالية إن لم تكن هناك لقطة) */
   function orderCommBreakdown(o) {
     const p = commBaseAmount(o);
-    if (p === null) return null;
+    const prow = orderPartnerRow(o);
+    // بلا أساس للعمولة (صافي ربح بلا تكاليف): تبقى حصة الشريك وحدها لأنها من قيمة البيع
+    if (p === null) return prow ? { profit: null, base: null, baseMode: commBaseMode(), rows: [prow] } : null;
     const owner = Store.getUser(o.createdBy);
     const isMan = !!(owner && owner.role === 'mandoub');
     const parent = (isMan && owner && owner.parentId) ? Store.getUser(owner.parentId) : null;
@@ -6232,6 +6264,7 @@ function docTitle(order) {
       const par = Store.getUser(r.parentId);
       rows.push({ kind: 'parent', who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId, src: src.parent, paid: commPaidOf(o, 'parent') });
     }
+    if (prow) rows.push(prow);
     rows.push({ kind: 'share', who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null, src: src.share, paid: null });
     return { profit: orderProfit(o), base: p, baseMode: commBaseMode(), rows };
   }
@@ -7089,6 +7122,15 @@ function docTitle(order) {
 
   /* الإعدادات صفحة مستقلة لا نافذة: نموذج طويل بأقسام، والحفظ في مكان ثابت.
      الحقول وأسماؤها كما كانت (sName، sVatNo…)، ويُقرأ كائن الإعدادات عند الحفظ لا عند الفتح. */
+  /** قراءة شراكات العمولة من نافذة الإعدادات (يُتجاهل الصف الناقص أو موظف مع نفسه) — since يبقى كما كان أو اليوم لشراكة جديدة */
+  function readPartners(b) {
+    return $$('#sPartners .partner-row', b).map((r) => ({
+      a: $('.pa', r).value, b: $('.pb', r).value,
+      rate: Math.min(100, Math.max(0, num($('.pr input', r).value))),
+      since: r.dataset.since || today(),
+    })).filter((p) => p.a && p.b && p.a !== p.b && p.rate > 0);
+  }
+
   function renderSettings() {
     if (!can('settings.manage')) return;
     const s = settings();
@@ -7153,6 +7195,12 @@ function docTitle(order) {
               <select id="sCommBase"><option value="profit" ${s.commBase !== 'total' ? 'selected' : ''}>صافي الربح (البيع قبل الضريبة − التكاليف)</option><option value="total" ${s.commBase === 'total' ? 'selected' : ''}>الإجمالي شامل الضريبة (السعر الشامل)</option></select>
               <small class="hint">ينطبق على عمولة البائع والمندوب والمندوب الأعلى وحصة المشاركة، في كل الطلبات القديمة والجديدة. «الإجمالي» لا يحتاج إدخال التكاليف.</small></label>
           </div>
+          <div class="partners-box">
+            <b>شراكات العمولة بين الموظفين</b>
+            <p class="hint">موظفان يتشاركان (مثل فرع واحد): حين يبيع أحدهما يأخذ الآخر النسبة المحددة من <b>قيمة البيع</b> (الإجمالي شامل الضريبة) فوق عمولة البائع. تُطبَّق على كل طلباتهما التي لم تُصرف عمولتها، وتظهر في تقرير العمولات ونافذة الصرف.</p>
+            <div id="sPartners"></div>
+            <button type="button" class="btn small" id="sAddPartner">${icon('plus')} إضافة شراكة</button>
+          </div>
         </div>
       </section>
       <div class="set-save">
@@ -7190,6 +7238,20 @@ function docTitle(order) {
     const syncTheme = () => $$('[data-theme-v]', b).forEach((x) => { const on = x.dataset.themeV === themePref(); x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); });
     $$('[data-theme-v]', b).forEach((x) => x.addEventListener('click', () => { setTheme(x.dataset.themeV); syncTheme(); }));
     syncTheme();
+    // شراكات العمولة: صف لكل شراكة (موظف + موظف + نسبة)، ويُحفظ مع الإعدادات
+    { const box = $('#sPartners', b);
+      const staffOpts = (sel) => '<option value="">— اختر —</option>' + db().users.filter((u) => u.role !== 'mandoub' && u.active !== false).map((u) => `<option value="${esc(u.id)}"${u.id === sel ? ' selected' : ''}>${esc(u.name)}</option>`).join('');
+      const rowHtml = (p) => `<div class="partner-row" data-since="${esc((p && p.since) || '')}">
+        <select class="pa" aria-label="الموظف الأول">${staffOpts(p && p.a)}</select><span aria-hidden="true">⇄</span>
+        <select class="pb" aria-label="الموظف الثاني">${staffOpts(p && p.b)}</select>
+        <label class="pr">٪ <input type="number" min="0" max="100" step="0.5" value="${p ? esc(p.rate) : '2'}" aria-label="نسبة الشريك من قيمة البيع"></label>
+        <button type="button" class="icon-btn" data-prm title="حذف الشراكة">${icon('trash')}</button></div>`;
+      const list = Array.isArray(s.partners) ? s.partners : [];
+      box.innerHTML = list.map(rowHtml).join('');
+      const wireRm = () => $$('[data-prm]', box).forEach((x) => { x.onclick = () => x.closest('.partner-row').remove(); });
+      wireRm();
+      $('#sAddPartner', b).onclick = () => { box.insertAdjacentHTML('beforeend', rowHtml(null)); wireRm(); };
+    }
     $('#sSave', b).onclick = async () => {
       const btn = $('#sSave', b);
       // يُقرأ كائن الإعدادات الآن لا عند فتح الصفحة: أي مزامنة تستبدله بكائن جديد
@@ -7221,6 +7283,7 @@ function docTitle(order) {
         depositPct: Math.min(100, Math.max(0, num($('#sDeposit', b).value))), quoteDays: Math.min(90, Math.max(1, Math.round(num($('#sQuoteDays', b).value) || 7))),
         sellerRate: Math.min(100, Math.max(0, num($('#sSellerRate', b).value))), mandoubRate: Math.min(100, Math.max(0, num($('#sMandoubRate', b).value))), shareRate: Math.min(100, Math.max(0, num($('#sShareRate', b).value))),
         commBase: $('#sCommBase', b).value === 'total' ? 'total' : 'profit',
+        partners: readPartners(b),
         tagline: mRaw.tagline, logoUrl: mRaw.logoUrl, mapsUrl: mRaw.mapsUrl, whatsapp: mRaw.whatsapp,
         instagram: mRaw.instagram, tiktok: mRaw.tiktok, snapchat: mRaw.snapchat,
       });
@@ -7579,6 +7642,7 @@ function docTitle(order) {
       profit, costedRevenue,
       commission: sum(commOrders, orderCommission),
       share: sum(commOrders, orderShareAmount),
+      partner: sum(live, orderPartnerCommission),
       margin: costedRevenue > 0 ? r2((profit / costedRevenue) * 100) : 0,
       avg: live.length ? money(revenue / live.length) : 0,
       meters: r2(live.reduce((s, o) => s + biMeters(o), 0)),
@@ -8278,7 +8342,7 @@ function docTitle(order) {
 
     $('#biKpisSub').innerHTML = `
       <div class="stat profit"><span>صافي الربح</span><b class="${a.costed.length ? (a.profit < 0 ? 'neg' : 'pos') : 'is-na'}">${a.costed.length ? fmt(a.profit) : '—'}</b><small class="${a.costed.length ? '' : 'na-note'}">${a.costed.length ? `هامش ${fmtQty(a.margin)}٪` : 'يُحسب بعد إدخال تكاليف الطلبات'}</small></div>
-      <div class="stat"><span>إجمالي العمولات</span><b class="${a.commOrders.length ? 'pos' : 'is-na'}">${a.commOrders.length ? fmt(money(a.commission + a.share)) : '—'}</b><small>${a.commOrders.length ? `من ${commBaseLabel()}: عمولات ${fmt(a.commission)} + مشاركة ${fmt(a.share)}` : ''}</small></div>
+      <div class="stat"><span>إجمالي العمولات</span><b class="${a.commOrders.length || a.partner ? 'pos' : 'is-na'}">${a.commOrders.length || a.partner ? fmt(money(a.commission + a.share + a.partner)) : '—'}</b><small>${a.commOrders.length ? `من ${commBaseLabel()}: عمولات ${fmt(a.commission)} + مشاركة ${fmt(a.share)}${a.partner ? ` + شراكة ${fmt(a.partner)}` : ''}` : ''}</small></div>
       <div class="stat"><span>متوسط قيمة الطلب</span><b>${fmt(a.avg)}</b>${biDeltaTag(a.avg, pv && pv.avg)}</div>
       <div class="stat"><span>أمتار الكنب</span><b>${fmtQty(a.meters)}</b><small>${a.count ? `${fmtQty(r2(a.meters / a.count))} م لكل طلب` : '—'}</small></div>
       <div class="stat"><span>عملاء جدد</span><b>${fresh}</b><small>من ${inPeriod.length} عميل في الفترة</small></div>`;
@@ -8355,7 +8419,7 @@ function docTitle(order) {
     push('قيمة الطلبات مع الضريبة', a.gross);
     push('إجمالي التكاليف', a.costed.length ? a.cost : '');
     push('صافي الربح', a.costed.length ? a.profit : '');
-    push('إجمالي العمولات', a.commOrders.length ? money(a.commission + a.share) : '');
+    push('إجمالي العمولات', a.commOrders.length || a.partner ? money(a.commission + a.share + a.partner) : '');
     push('هامش الربح ٪', a.costed.length ? a.margin : '');
     push('المحصّل', a.paid);
     push('المتبقي على العملاء', a.remaining);
@@ -8409,7 +8473,7 @@ async function biExportPdf() {
       { label: 'عدد الطلبات', value: a.count, kind: 'num' },
       { label: 'إجمالي التكاليف', value: has ? a.cost : null, kind: 'money' },
       { label: 'صافي الربح', value: has ? a.profit : null, kind: 'money' },
-      { label: 'إجمالي العمولات', value: a.commOrders.length ? money(a.commission + a.share) : null, kind: 'money' },
+      { label: 'إجمالي العمولات', value: a.commOrders.length || a.partner ? money(a.commission + a.share + a.partner) : null, kind: 'money' },
       { label: 'إجمالي المصروفات', value: a.expenses, kind: 'money' },
       { label: 'صافي النتيجة بعد المصروفات', value: a.net, kind: 'money' },
     ],
@@ -8449,7 +8513,7 @@ async function biExportXlsx() {
     ['عروض الأسعار', a.quotes],
     ['إجمالي التكاليف', a.costed.length ? a.cost : ''],
     ['صافي الربح', a.costed.length ? a.profit : ''],
-    ['إجمالي العمولات', a.commOrders.length ? money(a.commission + a.share) : ''],
+    ['إجمالي العمولات', a.commOrders.length || a.partner ? money(a.commission + a.share + a.partner) : ''],
     ['هامش الربح %', a.costed.length ? a.margin : ''],
     ['أمتار الكنب', a.meters],
     ['عملاء جدد', a.fresh],

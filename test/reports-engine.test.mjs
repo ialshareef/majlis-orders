@@ -36,6 +36,7 @@ const expenses = [
   { id: 'e3', name: 'قديم', amount: 999, category: 'إيجار', created_by: 'a1', expense_date: '2025-01-01' },
 ];
 const breakdown = (o) => {
+  if (o._cost === null || o._cost === undefined) return null;   // كالتطبيق: أساس «صافي الربح» بلا تكاليف ← لا عمولة
   const r = o.commRates || { ownerRate: 10, parentId: null, parentRate: null, shareRate: 5 }; const p = o.subtotal - o.discount - o._cost;
   const rows = [{ kind: 'owner', userId: o.createdBy, who: o.createdByName, rate: r.ownerRate, amount: p * r.ownerRate / 100 }];
   if (r.parentId) rows.push({ kind: 'parent', userId: r.parentId, who: users.find((u) => u.id === r.parentId).name, rate: r.parentRate, amount: p * r.parentRate / 100 });
@@ -202,7 +203,7 @@ ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) =
 {
   // عمولة المندوب التابع (200) في الطلب #2 صُرفت؛ عمولة سالم (40) وعمولة المندوب الأعلى (50) لم تُصرف
   const paidOrders = orders.map((o) => (o.id === 'o2' ? { ...o, commPaid: { owner: { at: '2026-10-25', amount: 200, byName: 'المالك' } } } : o));
-  const bdPaid = (o) => { const b = breakdown(o); b.rows.forEach((r) => { r.paid = (o.commPaid && o.commPaid[r.kind]) || null; }); return b; };
+  const bdPaid = (o) => { const b = breakdown(o); if (!b) return b; b.rows.forEach((r) => { r.paid = (o.commPaid && o.commPaid[r.kind]) || null; }); return b; };
   const mk = (cp) => { const c = ctxOf({ orders: paidOrders, commPaid: cp }); c.calc = { ...c.calc, breakdown: bdPaid }; return c; };
   const r0 = Reports.build('commissions', mk(''));
   const by = Object.fromEntries(r0.tables[0].rows.map((x) => [x.name, x]));
@@ -215,6 +216,23 @@ ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) =
   ok(rd.tables[0].rows.map((x) => x.name).sort().join() === ['سالم', 'مندوب أعلى'].sort().join() && rd.tables[1].rows.every((d) => d.paidTxt === 'لم تُصرف') && rd.tables[1].rows.length === 2, 'commPaid/due: غير المصروفة فقط (أشخاص وتفصيل)', rd.tables[1].rows.map((d) => d.who));
   const rp = Reports.build('commissions', mk('paid'));
   ok(rp.tables[0].rows.length === 1 && rp.tables[0].rows[0].name === 'مندوب تابع' && rp.tables[1].rows.length === 1 && rp.tables[1].rows[0].amount === 200, 'commPaid/paid: المصروفة فقط', rp.tables[1].rows);
+}
+
+/* ---- شراكة الفرع: سطر kind 'partner' من قيمة البيع ---- */
+{
+  // الطلب #1 لسالم (s1) إجماليه 1150 — شريكه s2 يأخذ 2٪ = 23
+  const bdP = (o) => { const b = breakdown(o); if (b && o.createdBy === 's1') b.rows.splice(1, 0, { kind: 'partner', userId: 's2', who: (users.find((u) => u.id === 's2') || {}).name, rate: 2, amount: o.total * 2 / 100, paid: null }); return b; };
+  const c = ctxOf(); c.calc = { ...c.calc, breakdown: bdP };
+  const r = Reports.build('commissions', c);
+  const s2 = r.tables[0].rows.find((x) => x._id === 's2');
+  ok(s2 && eq(s2.partnerComm, 23) && r.tables[0].columns.some((x) => x.key === 'partnerComm'), 'partner: حصة الشريك 2٪ من 1150 = 23 وعمود «شراكة الفرع»', s2);
+  ok(eq(S(r, 'حصص شراكة الفرع'), 23), 'partner: سطر الملخص', r.summary);
+  ok(r.tables[1].rows.some((d) => d.type === 'حصة شريك الفرع' && eq(d.amount, 23) && eq(d.base, 1150)), 'partner: التفصيل بأساس قيمة البيع');
+  const r0 = Reports.build('commissions', ctxOf());
+  ok(!r0.tables[0].columns.some((x) => x.key === 'partnerComm'), 'partner: العمود يختفي بلا شراكة');
+  const ro = Reports.build('orders', c);
+  const o1 = ro.tables[0].rows.find((x) => x.number === '#1');
+  ok(eq(o1.partnerComm, 23) && eq(o1.afterComm, 400 - 40 - 20 - 23), 'partner: تفصيل الطلبات يخصم حصة الشريك من الربح', o1);
 }
 
 /* ---- تقرير «الطلبات الجديدة» ---- */
