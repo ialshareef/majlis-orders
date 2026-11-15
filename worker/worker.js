@@ -427,13 +427,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.11';
-// بصمة asalh-najd-1.1.11.apk (إصدار GitHub v1.1.11، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.11 وversionCode 10111، ونفس شهادة توقيع 1.1.10).
-const UPDATE_FALLBACK_SHA256 = '672315a755d4f2b006fd1b485d85b605a2e747b92380a68f2394fd1e1bc70399';
+const UPDATE_FALLBACK_VERSION = '1.1.12';
+// بصمة asalh-najd-1.1.12.apk (إصدار GitHub v1.1.12، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.12 وversionCode 10112، ونفس شهادة توقيع 1.1.11).
+const UPDATE_FALLBACK_SHA256 = '5f7d83d57ddd67feaa1041f098b19cd6c57ecda323b98e548304bffba202fc4f';
 const UPDATE_FALLBACK_NOTES = [
-  'الفيديو التعريفي: في الملف التعريفي وصفحة تصميم العملاء و«عن التطبيق» للمشاركة',
-  'ملفات الطلب PDF: لا يظهر مخطط الغرفة لطلب أصناف إضافية فقط (سجاد، مكيف…) بلا كنب',
+  'صرف العمولة: زر «تم الصرف» تحت العمولة في قائمة الطلبات، وتقرير العمولات يعرض المصروف وغير المصروف',
+  'نسبة عمولة خاصة لكل موظف من صفحة المستخدمين، تُطبَّق على طلباته الجديدة',
 ];
 
 function versionCodeOfName(v) {
