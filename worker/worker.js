@@ -423,13 +423,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.8';
-// بصمة asalh-najd-1.1.8.apk (إصدار GitHub v1.1.8، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.8 وversionCode 10108، ونفس شهادة توقيع 1.1.7).
-const UPDATE_FALLBACK_SHA256 = '9205af0a7f40104356c64a54b826ae8caf99db62243902dcbc75864e963633cd';
+const UPDATE_FALLBACK_VERSION = '1.1.9';
+// بصمة asalh-najd-1.1.9.apk (إصدار GitHub v1.1.9، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.9 وversionCode 10109، ونفس شهادة توقيع 1.1.8).
+const UPDATE_FALLBACK_SHA256 = '813cb6c93ea245810110f9d856cfd9940ce066445e0016cda3e64106d2c2321a';
 const UPDATE_FALLBACK_NOTES = [
-  'الجوال: أزرار إضافة الكنبة والباب والتلفاز داخل الشاشة دائماً حتى مع خط الجوال المكبَّر',
-  'الدفع: الإجمالي والمدفوع والمتبقي تظهر كاملة بلا «…» — كل مبلغ في سطر مستقل',
+  'الملف التعريفي للشركة: صفحة على /profile تعرض أعمالنا وخدماتنا، مع ملف PDF للتنزيل والإرسال',
+  'روابط مباشرة للواتساب وتصميم المجلس وموقع المعرض، ورموز QR لحساباتنا',
 ];
 
 function versionCodeOfName(v) {
