@@ -265,6 +265,11 @@ export default {
     if (url.pathname === '/customer-design-expanded' || url.pathname.startsWith('/customer-design-expanded/')) {
       return Response.redirect(url.origin + '/customer-design' + url.search, 302);
     }
+    /* الملف التعريفي PDF: محفوظ في المستودع (profile/asalh-najd-profile.pdf) ويُخدَم من jsDelivr
+       مثبَّتاً على وسم الإصدار المنشور — لا يُضمَّن في الـ Worker حتى لا يكبر حجمه. الصفحة نفسها /profile من ASSETS. */
+    if (url.pathname === '/profile.pdf') {
+      return Response.redirect(PROFILE_PDF_BASE + 'v' + UPDATE_FALLBACK_VERSION + '/profile/asalh-najd-profile.pdf', 302);
+    }
     if (!url.pathname.startsWith('/api/')) {
       if (ASSETS) return serveAsset(url.pathname);
       return json({ ok: true, service: 'majlis-api', hint: 'ضع هذا الرابط في config.js (apiUrl)' }, 200, cors);
@@ -416,6 +421,8 @@ async function route(request, env, url) {
    fail-closed: رابط خارج المسار الرسمي يُصفَّر، وبصمة فاسدة تُهمل (null)
    فيرفض التطبيق التنزيل بدل تثبيت ملف غير موثوق. */
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
+/** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
+const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
 const UPDATE_FALLBACK_VERSION = '1.1.8';
 // بصمة asalh-najd-1.1.8.apk (إصدار GitHub v1.1.8، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
 // versionName 1.1.8 وversionCode 10108، ونفس شهادة توقيع 1.1.7).

@@ -1,0 +1,64 @@
+/* الملف التعريفي للشركة (/profile و /profile.pdf) — فحوص بلا متصفح:
+   كل صورة مذكورة موجودة وفي قائمة بناء الـ Worker، والرقم المعتمد وحده، وملف PDF سليم،
+   ومسار /profile.pdf يحوّل إلى نسخة الإصدار المنشور على jsDelivr.
+   الاستخدام: node test/profile-page.test.mjs */
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const here = path.dirname(fileURLToPath(import.meta.url));
+const root = path.join(here, '..');
+const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
+let pass = 0, fail = 0;
+const ok = (c, name, extra) => { if (c) { pass++; console.log('PASS  ' + name); } else { fail++; console.log('FAIL  ' + name + (extra !== undefined ? '  -> ' + JSON.stringify(extra).slice(0, 300) : '')); } };
+
+const html = read('profile/index.html');
+const bw = read('build-worker.ps1');
+const imgs = [...new Set([...html.matchAll(/\/profile\/img\/([a-z0-9-]+\.jpg)/g)].map((m) => m[1]))];
+ok(imgs.length >= 12, 'الصفحة تعرض 12 صورة من أعمال الشركة على الأقل', imgs.length);
+const missing = imgs.filter((f) => !fs.existsSync(path.join(root, 'profile', 'img', f)));
+ok(missing.length === 0, 'كل صورة مذكورة موجودة في profile/img', missing);
+const notBuilt = imgs.filter((f) => !bw.includes(`'/profile/img/${f}'`));
+ok(notBuilt.length === 0 && bw.includes("'/profile/index.html'"), 'الصفحة وكل صورها في قائمة بناء الـ Worker', notBuilt);
+ok(/'\.jpg' = 'image\/jpeg'/.test(bw) && /\$ext -eq '\.jpg'/.test(bw), 'بناء الـ Worker يعرف JPEG ويضمّنه ثنائياً');
+const extImg = [...html.matchAll(/<img[^>]+src="([^"]+)"/g)].map((m) => m[1]).filter((s) => !s.startsWith('/'));
+ok(extImg.length === 0, 'كل الصور من الموقع نفسه (لا روابط صور خارجية تنكسر)', extImg);
+
+// الرقم المعتمد وحده
+const digits = html.replace(/\s/g, '');
+ok(digits.includes('+966533724290') && digits.includes('wa.me/966533724290') && digits.includes('tel:+966533724290'), 'الرقم المعتمد +966 53 372 4290 للاتصال والواتساب');
+ok(!/0549955622|966549955622|0508148108|966508148108/.test(digits), 'لا أرقام قديمة في الملف التعريفي');
+
+// الأمان: مكتبة QR الخارجية الوحيدة ببصمة تحقق
+const scripts = [...html.matchAll(/<script[^>]+src="([^"]+)"[^>]*>/g)].map((m) => m[0]);
+ok(scripts.length === 1 && /integrity="sha384-[A-Za-z0-9+/=]+"/.test(scripts[0]) && /crossorigin="anonymous"/.test(scripts[0]), 'السكربت الخارجي الوحيد (QR) ببصمة SRI', scripts);
+
+// ملف PDF
+const pdfPath = path.join(root, 'profile', 'asalh-najd-profile.pdf');
+const pdf = fs.existsSync(pdfPath) ? fs.readFileSync(pdfPath) : Buffer.alloc(0);
+ok(pdf.subarray(0, 5).toString() === '%PDF-', 'ملف PDF موجود وصالح');
+ok(pdf.length > 200 * 1024 && pdf.length < 3 * 1024 * 1024, 'حجم PDF مناسب للإرسال بالواتساب (أقل من 3MB)', pdf.length);
+const pages = (pdf.toString('latin1').match(/\/Type\s*\/Page(?!s)/g) || []).length;
+ok(pages === 7, 'PDF من 7 صفحات A4', pages);
+
+// مسار /profile.pdf في الـ Worker
+const wsrc = read('worker/worker.js');
+const ver = (wsrc.match(/^const UPDATE_FALLBACK_VERSION = '([^']+)'/m) || [])[1];
+const { default: worker } = await import('data:text/javascript;base64,' + Buffer.from(wsrc).toString('base64'));
+const r = await worker.fetch(new Request('https://majlis-api.asalh-najd.workers.dev/profile.pdf'), {});
+ok(r.status === 302 && r.headers.get('location') === `https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@v${ver}/profile/asalh-najd-profile.pdf`, '/profile.pdf يحوّل إلى ملف وسم الإصدار المنشور على jsDelivr', r.headers.get('location'));
+
+// الحزمة المبنية (كما في visit-test.mjs): الصفحة وصورها تُخدَم فعلاً من الـ Worker
+const bundlePath = path.join(root, 'worker', 'worker.bundle.js');
+if (fs.existsSync(bundlePath)) {
+  const { default: bw2 } = await import('data:text/javascript;base64,' + fs.readFileSync(bundlePath).toString('base64'));
+  const pg = await bw2.fetch(new Request('https://majlis-api.asalh-najd.workers.dev/profile'), {});
+  const body = await pg.text();
+  ok(pg.status === 200 && /text\/html/.test(pg.headers.get('content-type')) && body.includes('شركة أصالة نجد للأثاث'), 'الحزمة: /profile صفحة HTML', pg.status);
+  const im = await bw2.fetch(new Request('https://majlis-api.asalh-najd.workers.dev/profile/img/' + imgs[0]), {});
+  const bytes = new Uint8Array(await im.arrayBuffer());
+  ok(im.status === 200 && im.headers.get('content-type') === 'image/jpeg' && bytes[0] === 0xFF && bytes[1] === 0xD8, 'الحزمة: صور البروفايل JPEG سليمة', [im.status, im.headers.get('content-type')]);
+} else console.log('NOTE  لا توجد حزمة مبنية — فحص الخدمة من الحزمة تخطّى (يُغطّى عند النشر)');
+
+console.log(`=== profile-page: PASS=${pass}  FAIL=${fail} ===`);
+process.exit(fail ? 1 : 0);

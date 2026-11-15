@@ -1,0 +1,425 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light">
+<title>شركة أصالة نجد للأثاث | الملف التعريفي</title>
+<meta name="description" content="شركة أصالة نجد للأثاث — مجالس نجدية وسلماني وخيام ملكية وجلسات خارجية، تصميم وتنفيذ حسب الطلب في الرياض منذ 15 عاماً.">
+<meta property="og:title" content="شركة أصالة نجد للأثاث — الملف التعريفي">
+<meta property="og:description" content="مجالس نجدية وسلماني وخيام ملكية — تصميم وتنفيذ حسب الطلب منذ 15 عاماً.">
+<meta property="og:image" content="/profile/img/outdoor-sadu.jpg">
+<link rel="icon" href="/icons/icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" rel="stylesheet">
+<!--
+  الملف التعريفي لشركة أصالة نجد — صفحة واحدة تُعرض على الجوال والشاشة، وتُطبع/تُصدَّر PDF بحجم A4
+  (كل قسم .sheet صفحة مستقلة عند الطباعة). المصادر: إعدادات المحل وكتالوج الأصناف في هذا المشروع،
+  وحسابا الشركة على إنستقرام وتيك توك (الصور من منشورات الشركة نفسها). الرقم المعتمد: +966 53 372 4290.
+  الأرقام العامة (المتابعون والإعجابات والمنشورات) كما كانت في نوفمبر 2026.
+-->
+<style>
+  :root {
+    --ivory: #F6F2EB; --paper: #FFFDF9; --paper-2: #FAF6EF; --sand: #EFE8DC; --line: #E5DCCD;
+    --ink: #2A2622; --ink-2: #4E463E; --ink-3: #635A4D;
+    --bronze: #8B5E34; --bronze-dk: #6E4724; --bronze-soft: #F3E9DC;
+    --night: #2E231C; --sadu-red: #8E2B2B; --sadu-cream: #EADBC0;
+    --r: 14px;
+  }
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--ivory); color: var(--ink);
+    font-family: 'IBM Plex Sans Arabic', 'Segoe UI', Tahoma, sans-serif; line-height: 1.75;
+  }
+  img { display: block; max-width: 100%; }
+  a { color: inherit; }
+  .num { font-variant-numeric: tabular-nums; direction: ltr; unicode-bidi: isolate; }
+
+  /* شريط السدو: مثلثات متناوبة بألوان السدو النجدي — الفاصل الزخرفي للهوية */
+  .sadu {
+    height: 14px; border: 0; margin: 0;
+    background:
+      linear-gradient(135deg, var(--sadu-red) 25%, transparent 25%) 0 0 / 14px 14px,
+      linear-gradient(225deg, var(--sadu-red) 25%, transparent 25%) 0 0 / 14px 14px,
+      linear-gradient(315deg, var(--night) 25%, transparent 25%) 7px 7px / 14px 14px,
+      linear-gradient(45deg, var(--night) 25%, transparent 25%) 7px 7px / 14px 14px,
+      var(--sadu-cream);
+  }
+
+  .sheet { position: relative; padding: 56px 20px; max-width: 1080px; margin: 0 auto; }
+  .eyebrow { display: inline-block; font-size: .82rem; font-weight: 600; color: var(--bronze); letter-spacing: .02em; margin-bottom: 6px; }
+  h1, h2, h3 { margin: 0; line-height: 1.35; }
+  h2 { font-size: clamp(1.5rem, 4.2vw, 2.1rem); font-weight: 700; color: var(--night); }
+  h2 + p, .lead { font-size: 1.05rem; color: var(--ink-2); max-width: 62ch; }
+  p { margin: .6em 0; }
+
+  /* ===== الغلاف ===== */
+  .cover { max-width: none; padding: 0; min-height: 92vh; display: grid; color: #FBF5EA; background: var(--night); overflow: hidden; }
+  .cover > * { grid-area: 1 / 1; }
+  /* الطبقات صريحة: الصورة نصف الشفافة تُرسم طبقةً مستقلة فوق النص إن لم يُرفع النص فوقها */
+  .cover .bg { width: 100%; height: 100%; object-fit: cover; object-position: 50% 45%; opacity: .62; position: relative; z-index: 0; }
+  .cover .veil { position: relative; z-index: 1; background: linear-gradient(180deg, rgba(30,22,16,.30) 0%, rgba(30,22,16,.45) 38%, rgba(30,22,16,.94) 72%); }
+  .cover .in { position: relative; z-index: 2; align-self: end; padding: 32px 22px 40px; max-width: 1080px; width: 100%; margin: 0 auto; }
+  .brand { display: flex; align-items: center; gap: 14px; margin-bottom: 22px; }
+  .brand img { width: 64px; height: 64px; border-radius: 16px; box-shadow: 0 6px 24px rgba(0,0,0,.35); }
+  .brand b { display: block; font-size: 1.05rem; }
+  .brand small { display: block; opacity: .8; font-size: .85rem; }
+  .cover h1 { font-size: clamp(2rem, 7vw, 3.4rem); font-weight: 700; }
+  .cover .tag { font-size: clamp(1.05rem, 3.4vw, 1.35rem); margin: 10px 0 22px; color: #EBDDC6; max-width: 34ch; }
+  .since { display: inline-flex; align-items: baseline; gap: 8px; padding: 6px 14px; border: 1px solid rgba(235,221,198,.5); border-radius: 999px; font-weight: 600; margin-bottom: 22px; }
+  .since b { font-size: 1.4rem; }
+  .cta { display: flex; flex-wrap: wrap; gap: 10px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 48px; padding: 0 20px; border-radius: 12px; font: inherit; font-weight: 600; text-decoration: none; border: 1px solid transparent; }
+  .btn svg { width: 20px; height: 20px; flex: none; }
+  .btn.primary { background: var(--bronze); color: #fff; }
+  .btn.light { background: #FBF5EA; color: var(--night); }
+  .btn.ghost { border-color: rgba(251,245,234,.55); color: #FBF5EA; }
+  .btn.line { border-color: var(--line); background: var(--paper); color: var(--night); }
+
+  /* ===== من نحن + الأرقام ===== */
+  .about { display: grid; gap: 28px; }
+  .stats { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 8px; }
+  .stat { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 16px; }
+  .stat b { display: block; font-size: clamp(1.6rem, 6vw, 2.2rem); color: var(--bronze-dk); line-height: 1.2; }
+  .stat span { color: var(--ink-2); font-size: .92rem; }
+  .stats-note { font-size: .8rem; color: var(--ink-3); margin-top: 8px; }
+  .about-img { border-radius: var(--r); overflow: hidden; aspect-ratio: 1 / 1; }
+  .about-img img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 88%; }
+  .pillars { display: grid; gap: 10px; margin: 18px 0 0; padding: 0; list-style: none; }
+  .pillars li { display: flex; gap: 10px; align-items: flex-start; }
+  .pillars li::before { content: ''; flex: none; width: 10px; height: 10px; margin-top: .62em; background: var(--sadu-red); transform: rotate(45deg); }
+
+  /* ===== الخدمات ===== */
+  .services { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 16px; margin-top: 24px; }
+  .svc { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; display: flex; flex-direction: column; }
+  .svc img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+  .svc div { padding: 14px 16px 16px; }
+  .svc h3 { font-size: 1.12rem; color: var(--night); }
+  .svc p { margin: 6px 0 0; color: var(--ink-2); font-size: .95rem; }
+
+  /* ===== الخامات + كيف نعمل ===== */
+  .two { display: grid; gap: 28px; }
+  .mat { display: grid; gap: 12px; margin-top: 18px; }
+  .mat div { background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 14px 16px; }
+  .mat b { color: var(--bronze-dk); }
+  .mat span { color: var(--ink-2); }
+  .steps { list-style: none; margin: 18px 0 0; padding: 0; counter-reset: s; display: grid; gap: 12px; }
+  .steps li { counter-increment: s; display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: start; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; }
+  .steps li::before { content: counter(s); width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; background: var(--night); color: #FBF5EA; font-weight: 700; font-size: 1.1rem; }
+  .steps b { display: block; color: var(--night); }
+  .steps span { color: var(--ink-2); font-size: .94rem; }
+
+  /* ===== صمّم مجلسك ===== */
+  .digital { background: var(--night); color: #FBF5EA; border-radius: 20px; padding: 28px 22px; display: grid; gap: 22px; align-items: center; }
+  .digital h2 { color: #FBF5EA; }
+  .digital p { color: #E5D6BE; }
+  .digital ul { margin: 12px 0 18px; padding-inline-start: 1.1em; color: #EBDDC6; }
+  .qr-card { background: #fff; color: var(--night); border-radius: 16px; padding: 14px; width: 200px; justify-self: center; text-align: center; }
+  .qr-card small { display: block; font-weight: 600; margin-top: 6px; }
+  .qr { width: 100%; aspect-ratio: 1; display: grid; place-items: center; }
+  .qr svg, .qr img { width: 100%; height: 100%; }
+
+  /* ===== معرض الأعمال ===== */
+  .gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-top: 22px; }
+  .work { position: relative; margin: 0; border-radius: 12px; overflow: hidden; background: var(--sand); aspect-ratio: 1 / 1; }
+  .work img { width: 100%; height: 100%; object-fit: cover; transition: transform .4s; }
+  .work a:hover img { transform: scale(1.04); }
+  .work figcaption { position: absolute; inset: auto 0 0 0; padding: 26px 10px 8px; font-size: .82rem; font-weight: 600; color: #fff; background: linear-gradient(180deg, transparent, rgba(20,14,10,.82)); }
+  .work .kind { position: absolute; top: 8px; inset-inline-start: 8px; background: rgba(20,14,10,.7); color: #fff; font-size: .72rem; padding: 2px 8px; border-radius: 999px; }
+  .more { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 10px; }
+
+  /* ===== تواصل ===== */
+  .contact { display: grid; gap: 22px; }
+  .rows { display: grid; gap: 10px; margin-top: 16px; }
+  .row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--paper); border: 1px solid var(--line); border-radius: var(--r); text-decoration: none; }
+  .row svg { width: 22px; height: 22px; color: var(--bronze); flex: none; }
+  .row b { display: block; color: var(--night); }
+  .row span { color: var(--ink-2); font-size: .92rem; }
+  .qrs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+  .qrs .qr-card { width: auto; padding: 10px; }
+  .qrs small { font-size: .78rem; }
+  footer { text-align: center; color: var(--ink-3); font-size: .85rem; padding: 26px 16px 40px; }
+  .print-only { display: none; }
+
+  @media (min-width: 760px) {
+    .sheet { padding: 80px 32px; }
+    .about { grid-template-columns: 1.2fr 1fr; align-items: center; }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .two { grid-template-columns: 1fr 1fr; }
+    .digital { grid-template-columns: 1.4fr 1fr; padding: 40px; }
+    .gallery { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    .contact { grid-template-columns: 1.2fr 1fr; align-items: start; }
+  }
+
+  /* ===== الطباعة / PDF: A4 طولي، كل قسم صفحة ===== */
+  @page { size: A4; margin: 0; }
+  @media print {
+    html, body { background: #fff; }
+    body { -webkit-print-color-adjust: exact; print-color-adjust: exact; font-size: 12.5pt; line-height: 1.65; }
+    .no-print { display: none !important; }
+    .print-only { display: block; }
+    .sheet {
+      width: 210mm; height: 297mm; max-width: none; margin: 0; padding: 18mm 16mm 16mm; overflow: hidden;
+      break-after: page; page-break-after: always; background: var(--ivory);
+    }
+    .sheet:last-of-type { break-after: auto; page-break-after: auto; }
+    .sheet > .sadu.top { position: absolute; top: 0; left: 0; right: 0; }
+    .pg { position: absolute; bottom: 8mm; left: 16mm; right: 16mm; display: flex; justify-content: space-between; font-size: 8pt; color: var(--ink-3); border-top: 1px solid var(--line); padding-top: 3mm; }
+    h2 { font-size: 27pt; margin-bottom: 2mm; }
+    h2 + p, .lead { font-size: 13pt; }
+    .eyebrow { font-size: 11pt; }
+    .cover { min-height: 0; padding: 0; }
+    .cover .in { padding: 0 16mm 22mm; }
+    .cover .in { padding: 0 18mm 26mm; }
+    .cover h1 { font-size: 46pt; }
+    .cover .tag { font-size: 18pt; max-width: 30ch; }
+    .brand img { width: 22mm; height: 22mm; }
+    .brand b { font-size: 16pt; } .brand small { font-size: 11pt; }
+    .since { font-size: 13pt; } .since b { font-size: 20pt; }
+    .about { grid-template-columns: minmax(0, 1fr); gap: 8mm; }
+    .about-img { aspect-ratio: 2 / 1; }
+    .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4mm; margin-top: 8mm; }
+    .stat { padding: 5mm; }
+    .stat b { font-size: 26pt; }
+    .stat span { font-size: 11pt; }
+    .services { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5mm; margin-top: 7mm; }
+    .svc img { aspect-ratio: 2 / 1; }
+    .svc div { padding: 3mm 4mm 4mm; }
+    .svc h3 { font-size: 13.5pt; }
+    .svc p { font-size: 10.5pt; line-height: 1.55; }
+    .two { grid-template-columns: minmax(0, 1fr); gap: 9mm; }
+    .mat { grid-template-columns: 1fr 1fr; gap: 4mm; }
+    .mat div, .steps li { padding: 4mm 5mm; }
+    .steps { gap: 4mm; }
+    .digital { grid-template-columns: 1.35fr 1fr; padding: 11mm; border-radius: 6mm; }
+    .digital .qr-card { width: 62mm; }
+    .gallery { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4mm; margin-top: 8mm; }
+    #works .gallery .work:nth-child(n+10) { display: none; }
+    .work .kind { display: none; }
+    .contact { grid-template-columns: minmax(0, 1fr); gap: 9mm; }
+    .rows { grid-template-columns: 1fr 1fr; gap: 4mm; }
+    .row { padding: 4mm 5mm; }
+    .row b { font-size: 13pt; } .row span { font-size: 11.5pt; }
+    .qrs { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 5mm; padding: 0 8mm; }
+    .qrs .qr-card { padding: 4mm; }
+    .qrs small { font-size: 11pt; }
+    footer { display: none; }
+  }
+</style>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-wa" viewBox="0 0 24 24"><path fill="currentColor" d="M12 2a10 10 0 0 0-8.6 15.1L2 22l5-1.3A10 10 0 1 0 12 2Zm0 18.2a8.2 8.2 0 0 1-4.2-1.1l-.3-.2-3 .8.8-2.9-.2-.3A8.2 8.2 0 1 1 12 20.2Zm4.5-6.1c-.2-.1-1.5-.7-1.7-.8s-.4-.1-.6.1-.7.8-.8 1-.3.2-.5.1a6.7 6.7 0 0 1-3.3-2.9c-.3-.4.2-.4.7-1.4.1-.2 0-.3 0-.4l-.8-1.8c-.2-.5-.4-.4-.6-.4h-.5a1 1 0 0 0-.7.3 3 3 0 0 0-.9 2.2 5.1 5.1 0 0 0 1.1 2.7 11.6 11.6 0 0 0 4.5 4c1.7.7 2.3.8 3.2.6a2.7 2.7 0 0 0 1.8-1.2 2.2 2.2 0 0 0 .1-1.2c0-.1-.2-.2-.4-.3Z"/></symbol>
+  <symbol id="i-phone" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.5 2.1L8 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2Z"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 22s7-6.1 7-12a7 7 0 1 0-14 0c0 5.9 7 12 7 12Z"/><circle cx="12" cy="10" r="2.5" fill="none" stroke="currentColor" stroke-width="1.8"/></symbol>
+  <symbol id="i-ig" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="12" cy="12" r="4" fill="none" stroke="currentColor" stroke-width="1.8"/><circle cx="17.5" cy="6.5" r="1.1" fill="currentColor"/></symbol>
+  <symbol id="i-tt" viewBox="0 0 24 24"><path fill="currentColor" d="M16.6 5.8A4.3 4.3 0 0 1 15.5 3h-3.1v12.4a2.6 2.6 0 1 1-2.6-2.6c.3 0 .5 0 .8.1V9.7a5.8 5.8 0 1 0 5 5.7V9.1a7.4 7.4 0 0 0 4.3 1.4V7.4a4.3 4.3 0 0 1-3.3-1.6Z"/></symbol>
+  <symbol id="i-pen" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></symbol>
+  <symbol id="i-dl" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></symbol>
+</svg>
+
+<!-- 1) الغلاف -->
+<section class="sheet cover" id="top">
+  <img class="bg" src="/profile/img/outdoor-sadu.jpg" alt="" aria-hidden="true">
+  <div class="veil"></div>
+  <div class="in">
+    <div class="brand">
+      <img src="/icons/shop-logo.svg" alt="شعار أصالة نجد">
+      <div><b>شركة أصالة نجد للأثاث</b><small>الرياض — المملكة العربية السعودية</small></div>
+    </div>
+    <span class="since">منذ <b class="num">15</b> عاماً</span>
+    <h1>مجالس بروح نجد</h1>
+    <p class="tag">مجالس نجدية وسلماني، خيام ملكية، وجلسات خارجية — تصميم وتنفيذ حسب الطلب بأيدٍ تعرف التراث.</p>
+    <div class="cta no-print">
+      <a class="btn primary" href="https://wa.me/966533724290?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D8%A3%D8%B1%D8%BA%D8%A8%20%D8%A8%D8%A7%D9%84%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D9%85%D8%AC%D9%84%D8%B3" target="_blank" rel="noopener"><svg><use href="#i-wa"/></svg>تواصل واتساب</a>
+      <a class="btn light" href="/customer-design?src=profile"><svg><use href="#i-pen"/></svg>صمّم مجلسك الآن</a>
+      <a class="btn ghost" href="/profile.pdf" download><svg><use href="#i-dl"/></svg>الملف التعريفي PDF</a>
+    </div>
+    <p class="print-only" style="margin-top:6mm;font-weight:600">للتواصل: <span class="num">+966 53 372 4290</span></p>
+  </div>
+</section>
+<hr class="sadu no-print">
+
+<!-- 2) من نحن + الأرقام -->
+<section class="sheet" id="about">
+  <hr class="sadu top print-only">
+  <div class="about">
+    <div>
+      <span class="eyebrow">من نحن</span>
+      <h2>خبرة 15 عاماً في صناعة المجلس السعودي</h2>
+      <p class="lead">أصالة نجد شركة سعودية متخصصة في تصميم وتنفيذ المجالس النجدية والسلماني والخيام الملكية والجلسات الخارجية، من مقرها في أسواق العويس بالرياض. نفصّل كل مجلس حسب مقاس المكان وذوق صاحبه، ونسلّمه جاهزاً.</p>
+      <ul class="pillars">
+        <li><span><b>تفصيل حسب الطلب:</b> لا قطع جاهزة — كل مجلس يُصمَّم على مقاس غرفتك.</span></li>
+        <li><span><b>روح التراث:</b> السدو النجدي، والحفر النجدي، والشراريب، بلمسة عصرية.</span></li>
+        <li><span><b>تسليم مفتاح:</b> من القياس والتصميم حتى التركيب داخل موقعك.</span></li>
+      </ul>
+    </div>
+    <div class="about-img"><img src="/profile/img/villa-majlis.jpg" alt="مجلس بالطراز النجدي والسلماني نفّذته أصالة نجد لأحد عملائها" loading="lazy"></div>
+  </div>
+  <div class="stats">
+    <div class="stat"><b class="num">+15</b><span>عاماً من الخبرة</span></div>
+    <div class="stat"><b class="num">+1,500</b><span>منشور يوثّق أعمالنا على إنستقرام</span></div>
+    <div class="stat"><b class="num">191</b><span>مقطعاً لأعمالنا على تيك توك</span></div>
+    <div class="stat"><b class="num">8.4K</b><span>متابع على تيك توك</span></div>
+    <div class="stat"><b class="num">49.9K</b><span>إعجاب بأعمالنا على تيك توك</span></div>
+    <div class="stat"><b class="num">5.7K</b><span>متابع على إنستقرام</span></div>
+  </div>
+  <p class="stats-note">أرقام الحسابات العامة كما في نوفمبر 2026.</p>
+  <div class="pg print-only"><span>شركة أصالة نجد للأثاث</span><span>الملف التعريفي</span></div>
+</section>
+
+<!-- 3) الخدمات -->
+<section class="sheet" id="services">
+  <hr class="sadu top print-only">
+  <span class="eyebrow">خدماتنا</span>
+  <h2>كل ما يحتاجه مجلسك، من تصميم واحد</h2>
+  <div class="services">
+    <article class="svc"><img src="/profile/img/najdi-tassels.jpg" alt="مجلس نجدي بشراريب تراثية" loading="lazy"><div><h3>المجالس النجدية والسلماني</h3><p>كنب عربي ومجالس أرضية بقماش مخمل أو كتان أو قطيفة أو جلد، مفصّلة على مقاس الجدران.</p></div></article>
+    <article class="svc"><img src="/profile/img/royal-tent-inside.jpg" alt="خيمة ملكية من الداخل" loading="lazy"><div><h3>الخيام الملكية والمغربية</h3><p>خيام فاخرة للاستراحات والمناسبات، مجهّزة بالمجالس والإضاءة والزخارف.</p></div></article>
+    <article class="svc"><img src="/profile/img/outdoor-aluminum-sadu.jpg" alt="جلسات خارجية ألمنيوم مع السدو" loading="lazy"><div><h3>الجلسات الخارجية والحدائق</h3><p>جلسات ألمنيوم وخشب للحدائق والأسطح، مع دمج قماش السدو النجدي.</p></div></article>
+    <article class="svc"><img src="/profile/img/carved-wood-seats.jpg" alt="جلسات خشب بنقوش السدو" loading="lazy"><div><h3>جلسات الخشب والحفر النجدي</h3><p>كنب بخشب سويدي أو زان، ولمسات حفر نجدي تعطي المجلس هويته.</p></div></article>
+    <article class="svc"><img src="/profile/img/rest-house-install.jpg" alt="تجهيز جلسات استراحة" loading="lazy"><div><h3>الاستراحات والفعاليات</h3><p>تجهيز الاستراحات والمخيمات والفعاليات بالجلسات التراثية كاملة.</p></div></article>
+    <article class="svc"><img src="/profile/img/heritage-event.jpg" alt="جلسة تراثية بفوانيس ودلال ومراكي" loading="lazy"><div><h3>الإكسسوارات والمكمّلات</h3><p>طاولات بلوت وكيرم، مراكي ومخدات، كراسي مفردة، وطاولات جانبية بنفس الطابع.</p></div></article>
+  </div>
+  <div class="pg print-only"><span>شركة أصالة نجد للأثاث</span><span>خدماتنا</span></div>
+</section>
+
+<!-- 4) الخامات + كيف نعمل -->
+<section class="sheet" id="process">
+  <hr class="sadu top print-only">
+  <div class="two">
+    <div>
+      <span class="eyebrow">خاماتنا</span>
+      <h2>خامات تدوم، وتفاصيل تُرى</h2>
+      <div class="mat">
+        <div><b>الخشب:</b> <span>سويدي وزان، وتصميم ساده أو بالحفر النجدي.</span></div>
+        <div><b>الأقمشة:</b> <span>مخمل، كتان، قطيفة، جلد، أبو طير، والسدو النجدي.</span></div>
+        <div><b>الإسفنج:</b> <span>إسفنج الراجحي وإسفنج ضغط 60 لجلسة مريحة تحافظ على شكلها.</span></div>
+        <div><b>التشطيب:</b> <span>شراريب وزخارف سدو ولمسات تراثية حسب ذوقك.</span></div>
+      </div>
+    </div>
+    <div>
+      <span class="eyebrow">كيف نعمل</span>
+      <h2>من الفكرة إلى التسليم</h2>
+      <ol class="steps">
+        <li><div><b>التواصل والقياس</b><span>نستمع لطلبك ونأخذ مقاسات المكان بدقة.</span></div></li>
+        <li><div><b>التصميم على مخطط الغرفة</b><span>نرسم المجلس على مقاس جدرانك، مع الأبواب والشبابيك.</span></div></li>
+        <li><div><b>عرض سعر واضح</b><span>تختار الخامات وتعرف التكلفة قبل البدء.</span></div></li>
+        <li><div><b>التفصيل والتنفيذ</b><span>في ورشتنا، مع متابعة مراحل طلبك.</span></div></li>
+        <li><div><b>التركيب والتسليم</b><span>نركّب في موقعك ونسلّمك المجلس جاهزاً.</span></div></li>
+      </ol>
+    </div>
+  </div>
+  <div class="pg print-only"><span>شركة أصالة نجد للأثاث</span><span>خاماتنا وطريقة عملنا</span></div>
+</section>
+
+<!-- 5) صمّم مجلسك بنفسك -->
+<section class="sheet" id="design">
+  <hr class="sadu top print-only">
+  <div class="digital">
+    <div>
+      <span class="eyebrow" style="color:#E2C49A">خدمة رقمية</span>
+      <h2>صمّم مجلسك بنفسك من جوالك</h2>
+      <p>أدخل مقاسات غرفتك، ورتّب الكنب والجلسات على المخطط، واختر الخامات — وأرسل التصميم لنا بضغطة زر.</p>
+      <ul>
+        <li>مخطط حقيقي بمقاسات الجدران والأبواب والشبابيك</li>
+        <li>مساعد ذكي يقترح عليك ترتيب المجلس</li>
+        <li>نراجع تصميمك ونتواصل معك بعرض السعر</li>
+      </ul>
+      <a class="btn light no-print" href="/customer-design?src=profile"><svg><use href="#i-pen"/></svg>ابدأ التصميم</a>
+    </div>
+    <div class="qr-card"><div class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" aria-label="رمز QR لصفحة تصميم المجلس"></div><small>امسح وصمّم مجلسك</small></div>
+  </div>
+  <div class="print-only" style="margin-top:10mm">
+    <span class="eyebrow">من أعمالنا</span>
+    <div class="gallery" style="grid-template-columns:repeat(2,minmax(0,1fr))">
+      <figure class="work" style="aspect-ratio:3/4"><img src="/profile/img/outdoor-sadu.jpg" alt="جلسة خارجية بمظلة خشب وقماش السدو"><figcaption>جلسة خارجية بمظلة خشب وسدو</figcaption></figure>
+      <figure class="work" style="aspect-ratio:3/4"><img src="/profile/img/carved-wood-seats.jpg" alt="جلسات خشب بنقوش السدو"><figcaption>جلسات خشب بنقوش السدو</figcaption></figure>
+    </div>
+  </div>
+  <div class="pg print-only"><span>شركة أصالة نجد للأثاث</span><span>صمّم مجلسك</span></div>
+</section>
+
+<!-- 6) معرض الأعمال -->
+<section class="sheet" id="works">
+  <hr class="sadu top print-only">
+  <span class="eyebrow">معرض أعمالنا</span>
+  <h2>من مشاريعنا المنفّذة</h2>
+  <p class="lead">مجموعة مختارة من أعمالنا — اضغط على أي صورة لمشاهدتها على حسابنا في إنستقرام.</p>
+  <div class="gallery">
+    <figure class="work"><a href="https://www.instagram.com/p/DXNkFJRCNAi/" target="_blank" rel="noopener"><img src="/profile/img/villa-majlis.jpg" alt="مجلس بالطراز النجدي والسلماني" loading="lazy"><figcaption>مشروع بالطراز النجدي والسلماني — تسليم مفتاح</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DGBIHUTocls/" target="_blank" rel="noopener"><img src="/profile/img/royal-tent-inside.jpg" alt="خيمة ملكية من الداخل" loading="lazy"><figcaption>خيمة ملكية — تصميم وتنفيذ حسب الطلب</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DFDrvIqo2gk/" target="_blank" rel="noopener"><img src="/profile/img/najdi-tassels.jpg" alt="مجلس نجدي بشراريب" loading="lazy"><figcaption>مجلس نجدي بشراريب تراثية</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DD5C-G2I_3U/" target="_blank" rel="noopener"><img src="/profile/img/outdoor-aluminum-sadu.jpg" alt="جلسات خارجية ألمنيوم مع السدو" loading="lazy"><figcaption>جلسات خارجية ألمنيوم مع السدو النجدي</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DGDwUmLohM_/" target="_blank" rel="noopener"><img src="/profile/img/outdoor-sadu.jpg" alt="جلسة خارجية بمظلة خشب وسدو" loading="lazy"><figcaption>جلسة خارجية بمظلة خشب وسدو</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DEi0KBcoeqi/" target="_blank" rel="noopener"><img src="/profile/img/carved-wood-seats.jpg" alt="جلسات خشب بنقوش السدو" loading="lazy"><figcaption>جلسات خشب بنقوش السدو</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DGBIFpfIwbM/" target="_blank" rel="noopener"><img src="/profile/img/heritage-event.jpg" alt="جلسات تراثية لفعالية" loading="lazy"><figcaption>جلسات تراثية لفعالية</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DFqucnVIrzN/" target="_blank" rel="noopener"><img src="/profile/img/rest-house-install.jpg" alt="تركيب جلسات استراحة" loading="lazy"><figcaption>تجهيز استراحة لأحد عملائنا</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/p/DD4ozVioZfD/" target="_blank" rel="noopener"><img src="/profile/img/warm-heritage.jpg" alt="مجلس تراثي بألوان دافئة" loading="lazy"><figcaption>مجلس تراثي بألوان دافئة</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/reel/DW4XSxMCB_n/" target="_blank" rel="noopener"><img src="/profile/img/royal-tent.jpg" alt="خيمة ملكية لأحد العملاء" loading="lazy"><span class="kind">مقطع</span><figcaption>خيمة ملكية لأحد عملائنا</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/reel/DYyKlkoocoW/" target="_blank" rel="noopener"><img src="/profile/img/najdi-majlis.jpg" alt="كنب نجدي مفصّل حسب الطلب" loading="lazy"><span class="kind">مقطع</span><figcaption>كنب نجدي مفصّل حسب الطلب</figcaption></a></figure>
+    <figure class="work"><a href="https://www.instagram.com/reel/DB9ETIEolux/" target="_blank" rel="noopener"><img src="/profile/img/moroccan-tents.jpg" alt="خيام مغربية" loading="lazy"><span class="kind">مقطع</span><figcaption>خيام مغربية متوفرة لدينا</figcaption></a></figure>
+  </div>
+  <div class="more no-print">
+    <a class="btn line" href="https://www.instagram.com/asalanajd_vip" target="_blank" rel="noopener"><svg><use href="#i-ig"/></svg>المزيد على إنستقرام</a>
+    <a class="btn line" href="https://www.tiktok.com/@asalahnajed" target="_blank" rel="noopener"><svg><use href="#i-tt"/></svg>مقاطعنا على تيك توك</a>
+  </div>
+  <div class="pg print-only"><span>شركة أصالة نجد للأثاث</span><span>معرض أعمالنا</span></div>
+</section>
+
+<!-- 7) تواصل -->
+<section class="sheet" id="contact">
+  <hr class="sadu top print-only">
+  <div class="contact">
+    <div>
+      <span class="eyebrow">تواصل معنا</span>
+      <h2>جاهزون لتصميم مجلسك</h2>
+      <p class="lead">زرنا في معرضنا، أو تواصل معنا بالواتساب وأرسل مقاسات مكانك — ونرد عليك بتصميم وعرض سعر.</p>
+      <div class="rows">
+        <a class="row" href="tel:+966533724290"><svg><use href="#i-phone"/></svg><div><b>اتصال</b><span class="num">+966 53 372 4290</span></div></a>
+        <a class="row" href="https://wa.me/966533724290" target="_blank" rel="noopener"><svg><use href="#i-wa"/></svg><div><b>واتساب</b><span class="num">+966 53 372 4290</span></div></a>
+        <a class="row" href="https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8" target="_blank" rel="noopener"><svg><use href="#i-pin"/></svg><div><b>المعرض — الرياض</b><span>أسواق العويس، مقابل أطلس للسجاد (فرع 1)</span></div></a>
+        <a class="row" href="https://www.instagram.com/asalanajd_vip" target="_blank" rel="noopener"><svg><use href="#i-ig"/></svg><div><b>إنستقرام</b><span class="num">@asalanajd_vip</span></div></a>
+        <a class="row" href="https://www.tiktok.com/@asalahnajed" target="_blank" rel="noopener"><svg><use href="#i-tt"/></svg><div><b>تيك توك</b><span class="num">@asalahnajed</span></div></a>
+      </div>
+    </div>
+    <div class="qrs">
+      <div class="qr-card"><div class="qr" data-qr="https://wa.me/966533724290" aria-label="رمز QR للواتساب"></div><small>واتساب</small></div>
+      <div class="qr-card"><div class="qr" data-qr="https://maps.app.goo.gl/QoVTZK6KtxLS1AEi8" aria-label="رمز QR لموقع المعرض"></div><small>موقع المعرض</small></div>
+      <div class="qr-card"><div class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/customer-design?src=profile" aria-label="رمز QR لتصميم المجلس"></div><small>صمّم مجلسك</small></div>
+      <div class="qr-card"><div class="qr" data-qr="https://www.instagram.com/asalanajd_vip" aria-label="رمز QR لإنستقرام"></div><small>إنستقرام</small></div>
+      <div class="qr-card"><div class="qr" data-qr="https://www.tiktok.com/@asalahnajed" aria-label="رمز QR لتيك توك"></div><small>تيك توك</small></div>
+      <div class="qr-card"><div class="qr" data-qr="https://majlis-api.asalh-najd.workers.dev/profile" aria-label="رمز QR لهذا الملف"></div><small>الملف التعريفي</small></div>
+    </div>
+  </div>
+  <div class="pg print-only"><span>شركة أصالة نجد للأثاث — الرياض</span><span class="num">+966 53 372 4290</span></div>
+</section>
+
+<footer class="no-print">
+  <hr class="sadu" style="max-width:220px;margin:0 auto 14px;border-radius:4px">
+  شركة أصالة نجد للأثاث — الرياض • <a href="tel:+966533724290" class="num">+966 53 372 4290</a>
+</footer>
+
+<!-- رموز QR: نفس مكتبة التطبيق (qrcode-generator) من cdnjs، مع بصمة تحقق. بدونها تبقى الروابط والأزرار تعمل -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+<script>
+  (function () {
+    var boxes = document.querySelectorAll('[data-qr]');
+    if (!window.qrcode) { boxes.forEach(function (b) { b.closest('.qr-card').hidden = true; }); return; }
+    boxes.forEach(function (b) {
+      try {
+        var qr = window.qrcode(0, 'M');
+        qr.addData(b.getAttribute('data-qr'));
+        qr.make();
+        var n = qr.getModuleCount(), q = 2, s = n + q * 2, d = '';
+        for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (qr.isDark(r, c)) d += 'M' + (c + q) + ' ' + (r + q) + 'h1v1h-1z';
+        b.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ' + s + ' ' + s + '" shape-rendering="crispEdges" role="img"><rect width="' + s + '" height="' + s + '" fill="#fff"/><path fill="#2E231C" d="' + d + '"/></svg>';
+      } catch (e) { b.closest('.qr-card').hidden = true; }
+    });
+    document.documentElement.setAttribute('data-qr-ready', '1');
+  })();
+</script>
+</body>
+</html>

@@ -26,7 +26,7 @@ function ConvertTo-JsString([string]$s) {
   return $sb.ToString()
 }
 
-$types = @{ '.html' = 'text/html; charset=utf-8'; '.css' = 'text/css; charset=utf-8'; '.js' = 'application/javascript; charset=utf-8'; '.svg' = 'image/svg+xml'; '.json' = 'application/json; charset=utf-8'; '.png' = 'image/png'; '.webmanifest' = 'application/manifest+json' }
+$types = @{ '.jpg' = 'image/jpeg'; '.html' = 'text/html; charset=utf-8'; '.css' = 'text/css; charset=utf-8'; '.js' = 'application/javascript; charset=utf-8'; '.svg' = 'image/svg+xml'; '.json' = 'application/json; charset=utf-8'; '.png' = 'image/png'; '.webmanifest' = 'application/manifest+json' }
 
 # Files served by the Worker. config.js is generated (points the app at its own origin).
 $files = @(
@@ -54,7 +54,21 @@ $files = @(
   @{ url = '/icons/icon-192.png';          path = 'icons\icon-192.png' },
   @{ url = '/icons/icon-512.png';          path = 'icons\icon-512.png' },
   @{ url = '/icons/icon-maskable-512.png'; path = 'icons\icon-maskable-512.png' },
-  @{ url = '/icons/shop-logo.svg'; path = 'icons\shop-logo.svg' }
+  @{ url = '/icons/shop-logo.svg'; path = 'icons\shop-logo.svg' },
+  # الملف التعريفي للشركة: /profile (ملف PDF يُخدَم من المستودع عبر /profile.pdf في worker.js)
+  @{ url = '/profile/index.html'; path = 'profile\index.html' },
+  @{ url = '/profile/img/villa-majlis.jpg'; path = 'profile\img\villa-majlis.jpg' },
+  @{ url = '/profile/img/najdi-majlis.jpg'; path = 'profile\img\najdi-majlis.jpg' },
+  @{ url = '/profile/img/royal-tent.jpg'; path = 'profile\img\royal-tent.jpg' },
+  @{ url = '/profile/img/moroccan-tents.jpg'; path = 'profile\img\moroccan-tents.jpg' },
+  @{ url = '/profile/img/outdoor-sadu.jpg'; path = 'profile\img\outdoor-sadu.jpg' },
+  @{ url = '/profile/img/royal-tent-inside.jpg'; path = 'profile\img\royal-tent-inside.jpg' },
+  @{ url = '/profile/img/heritage-event.jpg'; path = 'profile\img\heritage-event.jpg' },
+  @{ url = '/profile/img/rest-house-install.jpg'; path = 'profile\img\rest-house-install.jpg' },
+  @{ url = '/profile/img/najdi-tassels.jpg'; path = 'profile\img\najdi-tassels.jpg' },
+  @{ url = '/profile/img/carved-wood-seats.jpg'; path = 'profile\img\carved-wood-seats.jpg' },
+  @{ url = '/profile/img/outdoor-aluminum-sadu.jpg'; path = 'profile\img\outdoor-aluminum-sadu.jpg' },
+  @{ url = '/profile/img/warm-heritage.jpg'; path = 'profile\img\warm-heritage.jpg' }
 )
 
 $entries = New-Object System.Collections.Generic.List[string]
@@ -62,7 +76,7 @@ foreach ($f in $files) {
   $full = Join-Path $root $f.path
   if (-not (Test-Path -LiteralPath $full)) { throw "Missing file: $($f.path)" }
   $ext = [IO.Path]::GetExtension($full).ToLower()
-  $binary = ($ext -eq '.png')
+  $binary = ($ext -eq '.png' -or $ext -eq '.jpg')
   if ($binary) {
     $content = [Convert]::ToBase64String([IO.File]::ReadAllBytes($full))
   } else {
