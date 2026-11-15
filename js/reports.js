@@ -479,25 +479,29 @@
 
   /* عهدة الموظف: ما استلمه (custody_receipts) ناقص مصروفاته المسجّلة بعد أول استلام له (المصروفات الأقدم لا تُخصم).
      يعيد لكل موظف حركته مرتبة بوقت التسجيل مع الرصيد بعد كل حركة. */
-  function custodyLedger(receipts, expenses) {
+  function custodyLedger(receipts, expenses, dayOf) {
+    const day = dayOf || ((x) => String(x || '').slice(0, 10));
     const by = new Map();
     (receipts || []).forEach((r) => {
       if (!r || !r.user_id) return;
       if (!by.has(r.user_id)) by.set(r.user_id, { userId: r.user_id, name: r.user_name || '', start: '', moves: [] });
       const p = by.get(r.user_id);
       const at = String(r.created_at || '');
-      if (!p.start || at < p.start) p.start = at;
+      if (!p.start || at < p.start) { p.start = at; p.startDay = day(at); }
       p.moves.push({ kind: 'in', at, amount: money(r.amount), text: r.note || 'استلام مبلغ', category: '', by: r.created_by_name || '', id: r.id });
     });
     (expenses || []).forEach((e) => {
       const p = e && by.get(e.created_by);
       const at = String((e && e.created_at) || '');
-      if (!p || !p.start || at < p.start) return;
-      p.moves.push({ kind: 'out', at, amount: money(e.amount), text: e.name || '', category: e.category || '', by: e.created_by_name || '', id: e.id });
+      // يُخصم كل مصروف لصاحب العهدة سُجّل بعد أول استلام، أو تاريخه يوم أول استلام فما بعده (مصروف اليوم نفسه سُجّل قبل الاستلام بدقائق)
+      if (!p || !p.start || (at < p.start && !(e.expense_date && String(e.expense_date) >= p.startDay))) return;
+      // مصروف اليوم نفسه المسجّل قبل الاستلام يُرتَّب بعده (لا رصيد سالب وهمي)
+      p.moves.push({ kind: 'out', at, sortAt: at < p.start ? p.start + '~' : at, amount: money(e.amount), text: e.name || '', category: e.category || '', by: e.created_by_name || '', id: e.id });
     });
     const out = [];
     for (const p of by.values()) {
-      p.moves.sort((a, b) => a.at.localeCompare(b.at) || (a.kind === 'in' ? -1 : 1));
+      const k = (m) => m.sortAt || m.at;
+      p.moves.sort((a, b) => k(a).localeCompare(k(b)) || (a.kind === 'in' ? -1 : 1));
       let bal = 0, rec = 0, spent = 0;
       p.moves.forEach((m) => { if (m.kind === 'in') { bal += m.amount; rec += m.amount; } else { bal -= m.amount; spent += m.amount; } m.balance = money(bal); });
       out.push({ ...p, received: money(rec), spent: money(spent), balance: money(bal) });
@@ -517,7 +521,7 @@
       }
       const dDay = (ctx.calc && ctx.calc.dtDay) || ((x) => String(x).slice(0, 10));
       const dTime = (ctx.calc && ctx.calc.dtTime) || ((x) => String(x).slice(11, 16));
-      let L = custodyLedger(c.receipts, ctx.expenses);
+      let L = custodyLedger(c.receipts, ctx.expenses, ctx.calc && ctx.calc.dtDay);
       if (!ctx.scopeAll) L = L.filter((p) => p.userId === ctx.me);
       if (ctx.userId) L = L.filter((p) => p.userId === ctx.userId);
       const people = [], moves = [];
@@ -532,7 +536,7 @@
           n++;
           if (m.kind === 'in') rec += m.amount; else spent += m.amount;
           moves.push({ date: d, time: dTime(m.at), who: name, type: m.kind === 'in' ? 'استلام' : 'صرف', text: m.text, category: m.category || '',
-            inAmt: m.kind === 'in' ? m.amount : null, outAmt: m.kind === 'out' ? m.amount : null, balance: m.balance, _at: m.at, _kind: m.kind });
+            inAmt: m.kind === 'in' ? m.amount : null, outAmt: m.kind === 'out' ? m.amount : null, balance: m.balance, _at: m.sortAt || m.at, _kind: m.kind });
         }
         if (!n && !opening) continue;
         people.push({ name, opening: money(opening), received: money(rec), spent: money(spent), balance: money(opening + rec - spent), moves: n });
@@ -549,7 +553,7 @@
           { label: 'عدد الحركات', value: tot.moves, kind: 'num' },
         ],
         notes: [
-          'العهدة = ما استلمه الموظف ناقص ما صرفه منه. تُخصم مصروفات الموظف المسجّلة بعد أول استلام له؛ والمصروفات الأقدم تبقى في تقرير المصروفات ولا تمس العهدة.',
+          'العهدة = ما استلمه الموظف ناقص ما صرفه منه. تُخصم مصروفات الموظف من يوم أول استلام له فما بعده؛ والمصروفات الأقدم تبقى في تقرير المصروفات ولا تمس العهدة.',
           'التاريخ والوقت وقت تسجيل الحركة في التطبيق تلقائياً. «الرصيد» هو المتبقي بعد كل حركة.',
         ],
         tables: [

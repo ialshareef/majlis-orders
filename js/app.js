@@ -4014,6 +4014,32 @@ function docTitle(order) {
     } catch (_) { return false; }
   }
 
+  /** مشاركة ملف PDF (واتساب وغيره): مشاركة التطبيق الأصلية ← مشاركة المتصفح ← حفظ الملف مع تنبيه.
+      قاعدة دائمة: كل تصدير PDF له زر «مشاركة واتساب» بجانب الحفظ. */
+  async function sharePdfBlob(blob, fileName, caption) {
+    if (await sharePdfNative(blob, fileName, caption)) { toast('تمت المشاركة'); return true; }
+    const file = new File([blob], fileName, { type: 'application/pdf' });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try { await navigator.share({ files: [file], title: fileName, text: caption }); toast('تمت المشاركة'); return true; }
+      catch (e) { if (e && e.name !== 'AbortError') toast('تعذّرت المشاركة: ' + e.message, true); return false; }
+    }
+    downloadBlob(blob, fileName);
+    toast(`هذا المتصفح لا يرسل الملفات مباشرة: حُفظ ${fileName} في التنزيلات، أرفقه في واتساب`);
+    return false;
+  }
+  /** نص مرافق للمشاركة من ملخص أي تقرير: العنوان والفترة وأهم الأرقام */
+  function repShareCaption(rep) {
+    const v = (s) => (s.kind === 'money' ? fmt(s.value) + ' ' + currency() : s.kind === 'pct' ? r2(s.value) + '٪' : String(s.value));
+    const lines = [`*${rep.title}*`];
+    if (rep.to) lines.push(`الفترة: من ${rep.from || 'أول سجل'} إلى ${rep.to}`);
+    (rep.summary || []).filter((s) => s.value !== null && s.value !== undefined && s.value !== '').slice(0, 5).forEach((s) => lines.push(`${s.label}: ${v(s)}`));
+    lines.push('التفاصيل في الملف المرفق.');
+    return lines.join('\n');
+  }
+  /* زر «واتساب» لأي تصدير PDF: يشغّل دالة التصدير نفسها، فيُشارَك الملف بدل حفظه */
+  let pdfShareNext = false;
+  const pdfShareOf = (fn) => async () => { pdfShareNext = true; try { await fn(); } finally { pdfShareNext = false; } };
+
   /** حفظ أصلي لملف PDF على الجهاز داخل تطبيق أندرويد (WebView لا يدعم تنزيل <a download>) */
   async function savePdfNative(blob, fileName) {
     const P = (window.Capacitor && window.Capacitor.Plugins) || {};
@@ -4598,15 +4624,7 @@ function docTitle(order) {
     const caption = [`ملخص الطلب *#${o.number}* — داخلي للإدارة`, `العميل: ${(o.customer && o.customer.name) || '—'}`,
       `الإجمالي: ${v(rep.nums.total)} • التكاليف: ${v(rep.nums.cost)}${canSeeProfit(o) ? ` • صافي الربح: ${v(rep.nums.profit)}` : ''}`,
       'التفاصيل وكل بند تكلفة في الملف المرفق.'].join('\n');
-    if (await sharePdfNative(blob, fileName, caption)) { toast('تمت المشاركة'); return; }
-    const file = new File([blob], fileName, { type: 'application/pdf' });
-    if (navigator.canShare && navigator.canShare({ files: [file] })) {
-      try { await navigator.share({ files: [file], title: fileName, text: caption }); toast('تمت المشاركة'); }
-      catch (e) { if (e && e.name !== 'AbortError') toast('تعذّرت المشاركة: ' + e.message, true); }
-      return;
-    }
-    downloadBlob(blob, fileName);
-    toast(`هذا المتصفح لا يرسل الملفات مباشرة: حُفظ ${fileName} في التنزيلات، أرفقه في واتساب`);
+    await sharePdfBlob(blob, fileName, caption);
   }
 
   /** نافذة إدخال تكلفة كل صنف في الطلب مع حساب الربح مباشرة */
@@ -5774,7 +5792,7 @@ function docTitle(order) {
     })();
     return custLoading;
   }
-  const custLedger = () => Reports.custodyLedger(custList, expList);
+  const custLedger = () => Reports.custodyLedger(custList, expList, localDate);
   /** عهدة موظف واحد (أو null إن لم يستلم شيئاً) */
   const custodyOf = (userId) => custLedger().find((p) => p.userId === userId) || null;
   const custName = (id, fb) => { const u = Store.getUser(id); return (u && u.name) || fb || '—'; };
@@ -5795,12 +5813,21 @@ function docTitle(order) {
       const c = L.find((p) => p.userId === focus);
       const name = custName(focus, c && c.name);
       const recent = custList.filter((r) => r.user_id === focus).slice(0, 5);
+      const moves = c ? c.moves.slice().reverse() : [];
       body = `<div class="cust-head"><b>${icon('wallet')} ${focus === currentUser.id ? 'عهدتي' : 'عهدة ' + esc(name)}</b></div>
+        ${c ? `<p class="cust-eq" id="custEq">استلمت <b>${fmt(c.received)}</b> − صرفت <b>${fmt(c.spent)}</b> = المتبقي <b class="${c.balance < 0 ? 'neg' : 'pos'}">${fmt(c.balance)}</b> ${cu}</p>` : ''}
         ${c ? `<div class="stats-row cust-stats">
           <div class="stat"><span>المستلم</span><b>${fmt(c.received)}</b><small>${cu}</small></div>
           <div class="stat"><span>المصروف منه</span><b>${fmt(c.spent)}</b><small>${cu}</small></div>
           <div class="stat cust-bal${c.balance < 0 ? ' neg' : ''}"><span>المتبقي</span><b>${fmt(c.balance)}</b><small>${c.balance < 0 ? 'صرف أكثر من المستلم' : cu}</small></div>
-        </div>` : '<p class="hint">لا يوجد استلام مسجّل بعد. سجّل المبلغ المستلم، وكل مصروف بعده يُخصم منه تلقائياً.</p>'}
+        </div>
+        <details class="cust-stmt"${moves.length <= 8 ? ' open' : ''}><summary>كشف الحركة (${moves.length}) — كل استلام وصرف والرصيد بعده</summary>
+          <div class="table-wrap"><table class="table cust-moves"><thead><tr><th>البيان والوقت</th><th class="ta-end">المبلغ</th><th class="ta-end">الرصيد</th></tr></thead><tbody>
+          ${moves.slice(0, 50).map((m) => `<tr class="${m.kind === 'in' ? 'mv-in' : 'mv-out'}">
+            <td>${m.kind === 'in' ? '<span class="badge st-delivered">استلام</span> ' : '<span class="badge">صرف</span> '}${esc(m.text || '')}${m.category ? ` <small class="hint">(${esc(m.category)})</small>` : ''}<small class="mv-at"><bdi>${esc(fmtDate(localDate(m.at)))} ${esc(localTime(m.at))}</bdi></small></td>
+            <td class="num">${m.kind === 'in' ? '+' : '−'}${fmt(m.amount)}</td><td class="num${m.balance < 0 ? ' neg' : ''}"><b>${fmt(m.balance)}</b></td></tr>`).join('')}
+          </tbody></table></div>${moves.length > 50 ? '<p class="hint">آخر 50 حركة — الكشف الكامل في ملف PDF.</p>' : ''}
+        </details>` : '<p class="hint">لا يوجد استلام مسجّل بعد. سجّل المبلغ المستلم، وكل مصروف بعده يُخصم منه تلقائياً.</p>'}
         ${recent.length ? `<div class="cust-recv"><small class="hint">آخر الاستلامات</small>${recent.map((r) => `<div class="cust-r"><span><bdi>${esc(fmtDate(localDate(r.created_at)))} ${esc(localTime(r.created_at))}</bdi> — ${esc(r.note || 'استلام مبلغ')}</span><b>${fmt(r.amount)}</b>
           ${r.can_edit ? `<button class="icon-btn" data-custedit="${esc(r.id)}" title="تعديل الاستلام" aria-label="تعديل الاستلام">${icon('pen')}</button>` : ''}
           ${r.can_delete ? `<button class="icon-btn" data-custdel="${esc(r.id)}" title="حذف الاستلام" aria-label="حذف الاستلام">${icon('trash')}</button>` : ''}</div>`).join('')}</div>` : ''}`;
@@ -5812,10 +5839,11 @@ function docTitle(order) {
     }
     box.innerHTML = body + `<div class="btn-row cust-actions">
         ${canAdd ? `<button class="btn small" id="custAdd">${icon('plus')} تسجيل استلام</button>` : ''}
-        ${L.length ? `<button class="btn small" id="custPdf">${icon('file')} تصدير PDF لحركة العهدة</button>` : ''}
+        ${L.length ? `<button class="btn small primary" id="custWa">${icon('whatsapp')} مشاركة PDF واتساب</button><button class="btn small" id="custPdf">${icon('download')} تنزيل PDF</button>` : ''}
       </div>${custErr ? `<p class="error">${esc(custErr)}</p>` : ''}`;
     const add = $('#custAdd', box); if (add) add.onclick = () => receiptForm(null, focus);
     const pdf = $('#custPdf', box); if (pdf) pdf.onclick = () => exportCustodyPdf(focus, pdf);
+    const wa = $('#custWa', box); if (wa) wa.onclick = () => exportCustodyPdf(focus, wa, true);
     $$('[data-custedit]', box).forEach((x) => { x.onclick = () => receiptForm(custList.find((r) => r.id === x.dataset.custedit)); });
     $$('[data-custdel]', box).forEach((x) => { x.onclick = () => deleteReceiptFlow(custList.find((r) => r.id === x.dataset.custdel)); });
   }
@@ -5872,12 +5900,14 @@ function docTitle(order) {
   }
 
   /** PDF حركة العهدة مباشرة من صفحة المصروفات (فترة التصفية الحالية، والموظف المحدد أو الكل) */
-  async function exportCustodyPdf(userId, btn) {
+  async function exportCustodyPdf(userId, btn, share) {
     const ctx = { ...repCtx(), from: $('#expFrom').value || '', to: $('#expTo').value || today(), userId: userId || '', scopeAll: can('expenses.view_all'),
       custody: { ready: true, receipts: custList } };
     const rep = Reports.build('custody', ctx);
     const meta = [['المتجر', settings().shopName || 'أصالة نجد'], ['الموظف', userId ? custName(userId) : 'كل الموظفين'], ['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']];
-    await repPdfRender(rep, meta, 'custody-' + (userId ? custName(userId).replace(/[^\p{L}\p{N}]+/gu, '-') + '-' : '') + (ctx.from || 'all') + '_' + ctx.to + '.pdf', btn);
+    const S = (l) => { const x = rep.summary.find((s) => s.label === l); return x ? fmt(x.value) : '0'; };
+    const caption = [`*حركة العهدة* — ${userId ? custName(userId) : 'كل الموظفين'}`, `المستلم: ${S('المستلم')} • المصروف: ${S('المصروف من العهدة')} • المتبقي: ${S('المتبقي من العهدة')} ${currency()}`, 'كل حركة بتاريخها ووقتها في الملف المرفق.'].join('\n');
+    await repPdfRender(rep, meta, 'custody-' + (userId ? custName(userId).replace(/[^\p{L}\p{N}]+/gu, '-') + '-' : '') + (ctx.from || 'all') + '_' + ctx.to + '.pdf', btn, { share: !!share, caption });
   }
   $('#btnAddReceipt').addEventListener('click', () => receiptForm(null, can('expenses.view_all') ? $('#expUser').value : ''));
   $('#expUser').addEventListener('change', renderCustodyBox);
@@ -9301,6 +9331,7 @@ async function exportExpensesXlsx() {
       }
       const out = pdf.output('blob');
       if (opts.returnBlob) return out;
+      if (opts.share || pdfShareNext) { pdfShareNext = false; await sharePdfBlob(out, fileName, opts.caption || repShareCaption(rep)); return out; }
       downloadBlob(out, fileName);
       return out;
     } catch (e) {
@@ -9317,6 +9348,7 @@ async function exportExpensesXlsx() {
   $('#repUser').addEventListener('change', renderReports);
   $('#repStatus').addEventListener('change', renderReports);
   $('#btnRepPdf').addEventListener('click', repExportPdf);
+  $('#btnRepWa').addEventListener('click', pdfShareOf(repExportPdf));
   $('#btnRepXlsx').addEventListener('click', repExportXlsx);
   $('#btnRepCsv').addEventListener('click', repExportCsv);
 
@@ -9327,10 +9359,13 @@ async function exportExpensesXlsx() {
   $$('#biTopChips .chip').forEach((c) => c.addEventListener('click', () => { biTopTab = c.dataset.tp; renderBI(); }));
   $('#btnBiCsv').addEventListener('click', biExportCsv);
   $('#btnBiPdf').addEventListener('click', biExportPdf);
+  $('#btnBiWa').addEventListener('click', pdfShareOf(biExportPdf));
   $('#btnBiXlsx').addEventListener('click', biExportXlsx);
   $('#btnMandoubsPdf').addEventListener('click', exportMandoubsPdf);
+  $('#btnMandoubsWa').addEventListener('click', pdfShareOf(exportMandoubsPdf));
   $('#btnMandoubsXlsx').addEventListener('click', exportMandoubsXlsx);
   $('#btnExpensesPdf').addEventListener('click', exportExpensesPdf);
+  $('#btnExpensesWa').addEventListener('click', pdfShareOf(exportExpensesPdf));
   $('#btnExpensesXlsx').addEventListener('click', exportExpensesXlsx);
   $('#btnOrdersPdf').addEventListener('click', exportOrdersPdf);
   $('#btnOrdersXlsx').addEventListener('click', exportOrdersXlsx);

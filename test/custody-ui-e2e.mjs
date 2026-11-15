@@ -176,6 +176,9 @@ try {
   await addExpense(page, 'مسامير', 'مشتريات', 200);
   ok(await stat(page, 'المصروف منه') === '300.00' && await stat(page, 'المتبقي') === '1,200.00', 'البطاقة: صُرف 300 والمتبقي 1200', await box(page));
   ok(/آخر الاستلامات/.test(await box(page)) && /من المدير/.test(await box(page)), 'البطاقة: آخر الاستلامات بملاحظتها');
+  ok(/استلمت 1,500\.00 − صرفت 300\.00 = المتبقي 1,200\.00/.test(await box(page)), 'البطاقة: سطر واضح «استلمت − صرفت = المتبقي»', await box(page));
+  const stmt = await page.evaluate(() => [...document.querySelectorAll('#custBox .cust-moves tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
+  ok(stmt.length === 3 && /مسامير/.test(stmt[0]) && /1,200\.00/.test(stmt[0]) && /بنزين/.test(stmt[1]) && /1,400\.00/.test(stmt[1]) && /استلام/.test(stmt[2]) && /1,500\.00/.test(stmt[2]), 'البطاقة: كشف الحركة (الأحدث أولاً) بالرصيد بعد كل حركة', stmt);
 
   // تصدير PDF من البطاقة
   await page.evaluate(() => document.getElementById('custPdf').click());
@@ -184,6 +187,11 @@ try {
   const pdf = files.find((f) => /\.pdf$/.test(f.name));
   ok(pdf && /^custody-/.test(pdf.name) && pdf.size > 3000 && Buffer.from(pdf.b64, 'base64').subarray(0, 5).toString() === '%PDF-', 'PDF: ملف حركة العهدة صالح', pdf && { name: pdf.name, size: pdf.size });
   const pg = await page.evaluate(() => window.__pdfPages);
+  // زر «مشاركة PDF واتساب»: في المتصفح بلا مشاركة ملفات يُحفظ الملف مع تنبيه (وفي التطبيق تفتح المشاركة)
+  await page.evaluate(() => { window.__dl = []; document.getElementById('custWa').click(); });
+  await page.waitForFunction(() => window.__dl && window.__dl.length > 0, { timeout: 60000 });
+  const wf = (await page.evaluate(() => Promise.all(window.__dl))).find((f) => /\.pdf$/.test(f.name));
+  ok(wf && /^custody-/.test(wf.name) && await page.evaluate(() => /واتساب/.test(document.body.innerText)), 'واتساب: زر المشاركة ينشئ ملف حركة العهدة', wf && wf.name);
   ok(pg.length >= 1 && pg.every((p) => !p.over.length && p.footIn) && /حركة العهدة/.test(pg[0].title || ''), 'PDF: صفحة «حركة العهدة» بلا صفوف مقصوصة', pg);
   await page.browserContext().close();
 
@@ -208,6 +216,7 @@ try {
 
   // تقرير «حركة العهدة» في صفحة التقارير
   await go(op, 'reports');
+  ok(await op.evaluate(() => { const b = document.getElementById('btnRepWa'); return !!b && /واتساب/.test(b.textContent); }), 'التقارير: زر «واتساب» بجانب PDF');
   await op.evaluate(() => document.querySelector('#repCatalog [data-rep="custody"]').click()); await sleep(1500);
   await op.evaluate(() => document.querySelector('#repRangeChips [data-rr="all"]').click()); await sleep(1000);
   const mv = await op.evaluate(() => { const t = document.querySelectorAll('#repTables table')[1]; return t ? [...t.querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()) : []; });

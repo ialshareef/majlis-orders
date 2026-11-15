@@ -254,6 +254,11 @@ ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) =
   ok(mv.length === 2 && mv[0].type === 'صرف' && mv[0].text === 'مسامير' && mv[0].category === 'مشتريات' && eq(mv[0].outAmt, 200) && eq(mv[0].balance, 1200) && mv[1].type === 'استلام' && eq(mv[1].inAmt, 500), 'custody: جدول الحركة (النوع والبيان ونوع الصرف والرصيد)', mv);
   ok(mv[0].date === '2026-10-20' && /^\d{2}:\d{2}$/.test(mv[0].time), 'custody: التاريخ والوقت لكل حركة', mv[0]);
   ok(Reports.catalog(ctxOf()).some((x) => x.id === 'custody') && !Reports.catalog(ctxOf({ perms: { expenses: false } })).some((x) => x.id === 'custody'), 'custody: في الفهرس لمن يرى المصروفات فقط');
+  // مصروف اليوم نفسه سُجّل قبل الاستلام بساعة: يُخصم، ويُرتَّب بعد الاستلام (لا رصيد سالب)
+  const L2 = Reports.custodyLedger([{ id: 'q', user_id: 'u', amount: 10000, created_at: '2026-11-15T10:00:00.000Z' }],
+    [{ id: 'y', name: 'قبله بساعة', amount: 2000, created_by: 'u', created_at: '2026-11-15T09:00:00.000Z', expense_date: '2026-11-15' },
+     { id: 'z', name: 'أمس', amount: 50, created_by: 'u', created_at: '2026-11-14T09:00:00.000Z', expense_date: '2026-11-14' }]);
+  ok(eq(L2[0].received, 10000) && eq(L2[0].spent, 2000) && eq(L2[0].balance, 8000) && L2[0].moves.map((m) => m.balance).join() === '10000,8000', 'custody: 10,000 − 2,000 (اليوم نفسه) = 8,000، ومصروف الأمس لا يُخصم', L2[0]);
   const r2 = Reports.build('custody', ctxOf({ custody: { ready: false } }));
   ok(r2.summary[0].value === 'جارٍ تحميل العهدة…', 'custody: حالة التحميل');
 }
