@@ -427,13 +427,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.10';
-// بصمة asalh-najd-1.1.10.apk (إصدار GitHub v1.1.10، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.10 وversionCode 10110، ونفس شهادة توقيع 1.1.9).
-const UPDATE_FALLBACK_SHA256 = 'cd5188050f6ce67b9d8e6b134d4e9264e72ab691ee9261fd176bd29137793ea8';
+const UPDATE_FALLBACK_VERSION = '1.1.11';
+// بصمة asalh-najd-1.1.11.apk (إصدار GitHub v1.1.11، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.11 وversionCode 10111، ونفس شهادة توقيع 1.1.10).
+const UPDATE_FALLBACK_SHA256 = '672315a755d4f2b006fd1b485d85b605a2e747b92380a68f2394fd1e1bc70399';
 const UPDATE_FALLBACK_NOTES = [
-  'الملف التعريفي للشركة: في صفحة تصميم العملاء، وفي «عن التطبيق» مع فتح وPDF ونسخ ومشاركة',
-  'رموز QR في الملف التعريفي قابلة للضغط في الصفحة وملف PDF',
+  'الفيديو التعريفي: في الملف التعريفي وصفحة تصميم العملاء و«عن التطبيق» للمشاركة',
+  'ملفات الطلب PDF: لا يظهر مخطط الغرفة لطلب أصناف إضافية فقط (سجاد، مكيف…) بلا كنب',
 ];
 
 function versionCodeOfName(v) {
