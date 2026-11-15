@@ -2418,6 +2418,14 @@ function checkOrderFin(o) {
   for (const f of ['subtotal', 'total', 'remaining', 'vatRate', 'vatAmount']) {
     if (o[f] !== undefined && o[f] !== null && o[f] !== '' && !(isFinNum(o[f]) && o[f] >= 0)) finErr('order.' + f);
   }
+  // صرف العمولة: { owner|parent: { at: 'YYYY-MM-DD', amount ≥ 0, … } } فقط
+  if (o.commPaid !== undefined && o.commPaid !== null) {
+    if (typeof o.commPaid !== 'object' || Array.isArray(o.commPaid)) finErr('order.commPaid');
+    for (const [k, v] of Object.entries(o.commPaid)) {
+      if (k !== 'owner' && k !== 'parent') finErr('order.commPaid');
+      if (!v || typeof v !== 'object' || typeof v.at !== 'string' || !/^\d{4}-\d{2}-\d{2}/.test(v.at) || !(isFinNum(v.amount) && v.amount >= 0)) finErr('order.commPaid.' + k);
+    }
+  }
   // الخصم والنسب: أرقام غير سالبة، والخصم لا يتجاوز المجموع عند توفره
   for (const f of ['sellerRate', 'shareRate', 'othersRate']) {
     if (!isOptNonNeg(o[f])) finErr('order.' + f);
@@ -2784,7 +2792,8 @@ function hasCostIntent(o) {
 /* نسب العمولة في الطلب (لقطة commRates ونسب البائع/المندوب/المشاركة): يحددها المالك وحده.
    لغيره: تُستعاد القيم المخزّنة كما هي (ما يرسله العميل يُهمل)، وطلب بلا لقطة تُحسب لقطته هنا من
    القاعدة بنفس معادلات الواجهة (sellerRateOf/mandoubOwnerRateOf/mandoubParentRateOf/shareRateOf). */
-const COMMISSION_FIELDS = ['commRates', 'sellerRate', 'mandoubRate', 'shareRate', 'othersRate'];
+// commPaid (صرف العمولة) مثلها: يسجّله المالك وحده، وما يرسله غيره يُستبدل بالمخزّن
+const COMMISSION_FIELDS = ['commRates', 'sellerRate', 'mandoubRate', 'shareRate', 'othersRate', 'commPaid'];
 const rateOrNull = (v) => (v === undefined || v === null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
 function serverCommSnapshot(o, owner, s) {
   const isMan = !!(owner && owner.role === 'mandoub');

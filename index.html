@@ -1103,6 +1103,11 @@
           <label class="date-f">إلى <input id="repTo" type="date" aria-label="إلى تاريخ"></label>
         </div>
         <select id="repUser" aria-label="تصفية حسب الموظف أو المندوب"><option value="">كل الموظفين والمناديب</option></select>
+        <select id="repCommPaid" aria-label="تصفية حسب حالة صرف العمولة" hidden>
+          <option value="">كل العمولات</option>
+          <option value="due">غير المصروفة فقط</option>
+          <option value="paid">المصروفة فقط</option>
+        </select>
         <select id="repStatus" aria-label="تصفية حسب الحالة">
           <option value="">حسب «يشمل التقرير»</option>
           <option value="all">كل الطلبات</option>

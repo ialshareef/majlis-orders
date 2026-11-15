@@ -198,6 +198,25 @@ ok(aoa.length === 1 + 3 + 1 && typeof aoa[1][r.tables[0].columns.findIndex((c) =
   ok(o5.profit === null && eq(o5.ownerComm, 57.5), 'commBase/total: تفصيل الطلبات — طلب بلا تكاليف بلا ربح وبعمولة 57.5', o5);
 }
 
+/* ---- صرف العمولة: المصروف وغير المصروف، وفلتر حالة الصرف ---- */
+{
+  // عمولة المندوب التابع (200) في الطلب #2 صُرفت؛ عمولة سالم (40) وعمولة المندوب الأعلى (50) لم تُصرف
+  const paidOrders = orders.map((o) => (o.id === 'o2' ? { ...o, commPaid: { owner: { at: '2026-10-25', amount: 200, byName: 'المالك' } } } : o));
+  const bdPaid = (o) => { const b = breakdown(o); b.rows.forEach((r) => { r.paid = (o.commPaid && o.commPaid[r.kind]) || null; }); return b; };
+  const mk = (cp) => { const c = ctxOf({ orders: paidOrders, commPaid: cp }); c.calc = { ...c.calc, breakdown: bdPaid }; return c; };
+  const r0 = Reports.build('commissions', mk(''));
+  const by = Object.fromEntries(r0.tables[0].rows.map((x) => [x.name, x]));
+  ok(eq(by['مندوب تابع'].paid, 200) && eq(by['مندوب تابع'].due, 0) && eq(by['سالم'].due, 40) && eq(by['مندوب أعلى'].due, 50), 'commPaid: المصروف والمتبقي لكل شخص', [by['مندوب تابع'], by['سالم'], by['مندوب أعلى']]);
+  ok(eq(S(r0, 'عمولات صُرفت'), 200) && eq(S(r0, 'عمولات لم تُصرف بعد'), 90), 'commPaid: الملخص — صُرف 200 ولم يُصرف 90', r0.summary);
+  const det = r0.tables[1].rows;
+  ok(det.find((d) => d.type === 'عمولة طلبه' && d.who === 'مندوب تابع').paidTxt === 'صُرفت 2026-10-25' && det.find((d) => d.who === 'سالم').paidTxt === 'لم تُصرف' && det.find((d) => d.type === 'حصة المشاركة').paidTxt === '—', 'commPaid: عمود «الصرف» في تفصيل كل طلب', det.map((d) => d.who + ':' + d.paidTxt));
+  ok(r0.tables[0].columns.some((c) => c.key === 'paid') && r0.tables[0].columns.some((c) => c.key === 'due') && r0.tables[1].columns.some((c) => c.key === 'paidTxt'), 'commPaid: أعمدة «صُرف» و«متبقٍ للصرف» و«الصرف»');
+  const rd = Reports.build('commissions', mk('due'));
+  ok(rd.tables[0].rows.map((x) => x.name).sort().join() === ['سالم', 'مندوب أعلى'].sort().join() && rd.tables[1].rows.every((d) => d.paidTxt === 'لم تُصرف') && rd.tables[1].rows.length === 2, 'commPaid/due: غير المصروفة فقط (أشخاص وتفصيل)', rd.tables[1].rows.map((d) => d.who));
+  const rp = Reports.build('commissions', mk('paid'));
+  ok(rp.tables[0].rows.length === 1 && rp.tables[0].rows[0].name === 'مندوب تابع' && rp.tables[1].rows.length === 1 && rp.tables[1].rows[0].amount === 200, 'commPaid/paid: المصروفة فقط', rp.tables[1].rows);
+}
+
 /* ---- تقرير «الطلبات الجديدة» ---- */
 {
   const r = Reports.build('pending', ctxOf({ include: Reports.DEFAULT_INCLUDE }));

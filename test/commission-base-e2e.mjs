@@ -216,6 +216,35 @@ try {
   salem = await personRow(page, 'سالم الموظف');
   ok(salem && salem['عمولة طلباته'] === '40.00', 'profit: العودة إلى صافي الربح تعيد الحساب (40)', salem);
 
+  /* ----- صرف العمولة: زر «تم الصرف» تحت مبلغ العمولة في قائمة الطلبات ----- */
+  await go(page, 'orders');
+  const cell0 = await page.evaluate(() => { const b = document.querySelector('#ordersTable [data-commpay="o1"]'); return b ? { txt: b.textContent.trim(), inComm: !!b.closest('.c-comm') } : null; });
+  ok(cell0 && cell0.inComm && /تم الصرف/.test(cell0.txt), 'paid: زر «تم الصرف» تحت مبلغ العمولة في القائمة', cell0);
+  ok(await page.evaluate(() => !document.querySelector('#ordersTable [data-commpay="o2"]')), 'paid: لا زر لطلب بلا عمولة محسوبة (بلا تكاليف)');
+  await page.evaluate(() => document.querySelector('#ordersTable [data-commpay="o1"]').click());
+  await page.waitForFunction(() => !document.getElementById('modal').hidden && /صرف العمولة/.test(document.getElementById('modalTitle').textContent), { timeout: 10000 });
+  const dlg = await page.evaluate(() => ({ rows: [...document.querySelectorAll('.cp-row')].map((r) => r.textContent.replace(/\s+/g, ' ').trim()), checked: [...document.querySelectorAll('.cp-row input')].map((c) => c.checked) }));
+  ok(dlg.rows.length === 1 && /سالم الموظف/.test(dlg.rows[0]) && /40\.00/.test(dlg.rows[0]) && /لم تُصرف بعد/.test(dlg.rows[0]) && dlg.checked[0], 'paid: النافذة تعرض المستفيد ومبلغه وحالته', dlg);
+  await page.evaluate(() => { document.getElementById('cpDate').value = '2026-11-15'; document.getElementById('cpNote').value = 'تحويل'; document.getElementById('cpSave').click(); });
+  await page.waitForFunction(() => /سُجّل صرف العمولة/.test(document.getElementById('toast').textContent), { timeout: 20000 });
+  const srvO1 = JSON.parse(env.DB.tables.get('orders').find((r) => r.id === 'o1').data);
+  ok(srvO1.commPaid && srvO1.commPaid.owner && srvO1.commPaid.owner.at === '2026-11-15' && srvO1.commPaid.owner.amount === 40 && srvO1.commPaid.owner.note === 'تحويل', 'paid: الصرف محفوظ على الخادم بتاريخه ومبلغه وملاحظته', srvO1.commPaid);
+  ok(await page.evaluate(() => { const b = document.querySelector('#ordersTable [data-commpay="o1"]'); return !!b && b.classList.contains('is-paid') && /صُرفت/.test(b.textContent); }), 'paid: الشارة صارت «✓ صُرفت»');
+
+  /* ----- تقرير العمولات: حالة الصرف وفلترها ----- */
+  await go(page, 'reports'); await pick(page, 'commissions');
+  ok(await page.evaluate(() => !document.getElementById('repCommPaid').hidden), 'report: فلتر «حالة الصرف» ظاهر في تقرير العمولات');
+  salem = await personRow(page, 'سالم الموظف');
+  ok(salem && salem['صُرف'] === '40.00' && salem['متبقٍ للصرف'] === '0.00', 'report: سالم — صُرف 40 ومتبقٍ 0', salem);
+  const k2 = await kpis(page);
+  ok(k2['عمولات صُرفت'] === '40.00' && k2['عمولات لم تُصرف بعد'] === '0.00', 'report: الملخص يعرض المصروف وغير المصروف', k2);
+  await page.select('#repCommPaid', 'due'); await sleep(500);
+  ok(await page.evaluate(() => !document.querySelector('#repTables table tbody tr td') || [...document.querySelectorAll('#repTables table')[0].querySelectorAll('tbody tr')].every((tr) => !/سالم الموظف/.test(tr.textContent))), 'report: «غير المصروفة فقط» يُخفي سالم (صُرفت عمولته)');
+  await page.select('#repCommPaid', 'paid'); await sleep(500);
+  salem = await personRow(page, 'سالم الموظف');
+  ok(!!salem, 'report: «المصروفة فقط» يعرض سالم');
+  await page.select('#repCommPaid', ''); await sleep(300);
+
   await page.browserContext().close();
   ok(pageErrors.length === 0, 'ui: لا أخطاء JavaScript في الصفحة', pageErrors);
 } catch (e) {

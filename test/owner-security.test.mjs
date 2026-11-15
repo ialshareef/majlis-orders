@@ -349,6 +349,27 @@ await ta('commRates: المدير العادي لا يغيّرها، والما�
   await call(env, '/api/sync', '5', { orders: { upsert: [o] } });
   assert.strictEqual(stored(env, 'n4').commRates.ownerRate, 10, 'المدير العادي لا يغيّر');
 });
+await ta('commPaid (صرف العمولة): المالك يسجّله، والموظف والمدير العادي لا يغيّرانه، والصيغة الفاسدة تُرفض', async () => {
+  const env = mk();
+  await call(env, '/api/sync', '2', { orders: { upsert: [order('cp1', '2')] } });
+  // الموظف يحاول تسجيل صرف عمولته بنفسه: يُهمَل
+  const s1 = Object.assign({}, stored(env, 'cp1'), { commPaid: { owner: { at: '2026-11-15', amount: 20 } } });
+  assert.strictEqual((await call(env, '/api/sync', '2', { orders: { upsert: [s1] } })).s, 200);
+  assert.strictEqual(stored(env, 'cp1').commPaid, undefined, 'الموظف لا يسجّل الصرف');
+  // المالك يسجّله
+  const s2 = Object.assign({}, stored(env, 'cp1'), { commPaid: { owner: { at: '2026-11-15', amount: 20, byName: 'owner' } } });
+  assert.strictEqual((await call(env, '/api/sync', '1', { orders: { upsert: [s2] } })).s, 200);
+  assert.deepStrictEqual(stored(env, 'cp1').commPaid, { owner: { at: '2026-11-15', amount: 20, byName: 'owner' } }, 'المالك يسجّل');
+  // المدير العادي يحاول إلغاءه: يبقى كما سجّله المالك
+  const s3 = Object.assign({}, stored(env, 'cp1')); delete s3.commPaid;
+  await call(env, '/api/sync', '5', { orders: { upsert: [s3] } });
+  assert.strictEqual(stored(env, 'cp1').commPaid.owner.amount, 20, 'المدير العادي لا يلغي الصرف');
+  // صيغة فاسدة
+  for (const bad of [{ owner: { at: 'x', amount: 1 } }, { owner: { at: '2026-11-15', amount: -5 } }, { other: { at: '2026-11-15', amount: 1 } }, [1]]) {
+    const s4 = Object.assign({}, stored(env, 'cp1'), { commPaid: bad });
+    assert.strictEqual((await call(env, '/api/sync', '1', { orders: { upsert: [s4] } })).s, 400, JSON.stringify(bad));
+  }
+});
 await ta('sync: المدير العادي لا ينسب طلباً جديداً لغيره (403 ولا يُحفظ)؛ والمالك يستطيع', async () => {
   const env = mk();
   assert.strictEqual((await call(env, '/api/sync', '5', { orders: { upsert: [order('n5', '2')] } })).s, 403);

@@ -2542,6 +2542,20 @@ body.modal-open { overflow: hidden; }
 /* نافذة التعارض: اختيار القيمة لكل حقل غيّره الطرفان */
 /* «عن التطبيق»: سطر الملف التعريفي مميَّز أعلى روابط الوصول */
 .link-row.profile-row { background: var(--accent-soft); border: 1px solid var(--accent-line); border-radius: var(--r); padding: 10px 12px; }
+/* صرف العمولة: شارة/زر تحت مبلغ العمولة في القائمة، ونافذة الصرف */
+.comm-pay { display: inline-flex; align-items: center; gap: 4px; margin-top: 4px; padding: 2px 9px; min-height: 28px; border-radius: 999px; border: 1px solid var(--accent-line); background: var(--surface); color: var(--accent); font: inherit; font-size: .74rem; font-weight: 600; cursor: pointer; white-space: nowrap; direction: rtl; }
+.c-comm .comm-pay { display: flex; width: max-content; margin-inline-start: auto; }
+.comm-pay svg { width: 13px; height: 13px; }
+.comm-pay.is-paid { border-color: var(--ok-line); background: var(--ok-soft); color: var(--ok); }
+.comm-pay.ro { cursor: default; }
+.comm-pay.due { border-color: var(--warn-line); background: var(--warn-soft); color: var(--warn); }
+.cp-list { display: grid; gap: 8px; margin: 10px 0 12px; }
+.cp-row { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); cursor: pointer; }
+.cp-row input { width: 20px; height: 20px; }
+.cp-who { display: grid; gap: 2px; min-width: 0; }
+.cp-who small { color: var(--ink-3); font-size: .78rem; }
+.cp-who .cp-paid { color: var(--ok); font-weight: 600; }
+.cp-who .cp-due { color: var(--warn); font-weight: 600; }
 .cf-choices .cf-choice { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line, #E3D9CA); }
 .cf-choices .cf-choice:first-of-type { border-top: 0; }
 .cf-choices .cf-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }

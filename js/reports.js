@@ -200,7 +200,7 @@
       const people = new Map();
       const person = (id, name) => {
         const k = id || 'none';
-        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, share: 0 });
+        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, share: 0, paid: 0, due: 0 });
         return people.get(k);
       };
       const detail = [];
@@ -214,10 +214,15 @@
         const bAmt = f.bd.base !== undefined && f.bd.base !== null ? money(f.bd.base) : f.profit;
         owner.base += num(bAmt);
         const base = { number: o.number != null ? '#' + o.number : '—', date: ctx.calc.ordDate(o), customer: (o.customer || {}).name || '—', profit: f.profit, base: bAmt };
+        // حالة الصرف (عمولة صاحب الطلب والمندوب الأعلى): المصروف بمبلغه وقت الصرف، وغير المصروف بمبلغه الحالي
+        const payInfo = (r, p) => {
+          if (r.paid && r.paid.at) { p.paid += num(r.paid.amount !== undefined ? r.paid.amount : r.amount); return { paidTxt: 'صُرفت ' + r.paid.at, _paid: true }; }
+          p.due += num(r.amount); return { paidTxt: 'لم تُصرف', _paid: false };
+        };
         for (const r of f.bd.rows) {
-          if (r.kind === 'owner') { owner.ownComm += num(r.amount); detail.push({ ...base, _uid: owner.id, who: owner.name, type: 'عمولة طلبه', rate: num(r.rate), src: r.src || '', amount: money(r.amount) }); }
-          else if (r.kind === 'parent') { const p = person(r.userId, r.who); p.subsComm += num(r.amount); detail.push({ ...base, _uid: p.id, who: p.name, type: 'عمولة من طلب تابع', rate: num(r.rate), src: r.src || '', amount: money(r.amount) }); }
-          else if (r.kind === 'share') { sharePool += num(r.amount); detail.push({ ...base, _uid: null, who: 'موظفو المحل', type: 'حصة المشاركة', rate: num(r.rate), src: r.src || '', amount: money(r.amount) }); }
+          if (r.kind === 'owner') { owner.ownComm += num(r.amount); detail.push({ ...base, _uid: owner.id, who: owner.name, type: 'عمولة طلبه', rate: num(r.rate), src: r.src || '', amount: money(r.amount), ...payInfo(r, owner) }); }
+          else if (r.kind === 'parent') { const p = person(r.userId, r.who); p.subsComm += num(r.amount); detail.push({ ...base, _uid: p.id, who: p.name, type: 'عمولة من طلب تابع', rate: num(r.rate), src: r.src || '', amount: money(r.amount), ...payInfo(r, p) }); }
+          else if (r.kind === 'share') { sharePool += num(r.amount); detail.push({ ...base, _uid: null, who: 'موظفو المحل', type: 'حصة المشاركة', rate: num(r.rate), src: r.src || '', amount: money(r.amount), paidTxt: '—' }); }
         }
       }
       // حصة المشاركة تُقسم بالتساوي على موظفي المحل النشطين (موظف/مدير) — نفس قاعدة «ذكاء الأعمال»
@@ -230,25 +235,34 @@
         // نسبة عمولة طلباته: هي نسبته إن كانت واحدة، ومتوسطها المرجّح بالمبالغ إن اختلفت بين الطلبات
         rate: p.base ? pct(p.ownComm, p.base) : null,
         ownComm: money(p.ownComm), subsComm: money(p.subsComm), share: money(p.share),
-        total: money(p.ownComm + p.subsComm + p.share), _id: p.id,
+        total: money(p.ownComm + p.subsComm + p.share), paid: money(p.paid), due: money(p.due), _id: p.id,
       }));
       if (!ctx.scopeAll) rows = rows.filter((r) => r._id === ctx.me);
       if (ctx.userId) rows = rows.filter((r) => r._id === ctx.userId);
       rows = rows.filter((r) => r.orders || r.total).sort((a, b) => b.total - a.total);
+      // فلتر حالة الصرف: غير المصروفة أو المصروفة فقط (حصص المشاركة خارج هذا الفلتر — تُوزَّع شهرياً)
+      const cpf = ctx.commPaid || '';
+      if (cpf === 'due') rows = rows.filter((r) => r.due > 0.004);
+      if (cpf === 'paid') rows = rows.filter((r) => r.paid > 0.004);
       const keepIds = new Set(rows.map((r) => r._id));
-      const det = (ctx.userId || !ctx.scopeAll) ? detail.filter((d) => d._uid && keepIds.has(d._uid)) : detail;
+      let det = (ctx.userId || !ctx.scopeAll || cpf) ? detail.filter((d) => d._uid && keepIds.has(d._uid)) : detail;
+      if (cpf) det = det.filter((d) => d._paid === (cpf === 'paid'));
       const tot = { name: 'الإجمالي' };
-      ['orders', 'revenue', 'profit', 'base', 'ownComm', 'subsComm', 'share', 'total'].forEach((k) => { tot[k] = k === 'orders' ? rows.reduce((s, r) => s + r[k], 0) : sum(rows, (r) => r[k]); });
+      ['orders', 'revenue', 'profit', 'base', 'ownComm', 'subsComm', 'share', 'total', 'paid', 'due'].forEach((k) => { tot[k] = k === 'orders' ? rows.reduce((s, r) => s + r[k], 0) : sum(rows, (r) => r[k]); });
       tot.rate = tot.base ? pct(tot.ownComm, tot.base) : null;
       const summary = [
         { label: 'عمولات الطلبات', value: tot.ownComm, kind: 'money' },
         { label: 'عمولات المناديب الأعلى', value: tot.subsComm, kind: 'money' },
         { label: 'حصص المشاركة', value: ctx.scopeAll && !ctx.userId ? money(sharePool) : tot.share, kind: 'money' },
         { label: 'إجمالي المستحق', value: ctx.scopeAll && !ctx.userId ? money(tot.ownComm + tot.subsComm + sharePool) : tot.total, kind: 'money' },
+        { label: 'عمولات صُرفت', value: tot.paid, kind: 'money' },
+        { label: 'عمولات لم تُصرف بعد', value: tot.due, kind: 'money' },
       ];
       const notes = [(byTotal(ctx) ? 'العمولة = نسبة المستفيد × إجمالي الطلب شامل الضريبة (بعد الخصم)' : 'العمولة = نسبة المستفيد × صافي ربح الطلب (البيع قبل الضريبة − التكاليف)') + '، بالنسب المحفوظة على الطلب وقت اعتماده؛ والنسبة المخصّصة لطلب بعينه (من «نسبة البائع/المندوب») تغلب.',
         'مصدر النسبة: «مخصّصة لهذا الطلب» من نافذة الطلب، «نسبة المندوب الخاصة» من صفحة المناديب، «افتراضية» من الإعدادات، «محفوظة على الطلب وقت اعتماده» = نسبة سابقة تغيّر مصدرها بعد ذلك.',
-        `حصة المشاركة تُقسم بالتساوي على موظفي المحل النشطين (${internal.length}).`];
+        `حصة المشاركة تُقسم بالتساوي على موظفي المحل النشطين (${internal.length}).`,
+        'الصرف: «صُرفت» = سجّل المالك صرفها من قائمة الطلبات (بمبلغها وقت الصرف). «متبقٍ للصرف» عمولات الطلبات والتابعين غير المصروفة — حصص المشاركة خارجه لأنها تُوزَّع آخر الشهر.'];
+      if (cpf) notes.push(cpf === 'due' ? 'معروض: العمولات غير المصروفة فقط.' : 'معروض: العمولات المصروفة فقط.');
       if (uncosted) notes.push(`${uncosted} طلب بلا تكاليف مُدخلة لم تُحسب له عمولة.`);
       const showP = !!ctx.perms.profitAny;
       // صافي الربح لمن يملك صلاحيته فقط؛ وعمود «أساس العمولة» يظهر حين يختلف عن صافي الربح (أساس الإجمالي)
@@ -257,8 +271,8 @@
       return {
         summary, notes,
         tables: [
-          { title: 'المستحقات حسب الشخص', columns: noP([col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات', 'num'), col('revenue', 'المبيعات', 'money'), col('profit', 'صافي ربح طلباته', 'money'), col('base', BL, 'money'), col('rate', 'النسبة ٪', 'pct'), col('ownComm', 'عمولة طلباته', 'money'), col('subsComm', 'من طلبات تابعيه', 'money'), col('share', 'حصة المشاركة', 'money'), col('total', 'إجمالي المستحق', 'money')]), rows, totals: tot },
-          { title: 'تفصيل العمولات لكل طلب', columns: noP([col('number', 'رقم الطلب'), col('date', 'التاريخ', 'date'), col('customer', 'العميل'), col('who', 'المستفيد'), col('type', 'النوع'), col('rate', 'النسبة ٪', 'pct'), col('src', 'مصدر النسبة'), col('profit', 'صافي ربح الطلب', 'money'), col('base', BL, 'money'), col('amount', 'المبلغ', 'money')]), rows: det, totals: { number: 'الإجمالي', amount: sum(det, (d) => d.amount) } },
+          { title: 'المستحقات حسب الشخص', columns: noP([col('name', 'الاسم'), col('role', 'الدور'), col('orders', 'الطلبات', 'num'), col('revenue', 'المبيعات', 'money'), col('profit', 'صافي ربح طلباته', 'money'), col('base', BL, 'money'), col('rate', 'النسبة ٪', 'pct'), col('ownComm', 'عمولة طلباته', 'money'), col('subsComm', 'من طلبات تابعيه', 'money'), col('share', 'حصة المشاركة', 'money'), col('total', 'إجمالي المستحق', 'money'), col('paid', 'صُرف', 'money'), col('due', 'متبقٍ للصرف', 'money')]), rows, totals: tot },
+          { title: 'تفصيل العمولات لكل طلب', columns: noP([col('number', 'رقم الطلب'), col('date', 'التاريخ', 'date'), col('customer', 'العميل'), col('who', 'المستفيد'), col('type', 'النوع'), col('rate', 'النسبة ٪', 'pct'), col('src', 'مصدر النسبة'), col('profit', 'صافي ربح الطلب', 'money'), col('base', BL, 'money'), col('amount', 'المبلغ', 'money'), col('paidTxt', 'الصرف')]), rows: det, totals: { number: 'الإجمالي', amount: sum(det, (d) => d.amount) } },
         ],
       };
     },

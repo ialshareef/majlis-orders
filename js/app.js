@@ -2194,6 +2194,8 @@ function canEditOrder(o) {
     if (commBaseMode() === 'total') return money(num(o && o.total));
     return orderProfit(o);
   }
+  /** صرف العمولة: o.commPaid = { owner|parent: { at, amount, byId, byName, note } } — يسجّله المالك وحده (والخادم يفرضه) */
+  const commPaidOf = (o, kind) => { const p = o && o.commPaid && o.commPaid[kind]; return p && p.at ? p : null; };
   /** النسبة الفعلية المطبّقة على صاحب الطلب */
   function orderOwnerRate(o) { return commRatesOf(o).ownerRate; }
   /** عمولة صاحب الطلب = نسبته × أساس العمولة، أو null إن لم يتوفر الأساس */
@@ -4278,7 +4280,7 @@ function docTitle(order) {
         ${canSeeProfit(o) ? `
         <td data-label="صافي الربح" class="num c-money c-cost c-profit ${profit === null ? 'is-empty' : profit < 0 ? 'neg' : 'pos'}">${profit === null ? dash : fmt(profit)}</td>` : `
         <td data-label="صافي الربح" class="num c-money c-cost c-profit is-empty">${dash}</td>`}
-        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm${canSeeComm(o) && comm !== null ? '' : ' is-empty'}">${canSeeComm(o) && comm !== null ? fmt(comm) : dash}</td>` : ''}
+        ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm${canSeeComm(o) && comm !== null ? '' : ' is-empty'}">${canSeeComm(o) && comm !== null ? fmt(comm) + commPayBadge(o, comm) : dash}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
         <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
@@ -4290,6 +4292,7 @@ function docTitle(order) {
             menuItem(`data-print="${oid}"`, 'file', 'تصدير PDF ومشاركته'),
             (canSeeCosts(o) && canWriteCosts(o, cost !== null)) ? menuItem(`data-cost="${oid}"`, 'wallet', cost === null ? 'إضافة التكاليف' : 'تعديل التكاليف') : '',
             can('admin.core') ? menuItem(`data-comm="${oid}"`, 'trend', `${isMandoub(o) ? 'نسبة المندوب' : 'نسبة البائع'} ${fmtQty(orderOwnerRate(o))}٪`) : '',
+            (can('admin.core') && comm !== null) ? menuItem(`data-commpay="${oid}"`, 'wallet', commPaidOf(o, 'owner') ? 'العمولة صُرفت — عرض أو إلغاء' : 'تسجيل صرف العمولة') : '',
             can('admin.core') ? menuItem(`data-owner="${oid}"`, 'swap', 'نقل ملكية الطلب') : '',
             canFor(o, 'orders.delete') ? '<hr>' + menuItem(`data-delo="${oid}"`, 'trash', 'حذف الطلب', true) : '',
           ], `إجراءات الطلب ${esc(o.number || '')}`)}
@@ -4308,6 +4311,7 @@ function docTitle(order) {
     $$('[data-cost]', tb).forEach((b) => b.addEventListener('click', () => costForm(find(b.dataset.cost))));
     $$('[data-sum]', tb).forEach((b) => b.addEventListener('click', () => orderSummary(find(b.dataset.sum))));
     $$('[data-comm]', tb).forEach((b) => b.addEventListener('click', () => commissionForm(find(b.dataset.comm))));
+    $$('[data-commpay]', tb).forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); commPayForm(find(b.dataset.commpay)); }));
     $$('[data-owner]', tb).forEach((b) => b.addEventListener('click', () => transferOwner(find(b.dataset.owner))));
     $$('[data-delo]', tb).forEach((b) => b.addEventListener('click', async () => {
       const o = find(b.dataset.delo);
@@ -4462,7 +4466,8 @@ function docTitle(order) {
     }
     if (seeProfit) acc.push({ k: 'صافي الربح', v: profitAll, b: true });
     if (seeComm) {
-      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()} • ${CS.owner})`, v: comm });
+      const op = commPaidOf(o, 'owner');
+      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()} • ${CS.owner})${comm ? (op ? ` — صُرفت ${day(op.at)}` : ' — لم تُصرف') : ''}`, v: comm });
       if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; acc.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)} • ${CS.parent})`, v: parentComm }); }
       if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
     }
@@ -4792,6 +4797,76 @@ function docTitle(order) {
   }
 
   /** نافذة تعديل نسب عمولة الطلب (تحسب على صافي الربح) */
+  /** شارة الصرف تحت مبلغ العمولة في القائمة: زر «تم الصرف» للمالك، وحالة للقراءة لغيره */
+  function commPayBadge(o, comm) {
+    if (!(comm > 0.004)) return '';
+    const p = commPaidOf(o, 'owner');
+    const oid = esc(o.id);
+    if (can('admin.core')) {
+      return p
+        ? `<button type="button" class="comm-pay is-paid" data-commpay="${oid}" title="صُرفت ${esc(fmtDate(p.at))}${p.byName ? ' — ' + esc(p.byName) : ''} — اضغط للتفاصيل">${icon('check')}<span>صُرفت</span></button>`
+        : `<button type="button" class="comm-pay" data-commpay="${oid}" title="تسجيل أن العمولة صُرفت">${icon('wallet')}<span>تم الصرف</span></button>`;
+    }
+    return p ? `<span class="comm-pay is-paid ro">${icon('check')}<span>صُرفت</span></span>` : '<span class="comm-pay ro due">غير مصروفة</span>';
+  }
+
+  /** نافذة صرف العمولة: لكل مستفيد (صاحب الطلب، والمندوب الأعلى إن وُجد) مبلغه وحالته — المالك وحده.
+      علامة = مصروفة. ما يُعلَّم جديداً يُسجَّل بتاريخ الصرف ومبلغه وقتها، وإزالة العلامة تلغي صرفاً مسجّلاً خطأً. */
+  function commPayForm(o) {
+    if (!o || !can('admin.core')) return;
+    const bd = orderCommBreakdown(o);
+    const rows = bd ? bd.rows.filter((r) => r.kind !== 'share' && r.amount > 0.004) : [];
+    if (!rows.length) { toast('لا توجد عمولة محسوبة لهذا الطلب بعد', 'info'); return; }
+    const cur$ = esc(currency());
+    openModal(`صرف العمولة — الطلب #${esc(o.number || '')}`, `
+      <p class="hint">علّم العمولة التي صُرفت لصاحبها. تظهر حالة الصرف في قائمة الطلبات وفي تقرير العمولات.</p>
+      <div class="cp-list">${rows.map((r) => `
+        <label class="cp-row">
+          <input type="checkbox" data-k="${r.kind}" checked>
+          <span class="cp-who"><b>${esc(r.who)}</b><small>${r.kind === 'owner' ? (isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع') : 'عمولة المندوب الأعلى'} • ${fmtQty(r.rate)}٪</small>
+            ${r.paid ? `<small class="cp-paid">صُرفت ${esc(fmtDate(r.paid.at))}${r.paid.byName ? ' — ' + esc(r.paid.byName) : ''}${Math.abs(num(r.paid.amount) - r.amount) > 0.004 ? ` • المصروف ${fmt(r.paid.amount)} والحالي ${fmt(r.amount)}` : ''}</small>` : '<small class="cp-due">لم تُصرف بعد</small>'}</span>
+          <b class="num">${fmt(r.amount)} ${cur$}</b>
+        </label>`).join('')}</div>
+      <div class="row2">
+        <label>تاريخ الصرف <input type="date" id="cpDate" value="${today()}"></label>
+        <label>ملاحظة (اختياري) <input id="cpNote" maxlength="120" placeholder="تحويل، نقداً، مع راتب الشهر…"></label>
+      </div>
+      <p class="error" id="cpErr" role="alert"></p>
+      <div class="btn-row"><button class="btn" id="cpCancel">إلغاء</button><button class="btn primary" id="cpSave">${icon('check')} حفظ حالة الصرف</button></div>`, (b) => {
+      $('#cpCancel', b).onclick = closeModal;
+      $('#cpSave', b).onclick = async () => {
+        const at = $('#cpDate', b).value || today();
+        const note = $('#cpNote', b).value.trim().slice(0, 120);
+        const want = {}; $$('[data-k]', b).forEach((c) => { want[c.dataset.k] = c.checked; });
+        const undo = rows.filter((r) => r.paid && !want[r.kind]);
+        const add = rows.filter((r) => !r.paid && want[r.kind]);
+        if (!undo.length && !add.length) { closeModal(); return; }
+        if (undo.length && !(await confirmDlg('إلغاء صرف مسجّل', `سيُلغى تسجيل صرف: ${undo.map((r) => `${r.who} ${fmt(r.amount)}`).join('، ')}. متابعة؟`, 'إلغاء الصرف'))) { commPayForm(o); return; }
+        const before = JSON.parse(JSON.stringify(o));
+        const cp = Object.assign({}, o.commPaid || {});
+        add.forEach((r) => { cp[r.kind] = { at, amount: r.amount, byId: currentUser.id, byName: currentUser.name, ...(note ? { note } : {}) }; });
+        undo.forEach((r) => { delete cp[r.kind]; });
+        if (Object.keys(cp).length) o.commPaid = cp; else delete o.commPaid;
+        o.updatedAt = Store.now(); o.updatedByName = currentUser.name;
+        const details = add.map((r) => `صرف عمولة ${r.who}: ${fmt(r.amount)} (${fmtDate(at)})${note ? ' — ' + note : ''}`)
+          .concat(undo.map((r) => `إلغاء صرف عمولة ${r.who}: ${fmt(r.amount)}`));
+        const ev = logActivity('commission-paid', o, details);
+        if (!(await Store.save())) {
+          const i = db().orders.findIndex((x) => x.id === o.id);
+          if (i >= 0) db().orders[i] = before;
+          if (ev) db().activity = db().activity.filter((x) => x.id !== ev.id);
+          if (Store.lastStatus === 409) { closeModal(); toast('عُدّل الطلب من جهاز آخر — حدّث القائمة وأعد المحاولة', true); return; }
+          const e2 = document.getElementById('cpErr'); if (e2) e2.textContent = humanError(Store.lastError);
+          return;
+        }
+        if (cur.id === o.id) { if (o.commPaid) cur.commPaid = JSON.parse(JSON.stringify(o.commPaid)); else delete cur.commPaid; ownVersion(o.updatedAt); }
+        closeModal();
+        renderOrders();
+        toast(add.length ? `سُجّل صرف العمولة: ${add.map((r) => r.who).join('، ')}` : 'أُلغي تسجيل الصرف');
+      };
+    }, 'drawer');
+  }
+
   function commissionForm(o) {
     /* نسب العمولة للمدير وحده — لا تُفتح بتغيّر رؤية التكاليف */
     if (!o || !can('admin.core')) return;
@@ -6116,12 +6191,12 @@ function docTitle(order) {
     const r = commRatesOf(o);
     const src = commRateSources(o, r);
     const rows = [];
-    rows.push({ who: owner ? owner.name : 'المندوب', rate: r.ownerRate, amount: money(p * r.ownerRate / 100), userId: o.createdBy, src: src.owner });
+    rows.push({ kind: 'owner', who: owner ? owner.name : 'المندوب', rate: r.ownerRate, amount: money(p * r.ownerRate / 100), userId: o.createdBy, src: src.owner, paid: commPaidOf(o, 'owner') });
     if (r.parentId) {
       const par = Store.getUser(r.parentId);
-      rows.push({ who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId, src: src.parent });
+      rows.push({ kind: 'parent', who: par ? par.name : 'المندوب الأعلى', rate: r.parentRate || 0, amount: money(p * (r.parentRate || 0) / 100), userId: r.parentId, src: src.parent, paid: commPaidOf(o, 'parent') });
     }
-    rows.push({ who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null, src: src.share });
+    rows.push({ kind: 'share', who: 'موظفو المحل', rate: r.shareRate, amount: money(p * r.shareRate / 100), userId: null, src: src.share, paid: null });
     return { profit: orderProfit(o), base: p, baseMode: commBaseMode(), rows };
   }
 
@@ -6790,7 +6865,7 @@ function docTitle(order) {
   }
 
   /* ---------------- سجل تحديثات الطلبات (مدير) ---------------- */
-  const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب', 'design-convert': 'تحويل تصميم عميل' };
+  const ACTIONS = { create: 'إنشاء طلب', update: 'تعديل طلب', status: 'تغيير الحالة', cost: 'تعديل التكاليف', commission: 'نسبة البائع', 'commission-paid': 'صرف العمولة', owner: 'نقل الملكية', export: 'تصدير PDF', delete: 'حذف طلب', 'design-convert': 'تحويل تصميم عميل' };
   const ACTION_CLASS = { create: 'st-new', update: 'st-progress', status: '', cost: 'st-progress', owner: 'st-new', export: 'st-delivered', delete: 'st-cancelled' };
   const localDate = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
   const localTime = (iso) => { const d = new Date(iso); if (isNaN(d)) return ''; return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`; };
@@ -8633,7 +8708,7 @@ async function exportExpensesXlsx() {
     const b = orderCommBreakdown(o);
     if (!b) return null;
     const hasParent = b.rows.length === 3;
-    return { profit: b.profit, base: b.base, rows: b.rows.map((r, i) => ({ ...r, kind: i === 0 ? 'owner' : (hasParent && i === 1 ? 'parent' : 'share') })) };
+    return { profit: b.profit, base: b.base, rows: b.rows.map((r, i) => ({ ...r, kind: r.kind || (i === 0 ? 'owner' : (hasParent && i === 1 ? 'parent' : 'share')) })) };
   }
 
   /* تقرير «زيارات الموقع»: بيانات الخادم للفترة المختارة (لا تصل مع المزامنة). تُجلب عند فتح التقرير
@@ -8662,6 +8737,7 @@ async function exportExpensesXlsx() {
       userId: scopeAll ? $('#repUser').value : '',
       status: $('#repStatus').value,
       include: getInclude(),
+      commPaid: ($('#repCommPaid') && repId === 'commissions') ? $('#repCommPaid').value : '',
       me: currentUser && currentUser.id, scopeAll,
       perms: {
         profitAny: canAny('profit.view_own', 'profit.view_all'),
@@ -8762,6 +8838,7 @@ async function exportExpensesXlsx() {
     }
     const def = cat.find((c) => c.id === repId);
     $('#repStatus').hidden = !def.usesStatus;
+    { const cpf = $('#repCommPaid'); if (cpf) cpf.hidden = repId !== 'commissions'; }
     // «يشمل التقرير»: للتقارير المالية فقط، ويختفي حين تختار حالة محددة في تقرير الطلبات
     const incBox = $('#repInclude');
     incBox.hidden = !def.usesInclude || (def.usesStatus && !!$('#repStatus').value);
@@ -8983,6 +9060,7 @@ async function exportExpensesXlsx() {
 
   $$('#repRangeChips .chip').forEach((c) => c.addEventListener('click', () => { repRange = c.dataset.rr; repStore.set('range', repRange); renderReports(); }));
   ['repFrom', 'repTo'].forEach((id) => $('#' + id).addEventListener('change', () => { repRange = 'custom'; renderReports(); }));
+  { const cpf = $('#repCommPaid'); if (cpf) cpf.addEventListener('change', () => renderReports()); }
   $('#repUser').addEventListener('change', renderReports);
   $('#repStatus').addEventListener('change', renderReports);
   $('#btnRepPdf').addEventListener('click', repExportPdf);
