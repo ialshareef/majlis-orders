@@ -159,29 +159,56 @@
    * بلا CORS، يتبع redirects) ثم قراءة الملف والتحقق من SHA-256 قبل أي فتح.
    * يعيد {kind:'native', path, size}. أي فشل = رمي بسبب واضح، بلا ملف موثوق.
    */
-  async function downloadNativeApk(meta, onProgress) {
+  /* مهلة التوقف: إن لم يتقدّم التنزيل خلالها تُترك المحاولة ويُجرَّب المسار التالي
+     (كان التنزيل يعلق بلا نهاية حين تتوقف الشبكة أو يتعثر تحويل GitHub) */
+  var STALL_MS = 30000, NOPROG_MS = 120000;
+  function apkProxyUrl(meta) {
+    var b = apiBase();
+    return b && b.slice(0, 8) === 'https://' ? b + '/api/app-apk/' + apkFileName(meta) : '';
+  }
+  function stallGuard(label) {
+    var last = Date.now(), seen = false, timer = null, rejectFn = null;
+    var p = new Promise(function (_, rej) {
+      rejectFn = rej;
+      timer = setInterval(function () {
+        var idle = Date.now() - last;
+        if ((seen && idle > STALL_MS) || (!seen && idle > NOPROG_MS)) {
+          clearInterval(timer);
+          ulog('download/stall', label + ' idle=' + idle);
+          rej({ code: 'stall', message: 'توقف التنزيل.' });
+        }
+      }, 1000);
+    });
+    return { promise: p, tick: function () { last = Date.now(); seen = true; }, stop: function () { clearInterval(timer); } };
+  }
+
+  async function downloadNativeApk(meta, onProgress, url, tag) {
     var P = capPlugins();
     var FS = P.Filesystem;
     if (!FS || !FS.downloadFile || !FS.readFile) throw { code: 'no-native', message: 'التنزيل الأصلي غير متاح على هذا الجهاز.' };
-    var path = apkFileName(meta);
-    ulog('download/start', 'method=native url=' + meta.apkUrl);
+    url = url || meta.apkUrl;
+    var path = apkFileName(meta).replace(/\.apk$/, '') + (tag ? '-' + tag : '') + '.apk';
+    ulog('download/start', 'method=native url=' + url);
     try { await FS.deleteFile({ path: path, directory: 'CACHE' }); } catch (_) { /* stale cleanup best-effort */ }
+    var guard = stallGuard('native');
     var progHandle = null;
-    if (onProgress && FS.addListener) {
+    if (FS.addListener) {
       try {
         progHandle = await FS.addListener('progress', function (p) {
-          if (p && p.url === meta.apkUrl && onProgress) {
-            try { onProgress(Number(p.bytes) || 0, Number(p.contentLength) || 0); } catch (_) { /* noop */ }
+          if (p && p.url === url) {
+            guard.tick();
+            if (onProgress) { try { onProgress(Number(p.bytes) || 0, Number(p.contentLength) || 0); } catch (_) { /* noop */ } }
           }
         });
       } catch (_) { progHandle = null; }
     }
     try {
-      await FS.downloadFile({ url: meta.apkUrl, path: path, directory: 'CACHE', progress: !!onProgress, recursive: true });
+      await Promise.race([FS.downloadFile({ url: url, path: path, directory: 'CACHE', progress: true, recursive: true }), guard.promise]);
     } catch (e) {
       ulog('download/fail', 'method=native err=' + ((e && e.message) || e));
-      throw { code: 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.' };
+      throw { code: (e && e.code === 'stall') ? 'stall' : 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.' };
     } finally {
+      guard.stop();
       try { if (progHandle && progHandle.remove) await progHandle.remove(); } catch (_) { /* noop */ }
     }
     var size = 0;
@@ -207,17 +234,22 @@
    * مسار المتصفح (احتياطي): fetch المباشر يعمل فقط إن سمح المضيف بـ CORS.
    * يعيد {kind:'web', blob}.
    */
-  async function downloadWebApk(meta, onProgress) {
-    ulog('download/start', 'method=web-fetch url=' + meta.apkUrl);
+  async function downloadWebApk(meta, onProgress, url) {
+    url = url || meta.apkUrl;
+    ulog('download/start', 'method=web-fetch url=' + url);
     var res;
+    var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+    var guard = stallGuard('web');
+    guard.promise.catch(function () { try { if (ctrl) ctrl.abort(); } catch (_) { /* noop */ } });
     try {
-      res = await fetch(meta.apkUrl, { method: 'GET', cache: 'no-store', credentials: 'omit', redirect: 'follow' });
+      res = await fetch(url, { method: 'GET', cache: 'no-store', credentials: 'omit', redirect: 'follow', signal: ctrl ? ctrl.signal : undefined });
     } catch (e) {
+      guard.stop();
       ulog('download/fail', 'method=web-fetch err=' + (e && e.name ? e.name + ': ' : '') + ((e && e.message) || e));
       throw { code: 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.' };
     }
     ulog('download/http', 'method=web-fetch status=' + res.status + ' final=' + (res.url || '').slice(0, 120));
-    if (!res.ok) throw { code: 'http-' + res.status, message: 'فشل تنزيل ملف التحديث.' };
+    if (!res.ok) { guard.stop(); throw { code: 'http-' + res.status, message: 'فشل تنزيل ملف التحديث.' }; }
     var total = Number(res.headers.get('content-length')) || 0;
     var reader = res.body && res.body.getReader ? res.body.getReader() : null;
     var chunks = [], loaded = 0;
@@ -227,14 +259,22 @@
       chunks.push(new Uint8Array(buf0));
       loaded = buf0.byteLength;
     } else {
-      for (;;) {
-        var step = await reader.read();
-        if (step.done) break;
-        chunks.push(step.value);
-        loaded += step.value.length;
-        if (onProgress) { try { onProgress(loaded, total); } catch (_) { /* noop */ } }
+      try {
+        for (;;) {
+          var step = await reader.read();
+          if (step.done) break;
+          guard.tick();
+          chunks.push(step.value);
+          loaded += step.value.length;
+          if (onProgress) { try { onProgress(loaded, total); } catch (_) { /* noop */ } }
+        }
+      } catch (e) {
+        guard.stop();
+        ulog('download/fail', 'method=web-fetch read err=' + ((e && e.message) || e));
+        throw { code: 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.' };
       }
     }
+    guard.stop();
     var bin = new Uint8Array(loaded), off = 0;
     for (var i = 0; i < chunks.length; i++) { bin.set(chunks[i], off); off += chunks[i].length; }
     ulog('download/done', 'method=web-fetch bytes=' + loaded);
@@ -255,17 +295,37 @@
    */
   async function downloadVerifiedApk(meta, onProgress) {
     if (!meta || !meta.sha256) throw { code: 'no-sha', message: 'بصمة التحقق غير متوفرة من الخادم — لن يتم التنزيل.' };
+    var proxy = apkProxyUrl(meta);
+    var tries = [];
     if (isNative()) {
+      if (proxy) tries.push(function () { return downloadNativeApk(meta, onProgress, proxy, 'srv'); });
+      if (proxy) tries.push(function () { return downloadWebApk(meta, onProgress, proxy); });
+      tries.push(function () { return downloadNativeApk(meta, onProgress, meta.apkUrl, 'gh'); });
+    } else {
+      if (proxy) tries.push(function () { return downloadWebApk(meta, onProgress, proxy); });
+      tries.push(function () { return downloadWebApk(meta, onProgress, meta.apkUrl); });
+    }
+    var last = null;
+    for (var i = 0; i < tries.length; i++) {
       try {
-        return await downloadNativeApk(meta, onProgress);
+        return await tries[i]();
       } catch (e) {
-        // المسار الأصلي أولاً دائماً على الجهاز؛ fetch احتياط أخير فقط
-        if (e && (e.code === 'checksum' || e.code === 'no-native')) throw e;
-        ulog('download/fallback-web', String((e && e.code) || (e && e.message) || e));
-        return downloadWebApk(meta, onProgress);
+        // بصمة خاطئة أو غياب المنزّل: لا محاولات أخرى (ملف غير موثوق)
+        if (e && (e.code === 'checksum' || e.code === 'no-native') && !(e.code === 'no-native' && i < tries.length - 1)) throw e;
+        last = e;
+        ulog('download/next', 'try=' + (i + 1) + ' ' + String((e && e.code) || (e && e.message) || e));
+        if (onProgress) { try { onProgress(-1, 0); } catch (_) { /* noop */ } }
       }
     }
-    return downloadWebApk(meta, onProgress);
+    var err = { code: (last && last.code) || 'download', message: 'تعذر تنزيل التحديث. تحقق من اتصال الإنترنت وحاول مرة أخرى.', manualUrl: meta.apkUrl };
+    throw err;
+  }
+
+  /** زر تنزيل يدوي عند فشل كل المحاولات: يفتح رابط GitHub في متصفح الجهاز (ينجح دائماً عند المالك) */
+  function manualLinkHtml(url) {
+    if (!url || url.indexOf(APK_ALLOW) !== 0) return '';
+    return '<a class="btn small appupd-manual" href="' + escHtml(url) + '" target="_blank" rel="noopener">تنزيل من المتصفح (GitHub)</a>' +
+      '<small class="hint appupd-manual-hint">بعد اكتمال التنزيل افتح الملف من إشعارات الجوال لتثبيته.</small>';
   }
 
   /**
@@ -433,6 +493,14 @@
           setProgress(els, -1, 0);
           var msg = (e && e.message) || 'فشل التنزيل أو التثبيت.';
           setStatus(els, msg, 'err');
+          if (e && e.manualUrl && els.status) {
+            try {
+              var old = els.status.parentNode && els.status.parentNode.querySelector('.appupd-manual-box');
+              if (old) old.remove();
+              var mb = document.createElement('div'); mb.className = 'appupd-manual-box'; mb.innerHTML = manualLinkHtml(e.manualUrl);
+              els.status.insertAdjacentElement('afterend', mb);
+            } catch (_) { /* noop */ }
+          }
           notify('failed', e);
         } finally {
           els.dl.disabled = false;
@@ -507,8 +575,10 @@
       if (!prog || !bar) return;
       if (!loaded || loaded < 0) { prog.hidden = true; return; }
       prog.hidden = false;
-      var pct = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 0;
+      prog.classList.toggle('indet', !(total > 0));
+      var pct = total > 0 ? Math.max(0, Math.min(100, Math.round((loaded / total) * 100))) : 35;
       bar.style.width = pct + '%';
+      if (status) status.textContent = 'جارٍ التنزيل… ' + (total > 0 ? pct + '٪' : (Math.round(loaded / 102400) / 10) + ' م.ب');
     }
     function close() {
       try { box.remove(); } catch (_) { /* noop */ }
@@ -547,6 +617,9 @@
       } catch (e) {
         setBar(-1, 0);
         setStatus((e && e.message) || 'فشل التنزيل أو التثبيت.');
+        if (e && e.manualUrl && status && !box.querySelector('.appupd-manual')) {
+          try { var mb2 = document.createElement('div'); mb2.className = 'appupd-manual-box'; mb2.innerHTML = manualLinkHtml(e.manualUrl); status.insertAdjacentElement('afterend', mb2); } catch (_) { /* noop */ }
+        }
         ulog('auto/failed', String((e && e.code) || (e && e.message) || e));
         try { onEvent('failed', e); } catch (_) { /* noop */ }
         go.disabled = false;
@@ -598,10 +671,12 @@
     validUpdateMeta: validUpdateMeta,
     checkForUpdate: checkForUpdate,
     downloadVerifiedApk: downloadVerifiedApk,
+    apkProxyUrl: apkProxyUrl,
     installApk: installApk,
     initBox: initBox,
     initAutoCheck: initAutoCheck,
     _diag: function () { return diagLog.slice(); },
     _resetAuto: function () { autoRan = false; },
+    _setStall: function (stallMs, noProgMs) { STALL_MS = stallMs; NOPROG_MS = noProgMs; },
   };
 })();

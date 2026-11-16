@@ -299,6 +299,61 @@ function cleanup() {
       else fail('F18 android-compat', cfg.appId + ' deps=' + Object.keys(deps).join(','));
     } catch (e) { fail('F18 android-compat', e.message); }
     cleanup();
+
+    // F19: التنزيل من خادمنا أولاً (بلا تحويل GitHub)، وعند تعثّره يُجرَّب GitHub
+    try {
+      window.APP_CONFIG = { apiUrl: 'https://srv.test' };
+      var bytes19 = new TextEncoder().encode('proxy-first-apk-bytes-xyz');
+      var sha19 = await sha256hex(bytes19);
+      var b6419 = btoa(String.fromCharCode.apply(null, bytes19));
+      var urls19 = [];
+      window.Capacitor = { isNativePlatform: function () { return true; }, Plugins: {
+        Filesystem: {
+          deleteFile: function () { return Promise.resolve(); },
+          downloadFile: function (o) { urls19.push(o.url); return o.url.indexOf('srv.test') >= 0 ? Promise.reject(new Error('proxy down')) : Promise.resolve({ path: o.path }); },
+          stat: function () { return Promise.resolve({ size: bytes19.length }); },
+          readFile: function () { return Promise.resolve({ data: b6419 }); },
+        },
+        FileOpener: {},
+      } };
+      window.fetch = function () { return Promise.reject(new TypeError('Failed to fetch')); };
+      var src19 = await AU.downloadVerifiedApk(metaOf({ sha256: sha19 }), null);
+      if (urls19[0] === 'https://srv.test/api/app-apk/asalh-najd-1.0.24.apk' && urls19[urls19.length - 1] === metaOf().apkUrl && src19 && src19.kind === 'native') ok('F19 proxy-first-then-github');
+      else fail('F19 proxy-first-then-github', JSON.stringify(urls19));
+    } catch (e) { fail('F19 proxy-first-then-github', e.message); }
+    cleanup();
+
+    // F20: تنزيل يعلق بلا تقدّم لا ينتظر للأبد: مهلة ثم المسار التالي، ثم زر التنزيل اليدوي
+    try {
+      window.APP_CONFIG = { apiUrl: 'https://srv.test' };
+      AU._setStall(300, 600);
+      window.Capacitor = { isNativePlatform: function () { return true; }, Plugins: {
+        Filesystem: {
+          deleteFile: function () { return Promise.resolve(); },
+          downloadFile: function () { return new Promise(function () {}); },   // يعلق للأبد
+          readFile: function () { return Promise.resolve({ data: '' }); },
+        },
+        FileOpener: {},
+      } };
+      window.fetch = function (u, o) {
+        if (String(u).indexOf('app-update') >= 0) return Promise.resolve({ ok: true, status: 200, json: function () { return Promise.resolve({ update: metaOf() }); } });
+        return new Promise(function (_, rej) { if (o && o.signal) o.signal.addEventListener('abort', function () { rej(new DOMException('aborted', 'AbortError')); }); });
+      };
+      var t20 = Date.now(), err20 = null;
+      try { await AU.downloadVerifiedApk(metaOf(), function () {}); } catch (e) { err20 = e; }
+      var took = Date.now() - t20;
+      if (err20 && err20.manualUrl === metaOf().apkUrl && took < 8000) ok('F20 stall-timeout ' + took + 'ms');
+      else fail('F20 stall-timeout', JSON.stringify(err20) + ' took=' + took);
+      // نافذة التحديث بعد الفشل: زر «تنزيل من المتصفح» برابط GitHub
+      await AU.initAutoCheck({ current: CUR_OLD });
+      document.querySelector('.appupd-modal .appupd-go').click();
+      await waitFor(function () { return document.querySelector('.appupd-modal .appupd-manual'); }, 10000);
+      var a20 = document.querySelector('.appupd-modal .appupd-manual');
+      if (a20 && a20.getAttribute('href') === metaOf().apkUrl && a20.target === '_blank') ok('F20b manual-download-link');
+      else fail('F20b manual-download-link', a20 ? a20.outerHTML : 'none');
+      AU._setStall(30000, 120000);
+    } catch (e) { fail('F20 stall-timeout', e.message); AU._setStall(30000, 120000); }
+    cleanup();
   } catch (e) {
     fail('harness', e.message);
   } finally {

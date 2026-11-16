@@ -3926,3 +3926,9 @@ body.portal { background: var(--bg); }
 .bi-fold > summary small { color: var(--ink-3); font-size: .8rem; }
 .bi-fold[open] > summary { margin-bottom: 10px; }
 #biInsightsCard { margin-bottom: 16px; }
+
+/* نافذة التحديث: تقدّم غير محدد حين لا يُعرف الحجم (بدل شريط فارغ يبدو معلّقاً)، وزر التنزيل اليدوي عند الفشل */
+.appupd-prog.indet > span { width: 35% !important; animation: upd-indet 1.3s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) { .appupd-prog.indet > span { animation: none; width: 100% !important; opacity: .45; } }
+.appupd-manual-box { display: grid; gap: 4px; justify-items: start; margin-top: 10px; }
+.appupd-manual { min-height: 40px; }

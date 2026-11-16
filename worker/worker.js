@@ -252,6 +252,11 @@ export default {
     if (request.method === 'GET' && url.pathname.replace(/\/+$/, '') === '/api/app-update') {
       return json({ ok: true, update: appUpdateMeta(env) }, 200, cors);
     }
+    // ملف التحديث نفسه عبر الخادم: الإصدار الحالي فقط (ليس وكيلاً لأي رابط)، بلا تحويل 302 إلى نطاق آخر،
+    // وبطوله (Content-Length) فيظهر تقدّم التنزيل — كان التنزيل من GitHub مباشرة يعلق على بعض الشبكات
+    if (request.method === 'GET' && /^\/api\/app-apk(\/[^/]*)?$/.test(url.pathname)) {
+      return appApk(env, url, cors);
+    }
     // بوابة العميل: مسار مستقل يقدّم portal.html (جاهز لنطاق فرعي لاحقاً دون إعادة بناء)
     if (url.pathname === '/customer-design' || url.pathname.startsWith('/customer-design/')) {
       await recordVisit(env, request, 'customer');
@@ -450,6 +455,30 @@ function versionCodeOfName(v) {
 }
 
 function shaOk(s) { return /^[0-9a-f]{64}$/.test(String(s || '').trim().toLowerCase()); }
+
+async function appApk(env, url, cors) {
+  const m = appUpdateMeta(env);
+  if (!m.apkUrl) return json({ ok: false, error: 'لا يوجد ملف تحديث منشور' }, 404, cors);
+  // /api/app-apk/asalh-najd-<الإصدار>.apk — اسم ملف إصدار قديم = 409 (أعد فحص التحديث)
+  const file = decodeURIComponent((url.pathname.split('/')[3] || ''));
+  if (file && file !== 'asalh-najd-' + m.versionName + '.apk') return json({ ok: false, error: 'إصدار غير متاح — أعد فحص التحديث' }, 409, cors);
+  let r;
+  try {
+    r = await fetch(m.apkUrl, { redirect: 'follow', cf: { cacheEverything: true, cacheTtl: 86400 } });
+  } catch (_) {
+    return json({ ok: false, error: 'تعذّر جلب ملف التحديث' }, 502, cors);
+  }
+  if (!r.ok || !r.body) return json({ ok: false, error: 'تعذّر جلب ملف التحديث' }, 502, cors);
+  const h = new Headers(cors);
+  h.set('Content-Type', 'application/vnd.android.package-archive');
+  const len = r.headers.get('content-length');
+  if (len) h.set('Content-Length', len);
+  h.set('Content-Disposition', 'attachment; filename="asalh-najd-' + m.versionName + '.apk"');
+  h.set('Cache-Control', 'public, max-age=3600');
+  h.set('X-Content-Type-Options', 'nosniff');
+  h.set('Access-Control-Expose-Headers', 'Content-Length');
+  return new Response(r.body, { status: 200, headers: h });
+}
 
 function appUpdateMeta(env) {
   const e = env || {};
