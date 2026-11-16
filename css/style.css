@@ -3437,6 +3437,8 @@ body.portal { background: var(--bg); }
 .ai-chip {
   border: 1px solid var(--accent-line); background: var(--surface); color: var(--accent);
   border-radius: 999px; padding: 6px 13px; font-size: .84rem; cursor: pointer; font-family: inherit;
+  /* ارتفاع لمس ثابت لا يتبع خط الجهاز (كان 29px حين يختلف الخط) */
+  min-height: 36px; display: inline-flex; align-items: center; justify-content: center; line-height: 1.3;
 }
 .ai-chip:hover { background: var(--accent-soft); }
 .ai-chip.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }

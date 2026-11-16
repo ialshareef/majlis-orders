@@ -19,6 +19,9 @@ let pass = 0, fail = 0;
 const t = (n, ok, info) => { ok ? pass++ : fail++; console.log((ok ? 'PASS  ' : 'FAIL  ') + n + (ok || !info ? '' : '  [' + info + ']')); };
 const codeOf = (v) => { const p = String(v).split('.').map((n) => parseInt(n, 10)); return p[0] * 10000 + (p[1] || 0) * 100 + (p[2] || 0); };
 
+// الوسوم تُنشأ على GitHub (سير عمل build-apk في السحابة) فالنسخة المحلية قد تتأخر: تُحدَّث أولاً،
+// وبلا إنترنت يُكتفى بالمحلي بصمت
+try { execSync('git fetch --tags --quiet origin', { cwd: root, stdio: 'ignore', timeout: 20000 }); } catch (_) { /* بلا شبكة */ }
 const tags = execSync('git tag --list "v*" --sort=-version:refname', { cwd: root }).toString().split(/\r?\n/);
 const latest = tags.find((s) => /^v\d+\.\d+\.\d+$/.test(s.trim())) || '';
 const tagVer = latest.replace(/^v/, '');
