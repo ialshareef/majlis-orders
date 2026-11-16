@@ -3873,7 +3873,7 @@ body.portal { background: var(--bg); }
   #ordersTable td.c-cust .sub { display: inline; margin-inline-start: 6px; }
   #ordersTable td.c-money { padding: 5px 8px !important; font-size: .9rem; }
   #ordersTable td.c-money::before, #ordersTable td.c-deliv::before { font-size: .7rem; }
-  #ordersTable td.c-cost, #ordersTable td.c-profit, #ordersTable td.c-comm, #ordersTable td.c-deliv {
+  #ordersTable td.c-cost, #ordersTable td.c-profit, #ordersTable td.c-comm {
     background: transparent; padding: 0 2px !important; font-size: .82rem;
   }
   #ordersTable td.is-empty, #ordersTable td.c-deliv.no-date { display: none !important; }
@@ -3900,7 +3900,7 @@ body.portal { background: var(--bg); }
   #ordersTable td.c-rem { order: 6; }
   #ordersTable td.c-cost { order: 7; }
   #ordersTable td.c-profit { order: 8; }
-  #ordersTable td.c-deliv { order: 9; background: transparent; padding: 0 2px !important; }
+  #ordersTable td.c-deliv { order: 9; padding: 5px 8px !important; font-size: .85rem; }
   #ordersTable td.c-comm { order: 10; grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   #ordersTable td.c-comm::before { margin: 0; }
   #ordersTable td.row-actions { order: 11; }

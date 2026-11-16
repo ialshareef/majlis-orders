@@ -195,7 +195,7 @@ try {
   ok(nav.reports === true, 'owner: «التقارير» في القائمة', nav);
   await go(page, 'reports');
   ok(await page.evaluate(() => document.getElementById('page-reports').classList.contains('active')), 'owner: الصفحة تُفتح');
-  ok((await tabs(page)).join() === 'orders,pending,commissions,pnl,staff,payments,receivables,expenses,custody,customers,visits', 'owner: الفهرس كامل (11 تقريراً مع «حركة العهدة»، مع «الطلبات الجديدة» و«زيارات الموقع» للمالك)', await tabs(page));
+  ok((await tabs(page)).join() === 'orders,pending,receivables,customers,pnl,payments,expenses,custody,commissions,staff,visits', 'owner: الفهرس كامل في مجموعات (11 تقريراً مع «حركة العهدة»، مع «الطلبات الجديدة» و«زيارات الموقع» للمالك)', await tabs(page));
   await pick(page, 'orders'); await range(page, 'm');
   let k = await kpis(page);
   ok(k['المبيعات قبل الضريبة'] === '3,000.00' && k['التكاليف'] === '1,600.00' && k['صافي الربح'] === '1,400.00', 'owner/orders: البيع 3000 والتكاليف 1600 والربح 1400 (هذا الشهر)', k);

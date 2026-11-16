@@ -11,6 +11,8 @@ try {
   // [العرض، تكبير الخط]: جوال عادي، أندرويد شائع 360، وخط مكبَّر كثيراً على شاشة ضيقة
   for (const [w, z] of [[390, 1], [360, 1.3], [320, 1.5]]) {
     const page = await app.login('owner', { width: w, height: 900, isMobile: true, hasTouch: true });
+    // التطبيق يبدأ من «الرئيسية»: نفتح صفحة الطلب (شريط التصميم فيها)
+    await page.evaluate(() => document.querySelector('#bottomNav [data-page="order"]').click());
     if (z !== 1) await page.evaluate((k) => { document.documentElement.style.fontSize = (16 * k) + 'px'; }, z);
     await sleep(600);
     const r = await page.evaluate(() => {
