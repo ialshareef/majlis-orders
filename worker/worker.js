@@ -437,13 +437,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.17';
-// بصمة asalh-najd-1.1.17.apk (إصدار GitHub v1.1.17، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.17 وversionCode 10117، ونفس شهادة توقيع 1.1.16).
-const UPDATE_FALLBACK_SHA256 = '82da493fd62f36207923351f8ee76769717dd534a6c7b0dfb5746df9d362e960';
+const UPDATE_FALLBACK_VERSION = '1.1.18';
+// بصمة asalh-najd-1.1.18.apk (إصدار GitHub v1.1.18، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.18 وversionCode 10118، ونفس شهادة توقيع 1.1.17).
+const UPDATE_FALLBACK_SHA256 = '7596a72388c00500c485bbb0c6fe19b3b2b9f40c0ea5e2c2bac4a73b121cf520';
 const UPDATE_FALLBACK_NOTES = [
-  'الإعدادات: قسم «العمولات والشراكات» وشريط تنقل بين الأقسام، ونافذة صرف العمولة تنبّه إن لم تُضبط شراكة البائع',
-  'لوحة الأرقام أبسط: الرؤى أولاً، والأقسام الثانوية مطويّة',
+  'تحديث التطبيق من داخله أسرع وأثبت: ينزل عبر خادمنا مع نسبة التقدّم، ولا يعلق عند تعثّر الشبكة',
+  'إن تعذّر التنزيل يظهر زر «تنزيل من المتصفح» مباشرة',
 ];
 
 function versionCodeOfName(v) {
