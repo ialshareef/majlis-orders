@@ -437,13 +437,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.18';
-// بصمة asalh-najd-1.1.18.apk (إصدار GitHub v1.1.18، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.18 وversionCode 10118، ونفس شهادة توقيع 1.1.17).
-const UPDATE_FALLBACK_SHA256 = '7596a72388c00500c485bbb0c6fe19b3b2b9f40c0ea5e2c2bac4a73b121cf520';
+const UPDATE_FALLBACK_VERSION = '1.1.19';
+// بصمة asalh-najd-1.1.19.apk (إصدار GitHub v1.1.19، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.19 وversionCode 10119، ونفس شهادة توقيع 1.1.18).
+const UPDATE_FALLBACK_SHA256 = 'f9013b33b0899ef5d5825eaf19463cdee5b16f0d6974dd3b3944459d2f88e9ba';
 const UPDATE_FALLBACK_NOTES = [
-  'تحديث التطبيق من داخله أسرع وأثبت: ينزل عبر خادمنا مع نسبة التقدّم، ولا يعلق عند تعثّر الشبكة',
-  'إن تعذّر التنزيل يظهر زر «تنزيل من المتصفح» مباشرة',
+  'أزرار الخيارات في بوت التصميم بحجم لمس ثابت مهما كان خط الجوال',
+  'تحديث التطبيق من داخله عبر خادمنا مع نسبة التقدّم وزر تنزيل احتياطي',
 ];
 
 function versionCodeOfName(v) {
