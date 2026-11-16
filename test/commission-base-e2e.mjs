@@ -216,10 +216,10 @@ try {
   salem = await personRow(page, 'سالم الموظف');
   ok(salem && salem['عمولة طلباته'] === '40.00', 'profit: العودة إلى صافي الربح تعيد الحساب (40)', salem);
 
-  /* ----- صرف العمولة: زر «تم الصرف» تحت مبلغ العمولة في قائمة الطلبات ----- */
+  /* ----- صرف العمولة: زر «لم تُصرف» تحت مبلغ العمولة في قائمة الطلبات ----- */
   await go(page, 'orders');
   const cell0 = await page.evaluate(() => { const b = document.querySelector('#ordersTable [data-commpay="o1"]'); return b ? { txt: b.textContent.trim(), inComm: !!b.closest('.c-comm') } : null; });
-  ok(cell0 && cell0.inComm && /تم الصرف/.test(cell0.txt), 'paid: زر «تم الصرف» تحت مبلغ العمولة في القائمة', cell0);
+  ok(cell0 && cell0.inComm && /لم تُصرف/.test(cell0.txt), 'paid: زر «لم تُصرف» (يفتح تسجيل الصرف) تحت مبلغ العمولة في القائمة', cell0);
   ok(await page.evaluate(() => !document.querySelector('#ordersTable [data-commpay="o2"]')), 'paid: لا زر لطلب بلا عمولة محسوبة (بلا تكاليف)');
   await page.evaluate(() => document.querySelector('#ordersTable [data-commpay="o1"]').click());
   await page.waitForFunction(() => !document.getElementById('modal').hidden && /صرف العمولة/.test(document.getElementById('modalTitle').textContent), { timeout: 10000 });

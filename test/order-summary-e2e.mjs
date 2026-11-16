@@ -260,13 +260,16 @@ try {
     const tag = tr.querySelector('.late-tag'), deliv = tr.querySelector('td.c-deliv'), comm = tr.querySelector('td.c-comm'), tot = tr.querySelector('td.c-total');
     const inside = (a, b) => a.left >= b.left - 0.5 && a.right <= b.right + 0.5 && a.top >= b.top - 0.5 && a.bottom <= b.bottom + 0.5;
     return { cost: vis('td.c-cost:not(.c-profit)'), profit: vis('td.c-profit'), comm: vis('td.c-comm'),
-      tagIn: !!tag && inside(R(tag), R(deliv)) && inside(R(deliv), R(tr)) && R(tag).top >= R(deliv.querySelector('.num')).bottom - 1,
-      tagTxt: tag ? tag.textContent : '', delivBg: getComputedStyle(deliv).backgroundColor, totBg: getComputedStyle(tot).backgroundColor,
+      tagIn: !!tag && inside(R(tag), R(deliv)) && inside(R(deliv), R(tr)),
+      tagTxt: tag ? tag.textContent : '',
+      // التاريخ كاملاً بلا قصّ (كان «026-10-22» مع خط الجوال الكبير)، والتوصيل سطر كامل
+      dateFull: (() => { const n = deliv.querySelector('.num'); return n.scrollWidth <= n.clientWidth + 1 && inside(R(n), R(deliv)) && inside(R(deliv), R(tr)); })(),
+      delivFull: R(deliv).width > R(tot).width * 1.8,
       commFull: R(comm).width > R(tot).width * 1.8 };
   });
   if (saveDir) { await page.evaluate(() => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-sum="o1"]')); document.querySelectorAll('.hj-tour').forEach((e) => e.remove()); tr.scrollIntoView({ block: 'start' }); }); await sleep(300); await page.screenshot({ path: path.join(saveDir, 'mobile-card.png') }); }
-  ok(card.tagIn && card.tagTxt === 'متأخر', 'mobile/card: شارة «متأخر» كاملة تحت تاريخ التوصيل وداخل البطاقة', card);
-  ok(card.delivBg === card.totBg, 'mobile/card: مربع التوصيل بنفس خلفية مربعات المبالغ', card);
+  ok(card.tagIn && card.tagTxt === 'متأخر', 'mobile/card: شارة «متأخر» كاملة داخل سطر التوصيل وداخل البطاقة', card);
+  ok(card.dateFull && card.delivFull, 'mobile/card: التوصيل سطر كامل وتاريخه ظاهر كاملاً بلا قصّ', card);
   ok(card.commFull, 'mobile/card: العمولة سطر كامل بلا فراغ بجانبها', card);
   ok(card.cost && /750\.00/.test(card.cost) && card.profit && /550\.00/.test(card.profit), 'mobile/card: بطاقة الطلب تعرض «التكلفة 750» و«صافي الربح 550» قبل الدخول', card);
   await page.browserContext().close();

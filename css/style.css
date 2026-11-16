@@ -3953,3 +3953,15 @@ body.portal { background: var(--bg); }
   .vs-src li > :nth-child(2) { grid-area: b; }
   .vs-src li > :nth-child(3) { grid-area: v; }
 }
+
+/* بطاقة الطلب في الجوال: التوصيل سطر كامل مثل العمولة («التوصيل 2026-10-22 متأخر») —
+   كان مربعاً ضيقاً يُقصّ فيه التاريخ مع خط الجوال الكبير، أو وحيداً في سطره بجانبه فراغ */
+@media (max-width: 960px) {
+  #ordersTable td.c-deliv { order: 10; grid-column: 1 / -1; display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px;
+    background: transparent; padding: 0 2px !important; white-space: normal; }
+  #ordersTable td.c-deliv::before { margin: 0; }
+  #ordersTable td.c-deliv .num { white-space: nowrap; }
+  #ordersTable td.c-deliv .late-tag { display: inline-block; margin: 0; }
+  #ordersTable td.c-comm { order: 11; }
+  #ordersTable td.row-actions { order: 12; }
+}

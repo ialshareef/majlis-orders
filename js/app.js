@@ -4952,7 +4952,7 @@ function docTitle(order) {
     if (can('admin.core')) {
       return p
         ? `<button type="button" class="comm-pay is-paid" data-commpay="${oid}" title="صُرفت ${esc(fmtDate(p.at))}${p.byName ? ' — ' + esc(p.byName) : ''} — اضغط للتفاصيل">${icon('check')}<span>صُرفت</span></button>`
-        : `<button type="button" class="comm-pay" data-commpay="${oid}" title="تسجيل أن العمولة صُرفت">${icon('wallet')}<span>تم الصرف</span></button>`;
+        : `<button type="button" class="comm-pay" data-commpay="${oid}" title="العمولة لم تُصرف بعد — اضغط لتسجيل صرفها">${icon('wallet')}<span>لم تُصرف</span></button>`;
     }
     return p ? `<span class="comm-pay is-paid ro">${icon('check')}<span>صُرفت</span></span>` : '<span class="comm-pay ro due">غير مصروفة</span>';
   }
