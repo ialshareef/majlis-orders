@@ -440,13 +440,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.19';
-// بصمة asalh-najd-1.1.19.apk (إصدار GitHub v1.1.19، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.19 وversionCode 10119، ونفس شهادة توقيع 1.1.18).
-const UPDATE_FALLBACK_SHA256 = 'f9013b33b0899ef5d5825eaf19463cdee5b16f0d6974dd3b3944459d2f88e9ba';
+const UPDATE_FALLBACK_VERSION = '1.1.20';
+// بصمة asalh-najd-1.1.20.apk (إصدار GitHub v1.1.20، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.20 وversionCode 10120، ونفس شهادة توقيع 1.1.19).
+const UPDATE_FALLBACK_SHA256 = '5ede034e1788925b051f5b8b74791c45db496de357f56894acf9a485e945a473';
 const UPDATE_FALLBACK_NOTES = [
-  'أزرار الخيارات في بوت التصميم بحجم لمس ثابت مهما كان خط الجوال',
-  'تحديث التطبيق من داخله عبر خادمنا مع نسبة التقدّم وزر تنزيل احتياطي',
+  'المصروفات والعهدة متاحة لكل الموظفين والمناديب، ويمكن سحبها لأي مستخدم من صلاحياته',
+  'أسماء بنود التكاليف وغيرها تظهر كاملة في الجوال بلا «…»',
 ];
 
 function versionCodeOfName(v) {
