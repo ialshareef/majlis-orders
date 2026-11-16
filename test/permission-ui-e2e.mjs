@@ -106,8 +106,8 @@ try {
   let page = await login('staff1');
   let nav = await navVisible(page);
   ok(nav.designs === true, 'staff/default: «تصاميم العملاء» ظاهرة (designs.view افتراضي)', nav);
-  ok(!nav.expenses && !nav.bi && !nav.items && !nav.users && !nav.settings && !nav.activity, 'staff/default: لا شاشة إدارية ولا مصروفات ولا تقارير تلقائياً', nav);
-  ok(await page.evaluate(() => [...document.querySelectorAll('#mainNav .sb-group')].slice(1).every((g) => g.hidden)), 'staff/default: عناوين الأقسام (المال، التقارير، الإدارة) مخفية حين لا صفحة تحتها');
+  ok(nav.expenses && !nav.bi && !nav.items && !nav.users && !nav.settings && !nav.activity, 'staff/default: لا شاشة إدارية ولا تقارير تلقائياً، والمصروفات والعهدة متاحة للجميع', nav);
+  ok(await page.evaluate(() => { const g = [...document.querySelectorAll('#mainNav .sb-group')]; const t = (x) => x.textContent.trim(); return g.filter((x) => /المال/.test(t(x))).every((x) => !x.hidden) && g.filter((x) => /التقارير|الإدارة/.test(t(x))).every((x) => x.hidden); }), 'staff/default: عنوان «المال» ظاهر (المصروفات)، وعناوين التقارير والإدارة مخفية حين لا صفحة تحتها');
   await go(page, 'orders');
   ok(await exists(page, '[data-cost="o2"]'), 'staff/default: «إضافة التكاليف» لطلبه (costs.add_own افتراضي)');
   ok(!(await exists(page, '[data-delo="o2"]')), 'staff/default: لا حذف لطلبه (orders.delete_own غير ممنوح)');

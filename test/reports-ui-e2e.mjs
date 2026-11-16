@@ -354,7 +354,7 @@ try {
   ok(nav.reports === true, 'staff/view_own: «التقارير» ظاهرة بالصلاحية الممنوحة');
   await go(page, 'reports');
   const st = await tabs(page);
-  ok(!st.includes('commissions') && !st.includes('expenses') && st.includes('pnl'), 'staff: لا تقرير عمولات ولا مصروفات (بلا صلاحيتهما)، وصافي الأرباح لطلباته', st);
+  ok(!st.includes('commissions') && st.includes('expenses') && st.includes('custody') && st.includes('pnl'), 'staff: لا تقرير عمولات (بلا صلاحيته)، ومصروفاته وعهدته (متاحة للجميع)، وصافي الأرباح لطلباته', st);
   ok(await page.evaluate(() => document.getElementById('repUser').hidden), 'staff: لا اختيار موظف آخر (طلباته فقط)');
   await pick(page, 'orders'); await range(page, 'm');
   const sr = await bodyRows(page);

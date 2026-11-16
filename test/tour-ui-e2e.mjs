@@ -93,7 +93,7 @@ ok(await P.evaluate(() => !document.querySelector('.hj-tour.show')), 'owner: «�
 const S = await app.login('staff1', { width: 1366, height: 860 }, { keepTour: true });
 const staffSteps = await walk(S, 'staff/desktop', 'staff-desktop');
 const st = staffSteps.map((s) => s.title);
-ok(!st.includes('الإدارة') && !st.includes('التقارير والتحليلات') && !st.includes('المال والمتابعة') && staffSteps.length < ownerSteps.length, 'staff: لا يرى خطوات أقسام لا يملك صلاحيتها', st);
+ok(!st.includes('الإدارة') && !st.includes('التقارير والتحليلات') && st.includes('المال والمتابعة') && staffSteps.length < ownerSteps.length, 'staff: لا يرى خطوات أقسام لا يملك صلاحيتها (والمصروفات متاحة له افتراضياً)', st);
 
 /* 3) المندوب — جوال */
 const M = await app.login('mand1', { width: 375, height: 812, isMobile: true, hasTouch: true }, { keepTour: true });
