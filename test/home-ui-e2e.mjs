@@ -179,6 +179,16 @@ try {
   await page.evaluate(() => document.querySelector('#mainNav [data-page="home"]').click()); await sleep(700);
   await page.evaluate(() => document.querySelector('#homeActions [data-hact="new"]').click()); await sleep(900);
   ok(await page.evaluate(() => document.body.dataset.page) === 'order', 'زر «طلب جديد» يفتح صفحة الطلب');
+  // فلتر «بلا تكاليف» في صفحة الطلبات: طلبات البيع التي لم تُسجَّل تكاليفها (عرض السعر خارجها)
+  await page.evaluate(() => document.querySelector('#mainNav [data-page="orders"]').click()); await sleep(1000);
+  const nc = await page.evaluate(() => { const c = document.getElementById('ordNoCostChip'); return { hidden: c.hidden, n: document.getElementById('ordNoCostN').textContent }; });
+  ok(!nc.hidden && nc.n === '4', 'الطلبات: شارة «بلا تكاليف» بعدد طلبات البيع بلا تكاليف (4، بلا عرض السعر)', nc);
+  await page.evaluate(() => document.getElementById('ordNoCostChip').click()); await sleep(600);
+  const rows = await page.evaluate(() => [...document.querySelectorAll('#ordersTable tbody tr [data-open]')].map((b) => b.dataset.open).sort().join());
+  ok(rows === 'fresh,late,over,owe' && await page.evaluate(() => document.getElementById('ordNoCostChip').getAttribute('aria-pressed') === 'true'), 'الطلبات: تفعيل «بلا تكاليف» يعرضها وحدها', rows);
+  await page.evaluate(() => document.getElementById('ordNoCostChip').click()); await sleep(500);
+  ok((await page.evaluate(() => document.querySelectorAll('#ordersTable tbody tr [data-open]').length)) === 5, 'الطلبات: إلغاء الفلتر يعيد كل الطلبات');
+  await page.evaluate(() => document.querySelector('#mainNav [data-page="home"]').click()); await sleep(500);
   await page.setViewport({ width: 390, height: 844 }); await sleep(500);
   ok(await page.evaluate(() => !!document.querySelector('#bottomNav [data-page="home"]') && getComputedStyle(document.getElementById('bottomNav')).display !== 'none'), 'الجوال: «الرئيسية» في الشريط السفلي');
   await page.evaluate(() => document.querySelector('#bottomNav [data-page="home"]').click()); await sleep(700);

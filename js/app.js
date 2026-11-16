@@ -4290,6 +4290,8 @@ function docTitle(order) {
   /** الحالات المختارة في الفلتر؛ فارغة = كل الحالات */
   const ordStatuses = new Set();
   let ordOverOnly = false;   // فلتر «مدفوع زائد»
+  let ordNoCostOnly = false;   // فلتر «بلا تكاليف»: طلبات بيع لم تُسجَّل تكاليفها (لمن يرى التكاليف)
+  const lacksCost = (o) => isSale(o) && canSeeCosts(o) && orderCost(o) === null;
   /* أقسام صفحة الطلبات (تبويبات): كل قسم مجموعة حالات جاهزة لفلتر الحالات نفسه */
   const ORD_TABS = { new: ['new'], work: ['progress', 'done'], delivered: ['delivered'], all: [] };
   function ordTabOf() {
@@ -4315,6 +4317,7 @@ function docTitle(order) {
     let list = db().orders.slice().sort((a, b) => (b.createdAt || '').localeCompare(a.createdAt || ''));
     if (f.statuses.size) list = list.filter((o) => f.statuses.has(o.status));
     if (ordOverOnly) list = list.filter((o) => overpaidBy(o) > 0);
+    if (ordNoCostOnly) list = list.filter(lacksCost);
     if (f.from) list = list.filter((o) => ordDate(o) >= f.from);
     if (f.to) list = list.filter((o) => ordDate(o) <= f.to);
     if (f.q) list = list.filter((o) => [o.number, o.customer?.name, o.customer?.phone, o.createdByName].some((v) => String(v || '').toLowerCase().includes(f.q)));
@@ -4352,7 +4355,7 @@ function docTitle(order) {
 
   function renderOrders() {
     const f = ordFilters();
-    const filtering = !!(f.q || f.from || f.to || f.statuses.size || ordOverOnly);
+    const filtering = !!(f.q || f.from || f.to || f.statuses.size || ordOverOnly || ordNoCostOnly);
     let list = filteredOrders();
     renderOrdCols();
     // شارة «مدفوع زائد»: تظهر ما دام هناك طلب مدفوعه أكبر من إجماليه (أو الفلتر مفعّل)
@@ -4363,6 +4366,14 @@ function docTitle(order) {
       $('#ordOverN').textContent = nOver;
       chip.classList.toggle('on', ordOverOnly);
       chip.setAttribute('aria-pressed', ordOverOnly ? 'true' : 'false'); }
+    // «بلا تكاليف»: تظهر لمن يرى التكاليف ما دام هناك طلب بيع بلا تكاليف (أو الفلتر مفعّل)
+    { const nNo = (db().orders || []).filter(lacksCost).length;
+      const chip = $('#ordNoCostChip');
+      if (!nNo && ordNoCostOnly) ordNoCostOnly = false;
+      chip.hidden = !nNo;
+      $('#ordNoCostN').textContent = nNo;
+      chip.classList.toggle('on', ordNoCostOnly);
+      chip.setAttribute('aria-pressed', ordNoCostOnly ? 'true' : 'false'); }
 
     $$('#ordStatusChips .chip').forEach((c) => {
       const on = ordStatuses.has(c.dataset.stf);
@@ -5109,9 +5120,11 @@ function docTitle(order) {
     renderOrders();
   }));
   $('#ordOverChip').addEventListener('click', () => { ordOverOnly = !ordOverOnly; ordersShown = PAGE_STEP; renderOrders(); });
+  $('#ordNoCostChip').addEventListener('click', () => { ordNoCostOnly = !ordNoCostOnly; ordersShown = PAGE_STEP; renderOrders(); });
   $('#ordClearFilters').addEventListener('click', () => {
     ordStatuses.clear();
     ordOverOnly = false;
+    ordNoCostOnly = false;
     $('#ordSearch').value = ''; $('#ordFrom').value = ''; $('#ordTo').value = '';
     ordersShown = PAGE_STEP;
     renderOrders();

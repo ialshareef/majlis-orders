@@ -373,6 +373,9 @@ button[data-del].del-danger:hover,
 .chip.chip-over { color: var(--danger); border-color: var(--danger); gap: 6px; }
 .chip.chip-over svg { width: 15px; height: 15px; }
 .chip.chip-over.on { background: var(--danger-soft); color: var(--danger); }
+.chip.chip-nocost { color: var(--warn); border-color: var(--warn); gap: 6px; }
+.chip.chip-nocost svg { width: 15px; height: 15px; }
+.chip.chip-nocost.on { background: var(--warn-soft); color: var(--warn); }
 .st-dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--dot, var(--ink-3)); flex: none; }
 
 /* المؤشر النابض — علامة «غير محفوظ» */
