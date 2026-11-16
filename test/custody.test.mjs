@@ -99,11 +99,16 @@ await ta('مبلغ غير صحيح يُرفض (صفر، سالب، نص، أكب
   assert.strictEqual((await call(env, '/api/custody', '1', { amount: 10, user_id: 'ghost' })).s, 400);
   assert.strictEqual(rows(env).length, 0);
 });
-await ta('بلا صلاحيات المصروفات: لا عرض ولا تسجيل', async () => {
+await ta('افتراضياً: الموظف والمندوب يسجّلان عهدتهما (المصروفات متاحة للجميع)', async () => {
   const env = mk();
+  assert.strictEqual((await call(env, '/api/custody', '2', { amount: 10 })).s, 200);
+  assert.strictEqual((await call(env, '/api/custody', '3', { amount: 20 })).s, 200);
+  assert.strictEqual((await call(env, '/api/custody', '2')).d.receipts.length, 1);
+});
+await ta('سحب صلاحيات المصروفات من مستخدم: لا عرض ولا تسجيل', async () => {
+  const env = mk({ grants: OWN.map((p) => ['2', p, 0]) });
   assert.strictEqual((await call(env, '/api/custody', '2')).s, 403);
   assert.strictEqual((await call(env, '/api/custody', '2', { amount: 10 })).s, 403);
-  assert.strictEqual((await call(env, '/api/custody', '3', { amount: 10 })).s, 403);
 });
 await ta('الجدول يُنشأ تلقائياً عند أول استخدام (لا خطوة يدوية)', async () => {
   const env = env0();

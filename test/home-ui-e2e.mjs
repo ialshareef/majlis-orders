@@ -49,11 +49,13 @@ const orders = [
   hord('fresh', 15, '1', 'المالك', { status: 'new', ago: 0 }),
 ];
 const env = envWith({
-  users: [U('1', 'owner', 'المالك', 'admin'), U('2', 'asim', 'عاصم', 'staff'), U('3', 'mand', 'مندوب', 'mandoub')],
+  users: [U('1', 'owner', 'المالك', 'admin'), U('2', 'asim', 'عاصم', 'staff'), U('3', 'mand', 'مندوب', 'mandoub'), U('4', 'noexp', 'بلا مصروفات', 'staff')],
   sessions: [], orders, counters: [{ key: 'order_no', value: 20 }], items: [],
   settings: [{ id: 1, data: JSON.stringify({ sellerRate: 10, shareRate: 5 }), updated_at: iso(-400) }],
 });
-for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses', 'user_permissions']) env.DB.tables.set(t, []);
+for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses']) env.DB.tables.set(t, []);
+// الموظف 4: سحب المالك منه صلاحيات المصروفات (المتاحة للجميع افتراضياً)
+env.DB.tables.set('user_permissions', ['expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own'].map((permission) => ({ user_id: '4', permission, value: 0, updated_by: '1', updated_at: iso(-1) })));
 env.ADMIN_INIT_PASSWORD = '';
 env.OWNER_USER_ID = '1';
 {
@@ -187,15 +189,22 @@ try {
   const sp = await login('asim');
   ok(await sp.evaluate(() => document.body.dataset.page) === 'home', 'الموظف: يبدأ من الرئيسية');
   const sacts = await sp.evaluate(() => [...document.querySelectorAll('#homeActions [data-hact]')].map((b) => b.dataset.hact));
-  ok(sacts.includes('new') && !sacts.includes('expense') && !sacts.includes('receipt'), 'الموظف: لا أزرار مصروفات بلا صلاحية', sacts);
+  ok(sacts.includes('new') && sacts.includes('expense') && sacts.includes('receipt'), 'الموظف: المصروفات والعهدة متاحة افتراضياً', sacts);
+  ok(await sp.evaluate(() => !document.querySelector('#mainNav [data-page="expenses"]').hidden), 'الموظف: «المصروفات والعهدة» في القائمة');
   const smap = await sp.evaluate(() => [...document.querySelectorAll('#homeMap [data-hgo]')].map((b) => b.dataset.hgo));
   ok(!smap.includes('settings') && !smap.includes('users') && !smap.includes('items') && smap.includes('orders'), 'الموظف: خريطة الأقسام بلا الإدارة', smap);
   await sp.browserContext().close();
 
+  /* ----- موظف سُحبت منه المصروفات ----- */
+  const np = await login('noexp');
+  const nacts = await np.evaluate(() => [...document.querySelectorAll('#homeActions [data-hact]')].map((b) => b.dataset.hact));
+  ok(!nacts.includes('expense') && !nacts.includes('receipt') && await np.evaluate(() => document.querySelector('#mainNav [data-page="expenses"]').hidden), 'سحب الصلاحية: لا مصروفات في القائمة ولا الأزرار', nacts);
+  await np.browserContext().close();
+
   /* ----- المندوب ----- */
   const mp = await login('mand');
   const mmap = await mp.evaluate(() => [...document.querySelectorAll('#homeMap [data-hgo]')].map((b) => b.dataset.hgo));
-  ok(!mmap.includes('designs') && !mmap.includes('settings') && mmap.includes('order'), 'المندوب: أقسامه فقط', mmap);
+  ok(!mmap.includes('designs') && !mmap.includes('settings') && mmap.includes('order') && mmap.includes('expenses'), 'المندوب: أقسامه فقط ومعها المصروفات', mmap);
   await mp.browserContext().close();
 } catch (e) {
   fail++; console.log('FAIL  استثناء: ' + (e && e.stack || e));

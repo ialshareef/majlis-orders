@@ -3953,5 +3953,3 @@ body.portal { background: var(--bg); }
   .vs-src li > :nth-child(2) { grid-area: b; }
   .vs-src li > :nth-child(3) { grid-area: v; }
 }
-/* اسم العميل الطويل في جدول الطلبات (الحاسب): سطران بدل «…» من أول سطر */
-#ordersTable td.c-cust b { white-space: normal; overflow: hidden; text-overflow: clip; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow-wrap: anywhere; }

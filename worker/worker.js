@@ -116,12 +116,15 @@ const ROLE_PERMISSIONS = Object.freeze({
     'profit.view_own',
     'payments.add',
     'designs.view',
+    // المصروفات والعهدة متاحة للجميع افتراضياً (مصروفاته هو فقط) — وتُسحب لأي مستخدم من نافذة صلاحياته
+    'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own',
   ]),
   mandoub: new Set([
     'orders.view_own', 'orders.create', 'orders.edit_own',
     'costs.view_own', 'costs.add_own', 'costs.edit_own',
     'commission.view_own',
     'payments.add',
+    'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own',
   ]),
 });
 // hasPerm: defaults + overrides; fail-closed on load failure.

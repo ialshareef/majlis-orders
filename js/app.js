@@ -347,8 +347,8 @@
      المصدر: صلاحيات المستخدم الفعّالة من الخادم (Store.can). الوضع المحلي بلا خادم:
      المدير كل شيء، وغيره افتراضيات دوره (نفس افتراضيات الخادم). */
   const LOCAL_ROLE_DEFAULTS = {
-    staff: ['orders.view_own', 'orders.create', 'orders.edit_own', 'costs.view_own', 'costs.add_own', 'costs.edit_own', 'profit.view_own', 'payments.add', 'designs.view'],
-    mandoub: ['orders.view_own', 'orders.create', 'orders.edit_own', 'costs.view_own', 'costs.add_own', 'costs.edit_own', 'commission.view_own', 'payments.add'],
+    staff: ['orders.view_own', 'orders.create', 'orders.edit_own', 'costs.view_own', 'costs.add_own', 'costs.edit_own', 'profit.view_own', 'payments.add', 'designs.view', 'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own'],
+    mandoub: ['orders.view_own', 'orders.create', 'orders.edit_own', 'costs.view_own', 'costs.add_own', 'costs.edit_own', 'commission.view_own', 'payments.add', 'expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own'],
   };
   const can = (p) => !!currentUser && (Store.isRemote ? Store.can(p) : (isAdmin() || (LOCAL_ROLE_DEFAULTS[currentUser.role] || []).includes(p)));
   const canAny = (...ps) => ps.some(can);

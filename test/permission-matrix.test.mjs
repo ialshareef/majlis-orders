@@ -213,9 +213,15 @@ await ta('mandoubs report: مدير مسحوب منه costs.view_all لا يرى
 
 /* ---------- المصروفات ---------- */
 const exp = (body) => Object.assign({ name: 'نقل وتركيب', amount: 250, category: 'نقل', expense_date: '2026-11-02' }, body);
-await ta('expenses: الموظف بلا منح لا يرى ولا يضيف (لا شاشة تُمنح تلقائياً)', async () => {
-  assert.strictEqual((await call(seeded(), '/api/expenses', '2')).status, 403);
-  assert.strictEqual((await call(seeded(), '/api/expenses', '2', exp())).status, 403);
+await ta('expenses: متاحة للموظف افتراضياً (مصروفاته فقط)، وسحبها من صلاحياته يمنعها', async () => {
+  const env = seeded();
+  assert.strictEqual((await call(env, '/api/expenses', '2', exp())).status, 200);
+  const l = await call(env, '/api/expenses', '2');
+  assert.strictEqual(l.status, 200);
+  assert.ok(l.data.expenses.every((e) => e.created_by === '2'), 'يرى مصروفاته فقط');
+  const off = seeded(['expenses.view_own', 'expenses.add_own', 'expenses.edit_own', 'expenses.delete_own'].map((p) => ['2', p, 0]));
+  assert.strictEqual((await call(off, '/api/expenses', '2')).status, 403);
+  assert.strictEqual((await call(off, '/api/expenses', '2', exp())).status, 403);
 });
 await ta('expenses: الإضافة تحفظ التاريخ والتصنيف والربط بطلب، والقائمة تعيد الاسم ورقم الطلب', async () => {
   const env = seeded();
