@@ -432,13 +432,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.15';
-// بصمة asalh-najd-1.1.15.apk (إصدار GitHub v1.1.15، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.15 وversionCode 10115، ونفس شهادة توقيع 1.1.14).
-const UPDATE_FALLBACK_SHA256 = 'c9fb180a98866e3701a2638910d9055ad34694e282eb7a86db8b0a29a4bfbbad';
+const UPDATE_FALLBACK_VERSION = '1.1.16';
+// بصمة asalh-najd-1.1.16.apk (إصدار GitHub v1.1.16، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.16 وversionCode 10116، ونفس شهادة توقيع 1.1.15).
+const UPDATE_FALLBACK_SHA256 = 'd3229976cae36aa7128d1d5e24fa2d6670c524bc9b3779508956af81b9dc9cb3';
 const UPDATE_FALLBACK_NOTES = [
-  'زر «مشاركة واتساب» بجانب كل تصدير PDF لإرسال الملف مباشرة',
-  'العهدة: سطر واضح «استلمت − صرفت = المتبقي» وكشف الحركة بالرصيد بعد كل حركة',
+  'صفحة «الرئيسية» الجديدة: أزرار سريعة، أرقام الشهر، وما يحتاج متابعتك، وآخر الطلبات',
+  'ترتيب أوضح للقائمة والتقارير، وبطاقات أخف للطلبات والعملاء في الجوال',
 ];
 
 function versionCodeOfName(v) {
