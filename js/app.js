@@ -433,12 +433,16 @@
     startNewOrder(true);
     resetNotifState();
     renderNotifications();
-    showPage('order');
+    showPage('home');
     // شارة تنبيهات واتساب الجاهزة — طلب خفيف صامت لمن يملك الخدمة فقط
     // وجلسة إرسال لم تكتمل (أُغلق التطبيق أثناءها) تُعرض للاستئناف
     setTimeout(() => { try { if (Store.isRemote && canPage('whatsapp')) waLoad().then(() => { if (wa.openSends.length && can(WA_P.send)) waResumeNudge(); }).catch(() => {}); } catch (_) { /* */ } }, 1200);
     requestAnimationFrame(() => designer.resize());
-    setTimeout(() => offerDraftRestore(pending), 400);
+    setTimeout(() => {
+      offerDraftRestore(pending);
+      // مسودة لم تصل للخادم: تنبيهها في صفحة الطلب، فننتقل إليها بدل الرئيسية
+      if (!$('#draftBanner').hidden && document.body.dataset.page === 'home') showPage('order');
+    }, 400);
     // فحص تحديث التطبيق تلقائياً: مرة واحدة لكل تشغيل، صامت تماماً عند أي فشل،
     // وبلا أي تأثير على الدخول أو الطلب الحالي (التفاصيل في js/update.js)
     setTimeout(() => {
@@ -589,6 +593,7 @@
     if (name !== 'order') designer.select(null);
     document.body.dataset.page = name;   // مساحة شريط أزرار الطلب في الجوال تخص صفحة الطلب وحدها
     closeDrawer();
+    if (name === 'home') renderHome();
     if (name === 'orders') renderOrders();
     if (name === 'customers') renderCustomers();
     if (name === 'activity') renderActivity();
@@ -599,7 +604,7 @@
     if (name === 'designs') renderDesigns();
     if (name === 'about') renderAbout();
     if (name === 'visits') { try { renderVisitStats(); } catch (_) { /* noop */ } }
-    if (['orders', 'customers', 'activity', 'items', 'users', 'bi', 'reports', 'mandoubs', 'designs'].includes(name)) syncFromServer();
+    if (['home', 'orders', 'customers', 'activity', 'items', 'users', 'bi', 'reports', 'mandoubs', 'designs'].includes(name)) syncFromServer();
     if (name === 'items') renderItems();
     if (name === 'users') renderUsers();
     if (name === 'expenses') renderExpenses();
@@ -608,6 +613,95 @@
     window.scrollTo({ top: 0 });
   }
   $$('#mainNav button[data-page], #bottomNav button[data-page]').forEach((b) => b.addEventListener('click', () => showPage(navTarget(b))));
+
+  /* ---------------- الرئيسية ----------------
+     نقطة البداية لكل مستخدم: ماذا أفعل الآن (أزرار سريعة حسب الصلاحيات)، أرقام الشهر،
+     ما يحتاج متابعة (تأخر التسليم، مدفوع زائد، توصيل بلا تحصيل)، آخر الطلبات، وخريطة الأقسام.
+     كل الأرقام من الطلبات التي يراها المستخدم أصلاً (db().orders بعد صلاحيات الخادم). */
+  const HOME_MAP = [
+    { page: 'order', t: 'الطلب الحالي', d: 'ارسم المجلس وسعّره وسجّل العميل والدفعات', i: 'pen' },
+    { page: 'orders', t: 'جميع الطلبات', d: 'ابحث في الطلبات وغيّر حالتها وتابع المتبقي', i: 'list' },
+    { page: 'designs', t: 'تصاميم العملاء', d: 'تصاميم وصلت من صفحة «صمّم مجلسك» لتحويلها لطلبات', i: 'sofa' },
+    { page: 'customers', t: 'العملاء', d: 'سجل كل عميل وطلباته وما عليه', i: 'user' },
+    { page: 'expenses', t: 'المصروفات والعهدة', d: 'ما استلمته وما صرفته والمتبقي', i: 'wallet' },
+    { page: 'mandoubs', t: 'المناديب والعمولات', d: 'المناديب ومستوياتهم ونسبهم', i: 'truck' },
+    { page: 'reports', t: 'التقارير والتحليلات', d: 'تقارير جاهزة PDF وExcel ولوحة الأرقام', i: 'chart' },
+    { page: 'whatsapp', t: 'إشعارات واتساب', d: 'رسائل جاهزة للعملاء والفريق', i: 'whatsapp' },
+    { page: 'items', t: 'الأصناف والأسعار', d: 'الكنب والأقمشة والإسفنج وأسعارها', i: 'tag' },
+    { page: 'users', t: 'المستخدمون ونشاطهم', d: 'الحسابات والصلاحيات والنسب', i: 'users' },
+    { page: 'settings', t: 'الإعدادات', d: 'بيانات المحل والضريبة والنسب والنسخ الاحتياطي', i: 'settings' },
+  ];
+  async function homeOpenOrder(o) {
+    if (!o) return;
+    if (dirty && !(await confirmDlg('فتح طلب', 'سيتم تجاهل التغييرات غير المحفوظة في الطلب الحالي. متابعة؟'))) return;
+    loadOrder(o);
+  }
+  const homeNavShown = (p) => { const b = $(`#mainNav [data-page="${p}"]`); return !!b && !b.hidden; };
+  function renderHome() {
+    if (!currentUser) return;
+    const h = new Date().getHours();
+    $('#homeHello').textContent = `${h < 12 ? 'صباح الخير' : 'مساء الخير'}، ${currentUser.name || ''}`;
+    $('#homeSub').textContent = `${ROLES[currentUser.role] || ''} • ${fmtDate(today())} — اختر ما تريد فعله، أو تابع ما يحتاج انتباهك.`;
+    const cu = esc(currency());
+    // أزرار سريعة: ما يملكه المستخدم فقط
+    const canExp = canAny('expenses.add_own', 'expenses.add_all') && homeNavShown('expenses');
+    const acts = [
+      can('orders.create') && { id: 'new', t: 'طلب جديد', i: 'plus', primary: true },
+      { id: 'orders', t: 'الطلبات', i: 'list' },
+      canExp && { id: 'expense', t: 'إضافة مصروف', i: 'wallet' },
+      canExp && { id: 'receipt', t: 'تسجيل استلام', i: 'money' },
+      canPage('designs') && homeNavShown('designs') && { id: 'designs', t: 'تصاميم العملاء', i: 'sofa' },
+      canPage('reports') && homeNavShown('reports') && { id: 'reports', t: 'التقارير', i: 'chart' },
+    ].filter(Boolean);
+    $('#homeActions').innerHTML = acts.map((a) => `<button type="button" class="btn ${a.primary ? 'primary' : ''} home-act" data-hact="${a.id}">${icon(a.i)}<span>${a.t}</span></button>`).join('');
+    $$('[data-hact]', $('#homeActions')).forEach((b) => b.addEventListener('click', async () => {
+      const k = b.dataset.hact;
+      if (k === 'new') { await startNewOrder(); showPage('order'); }
+      else if (k === 'expense') { showPage('expenses'); expenseForm(null); }
+      else if (k === 'receipt') { showPage('expenses'); receiptForm(null); }
+      else showPage(k);
+    }));
+    // أرقام: هذا الشهر (المبيعات بلا العروض والملغاة)، والمتبقي، والمفتوح
+    const orders = db().orders || [];
+    const mStart = today().slice(0, 8) + '01';
+    const month = orders.filter((o) => isSale(o) && ordDate(o) >= mStart);
+    const remOf = (o) => remainingOf(o.total, paidOf(o));
+    const owed = orders.filter((o) => isSale(o) && remOf(o) > 0.004);
+    const open = orders.filter((o) => isOpen(o) && o.status !== 'quote');
+    const quotes = orders.filter((o) => o.status === 'quote');
+    const sum = (l, f) => money(l.reduce((s, o) => s + num(f(o)), 0));
+    $('#homeKpis').innerHTML = `
+      <div class="stat"><span>طلبات هذا الشهر</span><b>${month.length}</b><small>بقيمة ${fmt(sum(month, (o) => o.total))} ${cu}</small></div>
+      <div class="stat"><span>المتبقي على العملاء</span><b class="${owed.length ? 'is-warn' : ''}">${fmt(sum(owed, remOf))}</b><small>${owed.length} طلب</small></div>
+      <div class="stat"><span>طلبات قيد العمل</span><b>${open.length}</b><small>لم تُسلَّم بعد</small></div>
+      <div class="stat"><span>عروض أسعار مفتوحة</span><b>${quotes.length}</b><small>لا تدخل في المبيعات</small></div>`;
+    // يحتاج متابعتك: الأهم أولاً
+    const attn = [];
+    orders.forEach((o) => {
+      const who = esc((o.customer && o.customer.name) || 'بدون اسم');
+      if (isOpen(o) && o.status !== 'quote' && o.deliveryDate && daysUntil(o.deliveryDate) < 0) attn.push({ o, w: 3, cls: 'bad', t: `تأخر التسليم ${-daysUntil(o.deliveryDate)} يوم`, who });
+      const over = overpaidBy(o);
+      if (over) attn.push({ o, w: 2, cls: 'bad', t: `مدفوع زيادة ${fmt(over)} ${cu}`, who });
+      if (o.status === 'delivered' && remOf(o) > 0.004) attn.push({ o, w: 1, cls: 'warn', t: `سُلِّم وعليه ${fmt(remOf(o))} ${cu}`, who });
+    });
+    attn.sort((a, b) => b.w - a.w || String(b.o.createdAt || '').localeCompare(String(a.o.createdAt || '')));
+    $('#homeAttnN').textContent = attn.length ? `${attn.length} بند` : '';
+    $('#homeAttn').innerHTML = attn.length
+      ? `<ul class="home-list">${attn.slice(0, 8).map((x, i) => `<li><button type="button" data-hattn="${i}"><span class="dot ${x.cls}"></span><span class="hl-main"><b>#${esc(x.o.number || '—')} — ${x.who}</b><small>${x.t}</small></span>${icon('chevron')}</button></li>`).join('')}</ul>${attn.length > 8 ? `<p class="hint">و${attn.length - 8} غيرها — راجعها من «جميع الطلبات».</p>` : ''}`
+      : `<p class="home-empty">${icon('check')} لا شيء متأخر أو معلّق الآن.</p>`;
+    $$('[data-hattn]', $('#homeAttn')).forEach((b) => b.addEventListener('click', () => homeOpenOrder(attn[+b.dataset.hattn].o)));
+    // آخر الطلبات
+    const recent = orders.slice().sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || ''))).slice(0, 6);
+    $('#homeRecent').innerHTML = recent.length
+      ? `<ul class="home-list">${recent.map((o, i) => `<li><button type="button" data-hrec="${i}"><span class="hl-main"><b>#${esc(o.number || '—')} — ${esc((o.customer && o.customer.name) || 'بدون اسم')}</b><small>${esc(STATUS[o.status] || '')} • ${esc(fmtDate(ordDate(o)))}</small></span><span class="hl-amt">${fmt(o.total)}</span>${icon('chevron')}</button></li>`).join('')}</ul>`
+      : `<p class="home-empty">لا توجد طلبات بعد. ابدأ من «طلب جديد».</p>`;
+    $$('[data-hrec]', $('#homeRecent')).forEach((b) => b.addEventListener('click', () => homeOpenOrder(recent[+b.dataset.hrec])));
+    // خريطة الأقسام المتاحة لهذا المستخدم
+    $('#homeMap').innerHTML = HOME_MAP.filter((m) => canPage(m.page) && homeNavShown(m.page))
+      .map((m) => `<button type="button" class="home-tile" data-hgo="${m.page}">${icon(m.i)}<span><b>${m.t}</b><small>${m.d}</small></span></button>`).join('');
+    $$('[data-hgo]', $('#homeMap')).forEach((b) => b.addEventListener('click', () => showPage(b.dataset.hgo)));
+  }
+  $('#homeAllOrders').addEventListener('click', () => showPage('orders'));
 
   /* القائمة الجانبية في الجوال: رأس الشريط الجانبي شريط علوي، وأقسامه لوحة منزلقة.
      الشريط السفلي يبقي الأكثر استعمالاً، و«القائمة» تفتح بقية الأقسام. */
@@ -4341,7 +4435,7 @@ function docTitle(order) {
         ${canAny('commission.view_own', 'commission.view_all') ? `<td data-label="العمولة" class="num c-money c-comm${canSeeComm(o) && comm !== null ? '' : ' is-empty'}">${canSeeComm(o) && comm !== null ? `<span class="comm-amt">${fmt(comm)}</span>` + commPayBadge(o, comm) : dash}</td>` : ''}
         <td data-label="المدفوع" class="num c-money c-paid">${fmt(o.paid)}</td>
         <td data-label="المتبقي" class="num c-money c-rem ${rem > 0.004 && o.status !== 'quote' ? 'warn-num' : ''}">${fmt(rem)}</td>
-        <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
+        <td data-label="التوصيل" class="c-deliv ${late ? 'late' : ''}${o.deliveryDate ? '' : ' no-date'}"><span class="num">${o.deliveryDate ? esc(fmtDate(o.deliveryDate)) : '—'}</span>${late ? '<span class="late-tag">متأخر</span>' : ''}</td>
         <td data-label="الحالة" class="c-status"><label class="status-chip sm" data-status="${st}"><i class="status-dot"></i><select data-st="${oid}" aria-label="حالة الطلب ${esc(o.number || '')}" ${canEditOrder(o) ? '' : 'disabled title="الطلب لموظف آخر"'}>${Object.entries(STATUS).map(([k, v]) => `<option value="${k}" ${o.status === k ? 'selected' : ''}>${v}</option>`).join('')}</select><svg class="status-caret"><use href="#i-chevron-down"/></svg></label></td>
         <td class="row-actions"><span class="ra">
           <button class="btn small" data-open="${oid}">${canEditOrder(o) ? `${icon('pen')} فتح` : `${icon('lock')} عرض`}</button>
@@ -5838,10 +5932,8 @@ function docTitle(order) {
         </tbody></table></div>` : '<p class="hint">لا توجد عهد مسجّلة بعد.</p>'}`;
     }
     box.innerHTML = body + `<div class="btn-row cust-actions">
-        ${canAdd ? `<button class="btn small" id="custAdd">${icon('plus')} تسجيل استلام</button>` : ''}
         ${L.length ? `<button class="btn small primary" id="custWa">${icon('whatsapp')} مشاركة PDF واتساب</button><button class="btn small" id="custPdf">${icon('download')} تنزيل PDF</button>` : ''}
       </div>${custErr ? `<p class="error">${esc(custErr)}</p>` : ''}`;
-    const add = $('#custAdd', box); if (add) add.onclick = () => receiptForm(null, focus);
     const pdf = $('#custPdf', box); if (pdf) pdf.onclick = () => exportCustodyPdf(focus, pdf);
     const wa = $('#custWa', box); if (wa) wa.onclick = () => exportCustodyPdf(focus, wa, true);
     $$('[data-custedit]', box).forEach((x) => { x.onclick = () => receiptForm(custList.find((r) => r.id === x.dataset.custedit)); });
@@ -6683,6 +6775,7 @@ function docTitle(order) {
       </tr>`;
     }).join('');
     $('#desPortalUrl').textContent = publicPortalUrl();
+    { const cb = $('#desCopyUrl'); if (cb && !cb.dataset.w) { cb.dataset.w = '1'; cb.addEventListener('click', () => srcCopy(publicPortalUrl())); } }
     $('#desEmpty').hidden = list.length > 0;
     $$('[data-desopen]', tb).forEach((b) => b.addEventListener('click', () => openDesign(b.dataset.desopen)));
     $$('[data-desconv]', tb).forEach((b) => b.addEventListener('click', () => convertDesignFlow(b.dataset.desconv)));
@@ -9094,6 +9187,12 @@ async function exportExpensesXlsx() {
     }).join('');
   }
 
+  const REP_GROUPS = [
+    { t: 'الطلبات والعملاء', ids: ['orders', 'pending', 'receivables', 'customers'] },
+    { t: 'المال', ids: ['pnl', 'payments', 'expenses', 'custody'] },
+    { t: 'الفريق والعمولات', ids: ['commissions', 'staff'] },
+    { t: 'الموقع', ids: ['visits'] },
+  ];
   function renderReports() {
     if (!canPage('reports') || !window.Reports) return;
     // المصروفات لا تصل مع المزامنة: تُجلب (مرة كل دقيقة على الأكثر) ثم يُعاد الرسم
@@ -9106,7 +9205,14 @@ async function exportExpensesXlsx() {
     const ctx = repCtx();
     const cat = Reports.catalog(ctx);
     if (!cat.some((c) => c.id === repId)) repId = cat[0].id;
-    $('#repCatalog').innerHTML = cat.map((c) => `<button type="button" class="rep-tab${c.id === repId ? ' on' : ''}" role="tab" aria-selected="${c.id === repId}" data-rep="${esc(c.id)}"><b>${esc(c.title)}</b><small>${esc(c.desc)}</small></button>`).join('');
+    // فهرس التقارير في مجموعات: يجد المستخدم الجديد التقرير من موضوعه بدل قراءة كل البطاقات
+    const repTab = (c) => `<button type="button" class="rep-tab${c.id === repId ? ' on' : ''}" role="tab" aria-selected="${c.id === repId}" data-rep="${esc(c.id)}"><b>${esc(c.title)}</b><small>${esc(c.desc)}</small></button>`;
+    const placed = new Set();
+    $('#repCatalog').innerHTML = REP_GROUPS.map((g) => {
+      const items = cat.filter((c) => g.ids.includes(c.id));
+      items.forEach((c) => placed.add(c.id));
+      return items.length ? `<span class="rep-group" role="presentation">${esc(g.t)}</span>${items.map(repTab).join('')}` : '';
+    }).join('') + cat.filter((c) => !placed.has(c.id)).map(repTab).join('');
     $$('#repCatalog [data-rep]').forEach((b) => b.addEventListener('click', () => { repId = b.dataset.rep; repStore.set('id', repId); renderReports(); }));
 
     // الموظفون والمناديب: من المستخدمين ومن الطلبات (مستخدم محذوف له طلبات)

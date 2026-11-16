@@ -203,7 +203,7 @@ try {
   await op.evaluate(() => { const s = document.getElementById('expUser'); s.value = '2'; s.dispatchEvent(new Event('change')); });
   await sleep(500);
   ok(/عهدة عاصم/.test(await box(op)), 'المالك: اختيار عاصم يعرض عهدته', await box(op));
-  await op.evaluate(() => document.getElementById('custAdd').click());
+  await op.evaluate(() => document.getElementById('btnAddReceipt').click());
   await op.waitForFunction(() => !!document.getElementById('rcAmount'), { timeout: 10000 });
   ok(await op.evaluate(() => document.getElementById('rcUser').value === '2'), 'المالك: المستلِم محدد مسبقاً (عاصم)');
   await op.type('#rcAmount', '300');

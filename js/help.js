@@ -142,6 +142,7 @@
         h: 'مراحل الطلب',
         p: 'الطلب يمر بخمس مراحل بالترتيب: التصميم، ثم التسعير، ثم العميل، ثم الدفع، ثم التصدير. انتقل بينها من هذا الشريط.',
         tip: 'المبالغ تُحسب تلقائياً من الأصناف والكميات.',
+        page: 'order',
         targets: [{ sel: '#stepNav' }],
       },
       {
@@ -248,6 +249,7 @@
       {
         h: 'مراحل الطلب',
         p: 'التصميم، ثم التسعير، ثم العميل، ثم الدفع، ثم التصدير — انتقل بينها من هذا الشريط.',
+        page: 'order',
         targets: [{ sel: '#stepNav' }],
       },
       {
@@ -465,6 +467,11 @@
     /* حلّ هدف الخطوة: أول مرشح صالح (عنصر ثم منطقة رسم). تُعيد
        {rect, p} أو {rect:null, p} (بطاقة م centered) أو null (تجاوز). */
     resolveTarget(step) {
+      // خطوة تخص صفحة بعينها (page): تُفتح الصفحة أولاً — التطبيق يبدأ من «الرئيسية»
+      if (step.page && document.body && document.body.dataset.page && document.body.dataset.page !== step.page) {
+        const nb = document.querySelector('#mainNav [data-page="' + step.page + '"]');
+        if (nb) { try { nb.click(); } catch (_) { /* */ } }
+      }
       const dz = ctxDesigner();
       if (step.skipIf === 'door' && !firstOpening(dz)) return null;
       const targets = step.targets || (step.sel ? [{ sel: step.sel }] : []);

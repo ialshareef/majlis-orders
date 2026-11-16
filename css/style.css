@@ -1850,7 +1850,8 @@ body.modal-open { overflow: hidden; }
 .set-head p { margin-top: 5px; font-size: .875rem; color: var(--ink-3); line-height: 1.7; }
 .set-body { min-width: 0; }
 .set-body > label:last-child, .set-body > .row2:last-child label { margin-bottom: 0; }
-.set-save { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 4px 2px; }
+.set-save { display: flex; align-items: center; justify-content: flex-end; gap: 12px; padding: 10px 14px;
+  position: sticky; bottom: 12px; z-index: 5; background: var(--surface); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-md); }
 .set-save .hint { margin-inline-end: auto; }
 .set-stats { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 14px; font-size: .85rem; color: var(--ink-3); }
 .set-stats b { color: var(--ink); font-weight: 600; }
@@ -3808,4 +3809,101 @@ body.portal { background: var(--bg); }
   .sum-table.responsive tr.sum-tot { background: var(--surface-2); border-top: 2px solid var(--line); }
   .sum-table.responsive tr.sum-tot td { font-weight: 700; }
   .sum-table.responsive tr.sum-tot td.sum-lead { margin-bottom: 0; }
+}
+
+/* =====================================================================
+   الرئيسية: نقطة البداية (أزرار سريعة، أرقام، يحتاج متابعة، آخر الطلبات، خريطة الأقسام)
+   ===================================================================== */
+.home-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 16px; }
+.home-act { min-height: 44px; }
+.home-kpis .stat b.is-warn { color: var(--warn); }
+.home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-bottom: 16px; }
+.home-card { padding: 14px 16px; min-width: 0; }
+.home-h { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.home-h h3 { margin: 0; font-size: 1.02rem; }
+.home-list { list-style: none; margin: 0; padding: 0; display: grid; }
+.home-list li + li { border-top: 1px solid var(--line-soft, var(--line)); }
+.home-list button {
+  width: 100%; display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 8px 4px;
+  background: transparent; border: 0; color: inherit; font: inherit; text-align: start; cursor: pointer; border-radius: var(--r-sm);
+}
+.home-list button:hover { background: var(--surface-2); }
+.home-list button:focus-visible { outline: none; box-shadow: var(--focus); }
+.home-list button > svg { width: 16px; height: 16px; flex: none; color: var(--ink-3); }
+.hl-main { flex: 1; min-width: 0; display: grid; }
+.hl-main b { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hl-main small { color: var(--ink-3); font-size: .8rem; }
+.hl-amt { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+.home-list .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; background: var(--warn); }
+.home-list .dot.bad { background: var(--danger); }
+.home-empty { display: flex; align-items: center; gap: 8px; color: var(--ink-3); margin: 6px 0; }
+.home-empty svg { width: 18px; height: 18px; color: var(--ok, var(--accent)); }
+.home-map { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.home-tile {
+  display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; min-height: 56px; text-align: start;
+  background: var(--surface-2); border: 1px solid var(--line); border-radius: var(--r); color: inherit; font: inherit; cursor: pointer;
+}
+.home-tile:hover { border-color: var(--accent-line, var(--accent)); }
+.home-tile:focus-visible { outline: none; box-shadow: var(--focus); }
+.home-tile > svg { width: 20px; height: 20px; flex: none; color: var(--accent); margin-top: 2px; }
+.home-tile span { display: grid; min-width: 0; }
+.home-tile b { font-weight: 600; }
+.home-tile small { color: var(--ink-3); font-size: .78rem; line-height: 1.5; }
+@media (max-width: 960px) {
+  .home-grid { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .home-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+  .home-actions .home-act:first-child.primary { grid-column: 1 / -1; }
+  .home-map { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* =====================================================================
+   الجوال: بطاقات أخف للطلبات والعملاء، وشريط أرقام يمرَّر أفقياً بدل مربعات تملأ الشاشة
+   ===================================================================== */
+@media (max-width: 960px) {
+  #ordersStats, #custStats, .home-kpis {
+    flex-wrap: nowrap; overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+  }
+  #ordersStats::-webkit-scrollbar, #custStats::-webkit-scrollbar, .home-kpis::-webkit-scrollbar { display: none; }
+  #ordersStats .stat, #custStats .stat, .home-kpis .stat { flex: 0 0 auto; min-width: 42%; scroll-snap-align: start; padding: 10px 12px; }
+  #ordersStats .stat b, #custStats .stat b, .home-kpis .stat b { font-size: 1.08rem; }
+
+  /* بطاقة الطلب: الرقم والحالة، ثم العميل، ثم الإجمالي والمدفوع والمتبقي، ثم التفاصيل بخط أصغر */
+  #ordersTable tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 8px; padding: 10px 12px; }
+  #ordersTable td.c-cust b { display: inline; font-size: .98rem; }
+  #ordersTable td.c-cust .sub { display: inline; margin-inline-start: 6px; }
+  #ordersTable td.c-money { padding: 5px 8px !important; font-size: .9rem; }
+  #ordersTable td.c-money::before, #ordersTable td.c-deliv::before { font-size: .7rem; }
+  #ordersTable td.c-cost, #ordersTable td.c-profit, #ordersTable td.c-comm, #ordersTable td.c-deliv {
+    background: transparent; padding: 0 2px !important; font-size: .82rem;
+  }
+  #ordersTable td.is-empty, #ordersTable td.c-deliv.no-date { display: none !important; }
+  #ordersTable td.row-actions { padding-top: 2px !important; }
+  #ordersTable td.row-actions .btn.small { min-height: 36px; }
+
+  /* بطاقة العميل: الاسم ثم الجوال والطلبات والمتبقي في سطر */
+  #custTable tbody tr { gap: 6px 8px; padding: 10px 12px; }
+  #custTable td { font-size: .9rem; }
+  #custTable td::before { font-size: .7rem; }
+}
+
+/* فهرس التقارير: عنوان لكل مجموعة يمتد على عرض الشبكة */
+#repCatalog .rep-group { grid-column: 1 / -1; font-size: .8rem; font-weight: 700; color: var(--ink-3); letter-spacing: .01em; margin: 6px 2px -2px; }
+#repCatalog .rep-group:first-child { margin-top: 0; }
+
+/* بطاقة الطلب والعميل في الجوال (كل العروض حتى 960px): ثلاثة أعمدة ثابتة —
+   الإجمالي والمدفوع والمتبقي في سطر، ثم التكلفة والربح والتوصيل، ثم العمولة سطراً كاملاً */
+@media (max-width: 960px) {
+  #ordersTable tbody tr, #custTable tbody tr { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #ordersTable td.c-no { grid-column: span 2; }
+  #ordersTable td.c-total { order: 4; }
+  #ordersTable td.c-paid { order: 5; }
+  #ordersTable td.c-rem { order: 6; }
+  #ordersTable td.c-cost { order: 7; }
+  #ordersTable td.c-profit { order: 8; }
+  #ordersTable td.c-deliv { order: 9; background: transparent; padding: 0 2px !important; }
+  #ordersTable td.c-comm { order: 10; grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  #ordersTable td.c-comm::before { margin: 0; }
+  #ordersTable td.row-actions { order: 11; }
+  #custTable td.c-cust::before { content: none; }
+  #custTable td.c-cust b { font-size: 1rem; }
 }
