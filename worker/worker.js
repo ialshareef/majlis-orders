@@ -440,13 +440,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.20';
-// بصمة asalh-najd-1.1.20.apk (إصدار GitHub v1.1.20، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.20 وversionCode 10120، ونفس شهادة توقيع 1.1.19).
-const UPDATE_FALLBACK_SHA256 = '5ede034e1788925b051f5b8b74791c45db496de357f56894acf9a485e945a473';
+const UPDATE_FALLBACK_VERSION = '1.1.21';
+// بصمة asalh-najd-1.1.21.apk (إصدار GitHub v1.1.21، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.21 وversionCode 10121، ونفس شهادة توقيع 1.1.20).
+const UPDATE_FALLBACK_SHA256 = 'f0a04ce46ac99b0348514920f499407556057cd10301320c9a8dd391c77b972b';
 const UPDATE_FALLBACK_NOTES = [
-  'المصروفات والعهدة متاحة لكل الموظفين والمناديب، ويمكن سحبها لأي مستخدم من صلاحياته',
-  'أسماء بنود التكاليف وغيرها تظهر كاملة في الجوال بلا «…»',
+  'فلتر «بلا تكاليف» في صفحة الطلبات لمتابعة الطلبات التي لم تُسجَّل تكاليفها',
+  'بطاقة الطلب في الجوال: تاريخ التوصيل كاملاً، وزر العمولة غير المصروفة «لم تُصرف»',
 ];
 
 function versionCodeOfName(v) {
