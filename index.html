@@ -921,56 +921,16 @@
       <div class="rep-include" id="biInclude" role="group" aria-label="الطلبات التي تُحسب في الأرقام"></div>
       <p class="filter-note" id="biNote"></p>
 
-      <!-- ===== لوحة تحليلات المالك ===== -->
-      <div class="card owner-panel" id="ownerPanel" data-admin hidden>
-        <div class="card-head">
-          <b>لوحة تحليلات المتجر · الزوار والتصاميم ومسار التحويل</b>
-          <div class="chip-group" id="ownerRangeChips" role="group" aria-label="فترة لوحة النشاط">
-            <button type="button" class="chip" data-og="d" aria-pressed="false">اليوم</button>
-            <button type="button" class="chip" data-og="d7" aria-pressed="false">آخر 7 أيام</button>
-            <button type="button" class="chip on" data-og="d30" aria-pressed="true">30 يوماً</button>
-            <button type="button" class="chip" data-og="m" aria-pressed="false">هذا الشهر</button>
-          </div>
-        </div>
-        <div class="date-range owner-custom">
-          <label class="date-f">من <input id="ownerFrom" type="date" aria-label="من تاريخ"></label>
-          <label class="date-f">إلى <input id="ownerTo" type="date" aria-label="إلى تاريخ"></label>
-          <button type="button" class="btn small" id="ownerApply">تطبيق</button>
-        </div>
-        <div class="stats-row kpis" id="ownerKpis"></div>
-        <div class="owner-grid">
-          <div class="card">
-            <b>مسار التحويل</b>
-            <div id="ownerFunnel"></div>
-          </div>
-          <div class="card">
-            <b>رسم يومي · بدء التصاميم وإكمالها</b>
-            <div id="ownerTrend"></div>
-          </div>
-          <div class="card">
-            <b>المراحل في مصمّم المجالس</b>
-            <div id="ownerSteps"></div>
-          </div>
-          <div class="card">
-            <b>تفضيلات التصاميم · من بيانات التصاميم المخزّنة</b>
-            <div id="ownerPrefs"></div>
-          </div>
-          <div class="card">
-            <b>متابعة الطلبات</b>
-            <div id="ownerOrders"></div>
-          </div>
-          <div class="card">
-            <b>مصادر البيانات وما لا يتوفّر</b>
-            <div id="ownerSources"></div>
-          </div>
-        </div>
-      </div>
 
 
       <!-- الأربعة الرئيسية في صف أول بحجم كامل، والمساندة في صف ثانٍ أصغر وأهدأ -->
       <div class="stats-row kpis kpis-main" id="biKpis"></div>
       <div class="stats-row kpis kpis-sub" id="biKpisSub"></div>
 
+      <section class="card module" id="biInsightsCard">
+          <div class="module-head"><h3>رؤى وملاحظات</h3></div>
+          <div id="biInsights" class="bi-insights"></div>
+        </section>
       <div id="biEmpty" class="card empty" hidden><span class="empty-ico"><svg><use href="#i-chart"/></svg></span><p>لا توجد طلبات في هذه الفترة</p>
         <div class="empty-actions"><button type="button" class="btn" id="biShowAll"><svg><use href="#i-calendar"/></svg> عرض كل الفترات</button></div></div>
 
@@ -1046,14 +1006,56 @@
           </section>
         </aside>
 
-        <section class="card module" id="biInsightsCard">
-          <div class="module-head"><h3>رؤى وملاحظات</h3></div>
-          <div id="biInsights" class="bi-insights"></div>
-        </section>
       </div>
 
       <!-- تقرير الطلبات والتحصيل: ملخص حسب الحالة + جدول قابل للفتح + تصدير -->
+      <!-- ===== لوحة تحليلات المالك ===== -->
+      <div class="card owner-panel" id="ownerPanel" data-admin hidden>
+        <details class="bi-fold"><summary><b>تحليلات الموقع والتحويل</b><small>الزوار والتصاميم ومسار التحويل — اضغط للفتح</small></summary>
+        <div class="card-head">
+          <div class="chip-group" id="ownerRangeChips" role="group" aria-label="فترة لوحة النشاط">
+            <button type="button" class="chip" data-og="d" aria-pressed="false">اليوم</button>
+            <button type="button" class="chip" data-og="d7" aria-pressed="false">آخر 7 أيام</button>
+            <button type="button" class="chip on" data-og="d30" aria-pressed="true">30 يوماً</button>
+            <button type="button" class="chip" data-og="m" aria-pressed="false">هذا الشهر</button>
+          </div>
+        </div>
+        <div class="date-range owner-custom">
+          <label class="date-f">من <input id="ownerFrom" type="date" aria-label="من تاريخ"></label>
+          <label class="date-f">إلى <input id="ownerTo" type="date" aria-label="إلى تاريخ"></label>
+          <button type="button" class="btn small" id="ownerApply">تطبيق</button>
+        </div>
+        <div class="stats-row kpis" id="ownerKpis"></div>
+        <div class="owner-grid">
+          <div class="card">
+            <b>مسار التحويل</b>
+            <div id="ownerFunnel"></div>
+          </div>
+          <div class="card">
+            <b>رسم يومي · بدء التصاميم وإكمالها</b>
+            <div id="ownerTrend"></div>
+          </div>
+          <div class="card">
+            <b>المراحل في مصمّم المجالس</b>
+            <div id="ownerSteps"></div>
+          </div>
+          <div class="card">
+            <b>تفضيلات التصاميم · من بيانات التصاميم المخزّنة</b>
+            <div id="ownerPrefs"></div>
+          </div>
+          <div class="card">
+            <b>متابعة الطلبات</b>
+            <div id="ownerOrders"></div>
+          </div>
+          <div class="card">
+            <b>مصادر البيانات وما لا يتوفّر</b>
+            <div id="ownerSources"></div>
+          </div>
+        </div>
+        </details>
+      </div>
       <section class="card module" id="ordersReportCard">
+        <details class="bi-fold"><summary><b>تقرير الطلبات والتحصيل وتصدير سريع</b><small>جدول الطلبات حسب الحالة، وملفات المناديب والمصروفات — اضغط للفتح</small></summary>
         <div class="module-head">
           <h3>تقرير الطلبات والتحصيل</h3>
           <div class="chip-group seg-chips" role="group" aria-label="تصدير التقرير">
@@ -1092,6 +1094,7 @@
           <button type="button" class="btn small" id="btnExpensesWa" data-perm-export><svg><use href="#i-whatsapp"/></svg> المصروفات واتساب</button>
           <button type="button" class="btn small" id="btnExpensesXlsx" data-perm-export><svg><use href="#i-download"/></svg> المصروفات Excel</button>
         </div>
+        </details>
       </section>
     </section>
 

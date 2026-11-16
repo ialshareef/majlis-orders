@@ -2298,8 +2298,10 @@ function canEditOrder(o) {
     const list = Array.isArray(settings().partners) ? settings().partners : [];
     for (const p of list) {
       if (!p || !(num(p.rate) > 0)) continue;
-      if (p.a === userId && p.b && p.b !== userId) return { userId: p.b, rate: num(p.rate), since: p.since || '' };
-      if (p.b === userId && p.a && p.a !== userId) return { userId: p.a, rate: num(p.rate), since: p.since || '' };
+      const u = String(userId ?? ''), A = String(p.a ?? ''), B = String(p.b ?? '');
+      if (!u || A === B) continue;
+      if (A === u && B) return { userId: B, rate: num(p.rate), since: p.since || '' };
+      if (B === u && A) return { userId: A, rate: num(p.rate), since: p.since || '' };
     }
     return null;
   }
@@ -4961,6 +4963,8 @@ function docTitle(order) {
     if (!o || !can('admin.core')) return;
     const bd = orderCommBreakdown(o);
     const rows = bd ? bd.rows.filter((r) => r.kind !== 'share' && r.amount > 0.004) : [];
+    // بائع (غير مندوب) بلا شراكة مضبوطة: يُذكَّر المالك أين تُضبط حصة الشريك
+    const noPartner = !isMandoub(o) && !partnerOf(o.createdBy) && !rows.some((r) => r.kind === 'partner');
     if (!rows.length) { toast('لا توجد عمولة محسوبة لهذا الطلب بعد', 'info'); return; }
     const cur$ = esc(currency());
     openModal(`صرف العمولة — الطلب #${esc(o.number || '')}`, `
@@ -4972,6 +4976,7 @@ function docTitle(order) {
             ${r.paid ? `<small class="cp-paid">صُرفت ${esc(fmtDate(r.paid.at))}${r.paid.byName ? ' — ' + esc(r.paid.byName) : ''}${Math.abs(num(r.paid.amount) - r.amount) > 0.004 ? ` • المصروف ${fmt(r.paid.amount)} والحالي ${fmt(r.amount)}` : ''}</small>` : '<small class="cp-due">لم تُصرف بعد</small>'}</span>
           <b class="num">${fmt(r.amount)} ${cur$}</b>
         </label>`).join('')}</div>
+      ${noPartner ? `<div class="cp-nopartner"><p class="hint">${icon('info')} لا تظهر هنا حصة شريك لأن «${esc(o.createdByName || 'البائع')}» ليس له شراكة مضبوطة. لإضافة شريكه (مثل موظفَي الفرع الواحد) افتح الإعدادات ← «العمولات والشراكات».</p>${can('settings.manage') ? `<button type="button" class="btn small" id="cpGoPartners">${icon('settings')} ضبط الشراكات</button>` : ''}</div>` : ''}
       <div class="row2">
         <label>تاريخ الصرف <input type="date" id="cpDate" value="${today()}"></label>
         <label>ملاحظة (اختياري) <input id="cpNote" maxlength="120" placeholder="تحويل، نقداً، مع راتب الشهر…"></label>
@@ -4979,6 +4984,7 @@ function docTitle(order) {
       <p class="error" id="cpErr" role="alert"></p>
       <div class="btn-row"><button class="btn" id="cpCancel">إلغاء</button><button class="btn primary" id="cpSave">${icon('check')} حفظ حالة الصرف</button></div>`, (b) => {
       $('#cpCancel', b).onclick = closeModal;
+      if ($('#cpGoPartners', b)) $('#cpGoPartners', b).onclick = () => { closeModal(); showPage('settings'); setTimeout(() => { const t = $('#set-comm'); if (t) t.scrollIntoView({ block: 'start' }); }, 300); };
       $('#cpSave', b).onclick = async () => {
         const at = $('#cpDate', b).value || today();
         const note = $('#cpNote', b).value.trim().slice(0, 120);
@@ -7399,7 +7405,7 @@ function docTitle(order) {
     return $$('#sPartners .partner-row', b).map((r) => ({
       a: $('.pa', r).value, b: $('.pb', r).value,
       rate: Math.min(100, Math.max(0, num($('.pr input', r).value))),
-      since: r.dataset.since || today(),
+      since: ($('.ps input', r) && $('.ps input', r).value) || '',
     })).filter((p) => p.a && p.b && p.a !== p.b && p.rate > 0);
   }
 
@@ -7408,7 +7414,8 @@ function docTitle(order) {
     const s = settings();
     const b = $('#settingsBody');
     b.innerHTML = `
-      <section class="set-section">
+      <nav class="set-nav" aria-label="أقسام الإعدادات"><button type="button" class="chip" data-setgo="set-shop">بيانات المحل</button><button type="button" class="chip" data-setgo="set-portal">بوابة العميل</button><button type="button" class="chip" data-setgo="set-tax">الضريبة</button><button type="button" class="chip" data-setgo="set-orders">افتراضيات الطلبات</button><button type="button" class="chip" data-setgo="set-comm">العمولات والشراكات</button><button type="button" class="chip" data-setgo="set-backup">النسخ الاحتياطي</button><button type="button" class="chip" data-setgo="set-theme">المظهر</button></nav>
+      <section class="set-section" id="set-shop">
         <div class="set-head"><h3>بيانات المحل</h3><p>تظهر في رأس أمر الشراء وأمر التصنيع والسندات.</p></div>
         <div class="set-body">
           <label>اسم المحل <input id="sName" value="${esc(s.shopName || '')}"></label>
@@ -7419,7 +7426,7 @@ function docTitle(order) {
           <label>العنوان <input id="sAddr" value="${esc(s.address || '')}"></label>
         </div>
       </section>
-      <section class="set-section">
+      <section class="set-section" id="set-portal">
         <div class="set-head"><h3>بوابة العميل والتسويق</h3><p>تظهر في صفحة التصميم العامة للعملاء. الروابط https فقط — والأرقام وحدها تُحوَّل تلقائياً.</p></div>
         <div class="set-body">
           <label>وصف تسويقي قصير <input id="sTagline" maxlength="140" value="${esc(s.tagline || '')}" placeholder="صمّم مجلسك حسب مقاسات غرفتك"></label>
@@ -7436,7 +7443,7 @@ function docTitle(order) {
           <p class="hint">رابط البوابة للعملاء: <bdi class="num url-line">${esc(publicPortalUrl())}</bdi></p>
         </div>
       </section>
-      <section class="set-section">
+      <section class="set-section" id="set-tax">
         <div class="set-head"><h3>الضريبة وشروط أمر الشراء</h3><p>حين تُفعَّل الضريبة ويُسجَّل الرقم الضريبي تصير الفاتورة «فاتورة ضريبية مبسطة» برمز QR.</p></div>
         <div class="set-body">
           <label>شروط تظهر في أمر الشراء (اختياري) <input id="sInvNote" value="${esc(s.invoiceNote || '')}" placeholder="مثال: العربون غير مسترد، مدة التنفيذ 10 أيام"></label>
@@ -7447,7 +7454,7 @@ function docTitle(order) {
           <label class="inline-check"><input id="sVatOn" type="checkbox" ${s.vatEnabled !== false ? 'checked' : ''}> تفعيل الضريبة افتراضياً في الطلبات الجديدة (يمكن إلغاؤها لكل طلب)</label>
         </div>
       </section>
-      <section class="set-section">
+      <section class="set-section" id="set-orders">
         <div class="set-head"><h3>افتراضيات الطلبات</h3><p>تُطبَّق على الطلبات الجديدة، ويمكن تغييرها داخل كل طلب.</p></div>
         <div class="set-body">
           <label>طريقة قياس الكنب
@@ -7457,6 +7464,11 @@ function docTitle(order) {
             <label>العربون المطلوب % <input id="sDeposit" type="number" min="0" max="100" step="5" value="${num(s.depositPct ?? 25)}"><small class="hint">يُطلب تأكيد عند بدء تنفيذ طلب مدفوعه أقل. 0 = بلا تنبيه.</small></label>
             <label>صلاحية عرض السعر (أيام) <input id="sQuoteDays" type="number" min="1" max="90" step="1" value="${num(s.quoteDays) || 7}"></label>
           </div>
+        </div>
+      </section>
+      <section class="set-section" id="set-comm">
+        <div class="set-head"><h3>العمولات والشراكات</h3><p>نسب العمولة الافتراضية، وأساس حسابها، وشراكات الموظفين. نسبة كل موظف بعينه من صفحة المستخدمين.</p></div>
+        <div class="set-body">
           <div class="row2">
             <label>نسبة عمولة البائع % <input id="sSellerRate" type="number" min="0" max="100" step="0.5" value="${num(s.sellerRate ?? 10)}"><small class="hint">تُطبَّق افتراضياً على طلبات البائع. ولكل موظف نسبة خاصة من صفحة المستخدمين، ولكل طلب من زر «نسبة البائع».</small></label>
             <label>نسبة عمولة المناديب % <input id="sMandoubRate" type="number" min="0" max="100" step="0.5" value="${num(s.mandoubRate ?? 5)}"><small class="hint">نسبة مستقلة للمناديب (خارج الشركة)، لا تُشارك مع الفريق الداخلي.</small></label>
@@ -7479,7 +7491,7 @@ function docTitle(order) {
         <p class="hint">التغييرات أعلاه لا تُطبَّق حتى تحفظها.</p>
         <button class="btn primary" id="sSave">${icon('check')} حفظ الإعدادات</button>
       </div>
-      <section class="set-section">
+      <section class="set-section" id="set-backup">
         <div class="set-head"><h3>النسخ الاحتياطي</h3><p>${Store.isRemote ? 'التخزين سحابي (Cloudflare Worker + D1): الطلبات مشتركة بين كل الأجهزة والموظفين وتتزامن كل 30 ثانية.' : 'التخزين محلي: البيانات في هذا المتصفح على هذا الجهاز فقط. لمشاركة الطلبات بين عدة أجهزة راجع ملف SETUP-CLOUDFLARE.md.'}</p></div>
         <div class="set-body">
           <p class="hint mb-12">صدّر نسخة احتياطية بانتظام واحتفظ بها في مكان آمن خارج هذا الجهاز.</p>
@@ -7496,7 +7508,7 @@ function docTitle(order) {
           </div>
         </div>
       </section>
-      <section class="set-section">
+      <section class="set-section" id="set-theme">
         <div class="set-head"><h3>المظهر</h3><p>يُحفظ لهذا الجهاز فقط. أمر الشراء وملف PDF يبقيان بخلفية بيضاء دائماً.</p></div>
         <div class="set-body">
           <div class="segmented" id="sTheme" role="group" aria-label="مظهر الواجهة">
@@ -7517,6 +7529,7 @@ function docTitle(order) {
         <select class="pa" aria-label="الموظف الأول">${staffOpts(p && p.a)}</select><span aria-hidden="true">⇄</span>
         <select class="pb" aria-label="الموظف الثاني">${staffOpts(p && p.b)}</select>
         <label class="pr">٪ <input type="number" min="0" max="100" step="0.5" value="${p ? esc(p.rate) : '2'}" aria-label="نسبة الشريك من قيمة البيع"></label>
+        <label class="ps">من <input type="date" value="${esc(p ? (p.since || '') : today())}" aria-label="تبدأ الشراكة من تاريخ (فارغ = كل الطلبات غير المصروفة)"></label>
         <button type="button" class="icon-btn" data-prm title="حذف الشراكة">${icon('trash')}</button></div>`;
       const list = Array.isArray(s.partners) ? s.partners : [];
       box.innerHTML = list.map(rowHtml).join('');
@@ -7524,6 +7537,7 @@ function docTitle(order) {
       wireRm();
       $('#sAddPartner', b).onclick = () => { box.insertAdjacentHTML('beforeend', rowHtml(null)); wireRm(); };
     }
+    $$('[data-setgo]', b).forEach((x) => x.addEventListener('click', () => { const t = $('#' + x.dataset.setgo, b); if (t) t.scrollIntoView({ behavior: 'smooth', block: 'start' }); }));
     $('#sSave', b).onclick = async () => {
       const btn = $('#sSave', b);
       // يُقرأ كائن الإعدادات الآن لا عند فتح الصفحة: أي مزامنة تستبدله بكائن جديد
@@ -8644,25 +8658,8 @@ function docTitle(order) {
   /* موازنة العمودين (الشاشات العريضة): أطوال البطاقات تتبع البيانات، فتُوضع بطاقة
      الرؤى حيث يقلّ الفرق بين العمودين — تحت الأقصر أو بعرض كامل أسفلهما —
      حتى لا يبقى فراغ كبير تحت عمود واحد. ترتيب العرض فقط، لا بيانات. */
-  function biBalance() {
-    const body = $('#biBody'), ins = $('#biInsightsCard');
-    if (!body || !ins) return;
-    if (ins.parentElement !== body) body.appendChild(ins);   // موضعه الأصلي: بعرض كامل
-    if (body.hidden || !window.matchMedia('(min-width: 1440px)').matches) return;
-    const main = $('.bi-main', body), side = $('.bi-side', body);
-    // تُجرَّب المواضع الثلاثة فعلاً وتُقاس بالطول الطبيعي (بلا مدّ آخر بطاقة):
-    // ارتفاع البطاقة يتغيّر بعرض موضعها (عمودا نص حين تكون بعرض كامل)
-    body.classList.add('measuring');
-    const diffNow = () => Math.abs(main.offsetHeight - side.offsetHeight);
-    let best = { el: null, diff: diffNow() };
-    [main, side].forEach((col) => {
-      col.appendChild(ins);
-      const diff = diffNow();
-      if (diff < best.diff) best = { el: col, diff };
-    });
-    if (best.el) best.el.appendChild(ins); else body.appendChild(ins);
-    body.classList.remove('measuring');
-  }
+  /* «رؤى وملاحظات» صارت أعلى الصفحة بعد الأرقام مباشرة (خلاصة تُقرأ أولاً)، فلم تعد تُنقل لموازنة العمودين */
+  function biBalance() {}
   let biWideAt = null;
   window.addEventListener('resize', () => {
     const wide = window.matchMedia('(min-width: 1440px)').matches;

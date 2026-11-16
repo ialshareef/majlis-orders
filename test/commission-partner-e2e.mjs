@@ -37,6 +37,8 @@ const orders = [
   ord('oa', 1, '2', 'عاصم', { ownerRate: 10, parentId: null, parentRate: null, shareRate: 5 }),
   ord('ob', 2, '3', 'سليم', { ownerRate: 10, parentId: null, parentRate: null, shareRate: 5 }),
   ord('oc', 3, '5', 'موظف آخر', { ownerRate: 10, parentId: null, parentRate: null, shareRate: 5 }),
+  // طلب قديم يحفظ رقم البائع رقماً لا نصاً (createdBy: 3): الشراكة تطابقه أيضاً
+  (() => { const r = ord('od', 4, '3', 'سليم', { ownerRate: 10, parentId: null, parentRate: null, shareRate: 5 }); const d = JSON.parse(r.data); d.createdBy = 3; r.data = JSON.stringify(d); return r; })(),
 ];
 const env = envWith({
   users: [U('1', 'owner', 'المالك', 'admin'), U('2', 'asim', 'عاصم', 'staff'), U('3', 'salim', 'سليم', 'staff'), U('5', 'other', 'موظف آخر', 'staff')],
@@ -178,9 +180,9 @@ try {
   const people = await page.evaluate(() => { const t = document.querySelector('#repTables table'); const hs = [...t.querySelectorAll('thead th')].map((th) => th.textContent.trim()); return { hs, rows: [...t.querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()) }; });
   ok(people.hs.includes('شراكة الفرع'), 'التقرير: عمود «شراكة الفرع»', people.hs);
   const ra = people.rows.find((r) => r.startsWith('عاصم')) || '', rs = people.rows.find((r) => r.startsWith('سليم')) || '';
-  ok(/40\.00/.test(ra) && /40\.00/.test(rs), 'التقرير: لكل من عاصم وسليم حصة شراكة 40 من بيع الآخر', people.rows);
+  ok(/ 80\.00 /.test(ra) && / 40\.00 /.test(rs) && people.rows.filter((r) => r.startsWith('سليم')).length === 1, 'التقرير: عاصم 80 (من طلبَي سليم) وسليم 40، وسليم سطر واحد', people.rows);
   const det = await page.evaluate(() => [...document.querySelectorAll('#repTables table')[1].querySelectorAll('tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
-  ok(det.filter((r) => /حصة شريك الفرع/.test(r)).length === 2, 'التقرير: سطران «حصة شريك الفرع» في التفصيل', det);
+  ok(det.filter((r) => /حصة شريك الفرع/.test(r)).length === 3, 'التقرير: ثلاثة أسطر «حصة شريك الفرع» في التفصيل', det);
 
   // ---- صرف حصة الشريك من نافذة الصرف ----
   await go(page, 'orders');
@@ -190,6 +192,18 @@ try {
   await page.evaluate(() => document.getElementById('cpSave').click()); await sleep(2000);
   const cp = stored('oa').commPaid || {};
   ok(cp.partner && Number(cp.partner.amount) === 40 && cp.owner && Number(cp.owner.amount) === 100, 'الخادم: حُفظ صرف حصة الشريك 40 وعمولة البائع 100', cp);
+  // رقم البائع المحفوظ رقماً: حصة الشريك تظهر أيضاً
+  await page.evaluate(() => document.querySelector('[data-commpay="od"]').click()); await sleep(900);
+  const kd = await page.evaluate(() => [...document.querySelectorAll('#modal input[type=checkbox][data-k]')].map((i) => i.dataset.k));
+  ok(kd.includes('partner'), 'الشراكة تطابق طلباً يحفظ رقم البائع رقماً لا نصاً', kd);
+  await page.evaluate(() => document.getElementById('cpCancel').click()); await sleep(400);
+  // بائع بلا شراكة: تنبيه في نافذة الصرف وزر لضبط الشراكات
+  await page.evaluate(() => document.querySelector('[data-commpay="oc"]').click()); await sleep(900);
+  const np = await page.evaluate(() => { const x = document.querySelector('#modal .cp-nopartner'); return x ? x.innerText.replace(/\s+/g, ' ') : ''; });
+  ok(/ليس له شراكة مضبوطة/.test(np) && /ضبط الشراكات/.test(np), 'نافذة الصرف: تنبيه «لا شراكة» لبائع بلا شريك', np);
+  await page.evaluate(() => document.getElementById('cpGoPartners').click()); await sleep(1200);
+  ok(await page.evaluate(() => document.body.dataset.page === 'settings' && !!document.getElementById('set-comm') && /العمولات والشراكات/.test(document.getElementById('set-comm').innerText)), 'زر «ضبط الشراكات» يفتح قسم «العمولات والشراكات» في الإعدادات');
+  ok(await page.evaluate(() => document.querySelectorAll('.set-nav [data-setgo]').length >= 6), 'الإعدادات: شريط تنقل بين الأقسام');
   await page.browserContext().close();
 } catch (e) {
   fail++; console.log('FAIL  استثناء: ' + (e && e.stack || e));

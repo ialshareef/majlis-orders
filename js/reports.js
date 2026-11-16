@@ -202,8 +202,9 @@
       const list = scopedOrders(ctx, { statusMode: 'sales' });
       const people = new Map();
       const person = (id, name) => {
-        const k = id || 'none';
-        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(id, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(id)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, partnerComm: 0, share: 0, paid: 0, due: 0 });
+        // المعرّف نصاً دائماً: طلبات قديمة قد تحفظ رقم المستخدم رقماً، فلا يتكرر الشخص نفسه
+        const k = (id === null || id === undefined || id === '') ? 'none' : String(id);
+        if (!people.has(k)) people.set(k, { id: k, name: name || ctx.userName(k, 'غير محدد'), role: ctx.labels.ROLES[ctx.userRole(k)] || '', orders: 0, revenue: 0, profit: 0, base: 0, ownComm: 0, subsComm: 0, partnerComm: 0, share: 0, paid: 0, due: 0 });
         return people.get(k);
       };
       const detail = [];

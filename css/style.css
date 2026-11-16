@@ -1889,7 +1889,7 @@ body.modal-open { overflow: hidden; }
 #biCustCard { order: 6; }
 #biOpsCard { order: 7; }
 #biCostsCard { order: 8; }
-#biInsightsCard { order: 9; }
+#biBody #biInsightsCard { order: 9; }
 /* الحاسوب المتوسط: الحالة والتحصيل متقاربتا الطول فتتجاوران بارتفاع واحد، والباقي بعرض كامل */
 @media (min-width: 961px) and (max-width: 1439px) {
   .bi-layout { grid-template-columns: repeat(2, minmax(0, 1fr)); }
@@ -2586,10 +2586,19 @@ body.modal-open { overflow: hidden; }
 .u-rate small.hint { font-size: .74rem; }
 /* شراكات العمولة في الإعدادات */
 .partners-box { margin-top: 12px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--surface-2); }
-.partner-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 92px auto; align-items: center; gap: 8px; margin: 8px 0; }
+.partner-row { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) 92px 150px auto; align-items: center; gap: 8px; margin: 8px 0; }
+.partner-row .ps { display: flex; align-items: center; gap: 4px; margin: 0; }
+.partner-row .ps input { min-width: 0; }
+.cp-nopartner { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 10px 0; padding: 10px 12px; border-radius: var(--r); background: var(--surface-2); border: 1px dashed var(--line); }
+.cp-nopartner p { margin: 0; flex: 1 1 220px; }
+.cp-nopartner svg { width: 15px; height: 15px; vertical-align: -2px; }
+.set-nav { display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none; margin: 0 0 14px; position: sticky; top: 0; z-index: 6; padding: 8px 0; background: var(--bg); }
+.set-nav::-webkit-scrollbar { display: none; }
+.set-nav .chip { flex: none; }
+.set-section { scroll-margin-top: 64px; }
 .partner-row .pr { display: flex; align-items: center; gap: 4px; margin: 0; }
 .partner-row .pr input { min-width: 0; }
-@media (max-width: 560px) { .partner-row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); } .partner-row .pr { grid-column: 1 / 3; } }
+@media (max-width: 560px) { .partner-row { grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); } .partner-row .pr { grid-column: 1 / 2; } .partner-row .ps { grid-column: 2 / 4; } }
 .cf-choices .cf-choice { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line, #E3D9CA); }
 .cf-choices .cf-choice:first-of-type { border-top: 0; }
 .cf-choices .cf-choice label { display: flex; align-items: center; gap: 8px; cursor: pointer; }
@@ -3907,3 +3916,13 @@ body.portal { background: var(--bg); }
   #custTable td.c-cust::before { content: none; }
   #custTable td.c-cust b { font-size: 1rem; }
 }
+
+/* لوحة الأرقام: أقسام ثانوية مطويّة (تحليلات الموقع، تقرير الطلبات والتصدير السريع) */
+.bi-fold > summary { cursor: pointer; list-style: none; display: grid; gap: 2px; padding: 4px 2px; min-height: 44px; align-content: center; }
+.bi-fold > summary::-webkit-details-marker { display: none; }
+.bi-fold > summary b { font-size: 1rem; }
+.bi-fold > summary b::before { content: '‹'; display: inline-block; margin-inline-end: 8px; transition: transform .15s; color: var(--ink-3); }
+.bi-fold[open] > summary b::before { transform: rotate(-90deg); }
+.bi-fold > summary small { color: var(--ink-3); font-size: .8rem; }
+.bi-fold[open] > summary { margin-bottom: 10px; }
+#biInsightsCard { margin-bottom: 16px; }
