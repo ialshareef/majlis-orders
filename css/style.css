@@ -3982,3 +3982,8 @@ body.portal { background: var(--bg); }
 .hx-amts b.neg, .hx-tot b.neg, .hx-stats b.neg { color: var(--danger); }
 .hx-actions { justify-content: flex-start; margin-top: 8px; }
 .hx-h { margin: 14px 0 6px; font-size: .95rem; }
+
+/* نافذة التكاليف: العمولات المصروفة بنوداً تلقائية (للعرض فقط) */
+.comm-cost-lines { display: grid; gap: 4px; margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: var(--r); background: var(--surface-2); }
+.comm-cost-lines svg { width: 14px; height: 14px; vertical-align: -2px; }
+.cc-line { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }

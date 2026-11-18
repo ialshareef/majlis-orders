@@ -2100,6 +2100,25 @@ function canEditOrder(o) {
       .map((e) => ({ name: String(e.name || '').trim(), amount: money(e.amount) }));
   }
 
+  /** العمولات المصروفة بنوداً في تكاليف الطلب: «عمولة عاصم»، «عمولة سليم»… تُشتق من سجل الصرف o.commPaid
+      (مبلغ وقت الصرف) فلا تُكتب في extraCosts ولا تتكرر، وإلغاء الصرف يزيلها تلقائياً.
+      لا تدخل أساس احتساب العمولة نفسها (وإلا نقصت العمولة بصرفها)، ولا تجعل طلباً بلا تكاليف «مُكلَّفاً». */
+  function commCostLines(o) {
+    const cp = (o && o.commPaid) || {};
+    const out = [];
+    const nm = (id, fb) => { const u = id && Store.getUser(id); return (u && u.name) || fb || ''; };
+    ['owner', 'parent', 'partner'].forEach((k) => {
+      const p = cp[k];
+      if (!p || !(num(p.amount) > 0.004)) return;
+      let who = '';
+      if (k === 'owner') who = nm(o.createdBy, o.createdByName);
+      else if (k === 'parent') { const r = (o.commRates || {}); who = nm(r.parentId, 'المندوب الأعلى'); }
+      else { const pp = partnerOf(o.createdBy); who = nm(pp && pp.userId, 'شريك الفرع'); }
+      out.push({ name: 'عمولة ' + (who || (k === 'owner' ? 'البائع' : '')), amount: money(p.amount), comm: k, at: p.at || '' });
+    });
+    return out;
+  }
+
   /** اقتراحات جاهزة تُسرّع كتابة البنود المتكررة */
   const EXTRA_PRESETS = ['التوصيل', 'تحميل وتنزيل', 'التركيب', 'أجور عمالة', 'نقل ومشاوير'];
 
@@ -2109,7 +2128,7 @@ function canEditOrder(o) {
    * الضريبة تُحصَّل للدولة وليست إيراداً فلا تدخل الحساب.
    * أرباح الأسطر تبقى على إجمالي السطر (الخصم على مستوى الطلب لا يُوزَّع على الأسطر).
    */
-  function computeCosts(order) {
+  function computeCosts(order, opts = {}) {
     const { lines, subtotal, vatEnabled, total } = computeLines(order);
     const rows = lines.map((l) => {
       const unitCost = lineCost(order, l);
@@ -2123,12 +2142,14 @@ function canEditOrder(o) {
     const linesCost = money(filled.reduce((s, r) => s + r.costTotal, 0));
     const extras = extraCosts(order);
     const extrasCost = money(extras.reduce((s, e) => s + e.amount, 0));
-    const costTotal = money(linesCost + extrasCost);
+    const commLines = opts.noComm ? [] : commCostLines(order);
+    const commCost = money(commLines.reduce((s, e) => s + e.amount, 0));
+    const costTotal = money(linesCost + extrasCost + commCost);
     const revenue = calcRevenue(subtotal, order.discount);
     const profit = calcProfit(revenue, costTotal);
     return {
       rows, subtotal, revenue, vatEnabled, total, costTotal, profit,
-      linesCost, extras, extrasCost,
+      linesCost, extras, extrasCost, commLines, commCost,
       entered: filled.length + extras.length, missing: rows.length - filled.length,
       margin: revenue > 0 && profit !== null ? r2((profit / revenue) * 100) : 0,
     };
@@ -2138,14 +2159,18 @@ function canEditOrder(o) {
       يُحسب من تكاليف الوحدات لا من costTotal المخزّن: الموظف لا يرى التكاليف، فإذا عدّل
       كميات طلب له تكاليف بقي costTotal على الكميات القديمة. الحساب يُخزَّن مؤقتاً لكل نسخة. */
   const costCache = new Map();
-  function orderCost(o) {
+  /** noComm: بلا بنود العمولة المصروفة (لأساس احتساب العمولة) */
+  function orderCost(o, noComm = false) {
     if (!o) return null;
     const has = (o.costs && Object.keys(o.costs).length) || (o.extraCosts && o.extraCosts.length)
       || (o.manualRows || []).some((r) => r && r.cost !== undefined && r.cost !== null && r.cost !== '');
-    if (!has) return (o.costTotal !== undefined && o.costTotal !== null) ? money(o.costTotal) : null;
-    const key = `${o.id}|${o.updatedAt || ''}|${o.costUpdatedAt || ''}`;
+    if (!has) {
+      if (o.costTotal === undefined || o.costTotal === null) return null;
+      return noComm ? money(o.costTotal) : money(num(o.costTotal) + commCostLines(o).reduce((s, e) => s + e.amount, 0));
+    }
+    const key = `${o.id}|${o.updatedAt || ''}|${o.costUpdatedAt || ''}|${noComm ? 'b' : 'c'}`;
     if (o.id && costCache.has(key)) return costCache.get(key);
-    const info = computeCosts(o);
+    const info = computeCosts(o, { noComm });
     const v = info.entered ? info.costTotal : null;
     if (o.id) { if (costCache.size > 1500) costCache.clear(); costCache.set(key, v); }
     return v;
@@ -2187,6 +2212,12 @@ function canEditOrder(o) {
   function orderProfit(o) {
     return calcProfit(orderRevenue(o), orderCost(o));
   }
+  /** الربح قبل العمولات المصروفة: أساس احتساب العمولة حين يكون «صافي الربح» */
+  function orderProfitBase(o) {
+    return calcProfit(orderRevenue(o), orderCost(o, true));
+  }
+  /** مجموع العمولات المصروفة المحسوبة ضمن التكاليف (للتقارير: لا تُخصم مرتين) */
+  const commInCost = (o) => (orderCost(o, true) === null ? 0 : money(commCostLines(o).reduce((s, e) => s + e.amount, 0)));
 
   /** نسبة عمولة البائع للطلب: قيمة الطلب إن حُدّدت، وإلا الإعداد الافتراضي */
   function sellerRateOf(o) {
@@ -2290,7 +2321,7 @@ function canEditOrder(o) {
   /** المبلغ الذي تُحسب منه النسب لهذا الطلب، أو null إن لم يتوفر (صافي ربح بلا تكاليف) */
   function commBaseAmount(o) {
     if (commBaseMode() === 'total') return money(num(o && o.total));
-    return orderProfit(o);
+    return orderProfitBase(o);
   }
   /* شراكة العمولة بين موظفَين (مثل فرع واحد): settings.partners = [{ a, b, rate, since }].
      حين يبيع أحدهما يأخذ الآخر rate٪ من قيمة البيع (الإجمالي شامل الضريبة) فوق عمولة البائع — من ربح المحل.
@@ -4611,11 +4642,12 @@ function docTitle(order) {
       empty: 'لا توجد أصناف في هذا الطلب',
     });
     // 2) التكاليف الإضافية كما سُجّلت بنداً بنداً
-    if (seeCost && info.extras.length) {
+    if (seeCost && (info.extras.length || info.commLines.length)) {
       tables.push({
         title: 'تكاليف إضافية على الطلب', columns: [{ key: 'name', label: 'البند' }, { key: 'amount', label: 'المبلغ', kind: 'money' }],
-        rows: info.extras.map((e) => ({ name: e.name || '—', amount: e.amount })),
-        totals: { name: 'المجموع', amount: info.extrasCost },
+        rows: info.extras.map((e) => ({ name: e.name || '—', amount: e.amount }))
+          .concat(info.commLines.map((e) => ({ name: `${e.name} (صُرفت${e.at ? ' ' + day(e.at) : ''})`, amount: e.amount }))),
+        totals: { name: 'المجموع', amount: money(info.extrasCost + info.commCost) },
       });
     }
     // 3) الحساب خطوة بخطوة: من مجموع الأصناف إلى صافي الربح والعمولات
@@ -4628,6 +4660,7 @@ function docTitle(order) {
       acc.push({ k: (L.vatEnabled ? 'المبيعات قبل الضريبة' : 'المبيعات') + ' (أساس الربح)', v: revenue });
       acc.push({ k: linesHave ? 'تكاليف الأصناف' : 'تكاليف الأصناف (لم تُسجَّل تكلفة وحدة)', v: linesHave ? -info.linesCost : null });
       if (info.extras.length) acc.push({ k: 'التكاليف الإضافية', v: -info.extrasCost });
+      if (info.commLines.length && hasCost) acc.push({ k: 'العمولات المصروفة (' + info.commLines.map((e) => e.name).join('، ') + ')', v: -info.commCost });
       acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -costAll : null, b: true });
     }
     if (seeProfit) acc.push({ k: 'صافي الربح', v: profitAll, b: true });
@@ -4772,6 +4805,8 @@ function docTitle(order) {
         <p class="hint">بنود لا تخص صنفاً بعينه: التوصيل، التحميل والتنزيل، التركيب، أجور العمالة… تُضاف إلى إجمالي التكاليف وتُخصم من الربح.</p>
         <div class="chip-group extra-presets">${EXTRA_PRESETS.map((p) => `<button type="button" class="chip" data-preset="${esc(p)}">${icon('plus')} ${esc(p)}</button>`).join('')}</div>
         <div id="extraList"></div>
+        ${info.commLines.length ? `<div class="comm-cost-lines"><small class="hint">${icon('wallet')} عمولات صُرفت — تُضاف تلقائياً عند «تم الصرف» وتُزال بإلغائه (تُدار من نافذة صرف العمولة):</small>
+          ${info.commLines.map((e) => `<div class="cc-line"><span>${esc(e.name)}${e.at ? ` <small class="hint">صُرفت ${esc(fmtDate(e.at))}</small>` : ''}</span><b class="num">${fmt(e.amount)}</b></div>`).join('')}</div>` : ''}
       </div>
 
       <div class="cost-sum" id="costSum"></div>
@@ -4861,7 +4896,7 @@ function docTitle(order) {
         });
         extrasCost = money(extrasCost);
 
-        costTotal = money(linesCost + extrasCost);
+        costTotal = money(linesCost + extrasCost + (filled > 0 || extrasCount > 0 ? info.commCost : 0));
         const profit = calcProfit(info.revenue, costTotal);
         const margin = info.revenue > 0 && profit !== null ? r2((profit / info.revenue) * 100) : 0;
         const missing = inputs.length - filled;
@@ -8401,6 +8436,7 @@ function docTitle(order) {
         const n = e.name || 'بند بلا اسم';
         extras.set(n, (extras.get(n) || 0) + e.amount);
       });
+      if (info.commCost) extras.set('عمولات مصروفة', money((extras.get('عمولات مصروفة') || 0) + info.commCost));
     });
     const rows = [{ label: 'تكلفة الأصناف', value: money(linesCost) }]
       .concat([...extras.entries()].sort((x, y) => y[1] - x[1]).map(([n, v]) => ({ label: n, value: money(v) })));
@@ -9255,7 +9291,7 @@ async function exportExpensesXlsx() {
       calc: {
         revenue: orderRevenue, cost: orderCost, breakdown: repBreakdown, ordDate,
         payDay: (pm) => String((pm && (pm.at || pm.date || pm.createdAt)) || '').slice(0, 10),
-        expDay, commBase: commBaseMode(), dtDay: localDate, dtTime: localTime,
+        expDay, commBase: commBaseMode(), dtDay: localDate, dtTime: localTime, commInCost,
       },
       labels: { STATUS, PAY_METHOD: PAY_METHODS, ROLES },
       userName: (id, fb) => { const u = id && Store.getUser(id); return (u && u.name) || fb || 'غير محدد'; },

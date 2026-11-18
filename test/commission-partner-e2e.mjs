@@ -192,6 +192,28 @@ try {
   await page.evaluate(() => document.getElementById('cpSave').click()); await sleep(2000);
   const cp = stored('oa').commPaid || {};
   ok(cp.partner && Number(cp.partner.amount) === 40 && cp.owner && Number(cp.owner.amount) === 100, 'الخادم: حُفظ صرف حصة الشريك 40 وعمولة البائع 100', cp);
+  // العمولة المصروفة بنداً في التكاليف: «عمولة عاصم» 100 و«عمولة سليم» 40 — والربح ينقص، والعمولة لا تتغيّر
+  ok(!(stored('oa').extraCosts || []).length, 'بنود العمولة لا تُخزَّن مع التكاليف اليدوية (تُشتق من سجل الصرف)');
+  const rowTxt = await page.evaluate(() => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-open="oa"]')); return tr ? tr.innerText.replace(/\s+/g, ' ') : ''; });
+  ok(/1,140\.00/.test(rowTxt) && /860\.00/.test(rowTxt) && /100\.00/.test(rowTxt), 'قائمة الطلبات: التكلفة 1140 (1000 + عمولتان) وصافي الربح 860، والعمولة 100 كما هي', rowTxt);
+  await page.evaluate(() => document.querySelector('[data-sum="oa"]').click()); await sleep(1200);
+  const sumTxt = clean(await page.evaluate(() => document.getElementById('modal').innerText));
+  ok(/عمولة عاصم \(صُرفت[^)]*\) 100\.00/.test(sumTxt) && /عمولة سليم \(صُرفت[^)]*\) 40\.00/.test(sumTxt) && /العمولات المصروفة \(عمولة عاصم، عمولة سليم\)/.test(sumTxt), 'ملخص الطلب: بند لكل عمولة مصروفة باسم صاحبها', sumTxt.slice(0, 600));
+  await page.evaluate(() => document.getElementById('modalClose').click()); await sleep(400);
+  // التقرير: لا تُخصم العمولة مرتين — الربح بعد العمولات = 2000 − 1000 − (100 + 40 + 50 مشاركة) = 810
+  await go(page, 'reports');
+  await page.evaluate(() => document.querySelector('#repCatalog [data-rep="orders"]').click()); await sleep(600);
+  await page.evaluate(() => document.querySelector('#repRangeChips [data-rr="all"]').click()); await sleep(900);
+  const repRow = await page.evaluate(() => { const t = document.querySelector('#repTables table'); const hs = [...t.querySelectorAll('thead th')].map((x) => x.textContent.trim()); const tr = [...t.querySelectorAll('tbody tr')].find((r) => /^#1\b/.test(r.innerText.trim())); return { hs, cells: tr ? [...tr.querySelectorAll('td')].map((x) => x.textContent.trim()) : [] }; });
+  const cellOf = (lbl) => repRow.cells[repRow.hs.indexOf(lbl)];
+  ok(cellOf('الربح بعد العمولات') === '810.00' && cellOf('صافي الربح') === '860.00', 'التقرير: صافي الربح 860 والربح بعد العمولات 810 (بلا خصم مزدوج)', { p: cellOf('صافي الربح'), a: cellOf('الربح بعد العمولات') });
+  // إلغاء الصرف يزيل البند تلقائياً
+  await go(page, 'orders');
+  await page.evaluate(() => document.querySelector('[data-commpay="oa"]').click()); await sleep(900);
+  await page.evaluate(() => { document.querySelectorAll('#modal input[type=checkbox][data-k]').forEach((c) => { c.checked = false; }); document.getElementById('cpSave').click(); }); await sleep(700);
+  await page.evaluate(() => { const b = document.getElementById('cYes'); if (b) b.click(); }); await sleep(1500);
+  const rowTxt2 = await page.evaluate(() => { const tr = [...document.querySelectorAll('#ordersTable tbody tr')].find((r) => r.querySelector('[data-open="oa"]')); return tr ? tr.innerText.replace(/\s+/g, ' ') : ''; });
+  ok(!(stored('oa').commPaid || {}).owner && /1,000\.00/.test(rowTxt2), 'إلغاء الصرف: تعود التكلفة 1000 (يُزال بند العمولة)', rowTxt2);
   // رقم البائع المحفوظ رقماً: حصة الشريك تظهر أيضاً
   await page.evaluate(() => document.querySelector('[data-commpay="od"]').click()); await sleep(900);
   const kd = await page.evaluate(() => [...document.querySelectorAll('#modal input[type=checkbox][data-k]')].map((i) => i.dataset.k));

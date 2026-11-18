@@ -92,13 +92,16 @@
     const bd = canComm ? ctx.calc.breakdown(o) : null;
     const part = (k) => (bd ? money(bd.rows.filter((r) => r.kind === k).reduce((s, r) => s + num(r.amount), 0)) : null);
     const ownerComm = part('owner'), parentComm = part('parent'), share = part('share'), partnerComm = part('partner');
+    const inCost = (hasCost && bd && ctx.calc.commInCost) ? money(ctx.calc.commInCost(o)) : 0;
     return {
       revenue, total, paid, vat: money(total - revenue), discount: money(o.discount),
       remaining: money(total - paid), hasCost,
       cost: canProfit && hasCost ? money(rawCost) : null,
       profit, margin: profit === null ? null : pct(profit, revenue),
       ownerComm, parentComm, share, partnerComm, bd,
-      afterComm: (profit !== null && bd) ? money(profit - ownerComm - parentComm - share - partnerComm) : null,
+      // العمولات المصروفة صارت بنوداً في التكاليف (فالربح أعلاه بعدها): تُعاد هنا حتى لا تُخصم مرتين
+      commInCost: inCost,
+      afterComm: (profit !== null && bd) ? money(profit - ownerComm - parentComm - share - partnerComm + inCost) : null,
     };
   }
 
@@ -307,7 +310,7 @@
         b.orders++; b.revenue += f.revenue;
         if (f.profit === null) { b.uncostedRev += f.revenue; continue; }
         b.cost += f.cost; b.profit += f.profit;
-        if (f.bd) b.comm += num(f.ownerComm) + num(f.parentComm) + num(f.partnerComm) + num(f.share);
+        if (f.bd) b.comm += num(f.ownerComm) + num(f.parentComm) + num(f.partnerComm) + num(f.share) - num(f.commInCost);
       }
       for (const e of exps) bucket(ctx.calc.expDay(e).slice(0, 7)).expenses += num(e.amount);
       const rows = [...months.values()].sort((a, b) => a.month.localeCompare(b.month)).map((b) => ({
