@@ -700,6 +700,7 @@
     $('#homeMap').innerHTML = HOME_MAP.filter((m) => canPage(m.page) && homeNavShown(m.page))
       .map((m) => `<button type="button" class="home-tile" data-hgo="${m.page}">${icon(m.i)}<span><b>${m.t}</b><small>${m.d}</small></span></button>`).join('');
     $$('[data-hgo]', $('#homeMap')).forEach((b) => b.addEventListener('click', () => showPage(b.dataset.hgo)));
+    renderHomeExp();
   }
   $('#homeAllOrders').addEventListener('click', () => showPage('orders'));
 
@@ -6019,6 +6020,127 @@ function docTitle(order) {
     const S = (l) => { const x = rep.summary.find((s) => s.label === l); return x ? fmt(x.value) : '0'; };
     const caption = [`*حركة العهدة* — ${userId ? custName(userId) : 'كل الموظفين'}`, `المستلم: ${S('المستلم')} • المصروف: ${S('المصروف من العهدة')} • المتبقي: ${S('المتبقي من العهدة')} ${currency()}`, 'كل حركة بتاريخها ووقتها في الملف المرفق.'].join('\n');
     await repPdfRender(rep, meta, 'custody-' + (userId ? custName(userId).replace(/[^\p{L}\p{N}]+/gu, '-') + '-' : '') + (ctx.from || 'all') + '_' + ctx.to + '.pdf', btn, { share: !!share, caption });
+  }
+
+  /* ---------------- الرئيسية: مصروفات الشركة والعهد (لمن يرى مصروفات الجميع: expenses.view_all) ----------------
+     لكل موظف: ما استلمه، ومجموع مصروفاته، والمتبقي من عهدته. الضغط على الموظف يفتح تفاصيله، ويُصدَّر PDF/واتساب. */
+  function expPeople() {
+    const byL = new Map(custLedger().map((p) => [p.userId, p]));
+    const m = new Map();
+    const P = (id, name) => { if (!m.has(id)) m.set(id, { id, name: custName(id, name), received: 0, spent: 0, n: 0, last: '' }); return m.get(id); };
+    custList.forEach((r) => { const p = P(r.user_id, r.user_name); p.received = money(p.received + num(r.amount)); });
+    expList.forEach((e) => { const p = P(e.created_by, e.created_by_name); p.spent = money(p.spent + num(e.amount)); p.n++; const d = expDay(e); if (d > p.last) p.last = d; });
+    return [...m.values()].map((p) => ({ ...p, custody: byL.get(p.id) || null })).sort((a, b) => b.spent - a.spent || b.received - a.received);
+  }
+  let homeExpBusy = false, homeExpAt = 0;   // آخر تحميل لبطاقة الرئيسية (مستقل عن غيره: لا حلقة تحميل)
+  function renderHomeExp() {
+    const box = $('#homeExp');
+    if (!box) return;
+    if (!can('expenses.view_all') || !homeNavShown('expenses')) { box.hidden = true; return; }
+    box.hidden = false;
+    const head = `<div class="home-h"><h3>${icon('wallet')} مصروفات الشركة والعهد</h3><small class="hint">اضغط على الموظف لعرض تفاصيله</small></div>`;
+    if (Date.now() - homeExpAt > 60000 && !homeExpBusy) {
+      homeExpBusy = true;
+      const first = !homeExpAt;
+      if (first) box.innerHTML = head + '<p class="hint">جارٍ تحميل المصروفات…</p>';
+      Promise.all([loadExpenses(), loadCustody()])
+        .then(() => { homeExpAt = Date.now(); homeExpBusy = false; if (document.body.dataset.page === 'home') renderHomeExp(); })
+        .catch((e) => { homeExpAt = Date.now(); homeExpBusy = false; box.innerHTML = head + `<p class="error">${esc(humanError(e && e.message, 'تعذّر تحميل المصروفات. تحقق من الاتصال.'))}</p>`; });
+      if (first) return;
+    }
+    const ps = expPeople();
+    const cu = esc(currency());
+    const T = (k) => money(ps.reduce((s, p) => s + num(p[k]), 0));
+    const bal = money(ps.reduce((s, p) => s + (p.custody ? num(p.custody.balance) : 0), 0));
+    box.innerHTML = head + (ps.length ? `
+      <div class="hx-tot"><span>المستلم <b>${fmt(T('received'))}</b></span><span>المصروف <b>${fmt(T('spent'))}</b></span><span>المتبقي من العهد <b class="${bal < 0 ? 'neg' : ''}">${fmt(bal)}</b></span><small>${cu}</small></div>
+      <ul class="home-list hx-list">${ps.map((p) => `<li><button type="button" data-hexp="${esc(p.id)}">
+        <span class="hl-main"><b>${esc(p.name)}</b><small>${p.n} مصروف${p.last ? ' • آخرها ' + esc(fmtDate(p.last)) : ''}</small></span>
+        <span class="hx-amts"><span>استلم <b>${fmt(p.received)}</b></span><span>صرف <b>${fmt(p.spent)}</b></span>${p.custody ? `<span>المتبقي <b class="${p.custody.balance < 0 ? 'neg' : 'pos'}">${fmt(p.custody.balance)}</b></span>` : '<span class="hint">بلا عهدة</span>'}</span>
+        ${icon('chevron')}</button></li>`).join('')}</ul>
+      <div class="btn-row hx-actions">
+        <button type="button" class="btn small primary" id="hxWa">${icon('whatsapp')} مشاركة PDF واتساب</button>
+        <button type="button" class="btn small" id="hxPdf">${icon('download')} تنزيل PDF</button>
+      </div>` : '<p class="home-empty">لا توجد مصروفات أو عهد مسجّلة بعد.</p>');
+    $$('[data-hexp]', box).forEach((b) => b.addEventListener('click', () => expPersonModal(b.dataset.hexp)));
+    if ($('#hxPdf', box)) $('#hxPdf', box).onclick = () => exportExpPeoplePdf(null, $('#hxPdf', box));
+    if ($('#hxWa', box)) $('#hxWa', box).onclick = () => exportExpPeoplePdf(null, $('#hxWa', box), true);
+  }
+
+  /** تفاصيل موظف: ملخص، وكشف العهدة، وكل مصروفاته — مع PDF وواتساب */
+  function expPersonModal(id) {
+    const p = expPeople().find((x) => x.id === id);
+    if (!p) return;
+    const cu = esc(currency());
+    const exps = expList.filter((e) => e.created_by === id).slice().sort((a, b) => expDay(b).localeCompare(expDay(a)) || String(b.created_at).localeCompare(String(a.created_at)));
+    const moves = p.custody ? p.custody.moves.slice().reverse() : [];
+    openModal(`مصروفات وعهدة — ${esc(p.name)}`, `
+      <div class="stats-row hx-stats">
+        <div class="stat"><span>المستلم</span><b>${fmt(p.received)}</b><small>${cu}</small></div>
+        <div class="stat"><span>المصروف</span><b>${fmt(p.spent)}</b><small>${p.n} مصروف</small></div>
+        <div class="stat"><span>المتبقي من العهدة</span><b class="${p.custody && p.custody.balance < 0 ? 'neg' : ''}">${p.custody ? fmt(p.custody.balance) : '—'}</b><small>${p.custody ? cu : 'لم يستلم عهدة'}</small></div>
+      </div>
+      ${moves.length ? `<h4 class="hx-h">كشف العهدة (الاستلام والصرف)</h4>
+      <div class="table-wrap"><table class="table cust-moves"><thead><tr><th>البيان والوقت</th><th class="ta-end">المبلغ</th><th class="ta-end">الرصيد</th></tr></thead><tbody>
+        ${moves.slice(0, 60).map((m) => `<tr class="${m.kind === 'in' ? 'mv-in' : 'mv-out'}"><td>${m.kind === 'in' ? '<span class="badge st-delivered">استلام</span> ' : '<span class="badge">صرف</span> '}${esc(m.text || '')}${m.category ? ` <small class="hint">(${esc(m.category)})</small>` : ''}<small class="mv-at"><bdi>${esc(fmtDate(localDate(m.at)))} ${esc(localTime(m.at))}</bdi></small></td>
+          <td class="num">${m.kind === 'in' ? '+' : '−'}${fmt(m.amount)}</td><td class="num${m.balance < 0 ? ' neg' : ''}"><b>${fmt(m.balance)}</b></td></tr>`).join('')}
+      </tbody></table></div>` : ''}
+      <h4 class="hx-h">كل المصروفات (${exps.length})</h4>
+      ${exps.length ? `<div class="table-wrap"><table class="table cust-moves"><thead><tr><th>البيان</th><th class="ta-end">المبلغ</th></tr></thead><tbody>
+        ${exps.slice(0, 100).map((e) => `<tr><td><b>${esc(e.name)}</b>${e.category ? ` <small class="hint">(${esc(e.category)})</small>` : ''}${e.order_number ? ` <small class="hint">طلب #${esc(e.order_number)}</small>` : ''}<small class="mv-at"><bdi>${esc(fmtDate(expDay(e)))}</bdi>${e.note ? ' — ' + esc(e.note) : ''}</small></td><td class="num">${fmt(e.amount)}</td></tr>`).join('')}
+      </tbody></table></div>${exps.length > 100 ? '<p class="hint">أحدث 100 مصروف — الكامل في ملف PDF.</p>' : ''}` : '<p class="hint">لا مصروفات مسجّلة.</p>'}
+      <div class="btn-row">
+        <button type="button" class="btn" id="hxOpen">${icon('list')} فتح في صفحة المصروفات</button>
+        <button type="button" class="btn" id="hxPPdf">${icon('download')} تنزيل PDF</button>
+        <button type="button" class="btn primary" id="hxPWa">${icon('whatsapp')} مشاركة PDF واتساب</button>
+      </div>`, (b) => {
+      $('#hxPPdf', b).onclick = () => exportExpPeoplePdf(id, $('#hxPPdf', b));
+      $('#hxPWa', b).onclick = () => exportExpPeoplePdf(id, $('#hxPWa', b), true);
+      $('#hxOpen', b).onclick = () => {
+        closeModal(); showPage('expenses');
+        const sel = $('#expUser');
+        setTimeout(() => { if (sel && [...sel.options].some((o) => o.value === id)) { sel.value = id; sel.dispatchEvent(new Event('change')); } }, 400);
+      };
+    }, 'drawer wide');
+  }
+
+  /** PDF مصروفات الشركة (id = null) أو موظف واحد: ملخص لكل موظف، والمصروفات بالتفصيل، والاستلامات */
+  async function exportExpPeoplePdf(id, btn, share) {
+    const ps = expPeople().filter((p) => !id || p.id === id);
+    if (!ps.length) { toast('لا توجد بيانات للتصدير', true); return; }
+    const col = (key, label, kind = 'text') => ({ key, label, kind });
+    const ids = new Set(ps.map((p) => p.id));
+    const one = !!id;
+    const T = (k) => money(ps.reduce((s, p) => s + num(p[k]), 0));
+    const bal = money(ps.reduce((s, p) => s + (p.custody ? num(p.custody.balance) : 0), 0));
+    const people = ps.map((p) => ({ name: p.name, received: p.received, spent: p.spent, balance: p.custody ? p.custody.balance : null, n: p.n, last: p.last }));
+    const exps = expList.filter((e) => ids.has(e.created_by)).slice().sort((a, b) => expDay(a).localeCompare(expDay(b)))
+      .map((e) => ({ date: expDay(e), who: custName(e.created_by, e.created_by_name), name: e.name || '', category: e.category || '', amount: money(e.amount), order: e.order_number ? '#' + e.order_number : '', note: e.note || '' }));
+    const recs = custList.filter((r) => ids.has(r.user_id)).slice().sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)))
+      .map((r) => ({ date: localDate(r.created_at), time: localTime(r.created_at), who: custName(r.user_id, r.user_name), amount: money(r.amount), note: r.note || '', by: r.created_by_name || '' }));
+    const title = one ? 'مصروفات وعهدة — ' + ps[0].name : 'مصروفات الشركة والعهد';
+    const rep = {
+      id: 'company-expenses', title, from: '', to: today(), portrait: one,
+      summary: [
+        { label: 'المستلم (العهد)', value: T('received'), kind: 'money' },
+        { label: 'مجموع المصروفات', value: T('spent'), kind: 'money' },
+        { label: 'المتبقي من العهد', value: bal, kind: 'money' },
+        { label: 'عدد المصروفات', value: exps.length, kind: 'num' },
+      ],
+      tables: [
+        ...(one ? [] : [{ title: 'حسب الموظف', columns: [col('name', 'الموظف'), col('received', 'المستلم', 'money'), col('spent', 'المصروف', 'money'), col('balance', 'المتبقي من العهدة', 'money'), col('n', 'عدد المصروفات', 'num'), col('last', 'آخر مصروف', 'date')], rows: people,
+          totals: { name: 'الإجمالي', received: T('received'), spent: T('spent'), balance: bal, n: exps.length } }]),
+        { title: 'المصروفات بالتفصيل', columns: [col('date', 'التاريخ', 'date'), ...(one ? [] : [col('who', 'الموظف')]), col('name', 'البيان'), col('category', 'التصنيف'), col('order', 'الطلب'), col('note', 'ملاحظة'), col('amount', 'المبلغ', 'money')], rows: exps,
+          totals: { date: 'الإجمالي', amount: T('spent') } },
+        ...(recs.length ? [{ title: 'الاستلامات (العهد)', columns: [col('date', 'التاريخ', 'date'), col('time', 'الوقت'), ...(one ? [] : [col('who', 'الموظف')]), col('note', 'ملاحظة'), col('by', 'سجّله'), col('amount', 'المبلغ', 'money')], rows: recs,
+          totals: { date: 'الإجمالي', amount: T('received') } }] : []),
+      ],
+      notes: ['«المصروف» كل مصروفات الموظف المسجّلة. «المتبقي من العهدة» = ما استلمه ناقص مصروفاته من يوم أول استلام له (المصروفات الأقدم لا تمس العهدة).'],
+    };
+    const meta = [['المتجر', settings().shopName || 'أصالة نجد'], ['الموظف', one ? ps[0].name : 'كل الموظفين'], ['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']];
+    const file = (one ? 'expenses-' + ps[0].name.replace(/[^\p{L}\p{N}]+/gu, '-') : 'company-expenses') + '-' + today() + '.pdf';
+    const caption = [`*${title}*`, `المستلم: ${fmt(T('received'))} • المصروف: ${fmt(T('spent'))} • المتبقي من العهد: ${fmt(bal)} ${currency()}`, 'التفاصيل في الملف المرفق.'].join('\n');
+    await repPdfRender(rep, meta, file, btn, { share: !!share, caption });
   }
   $('#btnAddReceipt').addEventListener('click', () => receiptForm(null, can('expenses.view_all') ? $('#expUser').value : ''));
   $('#expUser').addEventListener('change', renderCustodyBox);

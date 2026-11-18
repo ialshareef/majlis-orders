@@ -3968,3 +3968,17 @@ body.portal { background: var(--bg); }
   #ordersTable td.c-comm { order: 11; }
   #ordersTable td.row-actions { order: 12; }
 }
+
+/* الرئيسية: مصروفات الشركة والعهد (للمدير ومن يرى مصروفات الجميع) */
+.home-exp { margin-bottom: 16px; }
+.home-exp .home-h h3 { display: inline-flex; align-items: center; gap: 6px; }
+.home-exp .home-h h3 svg { width: 18px; height: 18px; }
+.hx-tot { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; padding: 8px 12px; margin: 0 0 6px; border-radius: var(--r); background: var(--surface-2); font-size: .9rem; }
+.hx-tot b { font-size: 1.05rem; font-variant-numeric: tabular-nums; }
+.hx-tot small { color: var(--ink-3); }
+.hx-amts { display: grid; justify-items: end; gap: 1px; font-size: .8rem; color: var(--ink-3); white-space: nowrap; }
+.hx-amts b { color: var(--ink); font-variant-numeric: tabular-nums; }
+.hx-amts b.pos { color: var(--ok, #15803d); }
+.hx-amts b.neg, .hx-tot b.neg, .hx-stats b.neg { color: var(--danger); }
+.hx-actions { justify-content: flex-start; margin-top: 8px; }
+.hx-h { margin: 14px 0 6px; font-size: .95rem; }
