@@ -440,13 +440,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.21';
-// بصمة asalh-najd-1.1.21.apk (إصدار GitHub v1.1.21، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.21 وversionCode 10121، ونفس شهادة توقيع 1.1.20).
-const UPDATE_FALLBACK_SHA256 = 'f0a04ce46ac99b0348514920f499407556057cd10301320c9a8dd391c77b972b';
+const UPDATE_FALLBACK_VERSION = '1.1.22';
+// بصمة asalh-najd-1.1.22.apk (إصدار GitHub v1.1.22، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.22 وversionCode 10122، ونفس شهادة توقيع 1.1.21).
+const UPDATE_FALLBACK_SHA256 = '79cbfc8b18270f52faf5d201b36606de33714a3169be01d23a0a05c27c7e25bb';
 const UPDATE_FALLBACK_NOTES = [
-  'فلتر «بلا تكاليف» في صفحة الطلبات لمتابعة الطلبات التي لم تُسجَّل تكاليفها',
-  'بطاقة الطلب في الجوال: تاريخ التوصيل كاملاً، وزر العمولة غير المصروفة «لم تُصرف»',
+  'الرئيسية للمدير: «مصروفات الشركة والعهد» — لكل موظف استلامه ومصروفه والمتبقي، وتفاصيله بالضغط',
+  'تصدير PDF ومشاركة واتساب لمصروفات الشركة أو لموظف واحد',
 ];
 
 function versionCodeOfName(v) {
