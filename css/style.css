@@ -4026,3 +4026,8 @@ input[data-est="1"] { background: var(--warn-soft); }
 .pur-lines td, .pur-lines th { font-size: .86rem; vertical-align: top; }
 .pur-lines select { margin: 0; min-width: 140px; max-width: 220px; }
 #page-purchases .exp-filters .search { flex: 1 1 220px; }
+
+/* المصروفات: تصنيف طويل (من نص حر قديم) يلتف داخل خانته ولا يتراكب على خانة المبلغ */
+#expensesTable td { min-width: 0; }
+#expensesTable .badge { white-space: normal; max-width: 100%; overflow-wrap: anywhere; text-align: start; }
+#expCat { max-width: 100%; min-width: 0; text-overflow: ellipsis; }

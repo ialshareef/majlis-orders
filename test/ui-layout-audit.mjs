@@ -68,7 +68,7 @@ const env = envWith({
   settings: [{ id: 1, data: JSON.stringify({ shopName: 'أصالة نجد للمجالس العربية والديكور', phone: '0500000000' }), updated_at: past }], items: [],
 });
 for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses', 'user_permissions']) env.DB.tables.set(t, []);
-env.DB.tables.set('expenses', Array.from({ length: 8 }, (_, i) => ({ id: 'e' + i, name: ['إيجار المعرض الرئيسي — طريق الملك فهد', 'رواتب', 'Google Ads campaign (Ramadan)', 'كهرباء'][i % 4], amount: [125000, 300, 45678.9, 12][i % 4], category: ['إيجار', 'رواتب', 'تسويق', 'خدمات'][i % 4], note: 'ملاحظة', created_by: '1', created_at: thisMonth(1 + i) + 'T08:00:00Z', updated_at: thisMonth(1 + i) + 'T08:00:00Z', expense_date: thisMonth(1 + i), order_id: null })));
+env.DB.tables.set('expenses', Array.from({ length: 8 }, (_, i) => ({ id: 'e' + i, name: ['إيجار المعرض الرئيسي — طريق الملك فهد', 'رواتب', 'Google Ads campaign (Ramadan)', 'كهرباء'][i % 4], amount: [125000, 300, 45678.9, 12][i % 4], category: ['إيجار', 'تسليم عبدالله ظفران ٥٠٠ ريال حسب طلب الأخ خالد', 'تسويق', 'خدمات'][i % 4], note: 'ملاحظة', created_by: '1', created_at: thisMonth(1 + i) + 'T08:00:00Z', updated_at: thisMonth(1 + i) + 'T08:00:00Z', expense_date: thisMonth(1 + i), order_id: null })));
 env.DB.tables.set('activity', Array.from({ length: 15 }, (_, i) => ({ id: 'a' + i, at: new Date(Date.now() - i * 3600e3).toISOString(), data: JSON.stringify({ id: 'a' + i, at: new Date(Date.now() - i * 3600e3).toISOString(), user: LONG_NAMES[i % 6], action: 'تعديل الطلب', detail: 'تغيير حالة الطلب رقم 1005 من «جديد» إلى «قيد التنفيذ» مع تحديث مبلغ الدفعة الأولى إلى 12,345.67 ر.س' }) })));
 env.ADMIN_INIT_PASSWORD = '';
 env.OWNER_USER_ID = '1';
