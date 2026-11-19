@@ -2477,8 +2477,8 @@ async function bootstrap(env, user) {
     user: publicUser(user),
     // صلاحيات المستخدم الحالي الفعّالة: للواجهة لإخفاء ما لا يملكه فقط (الفرض في الخادم دائماً)
     permissions: [...effectivePermissions(user, user.permissions)],
-    settings: settings ? safeParse(settings.data, {}) : {},
-    items: items.results.map((r) => safeParse(r.data)),
+    settings: (() => { const s = settings ? safeParse(settings.data, {}) : {}; if (s && !canViewAllCosts) delete s.estimate; return s; })(),
+    items: items.results.map((r) => { const i = safeParse(r.data); return canViewAllCosts ? i : stripItemCost(i); }),
     // الملكية مصفّاة أعلاه من عمود قاعدة البيانات الموثوق، لا من بيانات الطلب.
     // لا نعيد صفوفاً جزئية للغير؛ ذلك يمنع التسريب عبر التفاصيل أو التصدير.
     // لا نعيد للغير إلا طلباته؛ والتكاليف لا تظهر إلا لمن يملك صلاحية رؤيتها.
@@ -2652,6 +2652,25 @@ async function sync(env, user, body) {
   if ((it.upsert && it.upsert.length) || (it.delete && it.delete.length)) {
     // الأصناف والأسعار صلاحية مستقلة عن إعدادات المحل
     requirePerm(user, 'items.manage');
+    for (const i of (it.upsert || [])) {
+      for (const k of ITEM_COST_FIELDS) {
+        const v = i && i[k];
+        if (v !== undefined && v !== null && !(typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000000)) finErr('item.' + k);
+      }
+    }
+    // من لا يرى التكاليف لا تصله أسعار الجملة: يُحفظ ما في القاعدة بدل أن يمحوه حفظه للصنف
+    if (!canSeeAnyCost(user) && (it.upsert || []).length) {
+      const ids = it.upsert.map((i) => i && i.id).filter(Boolean);
+      for (let n = 0; n < ids.length; n += 50) {
+        const chunk = ids.slice(n, n + 50);
+        const rows = await env.DB.prepare(`SELECT id, data FROM items WHERE id IN (${chunk.map(() => '?').join(',')})`).bind(...chunk).all();
+        for (const r of rows.results || []) {
+          const old = safeParse(r.data, {}) || {};
+          const inc = it.upsert.find((i) => i && i.id === r.id);
+          if (inc) ITEM_COST_FIELDS.forEach((k) => { if (old[k] !== undefined) inc[k] = old[k]; else delete inc[k]; });
+        }
+      }
+    }
     (it.upsert || []).forEach((i) => q('INSERT INTO items (id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', i.id, JSON.stringify(i), ts));
     (it.delete || []).forEach((id) => q('DELETE FROM items WHERE id = ?', id));
   }
@@ -2843,6 +2862,18 @@ async function sync(env, user, body) {
 
   if (body.settings) {
     requirePerm(user, 'settings.manage');
+    // إعدادات التكلفة التقديرية: شكل صالح فقط، ومن لا يرى التكاليف لا يمحوها
+    { const E = body.settings.estimate;
+      if (E !== undefined && E !== null) {
+        if (typeof E !== 'object' || Array.isArray(E) || JSON.stringify(E).length > 8000) finErr('settings.estimate');
+        if (E.workshops !== undefined && (!Array.isArray(E.workshops) || E.workshops.length > 10)) finErr('settings.estimate');
+      }
+      if (!canSeeAnyCost(user)) {
+        const srow = await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+        const old = (srow && safeParse(srow.data, {})) || {};
+        if (old.estimate !== undefined) body.settings.estimate = old.estimate; else delete body.settings.estimate;
+      }
+    }
     q('INSERT INTO settings (id, data, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', JSON.stringify(body.settings), ts);
   }
 
@@ -2881,6 +2912,17 @@ async function sync(env, user, body) {
 const COST_FIELDS = ['costs', 'costTotal', 'extraCosts', 'costUpdatedAt', 'costUpdatedByName'];
 
 /** نسخة الطلب كما تصل الموظف: بلا تكلفة ولا ربح */
+/* أسعار الجملة ومعدّلات الاستهلاك على الأصناف (والتقدير في الإعدادات): لمن يرى التكاليف فقط */
+const ITEM_COST_FIELDS = ['cost', 'fabricPerM', 'foamPerM', 'laborPerM', 'sheetLen'];
+function stripItemCost(i) {
+  if (!i || typeof i !== 'object') return i;
+  const r = { ...i };
+  ITEM_COST_FIELDS.forEach((k) => delete r[k]);
+  return r;
+}
+// أسعار الجملة أسرار الإدارة: لمن يرى تكاليف الجميع (costs.view_all) — لا لمن يرى تكاليف طلباته فقط
+const canSeeAnyCost = (user) => hasPerm(user, 'costs.view_all', user.permissions);
+
 function stripCosts(o) {
   if (!o || typeof o !== 'object') return o;
   const r = { ...o };

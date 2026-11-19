@@ -3987,3 +3987,37 @@ body.portal { background: var(--bg); }
 .comm-cost-lines { display: grid; gap: 4px; margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--line); border-radius: var(--r); background: var(--surface-2); }
 .comm-cost-lines svg { width: 14px; height: 14px; vertical-align: -2px; }
 .cc-line { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+
+/* التكلفة التقديرية (مرحلة التسعير) */
+.est-box { margin-top: 14px; padding: 14px 16px; border-style: dashed; }
+.est-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px; margin-bottom: 8px; }
+.est-head h4 { margin: 0; display: inline-flex; align-items: center; gap: 6px; }
+.est-head svg { width: 18px; height: 18px; }
+.est-group { padding: 8px 0; border-top: 1px solid var(--line-soft, var(--line)); }
+.est-rows { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 3px 12px; margin-top: 4px; font-size: .88rem; }
+.est-rows span { color: var(--ink-2); overflow-wrap: anywhere; }
+.est-rows b { font-variant-numeric: tabular-nums; text-align: end; }
+.est-sum { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+.est-sum > div { padding: 10px 12px; border-radius: var(--r); background: var(--surface-2); display: grid; }
+.est-sum span { font-size: .8rem; color: var(--ink-3); }
+.est-sum b { font-size: 1.15rem; font-variant-numeric: tabular-nums; }
+.est-sum b.pos { color: var(--ok, #15803d); }
+.est-sum b.neg { color: var(--danger); }
+.est-sum small { color: var(--ink-3); font-size: .76rem; }
+.est-sum > div.warn { background: var(--warn-soft); }
+.est-warn { color: var(--warn); margin: 8px 0 0; display: flex; align-items: center; gap: 6px; }
+.est-warn svg { width: 16px; height: 16px; flex: none; }
+.est-miss { margin: 8px 0 0; }
+.est-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 10px; }
+.est-ws { display: flex; align-items: center; gap: 6px; margin: 0; }
+.est-ws select { width: auto; margin: 0; }
+input[data-est="1"] { background: var(--warn-soft); }
+/* نافذة الصنف وإعدادات التقدير */
+.f-cost { border: 1px dashed var(--line); border-radius: var(--r); padding: 8px 12px 10px; margin: 8px 0; }
+.f-cost legend { font-size: .82rem; color: var(--ink-3); padding: 0 4px; }
+.row3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.est-cfg input { width: 100%; min-width: 60px; margin: 0; }
+.ws-row { display: grid; grid-template-columns: minmax(0, 1.4fr) repeat(3, minmax(0, 1fr)) auto; align-items: center; gap: 8px; margin: 8px 0; }
+.ws-row label { margin: 0; font-size: .78rem; display: grid; gap: 2px; }
+.ws-row input { margin: 0; min-width: 0; }
+@media (max-width: 560px) { .ws-row { grid-template-columns: repeat(3, minmax(0, 1fr)); } .ws-row .wn { grid-column: 1 / -1; } .row3 { grid-template-columns: minmax(0, 1fr); } }

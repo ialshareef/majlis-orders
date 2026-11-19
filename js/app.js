@@ -2396,8 +2396,136 @@ function canEditOrder(o) {
     return info;
   }
 
+
+  /* ---------------- التكلفة التقديرية ----------------
+     سعر الجملة على كل صنف (item.cost): القماش لكل متر قماش، والإسفنج لكل متر كنب، والجلسة (الخشب) لهيكل كل متر،
+     والإكسسوار للقطعة. ومعدّلات الاستهلاك لكل نوع جلسة في الإعدادات (settings.estimate) وتُعدَّل لكل جلسة على صنفها.
+     العمق يغيّر الاستهلاك (مجلس أعمق = قماش وإسفنج أكثر)، والزاوية تضيف قماشاً. تقدير لا يُخزَّن ولا يغيّر التكاليف الفعلية. */
+  const SEAT_TYPES = { sofa: 'كنب (خشب)', floorWood: 'جلسة أرضية خشب', floorFoam: 'جلسة أرضية إسفنج' };
+  const EST_DEFAULTS = {
+    // foam = طبقات الإسفنج لكل متر من الجلسة (قعدة + ظهر…): الألواح = الأمتار × الطبقات ÷ طول اللوح
+    types: { sofa: { fabric: 2.5, foam: 2, labor: 70 }, floorWood: { fabric: 2, foam: 1, labor: 50 }, floorFoam: { fabric: 2.3, foam: 2, labor: 45 } },
+    cornerFabric: 1, waste: 10, minMargin: 30, workshops: [],
+  };
+  // أسعار الجملة والتقدير للإدارة: من يرى تكاليف الجميع (الخادم يحجبها عن غيره أصلاً)
+  const canSeeCostAny = () => can('costs.view_all');
+  function estCfg() {
+    const e = (settings().estimate && typeof settings().estimate === 'object') ? settings().estimate : {};
+    const types = {};
+    Object.keys(EST_DEFAULTS.types).forEach((k) => {
+      const d = EST_DEFAULTS.types[k], v = (e.types && e.types[k]) || {};
+      types[k] = { fabric: v.fabric ?? d.fabric, foam: v.foam ?? d.foam, labor: v.labor ?? d.labor };
+    });
+    return { types, cornerFabric: e.cornerFabric ?? EST_DEFAULTS.cornerFabric, waste: e.waste ?? EST_DEFAULTS.waste,
+      minMargin: e.minMargin ?? EST_DEFAULTS.minMargin, workshops: Array.isArray(e.workshops) ? e.workshops : [] };
+  }
+  /** نوع الجلسة من صنفها: المحدَّد صراحةً، وإلا من الاسم («أرضي…إسفنج» / «أرضي») وإلا كنب */
+  function seatTypeOf(item) {
+    if (item && SEAT_TYPES[item.seatType]) return item.seatType;
+    const n = String((item && item.name) || '');
+    if (/أرض/.test(n)) return /إسفنج|اسفنج/.test(n) ? 'floorFoam' : 'floorWood';
+    return 'sofa';
+  }
+  const has$ = (v) => v !== undefined && v !== null && v !== '' && Number.isFinite(Number(v));
+  function orderEstimate(o) {
+    const cfg = estCfg();
+    const ws = cfg.workshops.find((w) => w && w.id === o.workshopId) || null;
+    const groups = [], acc = [], missing = new Set();
+    const map = new Map();
+    ((o.design && o.design.pieces) || []).filter((p) => p.kind === 'sofa').forEach((p) => {
+      const k = sofaTypeKey(p);
+      if (!map.has(k)) map.set(k, { first: p, pieces: [], key: k });
+      map.get(k).pieces.push(p);
+    });
+    map.forEach((g) => {
+      const p = g.first;
+      const S = specRecord(p, 'wood'), F = specRecord(p, 'fabric'), M = specRecord(p, 'foam');
+      const type = seatTypeOf(S);
+      const T = cfg.types[type];
+      const qty = r2(g.pieces.reduce((s, a) => s + num(a.w), 0));
+      const corners = new Set(g.pieces.filter((a) => a.group).map((a) => a.group)).size;
+      const refD = num(S && S.depth) || 0.8;
+      const depthFac = Math.min(1.6, Math.max(0.6, (num(p.h) || refD) / refD));
+      const fabPer = has$(S && S.fabricPerM) ? num(S.fabricPerM) : T.fabric;
+      const foamPer = has$(S && S.foamPerM) ? num(S.foamPerM) : T.foam;
+      const fabricM = r2((qty * fabPer * depthFac + corners * num(cfg.cornerFabric)) * (1 + num(cfg.waste) / 100));
+      const sheetLen = M && has$(M.sheetLen) && num(M.sheetLen) > 0 ? num(M.sheetLen) : 2;   // لوح الإسفنج 200 سم افتراضياً
+      const foamU = r2(qty * foamPer * depthFac / sheetLen);
+      const rate = (ws && has$(ws[type]) && num(ws[type]) > 0) ? num(ws[type]) : (has$(S && S.laborPerM) ? num(S.laborPerM) : T.labor);
+      const part = (rec, label, units) => {
+        if (!rec) { missing.add(`${label} غير محدد`); return null; }
+        if (!has$(rec.cost)) { missing.add(`سعر جملة «${rec.name}»`); return null; }
+        return money(units * num(rec.cost));
+      };
+      const fabric = part(F, 'القماش', fabricM);
+      const foam = type === 'floorWood' && !M ? 0 : part(M, 'الإسفنج', foamU);
+      const wood = type === 'floorFoam' && S && !has$(S.cost) ? 0 : part(S, 'الجلسة', qty);
+      const labor = money(qty * rate);
+      const total = money([fabric, foam, wood, labor].reduce((s, v) => s + num(v), 0));
+      groups.push({ key: g.key, label: `${SEAT_TYPES[type]}${S ? ' — ' + S.name : ''}`, type, qty, corners, depthFac: r2(depthFac),
+        fabricName: F ? F.name : '', fabricM, fabric, foamName: M ? M.name : '', foamU, foam, wood, rate, labor, total });
+    });
+    const accLines = computeLines(o).lines.filter((l) => l.kind === 'acc' || l.kind === 'accessory' || l.itemId);
+    accLines.forEach((l) => {
+      const it = l.itemId ? Store.getItem(l.itemId) : null;
+      if (!it || it.category !== 'acc') return;
+      if (!has$(it.cost)) { missing.add(`سعر جملة «${it.name}»`); acc.push({ key: l.key, name: it.name, qty: l.qty, cost: null }); return; }
+      acc.push({ key: l.key, name: it.name, qty: l.qty, unit: money(it.cost), cost: money(num(l.qty) * num(it.cost)) });
+    });
+    const total = money(groups.reduce((s, g) => s + g.total, 0) + acc.reduce((s, a) => s + num(a.cost), 0));
+    const revenue = orderRevenue(o);
+    const profit = money(revenue - total);
+    return { groups, acc, total, revenue, profit, margin: revenue > 0 ? r2((profit / revenue) * 100) : 0, missing: [...missing], workshop: ws, cfg };
+  }
+
+  function renderEstimate() {
+    const box = $('#estBox');
+    if (!box) return;
+    const show = canSeeCostAny() && canSeeCosts(cur) && ((cur.design && cur.design.pieces) || []).length;
+    if (!show) { box.hidden = true; return; }
+    const E = orderEstimate(cur);
+    if (!E.groups.length && !E.acc.length) { box.hidden = true; return; }
+    box.hidden = false;
+    const cu = esc(currency());
+    const low = E.revenue > 0 && E.margin < num(E.cfg.minMargin);
+    const ws = E.cfg.workshops;
+    box.innerHTML = `
+      <div class="est-head"><h4>${icon('wallet')} التكلفة التقديرية</h4><small class="hint">تقريبية من أسعار الجملة ومعدّلات الاستهلاك — للإدارة فقط</small></div>
+      ${E.groups.map((g) => `<div class="est-group"><b>${esc(g.label)}</b> <small class="hint">${fmtQty(g.qty)} م${g.corners ? ` • ${g.corners} زاوية` : ''}${g.depthFac !== 1 ? ` • عمق ×${g.depthFac}` : ''}</small>
+        <div class="est-rows">
+          <span>القماش${g.fabricName ? ' (' + esc(g.fabricName) + ')' : ''}: ${fmtQty(g.fabricM)} م</span><b>${g.fabric === null ? '—' : fmt(g.fabric)}</b>
+          <span>الإسفنج${g.foamName ? ' (' + esc(g.foamName) + ')' : ''}: ${fmtQty(g.foamU)} لوح</span><b>${g.foam === null ? '—' : fmt(g.foam)}</b>
+          <span>${g.type === 'sofa' ? 'هيكل الكنب (خشب)' : 'الجلسة'}: ${fmtQty(g.qty)} م</span><b>${g.wood === null ? '—' : fmt(g.wood)}</b>
+          <span>أجرة التنجيد والخياطة: ${fmtQty(g.qty)} م × ${fmt(g.rate)}</span><b>${fmt(g.labor)}</b>
+        </div></div>`).join('')}
+      ${E.acc.length ? `<div class="est-group"><b>الإكسسوارات</b><div class="est-rows">${E.acc.map((a) => `<span>${esc(a.name)} × ${fmtQty(a.qty)}</span><b>${a.cost === null ? '—' : fmt(a.cost)}</b>`).join('')}</div></div>` : ''}
+      <div class="est-sum">
+        <div><span>التكلفة التقديرية</span><b>${fmt(E.total)}</b><small>${cu}</small></div>
+        <div class="${low ? 'warn' : ''}"><span>الربح التقديري</span><b class="${E.profit < 0 ? 'neg' : 'pos'}">${fmt(E.profit)}</b><small>${fmtQty(E.margin)}٪ من البيع قبل الضريبة</small></div>
+      </div>
+      ${low ? `<p class="est-warn">${icon('alert')} الربح التقديري أقل من ${fmtQty(E.cfg.minMargin)}٪ — راجع السعر قبل اعتماده للعميل.</p>` : ''}
+      ${E.missing.length ? `<p class="hint est-miss">ناقص للتقدير الكامل: ${E.missing.map(esc).join('، ')}. أضف سعر الجملة من صفحة الأصناف.</p>` : ''}
+      <div class="est-actions">
+        ${ws.length ? `<label class="est-ws">مشغل التنجيد <select id="estWs"><option value="">المعتاد (الأسعار الافتراضية)</option>${ws.map((w) => `<option value="${esc(w.id)}"${w.id === cur.workshopId ? ' selected' : ''}>${esc(w.name)}</option>`).join('')}</select></label>` : ''}
+        ${canSeeCosts(cur) && cur.id && db().orders.some((x) => x.id === cur.id) ? `<button type="button" class="btn small" id="estApply">${icon('check')} اعتماد كتكلفة (تعبئة نافذة التكاليف)</button>` : '<small class="hint">احفظ الطلب لتعتمد التقدير كتكلفة.</small>'}
+      </div>`;
+    const sel = $('#estWs', box);
+    if (sel) sel.onchange = () => { cur.workshopId = sel.value || undefined; if (!sel.value) delete cur.workshopId; markDirty(); renderEstimate(); };
+    const ap = $('#estApply', box);
+    if (ap) ap.onclick = () => {
+      const o = db().orders.find((x) => x.id === cur.id);
+      if (!o) return;
+      const E2 = orderEstimate(o);
+      const pre = {};
+      E2.groups.forEach((g) => { if (g.qty > 0) pre[g.key] = money(g.total / g.qty); });
+      E2.acc.forEach((a) => { if (a.unit !== undefined) pre[a.key] = a.unit; });
+      costForm(o, pre);
+    };
+  }
+
   function renderPricing() {
     const { lines, subtotal, vatEnabled, vatRate, vatAmount, discount, total } = computeLines(cur);
+    try { renderEstimate(); } catch (_) { /* التقدير لا يعطّل التسعير */ }
     const tb = $('#priceTable tbody');
     if (!lines.length) {
       // حالة فارغة تخصّ التسعير نفسه: عنوان صريح وإجراءان، بلا تعليمات مرحلة التصميم
@@ -4769,7 +4897,7 @@ function docTitle(order) {
   }
 
   /** نافذة إدخال تكلفة كل صنف في الطلب مع حساب الربح مباشرة */
-  function costForm(o) {
+  function costForm(o, prefill) {
     if (!o || !canSeeCosts(o) || !canWriteCosts(o, orderCost(o) !== null)) return;
     const info = computeCosts(o);
     const cur$ = esc(currency());
@@ -4783,7 +4911,7 @@ function docTitle(order) {
         <td data-label="الكمية" class="num">${r.kind === 'sofa' ? fmtQty(r.qty) : r.qty} ${esc(r.unit)}</td>
         <td data-label="سعر البيع" class="num">${fmt(r.price)}</td>
         <td data-label="إجمالي البيع" class="num">${fmt(r.total)}</td>
-        <td data-label="تكلفة الوحدة"><input class="inline num" type="number" step="1" min="0" inputmode="numeric" data-ck="${esc(r.key)}" value="${r.unitCost === null ? '' : r.unitCost}" placeholder="0" aria-label="تكلفة الوحدة لـ ${esc(r.name)}"></td>
+        <td data-label="تكلفة الوحدة"><input class="inline num" type="number" step="1" min="0" inputmode="numeric" data-ck="${esc(r.key)}" value="${r.unitCost === null ? (prefill && prefill[r.key] !== undefined ? prefill[r.key] : '') : r.unitCost}"${r.unitCost === null && prefill && prefill[r.key] !== undefined ? ' data-est="1" title="قيمة تقديرية — عدّلها بالفعلية"' : ''} placeholder="0" aria-label="تكلفة الوحدة لـ ${esc(r.name)}"></td>
         <td data-label="إجمالي التكلفة" class="num" data-ct="${esc(r.key)}">—</td>
         <td data-label="الربح" class="num" data-cp="${esc(r.key)}">—</td>
       </tr>`).join('');
@@ -5375,6 +5503,19 @@ function docTitle(order) {
         <p class="hint" id="fSofaHint"></p>
       </div>
       <p id="fSpecHint" class="hint" hidden></p>
+      ${canSeeCostAny() ? `<fieldset class="f-cost"><legend>التكلفة (للإدارة فقط)</legend>
+        <label><span id="fCostLbl">سعر الجملة</span> <input id="fCost" type="number" min="0" step="0.01" value="${has$(it.cost) ? esc(it.cost) : ''}" placeholder="بدون"></label>
+        <label id="fSheet">طول اللوح (م) — مثل 200×80×10 = 2 <input id="fSheetLen" type="number" min="0.1" step="0.05" value="${has$(it.sheetLen) ? esc(it.sheetLen) : ''}" placeholder="2"></label>
+        <div id="fSeat">
+          <label>نوع الجلسة <select id="fSeatType">${Object.entries(SEAT_TYPES).map(([k, v]) => `<option value="${k}"${seatTypeOf(it) === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
+          <p class="hint">الاستهلاك لكل متر من هذه الجلسة (فارغ = الافتراضي من الإعدادات). جلسة أسمك أو أعلى تحتاج قماشاً وإسفنجاً أكثر.</p>
+          <div class="row3">
+            <label>قماش (م) <input id="fFabPer" type="number" min="0" step="0.1" value="${has$(it.fabricPerM) ? esc(it.fabricPerM) : ''}"></label>
+            <label>طبقات إسفنج <input id="fFoamPer" type="number" min="0" step="0.1" value="${has$(it.foamPerM) ? esc(it.foamPerM) : ''}"></label>
+            <label>أجرة (${currency()}) <input id="fLaborPer" type="number" min="0" step="1" value="${has$(it.laborPerM) ? esc(it.laborPerM) : ''}"></label>
+          </div>
+        </div>
+      </fieldset>` : ''}
       <div id="fAcc">
         <div class="row2">
           <label>الطول (م) <input id="fW" type="number" min="0.1" step="0.05" value="${it.w || 0.5}"></label>
@@ -5400,6 +5541,13 @@ function docTitle(order) {
           ? 'لون القماش هو ما يظهر على قطع الكنب في المخطط.'
           : (cat === 'wood' ? 'العمق الافتراضي يُستعمل عند إضافة كنبة بهذا الخشب.' : '');
         $('#fPriceLbl', b).firstChild.textContent = cat === 'acc' ? `السعر (${currency()}) ` : `سعر المتر (${currency()}) `;
+        if ($('#fCostLbl', b)) {
+          $('#fCostLbl', b).textContent = { fabric: 'سعر جملة متر القماش (قبل الضريبة)', foam: 'سعر جملة لوح الإسفنج (قبل الضريبة)', wood: 'تكلفة هيكل/خامة الجلسة لكل متر (قبل الضريبة)', acc: 'سعر الجملة للقطعة (قبل الضريبة)' }[cat] || 'سعر الجملة';
+          $('#fSeat', b).hidden = cat !== 'wood';
+          $('#fSheet', b).hidden = cat !== 'foam';
+          const syncPh = () => { const T = estCfg().types[$('#fSeatType', b).value]; $('#fFabPer', b).placeholder = T.fabric; $('#fFoamPer', b).placeholder = T.foam; $('#fLaborPer', b).placeholder = T.labor; };
+          $('#fSeatType', b).onchange = syncPh; syncPh();
+        }
       };
       $('#fCat', b).addEventListener('change', sync); sync();
       $('#fCancel', b).onclick = closeModal;
@@ -5414,6 +5562,13 @@ function docTitle(order) {
           w: Math.max(0.1, num($('#fW', b).value) || 0.5), h: Math.max(0.1, num($('#fH', b).value) || 0.5),
           shape: $('#fShape', b).value, color: byMetre ? $('#fColor', b).value : $('#fColor2', b).value,
         };
+        // التكلفة لمن يراها فقط (غيره لا تصله أصلاً، والخادم يحفظ القيم القائمة)
+        if ($('#fCost', b)) {
+          const optNum = (sel) => { const v = $(sel, b).value.trim(); return v === '' ? null : Math.max(0, money(v)); };
+          data.cost = optNum('#fCost');
+          if (cat === 'foam') data.sheetLen = optNum('#fSheetLen');
+          if (cat === 'wood') { data.seatType = $('#fSeatType', b).value; data.fabricPerM = optNum('#fFabPer'); data.foamPerM = optNum('#fFoamPer'); data.laborPerM = optNum('#fLaborPer'); }
+        }
         // الصنف يُجلب بمعرّفه الآن: المرجع الملتقط عند فتح النافذة قد تكون المزامنة استبدلته
         const live = item ? Store.getItem(item.id) : null;
         if (live) Object.assign(live, data);
@@ -7570,6 +7725,19 @@ function docTitle(order) {
 
   /* الإعدادات صفحة مستقلة لا نافذة: نموذج طويل بأقسام، والحفظ في مكان ثابت.
      الحقول وأسماؤها كما كانت (sName، sVatNo…)، ويُقرأ كائن الإعدادات عند الحفظ لا عند الفتح. */
+  /** قراءة إعدادات التكلفة التقديرية من صفحة الإعدادات */
+  function readEstimate(b) {
+    const n = (id) => Math.max(0, num($('#' + id, b) && $('#' + id, b).value));
+    const types = {};
+    Object.keys(SEAT_TYPES).forEach((k) => { types[k] = { fabric: Math.min(50, n('sEstF_' + k)), foam: Math.min(50, n('sEstM_' + k)), labor: Math.min(100000, n('sEstL_' + k)) }; });
+    const workshops = $$('#sWorkshops .ws-row', b).map((r) => {
+      const w = { id: r.dataset.id, name: $('.wn', r).value.trim().slice(0, 40) };
+      $$('[data-wk]', r).forEach((i) => { if (i.value.trim() !== '') w[i.dataset.wk] = Math.min(100000, Math.max(0, num(i.value))); });
+      return w;
+    }).filter((w) => w.name).slice(0, 10);
+    return { types, cornerFabric: Math.min(50, n('sEstCorner')), waste: Math.min(100, n('sEstWaste')), minMargin: Math.min(100, n('sEstMin')), workshops };
+  }
+
   /** قراءة شراكات العمولة من نافذة الإعدادات (يُتجاهل الصف الناقص أو موظف مع نفسه) — since يبقى كما كان أو اليوم لشراكة جديدة */
   function readPartners(b) {
     return $$('#sPartners .partner-row', b).map((r) => ({
@@ -7657,6 +7825,26 @@ function docTitle(order) {
           </div>
         </div>
       </section>
+      ${canSeeCostAny() ? (() => { const E = estCfg(); const inp = (id, v, step = '0.1') => `<input id="${id}" type="number" min="0" step="${step}" value="${esc(v)}">`; return `
+      <section class="set-section" id="set-est">
+        <div class="set-head"><h3>التكلفة التقديرية</h3><p>استهلاك كل متر من الكنب أو الجلسة، وأجرة التنجيد. تقريبية وتُعدَّل متى شئت، ولكل جلسة أن تخالفها من صفحة الأصناف (مجلس أسمك أو أعلى).</p></div>
+        <div class="set-body">
+          <div class="table-wrap"><table class="table est-cfg"><thead><tr><th>النوع</th><th>قماش (م لكل متر)</th><th>إسفنج (طبقات لكل متر)</th><th>أجرة (${esc(currency())} لكل متر)</th></tr></thead><tbody>
+            ${Object.entries(SEAT_TYPES).map(([k, v]) => `<tr><td>${v}</td><td>${inp('sEstF_' + k, E.types[k].fabric)}</td><td>${inp('sEstM_' + k, E.types[k].foam)}</td><td>${inp('sEstL_' + k, E.types[k].labor, '1')}</td></tr>`).join('')}
+          </tbody></table></div>
+          <div class="row3">
+            <label>قماش إضافي لكل زاوية (م) ${inp('sEstCorner', E.cornerFabric)}</label>
+            <label>هدر القماش ٪ ${inp('sEstWaste', E.waste, '1')}</label>
+            <label>تنبيه إن قلّ الربح عن ٪ ${inp('sEstMin', E.minMargin, '1')}</label>
+          </div>
+          <div class="partners-box">
+            <b>مشاغل تنجيد أخرى (أجرة مختلفة)</b>
+            <p class="hint">أعمال لا ينفذها المشغل المعتاد: أضف المشغل وأجرته لكل متر، واختره من بطاقة «التكلفة التقديرية» في الطلب.</p>
+            <div id="sWorkshops"></div>
+            <button type="button" class="btn small" id="sAddWs">${icon('plus')} إضافة مشغل</button>
+          </div>
+        </div>
+      </section>`; })() : ''}
       <div class="set-save">
         <p class="hint">التغييرات أعلاه لا تُطبَّق حتى تحفظها.</p>
         <button class="btn primary" id="sSave">${icon('check')} حفظ الإعدادات</button>
@@ -7692,6 +7880,19 @@ function docTitle(order) {
     const syncTheme = () => $$('[data-theme-v]', b).forEach((x) => { const on = x.dataset.themeV === themePref(); x.classList.toggle('active', on); x.setAttribute('aria-pressed', String(on)); });
     $$('[data-theme-v]', b).forEach((x) => x.addEventListener('click', () => { setTheme(x.dataset.themeV); syncTheme(); }));
     syncTheme();
+    // مشاغل التنجيد البديلة: اسم + أجرة كل نوع
+    { const box = $('#sWorkshops', b);
+      if (box) {
+        const rowHtml = (w) => `<div class="ws-row" data-id="${esc((w && w.id) || Store.uid())}">
+          <input class="wn" placeholder="اسم المشغل" maxlength="40" value="${esc((w && w.name) || '')}" aria-label="اسم المشغل">
+          ${Object.entries(SEAT_TYPES).map(([k, v]) => `<label>${v.replace('جلسة ', '')} <input type="number" min="0" step="1" data-wk="${k}" value="${w && has$(w[k]) ? esc(w[k]) : ''}" aria-label="أجرة ${v}"></label>`).join('')}
+          <button type="button" class="icon-btn" data-wrm title="حذف المشغل">${icon('trash')}</button></div>`;
+        box.innerHTML = estCfg().workshops.map(rowHtml).join('');
+        const wire = () => $$('[data-wrm]', box).forEach((x) => { x.onclick = () => x.closest('.ws-row').remove(); });
+        wire();
+        $('#sAddWs', b).onclick = () => { box.insertAdjacentHTML('beforeend', rowHtml(null)); wire(); };
+      }
+    }
     // شراكات العمولة: صف لكل شراكة (موظف + موظف + نسبة)، ويُحفظ مع الإعدادات
     { const box = $('#sPartners', b);
       const staffOpts = (sel) => '<option value="">— اختر —</option>' + db().users.filter((u) => u.role !== 'mandoub' && u.active !== false).map((u) => `<option value="${esc(u.id)}"${u.id === sel ? ' selected' : ''}>${esc(u.name)}</option>`).join('');
@@ -7740,6 +7941,7 @@ function docTitle(order) {
         sellerRate: Math.min(100, Math.max(0, num($('#sSellerRate', b).value))), mandoubRate: Math.min(100, Math.max(0, num($('#sMandoubRate', b).value))), shareRate: Math.min(100, Math.max(0, num($('#sShareRate', b).value))),
         commBase: $('#sCommBase', b).value === 'total' ? 'total' : 'profit',
         partners: readPartners(b),
+        ...(canSeeCostAny() && $('#set-est', b) ? { estimate: readEstimate(b) } : {}),
         tagline: mRaw.tagline, logoUrl: mRaw.logoUrl, mapsUrl: mRaw.mapsUrl, whatsapp: mRaw.whatsapp,
         instagram: mRaw.instagram, tiktok: mRaw.tiktok, snapchat: mRaw.snapchat,
       });
