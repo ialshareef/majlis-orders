@@ -446,13 +446,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.28';
-// بصمة asalh-najd-1.1.28.apk (إصدار GitHub v1.1.28، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.28 وversionCode 10128، ونفس شهادة توقيع 1.1.27).
-const UPDATE_FALLBACK_SHA256 = 'c31a91d1c34c9f46c00285f5326db432696d9508e5e29373a9df755e573b9566';
+const UPDATE_FALLBACK_VERSION = '1.1.29';
+// بصمة asalh-najd-1.1.29.apk (إصدار GitHub v1.1.29، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.29 وversionCode 10129، ونفس شهادة توقيع 1.1.28).
+const UPDATE_FALLBACK_SHA256 = '187b01a910d8bcee376d4e244b10498a29849b787846e0f6845a3f27d3a9d7d6';
 const UPDATE_FALLBACK_NOTES = [
-  'الملف التعريفي للشركة والفيديو التعريفي: «40 عاماً» من الخبرة',
-  'إلغاء مقترحات المتصفح التي كانت تغطي الحقول أثناء الكتابة',
+  'الملف التعريفي: زر «واتساب PDF» يرسل ملف الكتالوج نفسه مباشرة بالواتساب',
+  'صفحة الملف التعريفي للعملاء: زر «مشاركة PDF بالواتساب»',
 ];
 
 function versionCodeOfName(v) {
