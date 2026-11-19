@@ -191,6 +191,7 @@
         <button type="button" data-page="reports" data-also="bi visits" title="التقارير والتحليلات"><svg><use href="#i-chart"/></svg><span>التقارير والتحليلات</span></button>
         <button type="button" data-page="whatsapp" title="إشعارات واتساب" hidden><svg><use href="#i-whatsapp"/></svg><span>إشعارات واتساب</span><span class="notif-badge" id="waBadge" hidden></span></button>
         <span class="sb-group" data-admin>الإدارة</span>
+        <button type="button" data-page="purchases" title="المشتريات" hidden><svg><use href="#i-receipt"/></svg><span>المشتريات</span></button>
         <button type="button" data-page="items" data-admin title="الأصناف والأسعار"><svg><use href="#i-tag"/></svg><span>الأصناف والأسعار</span></button>
         <!-- المستخدمون + نشاط الموظفين (سجل التحديثات) -->
         <button type="button" data-page="users" data-also="activity" data-admin title="المستخدمون ونشاطهم"><svg><use href="#i-users"/></svg><span>المستخدمون ونشاطهم</span></button>
@@ -810,6 +811,31 @@
     </section>
 
     <!-- ============ المصروفات (بصلاحيات expenses.*) ============ -->
+    <!-- ============ المشتريات: فواتير الموردين وأسعار الجملة (للإدارة: costs.view_all) ============ -->
+    <section id="page-purchases" class="page">
+      <header class="page-head">
+        <div class="ph-title"><h2>المشتريات</h2><p>فواتير الموردين بأسعارها قبل الضريبة، ومنها تُحدَّث أسعار الجملة للأصناف — للإدارة فقط.</p></div>
+        <div class="actions"><label class="btn primary file-btn"><svg><use href="#i-upload"/></svg> استيراد فواتير <input id="purImport" type="file" accept="application/json,.json" hidden></label></div>
+      </header>
+      <div class="card exp-filters">
+        <label class="search"><svg><use href="#i-search"/></svg><input id="purQ" type="search" placeholder="بحث بالمورد أو الصنف أو رقم الفاتورة" aria-label="بحث في المشتريات"></label>
+        <select id="purSup" aria-label="تصفية حسب المورد"><option value="">كل الموردين</option></select>
+        <label class="date-f">من <input id="purFrom" type="date" aria-label="من تاريخ"></label>
+        <label class="date-f">إلى <input id="purTo" type="date" aria-label="إلى تاريخ"></label>
+      </div>
+      <div class="stats-row" id="purStats"></div>
+      <div class="card table-card">
+        <div class="table-wrap">
+          <table class="table responsive" id="purTable">
+            <thead><tr><th>التاريخ</th><th>المورد</th><th>رقم الفاتورة</th><th>البنود</th><th class="ta-end">قبل الضريبة</th><th class="ta-end">الإجمالي</th><th><span class="sr-only">إجراءات</span></th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <p class="empty" id="purEmpty" hidden>لا توجد فواتير بعد — استورد ملف الفواتير.</p>
+        <p class="error" id="purErr" role="alert" hidden></p>
+      </div>
+    </section>
+
     <section id="page-expenses" class="page">
       <header class="page-head">
         <div class="ph-title"><h2>المصروفات والعهدة</h2><p>سجّل ما تستلمه (العهدة) وما تصرفه منه: نقل، مشتريات، أجور… — مستقلة عن تكاليف أصناف الطلبات.</p></div>

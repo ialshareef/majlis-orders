@@ -321,3 +321,18 @@ CREATE TABLE IF NOT EXISTS custody_receipts (
 );
 
 CREATE INDEX IF NOT EXISTS custody_receipts_user_idx ON custody_receipts(user_id);
+
+-- المشتريات (009): فاتورة مورد واحدة لكل صف. data = JSON: البنود (الاسم، الرمز، الكمية، الوحدة، سعر الوحدة
+-- قبل الضريبة بعد الخصم، الضريبة، الإجمالي، الفئة، الصنف المرتبط) والإجماليات. للإدارة فقط (costs.view_all).
+CREATE TABLE IF NOT EXISTS purchases (
+  id           TEXT PRIMARY KEY,
+  supplier     TEXT NOT NULL,
+  invoice_no   TEXT,
+  invoice_date TEXT,
+  data         TEXT NOT NULL,
+  created_by   TEXT NOT NULL,
+  created_at   TEXT NOT NULL,
+  updated_at   TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS purchases_date_idx ON purchases(invoice_date);

@@ -368,6 +368,7 @@
     whatsapp: () => canAny('notifications.whatsapp.view', 'notifications.whatsapp.manage', 'notifications.whatsapp.send'),
     reports: () => canAny('reports.view_own', 'reports.view_all'),
     visits: () => can('admin.core'),
+    purchases: () => can('costs.view_all'),
   };
   const canPage = (name) => !PAGE_PERMS[name] || PAGE_PERMS[name]();
   /* أقسام مدمجة: زر واحد في القائمة يفتح مجموعة صفحات تظهر كتبويبات أعلى كل صفحة منها */
@@ -609,6 +610,7 @@
     if (name === 'users') renderUsers();
     if (name === 'expenses') renderExpenses();
     if (name === 'whatsapp') renderWhatsapp();
+    if (name === 'purchases') renderPurchases();
     if (name === 'order') requestAnimationFrame(() => { designer.resize(); positionInspector(); });
     window.scrollTo({ top: 0 });
   }
@@ -627,6 +629,7 @@
     { page: 'mandoubs', t: 'المناديب والعمولات', d: 'المناديب ومستوياتهم ونسبهم', i: 'truck' },
     { page: 'reports', t: 'التقارير والتحليلات', d: 'تقارير جاهزة PDF وExcel ولوحة الأرقام', i: 'chart' },
     { page: 'whatsapp', t: 'إشعارات واتساب', d: 'رسائل جاهزة للعملاء والفريق', i: 'whatsapp' },
+    { page: 'purchases', t: 'المشتريات', d: 'فواتير الموردين وأسعار الجملة', i: 'receipt' },
     { page: 'items', t: 'الأصناف والأسعار', d: 'الكنب والأقمشة والإسفنج وأسعارها', i: 'tag' },
     { page: 'users', t: 'المستخدمون ونشاطهم', d: 'الحسابات والصلاحيات والنسب', i: 'users' },
     { page: 'settings', t: 'الإعدادات', d: 'بيانات المحل والضريبة والنسب والنسخ الاحتياطي', i: 'settings' },
@@ -5505,6 +5508,7 @@ function docTitle(order) {
       <p id="fSpecHint" class="hint" hidden></p>
       ${canSeeCostAny() ? `<fieldset class="f-cost"><legend>التكلفة (للإدارة فقط)</legend>
         <label><span id="fCostLbl">سعر الجملة</span> <input id="fCost" type="number" min="0" step="0.01" value="${has$(it.cost) ? esc(it.cost) : ''}" placeholder="بدون"></label>
+        ${it.costDate ? `<small class="hint">آخر سعر من فاتورة${it.supplier ? ' ' + esc(it.supplier) : ''} بتاريخ ${esc(fmtDate(it.costDate))}</small>` : ''}
         <label id="fSheet">طول اللوح (م) — مثل 200×80×10 = 2 <input id="fSheetLen" type="number" min="0.1" step="0.05" value="${has$(it.sheetLen) ? esc(it.sheetLen) : ''}" placeholder="2"></label>
         <div id="fSeat">
           <label>نوع الجلسة <select id="fSeatType">${Object.entries(SEAT_TYPES).map(([k, v]) => `<option value="${k}"${seatTypeOf(it) === k ? ' selected' : ''}>${v}</option>`).join('')}</select></label>
@@ -6071,6 +6075,133 @@ function docTitle(order) {
     await renderExpenses();
     toast('حُذف المصروف');
   }
+
+
+  /* ---------------- المشتريات (فواتير الموردين) ----------------
+     من الخادم (/api/purchases) لمن يرى تكاليف الجميع. الاستيراد من ملف JSON: يُطابق كل بند بصنف (برمز المورد)
+     أو يُنشئ صنفاً مخفياً بسعر الجملة حتى يُوضع سعر بيعه، ويُحدّث سعر الجملة لأحدث فاتورة. لا يكرر فاتورة مستوردة. */
+  let purList = [];
+  const PUR_CAT = { fabric: 'قماش', foam: 'إسفنج', wood: 'جلسات/خشب', acc: 'إكسسوار', '': 'أخرى' };
+  const PUR_COLOR = { fabric: '#a0826d', foam: '#e8e2d0', wood: '#8b5a2b', acc: '#7f8c8d' };
+  async function loadPurchases() {
+    const r = await Store.api('GET', '/api/purchases');
+    purList = (r && Array.isArray(r.purchases)) ? r.purchases : [];
+    return purList;
+  }
+  const purNet = (p) => money((p.totals && has$(p.totals.net)) ? p.totals.net : (p.lines || []).reduce((s, l) => s + num(l.net), 0));
+  const purTotal = (p) => money((p.totals && has$(p.totals.total)) ? p.totals.total : (p.lines || []).reduce((s, l) => s + num(l.total), 0));
+  function purFiltered() {
+    const q = $('#purQ').value.trim().toLowerCase(), sup = $('#purSup').value, from = $('#purFrom').value, to = $('#purTo').value;
+    return purList.filter((p) => (!sup || p.supplier === sup) && (!from || (p.invoice_date || '') >= from) && (!to || (p.invoice_date || '9999') <= to)
+      && (!q || [p.supplier, p.invoice_no, ...(p.lines || []).map((l) => l.name + ' ' + l.code)].some((v) => String(v || '').toLowerCase().includes(q))));
+  }
+  function renderPurchasesTable() {
+    const list = purFiltered();
+    const cu = esc(currency());
+    const net = money(list.reduce((s, p) => s + purNet(p), 0)), tot = money(list.reduce((s, p) => s + purTotal(p), 0));
+    $('#purStats').innerHTML = `
+      <div class="stat"><span>عدد الفواتير</span><b>${list.length}</b></div>
+      <div class="stat"><span>قبل الضريبة</span><b>${fmt(net)}</b><small>${cu}</small></div>
+      <div class="stat"><span>الضريبة</span><b>${fmt(money(tot - net))}</b><small>${cu}</small></div>
+      <div class="stat"><span>الإجمالي</span><b>${fmt(tot)}</b><small>${cu}</small></div>`;
+    const sel = $('#purSup'), cur0 = sel.value;
+    const sups = [...new Set(purList.map((p) => p.supplier))].sort();
+    sel.innerHTML = '<option value="">كل الموردين</option>' + sups.map((s) => `<option value="${esc(s)}"${s === cur0 ? ' selected' : ''}>${esc(s)}</option>`).join('');
+    $('#purEmpty').hidden = list.length > 0;
+    $('#purTable tbody').innerHTML = list.map((p) => `<tr>
+      <td data-label="التاريخ" class="num"><bdi>${esc(p.invoice_date ? fmtDate(p.invoice_date) : '—')}</bdi></td>
+      <td data-label="المورد"><b>${esc(p.supplier)}</b></td>
+      <td data-label="رقم الفاتورة" class="num">${esc(p.invoice_no || '—')}</td>
+      <td data-label="البنود">${(p.lines || []).length} <small class="hint">${esc((p.lines || []).slice(0, 2).map((l) => l.name).join('، '))}${(p.lines || []).length > 2 ? '…' : ''}</small></td>
+      <td data-label="قبل الضريبة" class="num">${fmt(purNet(p))}</td>
+      <td data-label="الإجمالي" class="num"><b>${fmt(purTotal(p))}</b></td>
+      <td class="row-actions"><span class="ra"><button class="btn small" data-pur="${esc(p.id)}">${icon('list')} التفاصيل</button></span></td></tr>`).join('');
+    $$('[data-pur]', $('#purTable')).forEach((b) => b.addEventListener('click', () => purchaseModal(b.dataset.pur)));
+  }
+  async function renderPurchases() {
+    if (!canPage('purchases')) return;
+    const err = $('#purErr'); err.hidden = true;
+    try { await loadPurchases(); } catch (e) { err.textContent = humanError(e && e.message, 'تعذّر تحميل المشتريات. تحقق من الاتصال.'); err.hidden = false; }
+    renderPurchasesTable();
+  }
+  /** تحديث سعر الجملة لصنف من بند فاتورة (أحدث فاتورة تفوز) */
+  function applyLineToItem(it, p, l) {
+    const key = `${p.supplier}|${l.code || l.name}`;
+    if (!Array.isArray(it.purchaseCodes)) it.purchaseCodes = [];
+    if (!it.purchaseCodes.includes(key)) it.purchaseCodes = it.purchaseCodes.concat(key).slice(-50);
+    const d = p.invoice_date || today();
+    if (has$(l.unitNet) && (!it.costDate || d >= it.costDate)) { it.cost = money(l.unitNet); it.costDate = d; it.supplier = p.supplier; if (l.sheetLen && it.category === 'foam') it.sheetLen = num(l.sheetLen); return true; }
+    return false;
+  }
+  function purchaseModal(id) {
+    const p = purList.find((x) => x.id === id);
+    if (!p) return;
+    const cu = esc(currency());
+    const lines = p.lines || [];
+    const opts = (l) => '<option value="">— بلا ربط —</option>' + db().items.filter((i) => !l.category || i.category === l.category)
+      .map((i) => `<option value="${esc(i.id)}"${i.id === l.itemId ? ' selected' : ''}>${esc(i.name)}${i.active === false ? ' (مخفي)' : ''}</option>`).join('');
+    openModal(`فاتورة ${esc(p.supplier)}${p.invoice_no ? ' — ' + esc(p.invoice_no) : ''}`, `
+      <p class="hint">${p.invoice_date ? 'بتاريخ ' + esc(fmtDate(p.invoice_date)) + ' • ' : ''}${lines.length} بند • قبل الضريبة ${fmt(purNet(p))} • الإجمالي ${fmt(purTotal(p))} ${cu}${p.note ? '<br>' + esc(p.note) : ''}</p>
+      <div class="table-wrap"><table class="table pur-lines"><thead><tr><th>البند</th><th class="ta-end">الكمية</th><th class="ta-end">سعر الوحدة قبل الضريبة</th><th class="ta-end">الصافي</th><th>الصنف في التطبيق</th></tr></thead><tbody>
+        ${lines.map((l, i) => `<tr><td><b>${esc(l.name)}</b>${l.code ? `<small class="hint"> ${esc(l.code)}</small>` : ''}<small class="mv-at">${esc(PUR_CAT[l.category] || 'أخرى')}${l.discount ? ' • خصم ' + fmt(l.discount) : ''}${l.note ? ' • ' + esc(l.note) : ''}</small></td>
+          <td class="num">${fmtQty(l.qty)} ${esc(l.unit || '')}</td><td class="num">${has$(l.unitNet) ? fmt(l.unitNet) : '—'}</td><td class="num">${has$(l.net) ? fmt(l.net) : '—'}</td>
+          <td>${l.category ? `<select data-pl="${i}" aria-label="الصنف المرتبط">${opts(l)}</select>` : '<small class="hint">لا يُربط (ليس صنف تصميم)</small>'}</td></tr>`).join('')}
+      </tbody></table></div>
+      <p class="hint">ربط البند بصنف يحدّث سعر جملة الصنف إن كانت هذه الفاتورة الأحدث.</p>
+      <p class="error" id="plErr"></p>
+      <div class="btn-row"><button class="btn danger" id="plDel">${icon('trash')} حذف الفاتورة</button><button class="btn" id="plCancel">إغلاق</button><button class="btn primary" id="plSave">${icon('save')} حفظ الربط</button></div>`, (b) => {
+      $('#plCancel', b).onclick = closeModal;
+      $('#plDel', b).onclick = async () => {
+        if (!(await confirmDlg('حذف فاتورة', `حذف فاتورة ${p.supplier} ${p.invoice_no || ''}؟ لا يغيّر أسعار الأصناف.`))) return;
+        try { await Store.api('DELETE', '/api/purchases/' + encodeURIComponent(p.id)); } catch (e) { toast(humanError(e && e.message, 'تعذّر الحذف'), true); return; }
+        closeModal(); await renderPurchases(); toast('حُذفت الفاتورة');
+      };
+      $('#plSave', b).onclick = async () => {
+        const ids = lines.map((l, i) => { const s = $(`[data-pl="${i}"]`, b); return s ? s.value : (l.itemId || ''); });
+        let changed = 0;
+        ids.forEach((iid, i) => { const it = iid && Store.getItem(iid); if (it && can('items.manage') && applyLineToItem(it, p, lines[i])) changed++; });
+        try {
+          if (changed && !(await Store.save())) throw new Error(Store.lastError || 'تعذّر حفظ الأصناف');
+          await Store.api('PUT', '/api/purchases/' + encodeURIComponent(p.id), { itemIds: ids });
+        } catch (e) { $('#plErr', b).textContent = humanError(e && e.message, 'تعذّر الحفظ'); return; }
+        closeModal(); await renderPurchases(); toast(changed ? `حُفظ الربط وحُدّث سعر جملة ${changed} صنف` : 'حُفظ الربط');
+      };
+    }, 'drawer wide');
+  }
+  /** استيراد ملف فواتير (JSON): {purchases:[{supplier, invoice_no, invoice_date, lines:[...], totals}]} */
+  async function importPurchasesFile(file) {
+    let j;
+    try { j = JSON.parse(await file.text()); } catch (_) { toast('الملف ليس ملف فواتير صالحاً', true); return; }
+    const list = Array.isArray(j) ? j : (j && Array.isArray(j.purchases) ? j.purchases : null);
+    if (!list || !list.length) { toast('لا توجد فواتير في الملف', true); return; }
+    const canItems = can('items.manage');
+    let created = 0, updated = 0;
+    const sorted = list.slice().sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')));
+    for (const p of sorted) {
+      for (const l of (p.lines || [])) {
+        if (!['fabric', 'foam', 'wood', 'acc'].includes(l.category)) continue;
+        const key = `${p.supplier}|${l.code || l.name}`;
+        let it = db().items.find((i) => Array.isArray(i.purchaseCodes) && i.purchaseCodes.includes(key)) || (l.itemId ? Store.getItem(l.itemId) : null);
+        if (!it && canItems) {
+          it = { id: Store.uid(), name: String(l.itemName || l.name).slice(0, 80), category: l.category, unit: l.category === 'acc' ? 'pc' : 'm', price: 0,
+            depth: 0.8, w: 0.5, h: 0.5, shape: 'rect', color: PUR_COLOR[l.category], active: false };
+          db().items.push(it); created++;
+        }
+        if (!it) continue;
+        if (canItems && applyLineToItem(it, p, l)) updated++;
+        l.itemId = it.id;
+      }
+    }
+    try {
+      if (canItems && (created || updated) && !(await Store.save())) throw new Error(Store.lastError || 'تعذّر حفظ الأصناف');
+      const r = await Store.api('POST', '/api/purchases/import', { purchases: list });
+      await renderPurchases();
+      if (document.body.dataset.page === 'items') renderItems();
+      toast(`أُضيفت ${r.added} فاتورة${r.skipped ? ` (تُخطّيت ${r.skipped} مستوردة سابقاً)` : ''}${created ? ` • ${created} صنف جديد مخفي حتى تضع سعر البيع` : ''}${updated ? ` • حُدّث سعر جملة ${updated}` : ''}`);
+    } catch (e) { toast(humanError(e && e.message, 'تعذّر الاستيراد'), true); }
+  }
+  $('#purImport').addEventListener('change', (e) => { const f = e.target.files && e.target.files[0]; e.target.value = ''; if (f) importPurchasesFile(f); });
+  ['#purQ', '#purSup', '#purFrom', '#purTo'].forEach((s) => $(s).addEventListener(s === '#purQ' ? 'input' : 'change', renderPurchasesTable));
 
   $('#btnAddExpense').addEventListener('click', () => expenseForm(null));
 

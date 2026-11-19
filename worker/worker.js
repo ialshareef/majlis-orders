@@ -382,6 +382,11 @@ async function route(request, env, url) {
   const mExp = path.match(/^\/api\/expenses\/([^/]+)$/);
   if (mExp && method === 'PUT') { requireAnyPerm(user, ['expenses.edit_own', 'expenses.edit_all']); return updateExpense(env, user, decodeURIComponent(mExp[1]), body); }
   if (mExp && method === 'DELETE') { requireAnyPerm(user, ['expenses.delete_own', 'expenses.delete_all']); return deleteExpense(env, user, decodeURIComponent(mExp[1])); }
+  if (path === '/api/purchases' && method === 'GET') { requirePerm(user, 'costs.view_all'); return listPurchases(env, user); }
+  if (path === '/api/purchases/import' && method === 'POST') { requirePerm(user, 'costs.view_all'); return importPurchases(env, user, body); }
+  const mPur = path.match(/^\/api\/purchases\/([^/]+)$/);
+  if (mPur && method === 'PUT') { requirePerm(user, 'costs.view_all'); return updatePurchase(env, user, decodeURIComponent(mPur[1]), body); }
+  if (mPur && method === 'DELETE') { requirePerm(user, 'costs.view_all'); return deletePurchase(env, user, decodeURIComponent(mPur[1])); }
   if (path === '/api/custody' && method === 'GET') { requireAnyPerm(user, ['expenses.view_own', 'expenses.view_all']); return listCustody(env, user); }
   if (path === '/api/custody' && method === 'POST') { requireAnyPerm(user, ['expenses.add_own', 'expenses.add_all']); return saveCustody(env, user, body); }
   const mCus = path.match(/^\/api\/custody\/([^/]+)$/);
@@ -1319,6 +1324,92 @@ const custodyOut = (user, r, names) => ({
   created_by: r.created_by, created_by_name: names.get(r.created_by) || '', created_at: r.created_at, updated_at: r.updated_at,
   can_edit: custPerm(user, 'edit', r), can_delete: custPerm(user, 'delete', r),
 });
+
+/* المشتريات (فواتير الموردين): للإدارة فقط (costs.view_all) — أسعار الموردين أسرار تجارية.
+   الاستيراد لا يكرر: فاتورة بالمورد ورقم الفاتورة نفسيهما تُتخطّى. */
+const PURCHASES_TABLE_SQL = 'CREATE TABLE IF NOT EXISTS purchases (id TEXT PRIMARY KEY, supplier TEXT NOT NULL, invoice_no TEXT, invoice_date TEXT, data TEXT NOT NULL, created_by TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)';
+const purchasesReady = new WeakSet();
+async function ensurePurchases(env) {
+  if (purchasesReady.has(env.DB)) return;
+  await env.DB.prepare(PURCHASES_TABLE_SQL).run().catch(ignoreExistsObject);
+  purchasesReady.add(env.DB);
+}
+const PUR_CATS = ['fabric', 'foam', 'wood', 'acc', ''];
+function cleanPurchase(p) {
+  const bad = (f) => { throw new HttpError(400, 'فاتورة غير صالحة: ' + f); };
+  if (!p || typeof p !== 'object') bad('شكل');
+  const str = (v, n) => String(v == null ? '' : v).trim().slice(0, n);
+  const numv = (v, f) => { if (v === null || v === undefined || v === '') return null; const x = Number(v); if (!Number.isFinite(x) || Math.abs(x) > 100000000) bad(f); return Math.round(x * 1000) / 1000; };
+  const supplier = str(p.supplier, 120);
+  if (!supplier) bad('المورد');
+  const date = str(p.invoice_date, 10);
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date)) bad('التاريخ');
+  const lines = Array.isArray(p.lines) ? p.lines : [];
+  if (!lines.length || lines.length > 200) bad('البنود');
+  const L = lines.map((l, i) => {
+    if (!l || typeof l !== 'object') bad('بند ' + (i + 1));
+    const cat = str(l.category, 10);
+    if (!PUR_CATS.includes(cat)) bad('فئة البند ' + (i + 1));
+    const name = str(l.name, 160);
+    if (!name) bad('اسم البند ' + (i + 1));
+    return { name, code: str(l.code, 60), unit: str(l.unit, 20), qty: numv(l.qty, 'الكمية'), unitNet: numv(l.unitNet, 'السعر'),
+      net: numv(l.net, 'الصافي'), vat: numv(l.vat, 'الضريبة'), total: numv(l.total, 'الإجمالي'), discount: numv(l.discount, 'الخصم'),
+      category: cat, itemId: str(l.itemId, 64), sheetLen: numv(l.sheetLen, 'طول اللوح'), note: str(l.note, 200) };
+  });
+  const t = p.totals && typeof p.totals === 'object' ? p.totals : {};
+  return { supplier, invoice_no: str(p.invoice_no, 60), invoice_date: date, vat_no: str(p.vat_no, 30), note: str(p.note, 300), lines: L,
+    totals: { net: numv(t.net, 'الصافي'), vat: numv(t.vat, 'الضريبة'), total: numv(t.total, 'الإجمالي') } };
+}
+async function listPurchases(env, user) {
+  await ensurePurchases(env);
+  const r = await env.DB.prepare('SELECT * FROM purchases').all();
+  // الأحدث أولاً (بتاريخ الفاتورة ثم وقت الإدخال)؛ فاتورة بلا تاريخ في آخرها
+  (r.results || []).sort((a, b) => String(b.invoice_date || '').localeCompare(String(a.invoice_date || '')) || String(b.created_at).localeCompare(String(a.created_at)));
+  const names = new Map(((await env.DB.prepare('SELECT id, name FROM users').all()).results || []).map((u) => [u.id, u.name]));
+  return { ok: true, purchases: (r.results || []).map((x) => ({ id: x.id, supplier: x.supplier, invoice_no: x.invoice_no || '', invoice_date: x.invoice_date || '',
+    ...(safeParse(x.data, {}) || {}), created_by_name: names.get(x.created_by) || '', created_at: x.created_at })) };
+}
+async function importPurchases(env, user, body) {
+  await ensurePurchases(env);
+  const list = body && Array.isArray(body.purchases) ? body.purchases : null;
+  if (!list || !list.length || list.length > 300) throw new HttpError(400, 'لا توجد فواتير صالحة للاستيراد');
+  const clean = list.map(cleanPurchase);
+  const existing = new Set(((await env.DB.prepare('SELECT supplier, invoice_no FROM purchases').all()).results || [])
+    .filter((x) => x.invoice_no).map((x) => x.supplier + '|' + x.invoice_no));
+  const st = [];
+  let added = 0, skipped = 0;
+  const t = now();
+  for (const p of clean) {
+    const key = p.supplier + '|' + p.invoice_no;
+    if (p.invoice_no && existing.has(key)) { skipped++; continue; }
+    if (p.invoice_no) existing.add(key);
+    const { supplier, invoice_no, invoice_date, ...data } = p;
+    st.push(env.DB.prepare('INSERT INTO purchases (id, supplier, invoice_no, invoice_date, data, created_by, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)')
+      .bind(uid(), supplier, invoice_no || null, invoice_date || null, JSON.stringify(data), user.id, t, t));
+    added++;
+  }
+  for (let i = 0; i < st.length; i += 50) await env.DB.batch(st.slice(i, i + 50));
+  return { ok: true, added, skipped };
+}
+/** تحديث ربط البنود بالأصناف (itemId لكل بند بالترتيب) — لا يغيّر الأرقام */
+async function updatePurchase(env, user, id, body) {
+  await ensurePurchases(env);
+  const row = await env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'الفاتورة غير موجودة');
+  const data = safeParse(row.data, {}) || {};
+  const links = body && Array.isArray(body.itemIds) ? body.itemIds : null;
+  if (!links || !Array.isArray(data.lines) || links.length !== data.lines.length) throw new HttpError(400, 'ربط غير صالح');
+  data.lines = data.lines.map((l, i) => ({ ...l, itemId: String(links[i] == null ? '' : links[i]).slice(0, 64) }));
+  await env.DB.prepare('UPDATE purchases SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(data), now(), id).run();
+  return { ok: true };
+}
+async function deletePurchase(env, user, id) {
+  await ensurePurchases(env);
+  const row = await env.DB.prepare('SELECT id FROM purchases WHERE id = ?').bind(id).first();
+  if (!row) throw new HttpError(404, 'الفاتورة غير موجودة');
+  await env.DB.prepare('DELETE FROM purchases WHERE id = ?').bind(id).run();
+  return { ok: true };
+}
 
 async function listCustody(env, user) {
   await ensureCustody(env);
@@ -2653,10 +2744,13 @@ async function sync(env, user, body) {
     // الأصناف والأسعار صلاحية مستقلة عن إعدادات المحل
     requirePerm(user, 'items.manage');
     for (const i of (it.upsert || [])) {
-      for (const k of ITEM_COST_FIELDS) {
+      for (const k of ['cost', 'fabricPerM', 'foamPerM', 'laborPerM', 'sheetLen']) {
         const v = i && i[k];
         if (v !== undefined && v !== null && !(typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 10000000)) finErr('item.' + k);
       }
+    }
+    for (const i of (it.upsert || [])) {
+      if (i && i.purchaseCodes !== undefined && i.purchaseCodes !== null && (!Array.isArray(i.purchaseCodes) || i.purchaseCodes.length > 50 || i.purchaseCodes.some((c) => typeof c !== 'string' || c.length > 200))) finErr('item.purchaseCodes');
     }
     // من لا يرى التكاليف لا تصله أسعار الجملة: يُحفظ ما في القاعدة بدل أن يمحوه حفظه للصنف
     if (!canSeeAnyCost(user) && (it.upsert || []).length) {
@@ -2913,7 +3007,7 @@ const COST_FIELDS = ['costs', 'costTotal', 'extraCosts', 'costUpdatedAt', 'costU
 
 /** نسخة الطلب كما تصل الموظف: بلا تكلفة ولا ربح */
 /* أسعار الجملة ومعدّلات الاستهلاك على الأصناف (والتقدير في الإعدادات): لمن يرى التكاليف فقط */
-const ITEM_COST_FIELDS = ['cost', 'fabricPerM', 'foamPerM', 'laborPerM', 'sheetLen'];
+const ITEM_COST_FIELDS = ['cost', 'fabricPerM', 'foamPerM', 'laborPerM', 'sheetLen', 'costDate', 'purchaseCodes', 'supplier'];
 function stripItemCost(i) {
   if (!i || typeof i !== 'object') return i;
   const r = { ...i };
