@@ -446,13 +446,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.29';
-// بصمة asalh-najd-1.1.29.apk (إصدار GitHub v1.1.29، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.29 وversionCode 10129، ونفس شهادة توقيع 1.1.28).
-const UPDATE_FALLBACK_SHA256 = '187b01a910d8bcee376d4e244b10498a29849b787846e0f6845a3f27d3a9d7d6';
+const UPDATE_FALLBACK_VERSION = '1.1.30';
+// بصمة asalh-najd-1.1.30.apk (إصدار GitHub v1.1.30، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.30 وversionCode 10130، ونفس شهادة توقيع 1.1.29).
+const UPDATE_FALLBACK_SHA256 = '89dc2c32ed175a72311ba10ff9686e557a62b7c1c67dc9bab11a53f5e276a04a';
 const UPDATE_FALLBACK_NOTES = [
-  'الملف التعريفي: زر «واتساب PDF» يرسل ملف الكتالوج نفسه مباشرة بالواتساب',
-  'صفحة الملف التعريفي للعملاء: زر «مشاركة PDF بالواتساب»',
+  'المصروفات: التصنيف الطويل يلتف داخل خانته بدل أن يتراكب على المبلغ',
+  'الملف التعريفي: زر «واتساب PDF» يرسل ملف الكتالوج نفسه بالواتساب',
 ];
 
 function versionCodeOfName(v) {
