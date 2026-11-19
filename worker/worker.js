@@ -445,13 +445,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.24';
-// بصمة asalh-najd-1.1.24.apk (إصدار GitHub v1.1.24، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.24 وversionCode 10124، ونفس شهادة توقيع 1.1.23).
-const UPDATE_FALLBACK_SHA256 = '58d411ab177d3037ea534725c5f9e0ee8b5a3e149b5612188701e702e7df40a9';
+const UPDATE_FALLBACK_VERSION = '1.1.25';
+// بصمة asalh-najd-1.1.25.apk (إصدار GitHub v1.1.25، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.25 وversionCode 10125، ونفس شهادة توقيع 1.1.24).
+const UPDATE_FALLBACK_SHA256 = '19ee75abf090199bb763fddc4e25dc935e7b48d48fc6df3955effffa50a76489';
 const UPDATE_FALLBACK_NOTES = [
-  'التكلفة التقديرية في التسعير: قماش وألواح إسفنج وهيكل وأجرة تنجيد، والربح التقديري قبل اعتماد السعر',
-  'سعر الجملة لكل صنف ومعدّلات استهلاك قابلة للتعديل لكل نوع جلسة (للإدارة فقط)',
+  'صفحة «المشتريات»: سجل فواتير الموردين واستيرادها، وتحديث أسعار الجملة للأصناف منها تلقائياً',
+  'الأصناف الجديدة من الفواتير تُضاف مخفية حتى تضع سعر البيع (للإدارة فقط)',
 ];
 
 function versionCodeOfName(v) {
