@@ -445,13 +445,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.26';
-// بصمة asalh-najd-1.1.26.apk (إصدار GitHub v1.1.26، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.26 وversionCode 10126، ونفس شهادة توقيع 1.1.25).
-const UPDATE_FALLBACK_SHA256 = 'edc68a2c85f9743be7746f4f76ed21e388706e84b063bb57c7b0ab5bc0c3ec84';
+const UPDATE_FALLBACK_VERSION = '1.1.27';
+// بصمة asalh-najd-1.1.27.apk (إصدار GitHub v1.1.27، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.27 وversionCode 10127، ونفس شهادة توقيع 1.1.26).
+const UPDATE_FALLBACK_SHA256 = '56b8f32f804f83d8180ea1be7dd61c20a6164b5f309a7b759ed61eb863f7746b';
 const UPDATE_FALLBACK_NOTES = [
-  'المصروفات: التصنيف من قائمة ثابتة، وتنبيه أن تسليم المبالغ للموظفين يُسجَّل «استلام عهدة» والعمولة تُصرف من الطلب',
-  'ملخص الطلب: صافي الربح بعد العمولات غير المصروفة، والتواريخ لا تنكسر على سطرين',
+  'إلغاء مقترحات المتصفح التي كانت تغطي الحقول أثناء الكتابة (البيان والملاحظة وغيرها)',
+  'المصروفات: تصنيف من قائمة ثابتة، وملخص الطلب يعرض الربح بعد العمولات غير المصروفة',
 ];
 
 function versionCodeOfName(v) {
