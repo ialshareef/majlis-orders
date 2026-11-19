@@ -440,13 +440,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.23';
-// بصمة asalh-najd-1.1.23.apk (إصدار GitHub v1.1.23، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.23 وversionCode 10123، ونفس شهادة توقيع 1.1.22).
-const UPDATE_FALLBACK_SHA256 = '42f5e088cc2b91b51a47b607464d7ce0fa8db9961560fb05446280c1e65ef98f';
+const UPDATE_FALLBACK_VERSION = '1.1.24';
+// بصمة asalh-najd-1.1.24.apk (إصدار GitHub v1.1.24، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.24 وversionCode 10124، ونفس شهادة توقيع 1.1.23).
+const UPDATE_FALLBACK_SHA256 = '58d411ab177d3037ea534725c5f9e0ee8b5a3e149b5612188701e702e7df40a9';
 const UPDATE_FALLBACK_NOTES = [
-  'العمولة المصروفة تُضاف تلقائياً بنداً في تكاليف الطلب باسم صاحبها (مثل «عمولة عاصم»)',
-  'صافي الربح يشمل العمولات المصروفة، والتقارير لا تخصمها مرتين',
+  'التكلفة التقديرية في التسعير: قماش وألواح إسفنج وهيكل وأجرة تنجيد، والربح التقديري قبل اعتماد السعر',
+  'سعر الجملة لكل صنف ومعدّلات استهلاك قابلة للتعديل لكل نوع جلسة (للإدارة فقط)',
 ];
 
 function versionCodeOfName(v) {
