@@ -296,6 +296,8 @@
     document.body.classList.add('modal-open');
     $('#modalTitle').textContent = title;
     $('#modalBody').innerHTML = bodyHtml;
+    // مقترحات المتصفح (ما كُتب سابقاً) تغطي الحقل على الجوال: تُلغى في كل النوافذ عدا كلمات المرور
+    for (const el of $('#modalBody').querySelectorAll('input:not([type="password"]):not([autocomplete]), textarea:not([autocomplete])')) el.setAttribute('autocomplete', 'off');
     $('#modal').className = 'modal' + (cls ? ' ' + cls : '');
     $('#modal').hidden = false;
     if (onMount) onMount($('#modalBody'));

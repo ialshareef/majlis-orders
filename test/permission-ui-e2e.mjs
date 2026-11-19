@@ -137,7 +137,7 @@ try {
   await page.waitForSelector('#exName', { visible: true });
   await page.evaluate(() => { document.getElementById('exDate').value = '2026-11-02'; });
   await page.type('#exName', 'نقل وتركيب'); await page.type('#exAmount', '2500'); await page.select('#exCatSel', 'نقل وتوصيل');
-  ok(await page.evaluate(() => { const h = document.getElementById('exKindHint'); const n = document.getElementById('exName'); const was = h.hidden; const v = n.value; n.value = 'تسليم مبلغ لسليم'; n.dispatchEvent(new Event('input')); const shown = !h.hidden && /تسجيل استلام/.test(h.textContent); n.value = v; n.dispatchEvent(new Event('input')); return was && shown && h.hidden; }), 'المصروف: تصنيف من قائمة ثابتة، وتنبيه أن «تسليم مبلغ» يُسجَّل استلاماً لا مصروفاً');
+  ok(await page.evaluate(() => { const h = document.getElementById('exKindHint'); const n = document.getElementById('exName'); const was = h.hidden; const v = n.value; n.value = 'تسليم مبلغ لسليم'; n.dispatchEvent(new Event('input')); const shown = !h.hidden && /تسجيل استلام/.test(h.textContent); n.value = v; n.dispatchEvent(new Event('input')); return was && shown && h.hidden && n.getAttribute('autocomplete') === 'off' && document.getElementById('exNote').getAttribute('autocomplete') === 'off'; }), 'المصروف: تصنيف من قائمة ثابتة، وتنبيه أن «تسليم مبلغ» يُسجَّل استلاماً لا مصروفاً، وبلا مقترحات متصفح تغطي الحقل');
   await page.select('#exOrder', 'o3');
   ok(!(await exists(page, '#exUser')), 'expenses: لا «سجّله باسم» بلا expenses.add_all');
   await page.evaluate(() => document.getElementById('exSave').click());
