@@ -7600,6 +7600,24 @@ function docTitle(order) {
   };
   const APK_RELEASES_URL = 'https://github.com/ialshareef/majlis-orders/releases/latest';
 
+  /** إرسال ملف الكتالوج PDF نفسه (لا رابطه) بالواتساب: يُجلب الملف ثم يُشارَك كمرفق */
+  async function shareProfilePdf(btn) {
+    if (btn && btn.disabled) return;
+    const label = btn && btn.innerHTML;
+    if (btn) { btn.disabled = true; btn.innerHTML = '<span>جارٍ التحميل…</span>'; }
+    try {
+      const r = await fetch(ACCESS_LINKS.profilePdf, { cache: 'no-store', credentials: 'omit' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      const blob = await r.blob();
+      await sharePdfBlob(new Blob([blob], { type: 'application/pdf' }), 'asalh-najd-profile.pdf',
+        'الملف التعريفي — شركة أصالة نجد للأثاث\n' + ACCESS_LINKS.profile);
+    } catch (e) {
+      toast('تعذّر تحميل الملف — تحقق من الاتصال، أو أرسل الرابط بزر «مشاركة»', true);
+    } finally {
+      if (btn) { btn.disabled = false; btn.innerHTML = label; }
+    }
+  }
+
   /** روابط العميل والموظفين: فتح/نسخ/مشاركة (Web Share API مع بديل النسخ) */
   let linksWired = false;
   function wireAccessLinks() {
@@ -7650,6 +7668,7 @@ function docTitle(order) {
     // الملف التعريفي للشركة: صفحة /profile وملف PDF
     bind('btnOpenProfile', () => open('profileLink'));
     bind('btnPdfProfile', () => window.open(ACCESS_LINKS.profilePdf, '_blank', 'noopener'));
+    bind('btnWaProfile', () => shareProfilePdf(document.getElementById('btnWaProfile')));
     bind('btnCopyProfile', () => copy('profileLink'));
     bind('btnShareProfile', () => share('profileLink', 'الملف التعريفي — شركة أصالة نجد للأثاث'));
     // الفيديو التعريفي

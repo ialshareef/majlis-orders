@@ -245,6 +245,7 @@
       <a class="btn primary" href="https://wa.me/966533724290?text=%D8%A7%D9%84%D8%B3%D9%84%D8%A7%D9%85%20%D8%B9%D9%84%D9%8A%D9%83%D9%85%D8%8C%20%D8%A3%D8%B1%D8%BA%D8%A8%20%D8%A8%D8%A7%D9%84%D8%A7%D8%B3%D8%AA%D9%81%D8%B3%D8%A7%D8%B1%20%D8%B9%D9%86%20%D9%85%D8%AC%D9%84%D8%B3" target="_blank" rel="noopener"><svg><use href="#i-wa"/></svg>تواصل واتساب</a>
       <a class="btn light" href="/customer-design?src=profile"><svg><use href="#i-pen"/></svg>صمّم مجلسك الآن</a>
       <a class="btn ghost" href="/profile.pdf" download><svg><use href="#i-dl"/></svg>الملف التعريفي PDF</a>
+      <button type="button" class="btn ghost" id="sharePdf"><svg><use href="#i-wa"/></svg>مشاركة PDF بالواتساب</button>
     </div>
     <p class="print-only" style="margin-top:6mm;font-weight:600">للتواصل: <span class="num">+966 53 372 4290</span></p>
   </div>
@@ -422,6 +423,24 @@
 
 <!-- رموز QR: نفس مكتبة التطبيق (qrcode-generator) من cdnjs، مع بصمة تحقق. بدونها تبقى الروابط والأزرار تعمل -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js" integrity="sha384-mZT2gIty7ZDdOGkxfP6joZcYdMW1Jvj9dRlfpTmaJAKKXTqzygtB22k7FLe+KZC1" crossorigin="anonymous"></script>
+<script>
+/* مشاركة ملف PDF نفسه بالواتساب (مشاركة الجوال)، وإن لم يدعمها المتصفح فرابط الملف في واتساب */
+(function () {
+  var b = document.getElementById('sharePdf'); if (!b) return;
+  var link = 'https://majlis-api.asalh-najd.workers.dev/profile';
+  var cap = 'الملف التعريفي — شركة أصالة نجد للأثاث';
+  b.addEventListener('click', function () {
+    var waLink = function () { window.open('https://wa.me/?text=' + encodeURIComponent(cap + '\n' + link), '_blank', 'noopener'); };
+    if (!navigator.canShare || typeof File === 'undefined') return waLink();
+    var t = b.innerHTML; b.disabled = true; b.textContent = 'جارٍ التحميل…';
+    fetch('/profile.pdf', { cache: 'no-store' }).then(function (r) { if (!r.ok) throw 0; return r.blob(); }).then(function (blob) {
+      var f = new File([blob], 'asalh-najd-profile.pdf', { type: 'application/pdf' });
+      if (!navigator.canShare({ files: [f] })) return waLink();
+      return navigator.share({ files: [f], title: cap, text: cap + '\n' + link }).catch(function (e) { if (!e || e.name !== 'AbortError') waLink(); });
+    }).catch(waLink).then(function () { b.disabled = false; b.innerHTML = t; });
+  });
+})();
+</script>
 <script>
   (function () {
     var boxes = document.querySelectorAll('[data-qr]');

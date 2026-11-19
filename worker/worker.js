@@ -276,7 +276,8 @@ export default {
     /* الملف التعريفي PDF: محفوظ في المستودع (profile/asalh-najd-profile.pdf) ويُخدَم من jsDelivr
        مثبَّتاً على وسم الإصدار المنشور — لا يُضمَّن في الـ Worker حتى لا يكبر حجمه. الصفحة نفسها /profile من ASSETS. */
     if (url.pathname === '/profile.pdf') {
-      return Response.redirect(PROFILE_PDF_BASE + 'v' + UPDATE_FALLBACK_VERSION + '/profile/asalh-najd-profile.pdf', 302);
+      // CORS على التحويل نفسه: التطبيق يجلب الملف ليرسله بواتساب (ملف عام بلا بيانات خاصة)
+      return new Response(null, { status: 302, headers: { Location: PROFILE_PDF_BASE + 'v' + UPDATE_FALLBACK_VERSION + '/profile/asalh-najd-profile.pdf', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' } });
     }
     // الفيديو التعريفي (5.5MB): من المستودع عبر jsDelivr مثبَّتاً على وسم الإصدار، مثل ملف PDF
     if (url.pathname === '/video.mp4') {
