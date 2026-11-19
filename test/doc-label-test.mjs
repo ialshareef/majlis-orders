@@ -18,8 +18,9 @@ let pass = 0, fail = 0;
 const lines = [];
 const t = (n, ok, i = '') => { if (ok) { pass++; lines.push('PASS  ' + n); } else { fail++; lines.push('FAIL  ' + n + (i ? '  -> ' + i : '')); } };
 
-const html = read('index.html');
-const app = read('js/app.js');
+// صفحة «المشتريات» تخص فواتير الموردين الواردة (لا مستندات العملاء)، فتُستثنى من الفحص
+const html = read('index.html').replace(/<section id="page-purchases"[\s\S]*?<\/section>/, '');
+const app = read('js/app.js').replace(/\/\* -+ المشتريات \(فواتير الموردين\)[\s\S]*?(?=\/\* -+ عهدة الموظف)/, (m) => m.replace(/[^\n]/g, ''));
 
 /* ---------- 1) لا «فاتورة» في النصوص المرئية ---------- */
 console.log('== 1) النصوص المرئية ==');
