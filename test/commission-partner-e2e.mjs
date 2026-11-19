@@ -167,6 +167,7 @@ try {
   await sleep(1200);
   const sm = await page.evaluate(() => [...document.querySelectorAll('#modal .sum-table tbody tr')].map((tr) => tr.innerText).join(' || '));
   ok(/حصة شريك الفرع — سليم \(2٪ من قيمة البيع\) — لم تُصرف 40\.00/.test(clean(sm)) && /عمولة البائع — عاصم .*100\.00/.test(clean(sm)), 'ملخص طلب عاصم: عمولته 100 + حصة سليم 40 (2٪ من 2000)', clean(sm));
+  ok(/صافي الربح بعد العمولات غير المصروفة \(140\.00\) 860\.00/.test(clean(sm)), 'ملخص الطلب: الربح بعد خصم العمولتين غير المصروفتين (140) = 860', clean(sm));
   await page.evaluate(() => document.getElementById('modalClose').click()); await sleep(300);
   await page.evaluate(() => document.querySelector('[data-sum="oc"]').click()); await sleep(1000);
   const sc = await page.evaluate(() => document.querySelector('#modal .sum-table').innerText);
@@ -199,6 +200,7 @@ try {
   await page.evaluate(() => document.querySelector('[data-sum="oa"]').click()); await sleep(1200);
   const sumTxt = clean(await page.evaluate(() => document.getElementById('modal').innerText));
   ok(/عمولة عاصم \(صُرفت[^)]*\) 100\.00/.test(sumTxt) && /عمولة سليم \(صُرفت[^)]*\) 40\.00/.test(sumTxt) && /العمولات المصروفة \(عمولة عاصم، عمولة سليم\)/.test(sumTxt), 'ملخص الطلب: بند لكل عمولة مصروفة باسم صاحبها', sumTxt.slice(0, 600));
+  ok(!/غير المصروفة/.test(sumTxt), 'بعد الصرف: لا سطر «بعد العمولات غير المصروفة» (كلها في التكاليف)');
   await page.evaluate(() => document.getElementById('modalClose').click()); await sleep(400);
   // التقرير: لا تُخصم العمولة مرتين — الربح بعد العمولات = 2000 − 1000 − (100 + 40 + 50 مشاركة) = 810
   await go(page, 'reports');

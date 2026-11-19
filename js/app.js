@@ -4801,6 +4801,12 @@ function docTitle(order) {
       if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; acc.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)} • ${CS.parent})`, v: parentComm }); }
       { const pr = orderPartnerRow(o); if (pr) acc.push({ k: `حصة شريك الفرع — ${pr.who} (${pct(pr.rate)} من قيمة البيع)${pr.paid ? ` — صُرفت ${day(pr.paid.at)}` : ' — لم تُصرف'}`, v: pr.amount }); }
       if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
+      // صافي الربح أعلاه يخصم المصروف فقط؛ فالمتبقي غير المصروف يُخصم هنا ليظهر الربح الفعلي المتوقع
+      if (seeProfit && hasCost && profitAll !== null) {
+        const pr = orderPartnerRow(o);
+        const unpaid = money((comm && !commPaidOf(o, 'owner') ? num(comm) : 0) + (CR.parentId && parentComm && !commPaidOf(o, 'parent') ? num(parentComm) : 0) + (pr && !pr.paid ? num(pr.amount) : 0));
+        if (unpaid > 0.004) acc.push({ k: `صافي الربح بعد العمولات غير المصروفة (${fmt(unpaid)})`, v: money(profitAll - unpaid), b: true });
+      }
     }
     tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
     // 4) الدفعات
@@ -5995,12 +6001,24 @@ function docTitle(order) {
     renderCustodyBox();
   }
 
+  const EXP_CATS = ['مواد ومشتريات', 'نقل وتوصيل', 'أجور عمال ومشاغل', 'رواتب', 'وقود ومواصلات', 'ضيافة', 'صيانة', 'إيجار وخدمات', 'أدوات ومستلزمات'];
+  const expCatValue = (b) => { const v = $('#exCatSel', b) ? $('#exCatSel', b).value : ''; return v && v !== '__other' ? v : $('#exCat', b).value.trim(); };
+  /** تنبيه ما ليس مصروفاً: تسليم مبلغ لموظف (عهدة) أو عمولة طلب (تُصرف من الطلب) — حتى لا يُحسب مرتين */
+  function expKindHint(b) {
+    const h = $('#exKindHint', b); if (!h) return;
+    const t = [$('#exName', b).value, expCatValue(b), $('#exNote', b).value].join(' ');
+    const msg = /تسليم|عهد[ةه]|سلف[ةه]/.test(t) ? 'تسليم مبلغ لموظف ليس مصروفاً: سجّله من «تسجيل استلام» في قسم العهدة، ثم يسجّل الموظف ما يصرفه منه — حتى لا يُحسب المبلغ مرتين.'
+      : /عمول[ةه]/.test(t) ? 'عمولة الطلب تُصرف من نافذة «صرف العمولة» داخل الطلب فتُضاف لتكاليفه تلقائياً — لا تسجّلها هنا مرة ثانية.' : '';
+    h.textContent = msg; h.hidden = !msg;
+  }
   /** نافذة إضافة/تعديل مصروف: التاريخ والبيان والتصنيف والمبلغ والملاحظة وطلب مرتبط اختياري */
   function expenseForm(e) {
     const isNew = !e;
     if (isNew ? !canAny('expenses.add_own', 'expenses.add_all') : !e.can_edit) return;
     const x = e || { expense_date: today(), name: '', category: '', amount: '', note: '', order_id: null };
-    const cats = [...new Set(expList.map((r) => r.category).filter(Boolean))].sort();
+    // تصنيفات ثابتة بدل النص الحر (كان يُكتب فيه البيان أو اسم الشخص فتتفرّق التقارير)، و«أخرى» لما سواها
+    const curCat = String(x.category || '').trim();
+    const catOther = !!curCat && !EXP_CATS.includes(curCat);
     // الطلبات المتاحة للربط هي ما يراه المستخدم أصلاً (الخادم يتحقق من حقه في الطلب أيضاً)
     const orders = db().orders.filter((o) => o.number).slice().sort((a, b) => num(b.number) - num(a.number)).slice(0, 300);
     const others = (isNew && can('expenses.add_all')) ? db().users.filter((u) => u.active !== false && u.id !== currentUser.id) : [];
@@ -6011,7 +6029,9 @@ function docTitle(order) {
       </div>
       ${isNew ? '<p class="hint cust-hint" id="exCustHint" hidden></p>' : ''}
       <label>البيان <input id="exName" value="${esc(x.name)}" maxlength="200" placeholder="مثال: نقل وتركيب"></label>
-      <label>التصنيف <input id="exCat" value="${esc(x.category || '')}" maxlength="60" list="exCatList" placeholder="مثال: نقل، مشتريات، أجور عمال"><datalist id="exCatList">${cats.map((c) => `<option value="${esc(c)}">`).join('')}</datalist></label>
+      <label>التصنيف <select id="exCatSel"><option value="">— اختر —</option>${EXP_CATS.map((c) => `<option value="${esc(c)}"${c === curCat ? ' selected' : ''}>${esc(c)}</option>`).join('')}<option value="__other"${catOther ? ' selected' : ''}>أخرى…</option></select></label>
+      <label id="exCatOtherL"${catOther ? '' : ' hidden'}>تصنيف آخر <input id="exCat" value="${esc(catOther ? curCat : '')}" maxlength="60" placeholder="اكتب التصنيف (لا البيان)"></label>
+      <p class="hint" id="exKindHint" hidden></p>
       <label>ملاحظة <input id="exNote" value="${esc(x.note || '')}" maxlength="500"></label>
       <label>ربط بطلب (اختياري)
         <select id="exOrder"><option value="">بلا طلب</option>${orders.map((o) => `<option value="${esc(o.id)}"${o.id === x.order_id ? ' selected' : ''}>#${esc(o.number)} — ${esc(o.customer?.name || '')}</option>`).join('')}</select>
@@ -6022,6 +6042,10 @@ function docTitle(order) {
       <p id="exErr" class="error"></p>
       <div class="btn-row"><button class="btn" id="exCancel">إلغاء</button><button class="btn primary" id="exSave">${icon('save')} حفظ</button></div>`, (b) => {
       $('#exCancel', b).onclick = closeModal;
+      const catSel = $('#exCatSel', b);
+      catSel.addEventListener('change', () => { const o = catSel.value === '__other'; $('#exCatOtherL', b).hidden = !o; if (o) $('#exCat', b).focus(); expKindHint(b); });
+      for (const id of ['#exName', '#exCat', '#exNote']) $(id, b).addEventListener('input', () => expKindHint(b));
+      expKindHint(b);
       // رصيد العهدة: الحالي وما يصير إليه بعد هذا المصروف (لصاحب المصروف)
       const hint = $('#exCustHint', b);
       if (hint) {
@@ -6045,7 +6069,7 @@ function docTitle(order) {
         if (!name) { err.textContent = 'البيان مطلوب'; return; }
         if (amount === null || !(amount > 0)) { err.textContent = 'أدخل مبلغاً أكبر من صفر (أرقام فقط)'; return; }
         if (!date) { err.textContent = 'التاريخ مطلوب'; return; }
-        const body = { expense_date: date, name, amount: money(amount), category: $('#exCat', b).value.trim(), note: $('#exNote', b).value.trim(), order_id: $('#exOrder', b).value || null };
+        const body = { expense_date: date, name, amount: money(amount), category: expCatValue(b), note: $('#exNote', b).value.trim(), order_id: $('#exOrder', b).value || null };
         const u = $('#exUser', b);
         if (u && u.value) body.created_by = u.value;
         const btn = $('#exSave', b);
@@ -9638,7 +9662,8 @@ async function exportExpensesXlsx() {
     if (kind === 'pct') return `<bdi>${r2(v)}٪</bdi>`;
     if (kind === 'num') return `<bdi>${esc(String(v))}</bdi>`;
     if (kind === 'date') return `<bdi>${esc(String(v))}</bdi>`;
-    return esc(String(v));
+    // تاريخ داخل نص (مثل «صُرفت 2026-11-16») لا ينكسر على سطرين
+    return esc(String(v)).replace(/[\u2066-\u2069]?\d{4}-\d{2}-\d{2}[\u2066-\u2069]?/g, (d) => `<span class="nowrap">${d}</span>`);
   };
   const isNumKind = (k) => k === 'money' || k === 'num' || k === 'pct';
   /** الفترة بتواريخ معزولة اتجاهياً (تاريخ لاتيني داخل نص عربي لا ينقلب) */

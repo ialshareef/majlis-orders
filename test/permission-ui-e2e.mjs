@@ -136,7 +136,8 @@ try {
   await page.evaluate(() => document.getElementById('btnAddExpense').click());
   await page.waitForSelector('#exName', { visible: true });
   await page.evaluate(() => { document.getElementById('exDate').value = '2026-11-02'; });
-  await page.type('#exName', 'نقل وتركيب'); await page.type('#exAmount', '2500'); await page.type('#exCat', 'نقل');
+  await page.type('#exName', 'نقل وتركيب'); await page.type('#exAmount', '2500'); await page.select('#exCatSel', 'نقل وتوصيل');
+  ok(await page.evaluate(() => { const h = document.getElementById('exKindHint'); const n = document.getElementById('exName'); const was = h.hidden; const v = n.value; n.value = 'تسليم مبلغ لسليم'; n.dispatchEvent(new Event('input')); const shown = !h.hidden && /تسجيل استلام/.test(h.textContent); n.value = v; n.dispatchEvent(new Event('input')); return was && shown && h.hidden; }), 'المصروف: تصنيف من قائمة ثابتة، وتنبيه أن «تسليم مبلغ» يُسجَّل استلاماً لا مصروفاً');
   await page.select('#exOrder', 'o3');
   ok(!(await exists(page, '#exUser')), 'expenses: لا «سجّله باسم» بلا expenses.add_all');
   await page.evaluate(() => document.getElementById('exSave').click());
@@ -145,7 +146,7 @@ try {
   let rows = await rowsText(page, '#expensesTable');
   ok(rows.length === 1 && /نقل وتركيب/.test(rows[0]) && /2,500/.test(rows[0]) && /#1002/.test(rows[0]) && /موظف ممنوح/.test(rows[0]), 'expenses: المصروف يظهر بالبيان والمبلغ والطلب ومن سجّله', rows);
   const stored = env.DB.tables.get('expenses');
-  ok(stored.length === 1 && stored[0].expense_date === '2026-11-02' && stored[0].order_id === 'o3' && stored[0].category === 'نقل' && stored[0].created_by === '3', 'd1: المصروف محفوظ بالتاريخ والتصنيف والطلب والمُسجِّل', stored);
+  ok(stored.length === 1 && stored[0].expense_date === '2026-11-02' && stored[0].order_id === 'o3' && stored[0].category === 'نقل وتوصيل' && stored[0].created_by === '3', 'd1: المصروف محفوظ بالتاريخ والتصنيف والطلب والمُسجِّل', stored);
   ok(/2,500/.test(await page.$eval('#expStats', (e) => e.innerText)), 'expenses: الإجمالي يُحسب من المصروفات الفعلية');
   await page.evaluate(() => document.querySelector('[data-expedit]').click());
   await page.waitForSelector('#exAmount', { visible: true });
