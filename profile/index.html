@@ -75,7 +75,9 @@
   .btn svg { width: 20px; height: 20px; flex: none; }
   .btn.primary { background: var(--bronze); color: #fff; }
   .btn.light { background: #FBF5EA; color: var(--night); }
-  .btn.ghost { border-color: rgba(251,245,234,.55); color: #FBF5EA; }
+  .btn.ghost { border-color: rgba(251,245,234,.55); color: #FBF5EA; background: transparent; }
+  button.btn { cursor: pointer; }
+  button.btn:disabled { opacity: .7; cursor: progress; }
   .btn.line { border-color: var(--line); background: var(--paper); color: var(--night); }
 
   /* ===== الفيديو ===== */
