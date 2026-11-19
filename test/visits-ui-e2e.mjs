@@ -69,6 +69,8 @@ const errs = [];
 async function login(un, vp = { width: 1366, height: 900 }) {
   const ctx = await browser.createBrowserContext();
   const page = await ctx.newPage();
+  // بيانات الاختبار بأيام الرياض (UTC+3)، فالمتصفح بتوقيت الرياض مثل جوال المالك — وإلا فشل بين 9 مساءً ومنتصف الليل UTC
+  await page.emulateTimezone('Asia/Riyadh');
   page.on('pageerror', (e) => errs.push(un + ': ' + String(e.message).split('\n')[0]));
   await page.evaluateOnNewDocument(() => {
     window.__dl = [];
