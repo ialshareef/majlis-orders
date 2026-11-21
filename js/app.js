@@ -4753,7 +4753,9 @@ function docTitle(order) {
       summary.push({ label: 'صافي الربح', value: profitAll, kind: 'money' });
       summary.push({ label: 'هامش الربح', value: hasCost ? marginAll : null, kind: 'pct' });
     }
-    const CR = commRatesOf(o);
+    const CR = commRatesOf(o), CS = commRateSources(o, CR);
+    // مصدر النسبة يُذكر فقط إن خُصّصت لهذا الطلب (الاستثناء الذي يستحق الانتباه)، وإلا فالنسبة وحدها
+    const csTag = (x) => (x === 'مخصّصة لهذا الطلب' ? ' • ' + x : '');
     const commLbl = `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${pct(CR.ownerRate)})`;
     if (seeComm) summary.push({ label: commLbl, value: comm, kind: 'money' });
 
@@ -4808,10 +4810,10 @@ function docTitle(order) {
     if (seeComm) {
       const cm = [];
       const st = (paidRec, amt) => (amt ? (paidRec ? ` — صُرفت ${day(paidRec.at)}` : ' — لم تُصرف') : '');
-      cm.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()})${st(commPaidOf(o, 'owner'), comm)}`, v: comm });
-      if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; cm.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)})${st(commPaidOf(o, 'parent'), parentComm)}`, v: parentComm }); }
+      cm.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()}${csTag(CS.owner)})${st(commPaidOf(o, 'owner'), comm)}`, v: comm });
+      if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; cm.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)}${csTag(CS.parent)})${st(commPaidOf(o, 'parent'), parentComm)}`, v: parentComm }); }
       if (pr) cm.push({ k: `حصة شريك الفرع — ${pr.who} (${pct(pr.rate)} من قيمة البيع)${pr.paid ? ` — صُرفت ${day(pr.paid.at)}` : ' — لم تُصرف'}`, v: pr.amount });
-      if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) cm.push({ k: `حصة المشاركة (${pct(CR.shareRate)})`, v: orderShareAmount(o) });
+      if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) cm.push({ k: `حصة المشاركة (${pct(CR.shareRate)}${csTag(CS.share)})`, v: orderShareAmount(o) });
       tables.push({ title: 'العمولات', columns: money2, rows: cm });
     }
     // 4) الدفعات

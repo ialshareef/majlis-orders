@@ -162,7 +162,7 @@ try {
   await page.evaluate(() => document.querySelector('[data-sum="oa"]').click());
   await sleep(1200);
   const sm = await page.evaluate(() => [...document.querySelectorAll('#modal .sum-table tbody tr')].map((tr) => tr.innerText.replace(/[⁦-⁩]/g, '').replace(/\s+/g, ' ').trim()).join(' || '));
-  ok(/عمولة البائع — سالم البائع \(20٪ من صافي الربح • مخصّصة لهذا الطلب\)( — لم تُصرف)? 200\.00/.test(sm) && /حصة المشاركة \(5٪ • مخصّصة لهذا الطلب\) 50\.00/.test(sm) && /صافي الربح 1,000\.00/.test(sm), 'ملخص الطلب: 20٪ «مخصّصة لهذا الطلب» = 200، والمشاركة 5٪ «افتراضية»', sm);
+  ok(/عمولة البائع — سالم البائع \(20٪ من صافي الربح • مخصّصة لهذا الطلب\)( — لم تُصرف)? 200\.00/.test(sm) && /حصة المشاركة \(5٪ • مخصّصة لهذا الطلب\) 50\.00/.test(sm) && /صافي الربح \(هامش 50٪\) 1,000\.00/.test(sm), 'ملخص الطلب: 20٪ «مخصّصة لهذا الطلب» = 200، والمشاركة 5٪ «افتراضية»', sm);
   await page.evaluate(() => document.getElementById('modalClose').click());
   await sleep(400);
 
