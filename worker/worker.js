@@ -448,13 +448,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.31';
-// بصمة asalh-najd-1.1.31.apk (إصدار GitHub v1.1.31، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.31 وversionCode 10131، ونفس شهادة توقيع 1.1.30).
-const UPDATE_FALLBACK_SHA256 = '762e5b672d2a94e1d88fa3cdd1f0013479ec351b731d5395b276d4c4afdbaaff';
+const UPDATE_FALLBACK_VERSION = '1.1.32';
+// بصمة asalh-najd-1.1.32.apk (إصدار GitHub v1.1.32، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.32 وversionCode 10132، ونفس شهادة توقيع 1.1.31).
+const UPDATE_FALLBACK_SHA256 = '5f3f81eb715b4b74f0e89fec5b1b3873febd7b5046cea4025656e00a0a6a9978';
 const UPDATE_FALLBACK_NOTES = [
-  'المشتريات: زر «فاتورة جديدة» لإدخال فاتورة المورد وبنودها يدوياً، فتُحدَّث أسعار الجملة للأصناف',
-  'جدول «أسعار الجملة للأصناف»: السعر وآخر تحديث ومورده وهامش الربح، وسعر الجملة تحت اسم الصنف',
+  'ملخص الطلب أوضح: حساب العميل، ثم الربح والتكاليف، ثم العمولات — في جداول قصيرة',
+  'ملف PDF لملخص الطلب لا يقص آخر الصفوف في الصفحة',
 ];
 
 function versionCodeOfName(v) {
