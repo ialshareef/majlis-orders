@@ -176,6 +176,39 @@ try {
   ok(/قماش جديد تجريبي/.test(m) && /52\.50/.test(m) && /موكيت تجريبي/.test(m) && /لا يُربط/.test(m), 'التفاصيل: البنود بأسعارها وربطها', m.slice(0, 300));
   ok(await page.evaluate(() => { const s = document.querySelector('[data-pl="0"]'); return s && s.selectedOptions[0] && /قماش جديد/.test(s.selectedOptions[0].textContent); }), 'البند مربوط بصنفه الجديد');
   await page.evaluate(() => document.getElementById('plCancel').click()); await sleep(300);
+
+  // جدول «أسعار الجملة للأصناف»: سعر الجملة وتاريخه ومورده
+  const pit = await page.evaluate(() => [...document.querySelectorAll('#purItemsTable tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
+  ok(pit.some((r) => /قماش جديد/.test(r) && /52\.50/.test(r) && /مخفي/.test(r) && /مورد تجريبي/.test(r)) && pit.some((r) => /قماش قائم/.test(r) && /45\.00/.test(r) && /120\.00/.test(r) && /62\.5/.test(r)), 'أسعار الجملة: الصنف وسعر جملته وبيعه وهامشه وآخر تحديث', pit);
+
+  // «فاتورة جديدة» يدوياً: مورد جديد وبند قماش مربوط بصنف قائم + بند جديد
+  await page.evaluate(() => document.getElementById('btnAddPurchase').click()); await sleep(600);
+  await page.evaluate(() => {
+    const set = (el, v) => { el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    set(document.getElementById('pfSupSel'), '__new'); set(document.getElementById('pfSup'), 'مورد يدوي');
+    set(document.getElementById('pfNo'), 'M-1'); set(document.getElementById('pfDate'), '2026-11-20');
+    const L = () => [...document.querySelectorAll('.pf-line')];
+    let l = L()[0];
+    set(l.querySelector('[data-f="name"]'), 'قماش قائم يدوي'); set(l.querySelector('[data-f="itemId"]'), 'f-old');
+    set(l.querySelector('[data-f="qty"]'), '10'); set(l.querySelector('[data-f="unitNet"]'), '48');
+    document.getElementById('pfAdd').click(); l = L()[1];
+    set(l.querySelector('[data-f="name"]'), 'إسفنج يدوي'); set(l.querySelector('[data-f="category"]'), 'foam');
+    set(l.querySelector('[data-f="qty"]'), '2'); set(l.querySelector('[data-f="unitNet"]'), '100');
+  });
+  await sleep(300);
+  const tot = clean(await page.evaluate(() => document.getElementById('pfTotal').innerText));
+  ok(/680\.00/.test(tot) && /102\.00/.test(tot) && /782\.00/.test(tot), 'فاتورة جديدة: الإجماليات (680 + ضريبة 102 = 782)', tot);
+  await page.evaluate(() => document.getElementById('pfSave').click()); await sleep(2500);
+  const P2 = env.DB.tables.get('purchases');
+  const its2 = itemRows();
+  ok(P2.length === 2 && P2.some((r) => r.supplier === 'مورد يدوي' && r.invoice_no === 'M-1'), 'فاتورة جديدة: محفوظة على الخادم', P2.map((r) => r.supplier));
+  ok(its2.find((i) => i.id === 'f-old').cost === 48 && its2.find((i) => i.id === 'f-old').costDate === '2026-11-20', 'فاتورة جديدة: حُدّث سعر جملة الصنف المربوط (48)', its2.find((i) => i.id === 'f-old'));
+  ok(its2.some((i) => i.name === 'إسفنج يدوي' && i.active === false && i.cost === 100 && i.sheetLen === 2), 'فاتورة جديدة: البند غير المربوط صار صنفاً مخفياً بسعر جملته');
+  // صفحة الأصناف: سعر الجملة وتاريخه تحت اسم الصنف للإدارة
+  await page.evaluate(() => document.querySelector('#mainNav [data-page="items"]').click()); await sleep(900);
+  await page.evaluate(() => document.querySelector('#itemsTabs [data-cat="fabric"]').click()); await sleep(500);
+  const itx = clean(await page.evaluate(() => document.getElementById('itemsTable').innerText));
+  ok(/جملة 48\.00/.test(itx), 'الأصناف: «جملة 48.00 • التاريخ» تحت اسم الصنف', itx.slice(0, 300));
   await page.browserContext().close();
 
   const sp = await login('asim');

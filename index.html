@@ -815,7 +815,7 @@
     <section id="page-purchases" class="page">
       <header class="page-head">
         <div class="ph-title"><h2>المشتريات</h2><p>فواتير الموردين بأسعارها قبل الضريبة، ومنها تُحدَّث أسعار الجملة للأصناف — للإدارة فقط.</p></div>
-        <div class="actions"><label class="btn primary file-btn"><svg><use href="#i-upload"/></svg> استيراد فواتير <input id="purImport" type="file" accept="application/json,.json" hidden></label></div>
+        <div class="actions"><button type="button" class="btn primary" id="btnAddPurchase"><svg><use href="#i-plus"/></svg> فاتورة جديدة</button><label class="btn file-btn"><svg><use href="#i-upload"/></svg> استيراد ملف <input id="purImport" type="file" accept="application/json,.json" hidden></label></div>
       </header>
       <div class="card exp-filters">
         <label class="search"><svg><use href="#i-search"/></svg><input id="purQ" type="search" placeholder="بحث بالمورد أو الصنف أو رقم الفاتورة" aria-label="بحث في المشتريات"></label>
@@ -831,8 +831,19 @@
             <tbody></tbody>
           </table>
         </div>
-        <p class="empty" id="purEmpty" hidden>لا توجد فواتير بعد — استورد ملف الفواتير.</p>
+        <p class="empty" id="purEmpty" hidden>لا توجد فواتير بعد — أضف فاتورة بزر «فاتورة جديدة» أو استورد ملف الفواتير.</p>
         <p class="error" id="purErr" role="alert" hidden></p>
+      </div>
+      <div class="card" id="purItemsCard">
+        <div class="card-head"><h3>أسعار الجملة للأصناف</h3>
+          <select id="purItemsF" aria-label="تصفية الأصناف"><option value="">كل الأصناف</option><option value="nocost">بلا سعر جملة</option><option value="noprice">مخفية أو بلا سعر بيع</option><option value="old">آخر تحديث قبل 90 يوماً</option></select></div>
+        <p class="hint">سعر الجملة قبل الضريبة من أحدث فاتورة، وتاريخ آخر تحديث ومورده، وهامش الربح من سعر البيع. اضغط الصنف لتعديله (سعر البيع والتفعيل).</p>
+        <div class="table-wrap">
+          <table class="table responsive" id="purItemsTable">
+            <thead><tr><th>الصنف</th><th>الفئة</th><th class="ta-end">سعر الجملة</th><th class="ta-end">سعر البيع</th><th class="ta-end">الهامش</th><th>آخر تحديث</th></tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
       </div>
     </section>
 
