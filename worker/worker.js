@@ -446,13 +446,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.30';
-// بصمة asalh-najd-1.1.30.apk (إصدار GitHub v1.1.30، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.30 وversionCode 10130، ونفس شهادة توقيع 1.1.29).
-const UPDATE_FALLBACK_SHA256 = '89dc2c32ed175a72311ba10ff9686e557a62b7c1c67dc9bab11a53f5e276a04a';
+const UPDATE_FALLBACK_VERSION = '1.1.31';
+// بصمة asalh-najd-1.1.31.apk (إصدار GitHub v1.1.31، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.31 وversionCode 10131، ونفس شهادة توقيع 1.1.30).
+const UPDATE_FALLBACK_SHA256 = '762e5b672d2a94e1d88fa3cdd1f0013479ec351b731d5395b276d4c4afdbaaff';
 const UPDATE_FALLBACK_NOTES = [
-  'المصروفات: التصنيف الطويل يلتف داخل خانته بدل أن يتراكب على المبلغ',
-  'الملف التعريفي: زر «واتساب PDF» يرسل ملف الكتالوج نفسه بالواتساب',
+  'المشتريات: زر «فاتورة جديدة» لإدخال فاتورة المورد وبنودها يدوياً، فتُحدَّث أسعار الجملة للأصناف',
+  'جدول «أسعار الجملة للأصناف»: السعر وآخر تحديث ومورده وهامش الربح، وسعر الجملة تحت اسم الصنف',
 ];
 
 function versionCodeOfName(v) {
