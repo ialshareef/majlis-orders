@@ -104,5 +104,33 @@ await ta('الجدول في schema.sql والهجرة 009، ويُنشأ تلق�
   assert.ok(env.DB.tables.has('purchases'));
 });
 
+await ta('الاستيراد بمفتاح مؤقت: مغلق بلا Secret، ويرفض المفتاح الخاطئ، وينشئ الأصناف مخفية ويحدّث سعر الجملة بلا تكرار', async () => {
+  const env = mk();
+  env.DB.tables.set('items', [{ id: 'f-old', data: JSON.stringify({ id: 'f-old', name: 'قائم', category: 'fabric', price: 90, active: true, purchaseCodes: ['مورد تجريبي|T-1'], cost: 40, costDate: '2026-01-01' }), updated_at: past }]);
+  const K = 'k'.repeat(40);
+  const body = { purchases: [INV('K-1', '2026-11-02', 52), { supplier: 'مورد آخر', invoice_no: 'K-2', invoice_date: '2026-11-03', lines: [{ name: 'إسفنج تجريبي', itemName: 'إسفنج ت', code: 'S-1', category: 'foam', unit: 'لوح', qty: 2, unitNet: 100, net: 200, vat: 30, total: 230, sheetLen: 2 }], totals: { net: 200, vat: 30, total: 230 } }] };
+  assert.equal((await call(env, '/api/purchases/import-key', null, body, 'POST', { 'X-Import-Key': K })).s, 404, 'بلا Secret: 404');
+  env.PURCHASE_IMPORT_KEY = 'short';
+  assert.equal((await call(env, '/api/purchases/import-key', null, body, 'POST', { 'X-Import-Key': 'short' })).s, 404, 'Secret قصير: 404');
+  env.PURCHASE_IMPORT_KEY = K;
+  assert.equal((await call(env, '/api/purchases/import-key', null, body, 'POST', { 'X-Import-Key': 'x'.repeat(40) })).s, 403, 'مفتاح خاطئ: 403');
+  const r = await call(env, '/api/purchases/import-key', null, body, 'POST', { 'X-Import-Key': K });
+  assert.equal(r.s, 200, JSON.stringify(r.d));
+  assert.deepEqual([r.d.added, r.d.itemsCreated], [2, 1]);
+  const items = env.DB.tables.get('items').map((x) => JSON.parse(x.data));
+  const old = items.find((i) => i.id === 'f-old'), foam = items.find((i) => i.name === 'إسفنج ت');
+  assert.ok(old.cost === 52 && old.costDate === '2026-11-02' && old.supplier === 'مورد تجريبي' && old.price === 90 && old.active === true, JSON.stringify(old));
+  assert.ok(foam && foam.active === false && foam.price === 0 && foam.cost === 100 && foam.sheetLen === 2 && foam.purchaseCodes[0] === 'مورد آخر|S-1', JSON.stringify(foam));
+  assert.ok(!items.some((i) => /موكيت/.test(i.name)), 'بنود «أخرى» بلا صنف');
+  const P = env.DB.tables.get('purchases');
+  assert.ok(P.length === 2 && P.every((x) => x.created_by === '1'), 'باسم المالك');
+  assert.ok(JSON.parse(P.find((x) => x.invoice_no === 'K-1').data).lines[0].itemId === 'f-old', 'البند مربوط بصنفه');
+  const r2 = await call(env, '/api/purchases/import-key', null, body, 'POST', { 'X-Import-Key': K });
+  assert.ok(r2.d.added === 0 && r2.d.skipped === 2 && r2.d.itemsCreated === 0 && env.DB.tables.get('items').length === 2, 'إعادة الإرسال: لا تكرار');
+  // الموظف لا تصله أسعار الجملة من الأصناف المنشأة
+  const b = (await call(env, '/api/bootstrap', '2')).d;
+  assert.ok(!JSON.stringify(b.items).includes('"cost"'), 'الموظف بلا أسعار جملة');
+});
+
 console.log(`\n=== purchases: PASS=${pass}  FAIL=${fail} ===`);
 process.exit(fail ? 1 : 0);

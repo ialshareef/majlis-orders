@@ -309,6 +309,8 @@ async function route(request, env, url) {
   if (path === '/api/login' && method === 'POST') return login(env, body, request);
   // استرداد حساب المالك: مغلق ما لم يضبط صاحب حساب Cloudflare سراً مؤقتاً (انظر ownerRecover)
   if (path === '/api/owner/recover' && method === 'POST') return ownerRecover(env, body, request);
+  // استيراد فواتير المشتريات بمفتاح مؤقت (Secret في Cloudflare) — مغلق (404) بلا المفتاح؛ انظر purchasesImportByKey
+  if (path === '/api/purchases/import-key' && method === 'POST') return purchasesImportByKey(env, body, request);
 
   // بوابة العميل (عامة): كل مسار يتحقق من customer token ولا يرى إلا صفّه
   if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request, body);
@@ -4033,6 +4035,63 @@ async function ownerRecover(env, body, request) {
     ...keys.map((k) => env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind(k)),
   ]);
   return { ok: true, username: owner.username };
+}
+
+/* استيراد فواتير المشتريات بلا جلسة دخول — لإدخال بيانات الفواتير نيابة عن المالك دون رفعها للمستودع العام:
+   1) يُضبط Secret مؤقت PURCHASE_IMPORT_KEY (32 حرفاً فأكثر) على الـ Worker.
+   2) POST /api/purchases/import-key بالترويسة X-Import-Key والجسم { purchases: [...] } (نفس ملف الاستيراد).
+      يربط كل بند (قماش/إسفنج/خشب/إكسسوار) بصنفه برمز المورد، أو يُنشئ صنفاً مخفياً بسعر جملته (price 0)،
+      ويحدّث سعر الجملة لأحدث فاتورة، ثم يحفظ الفواتير (بلا تكرار: المورد + رقم الفاتورة) باسم المالك.
+   3) يُحذف الـ Secret بعد الاستخدام. بلا المفتاح المسار غير موجود (404)، والمحاولات الخاطئة محدودة. */
+async function purchasesImportByKey(env, body, request) {
+  const secret = env && env.PURCHASE_IMPORT_KEY != null ? String(env.PURCHASE_IMPORT_KEY) : '';
+  const ownerId = ownerIdOf(env);
+  if (secret.length < 32 || !ownerId) throw new HttpError(404, 'المسار غير موجود');
+  const ip = (request && request.headers.get('CF-Connecting-IP')) || '';
+  const keys = ['pimport:all'].concat(ip ? ['pimport:ip:' + ip] : []);
+  const mins = await loginLocked(env, keys);
+  if (mins) throw new HttpError(429, `محاولات كثيرة — أعد المحاولة بعد ${mins} دقيقة`);
+  const given = await sha256Hex(String((request && request.headers.get('X-Import-Key')) || ''));
+  if (!timingSafeEqual(given, await sha256Hex(secret))) { await loginFailed(env, keys); throw new HttpError(403, 'مفتاح الاستيراد غير صحيح'); }
+  const owner = await env.DB.prepare('SELECT id, name FROM users WHERE id = ?').bind(ownerId).first();
+  if (!owner) throw new HttpError(400, 'حساب المالك غير موجود');
+  const list = body && Array.isArray(body.purchases) ? body.purchases : null;
+  if (!list || !list.length || list.length > 300) throw new HttpError(400, 'لا توجد فواتير صالحة للاستيراد');
+  list.forEach(cleanPurchase); // تحقق مبكر قبل لمس الأصناف
+  const items = ((await env.DB.prepare('SELECT id, data FROM items').all()).results || []).map((r) => safeParse(r.data, null)).filter(Boolean);
+  const changed = new Map();
+  let created = 0, updated = 0;
+  const COLORS = { fabric: '#a0826d', foam: '#e8e2d0', wood: '#8b5a2b', acc: '#7f8c8d' };
+  const num2 = (v) => Math.round(Number(v) * 100) / 100;
+  const sorted = list.slice().sort((a, b) => String(a.invoice_date || '').localeCompare(String(b.invoice_date || '')));
+  for (const p of sorted) {
+    for (const l of (p.lines || [])) {
+      if (!l || !['fabric', 'foam', 'wood', 'acc'].includes(l.category)) continue;
+      const key = `${String(p.supplier).trim()}|${String(l.code || l.name).trim()}`;
+      let it = items.find((i) => Array.isArray(i.purchaseCodes) && i.purchaseCodes.includes(key)) || (l.itemId ? items.find((i) => i.id === l.itemId) : null);
+      if (!it) {
+        it = { id: uid(), name: String(l.itemName || l.name).slice(0, 80), category: l.category, unit: l.category === 'acc' ? 'pc' : 'm', price: 0,
+          depth: 0.8, w: 0.5, h: 0.5, shape: 'rect', color: COLORS[l.category], active: false };
+        items.push(it); created++; changed.set(it.id, it);
+      }
+      if (!Array.isArray(it.purchaseCodes)) it.purchaseCodes = [];
+      if (!it.purchaseCodes.includes(key)) { it.purchaseCodes = it.purchaseCodes.concat(key).slice(-50); changed.set(it.id, it); }
+      const d = String(p.invoice_date || '').slice(0, 10) || now().slice(0, 10);
+      const u = Number(l.unitNet);
+      if (Number.isFinite(u) && u > 0 && (!it.costDate || d >= it.costDate)) {
+        it.cost = num2(u); it.costDate = d; it.supplier = String(p.supplier).trim().slice(0, 120);
+        if (l.sheetLen && it.category === 'foam') it.sheetLen = num2(l.sheetLen);
+        updated++; changed.set(it.id, it);
+      }
+      l.itemId = it.id;
+    }
+  }
+  const ts = now();
+  const st = [...changed.values()].map((i) => env.DB.prepare('INSERT INTO items (id, data, updated_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at').bind(i.id, JSON.stringify(i), ts));
+  for (let i = 0; i < st.length; i += 50) await env.DB.batch(st.slice(i, i + 50));
+  const r = await importPurchases(env, { id: owner.id }, { purchases: list });
+  await env.DB.batch(keys.map((k) => env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind(k)));
+  return { ok: true, added: r.added, skipped: r.skipped, itemsCreated: created, itemsUpdated: updated, itemsChanged: changed.size };
 }
 
 /* ------------------------------ خدمة ملفات الواجهة ------------------------------ */

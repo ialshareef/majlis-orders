@@ -4753,7 +4753,7 @@ function docTitle(order) {
       summary.push({ label: 'صافي الربح', value: profitAll, kind: 'money' });
       summary.push({ label: 'هامش الربح', value: hasCost ? marginAll : null, kind: 'pct' });
     }
-    const CR = commRatesOf(o), CS = commRateSources(o, CR);
+    const CR = commRatesOf(o);
     const commLbl = `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'} (${pct(CR.ownerRate)})`;
     if (seeComm) summary.push({ label: commLbl, value: comm, kind: 'money' });
 
@@ -4783,34 +4783,37 @@ function docTitle(order) {
         totals: { name: 'المجموع', amount: money(info.extrasCost + info.commCost) },
       });
     }
-    // 3) الحساب خطوة بخطوة: من مجموع الأصناف إلى صافي الربح والعمولات
-    const acc = [{ k: 'مجموع الأصناف', v: L.subtotal }];
-    if (L.discount) acc.push({ k: 'الخصم', v: -L.discount });
-    if (L.vatEnabled) acc.push({ k: `ضريبة القيمة المضافة (${pct(L.vatRate)})`, v: L.vatAmount });
-    acc.push({ k: totalLbl, v: money(o.total), b: true });
-    acc.push({ k: 'المدفوع', v: paid }, { k: 'المتبقي على العميل', v: rem, b: true });
+    /* 3) الحساب في ثلاثة جداول قصيرة بعناوين واضحة (بدل جدول طويل واحد):
+       حساب العميل ← الربح والتكاليف ← العمولات */
+    const money2 = [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }];
+    const cust = [{ k: 'مجموع الأصناف', v: L.subtotal }];
+    if (L.discount) cust.push({ k: 'الخصم', v: -L.discount });
+    if (L.vatEnabled) cust.push({ k: `ضريبة القيمة المضافة (${pct(L.vatRate)})`, v: L.vatAmount });
+    cust.push({ k: totalLbl, v: money(o.total), b: true });
+    cust.push({ k: 'المدفوع', v: paid }, { k: 'المتبقي على العميل', v: rem, b: true });
+    tables.push({ title: 'حساب العميل', columns: money2, rows: cust });
+    const pr = orderPartnerRow(o);
+    const unpaid = seeComm ? money((comm && !commPaidOf(o, 'owner') ? num(comm) : 0) + (CR.parentId && parentComm && !commPaidOf(o, 'parent') ? num(parentComm) : 0) + (pr && !pr.paid ? num(pr.amount) : 0)) : 0;
     if (seeCost) {
-      acc.push({ k: (L.vatEnabled ? 'المبيعات قبل الضريبة' : 'المبيعات') + ' (أساس الربح)', v: revenue });
-      acc.push({ k: linesHave ? 'تكاليف الأصناف' : 'تكاليف الأصناف (لم تُسجَّل تكلفة وحدة)', v: linesHave ? -info.linesCost : null });
+      const acc = [{ k: (L.vatEnabled ? 'المبيعات قبل الضريبة' : 'المبيعات') + ' (أساس الربح)', v: revenue }];
+      if (linesHave) acc.push({ k: 'تكاليف الأصناف', v: -info.linesCost });
       if (info.extras.length) acc.push({ k: 'التكاليف الإضافية', v: -info.extrasCost });
       if (info.commLines.length && hasCost) acc.push({ k: 'العمولات المصروفة (' + info.commLines.map((e) => e.name).join('، ') + ')', v: -info.commCost });
       acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -costAll : null, b: true });
-    }
-    if (seeProfit) acc.push({ k: 'صافي الربح', v: profitAll, b: true });
+      if (seeProfit) acc.push({ k: hasCost ? `صافي الربح (هامش ${pct(marginAll)})` : 'صافي الربح', v: profitAll, b: true });
+      // صافي الربح يخصم المصروف من العمولات فقط؛ فالمتبقي غير المصروف يُخصم هنا ليظهر الربح الفعلي المتوقع
+      if (seeProfit && hasCost && profitAll !== null && unpaid > 0.004) acc.push({ k: `صافي الربح بعد العمولات غير المصروفة (${fmt(unpaid)})`, v: money(profitAll - unpaid), b: true });
+      tables.push({ title: 'الربح والتكاليف', columns: money2, rows: acc });
+    } else if (seeProfit) tables.push({ title: 'الربح', columns: money2, rows: [{ k: 'صافي الربح', v: profitAll, b: true }] });
     if (seeComm) {
-      const op = commPaidOf(o, 'owner');
-      acc.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()} • ${CS.owner})${comm ? (op ? ` — صُرفت ${day(op.at)}` : ' — لم تُصرف') : ''}`, v: comm });
-      if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; acc.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)} • ${CS.parent})`, v: parentComm }); }
-      { const pr = orderPartnerRow(o); if (pr) acc.push({ k: `حصة شريك الفرع — ${pr.who} (${pct(pr.rate)} من قيمة البيع)${pr.paid ? ` — صُرفت ${day(pr.paid.at)}` : ' — لم تُصرف'}`, v: pr.amount }); }
-      if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) acc.push({ k: `حصة المشاركة (${pct(CR.shareRate)} • ${CS.share})`, v: orderShareAmount(o) });
-      // صافي الربح أعلاه يخصم المصروف فقط؛ فالمتبقي غير المصروف يُخصم هنا ليظهر الربح الفعلي المتوقع
-      if (seeProfit && hasCost && profitAll !== null) {
-        const pr = orderPartnerRow(o);
-        const unpaid = money((comm && !commPaidOf(o, 'owner') ? num(comm) : 0) + (CR.parentId && parentComm && !commPaidOf(o, 'parent') ? num(parentComm) : 0) + (pr && !pr.paid ? num(pr.amount) : 0));
-        if (unpaid > 0.004) acc.push({ k: `صافي الربح بعد العمولات غير المصروفة (${fmt(unpaid)})`, v: money(profitAll - unpaid), b: true });
-      }
+      const cm = [];
+      const st = (paidRec, amt) => (amt ? (paidRec ? ` — صُرفت ${day(paidRec.at)}` : ' — لم تُصرف') : '');
+      cm.push({ k: `${isMandoub(o) ? 'عمولة المندوب' : 'عمولة البائع'}${o.createdByName ? ' — ' + o.createdByName : ''} (${pct(CR.ownerRate)} من ${commBaseLabel()})${st(commPaidOf(o, 'owner'), comm)}`, v: comm });
+      if (CR.parentId) { const par = Store.getUser(CR.parentId) || parent; cm.push({ k: `عمولة المندوب الأعلى — ${(par && par.name) || ''} (${pct(CR.parentRate)})${st(commPaidOf(o, 'parent'), parentComm)}`, v: parentComm }); }
+      if (pr) cm.push({ k: `حصة شريك الفرع — ${pr.who} (${pct(pr.rate)} من قيمة البيع)${pr.paid ? ` — صُرفت ${day(pr.paid.at)}` : ' — لم تُصرف'}`, v: pr.amount });
+      if (CR.shareRate && commBaseAmount(o) !== null && (commBaseMode() === 'total' || (seeProfit && hasCost))) cm.push({ k: `حصة المشاركة (${pct(CR.shareRate)})`, v: orderShareAmount(o) });
+      tables.push({ title: 'العمولات', columns: money2, rows: cm });
     }
-    tables.push({ title: 'ملخص الحساب', columns: [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }], rows: acc, bold: true });
     // 4) الدفعات
     const pays = (Array.isArray(o.payments) ? o.payments : []).filter((p) => p && num(p.amount));
     tables.push({
@@ -10034,7 +10037,7 @@ async function exportExpensesXlsx() {
       const fits = (body) => {
         if (body.scrollHeight > body.clientHeight + 1) return false;
         const last = body.lastElementChild;
-        return !last || last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom - 6;
+        return !last || last.getBoundingClientRect().bottom <= body.getBoundingClientRect().bottom - 14;
       };
       let body = newPage(true);
       /* القياس قبل اكتمال تحميل الخط يُخطئ في الارتفاعات (الخط البديل أصغر)، فيُقصّ آخر صف تحت الصفحة
@@ -10094,6 +10097,21 @@ async function exportExpensesXlsx() {
       });
       host.querySelectorAll('.rp-table').forEach((tb) => { tb.style.fontSize = minFs[tb.dataset.t] + 'px'; });
       pages.forEach((pg, i) => { pg.querySelector('.rp-foot').innerHTML = footHtml(i + 1, pages.length); });
+      /* حارس أخير قبل التصوير: على الجوال قد يكتمل الخط بعد التقسيم فتطول الصفوف ويُقصّ آخرها تحت الصفحة.
+         ننتظر الخط ثم نفحص كل صفحة؛ إن فاض محتواها نصغّر خط جداولها ونضغط حشوها قليلاً حتى تتسع كاملة */
+      try { await Promise.race([document.fonts.ready, new Promise((r) => setTimeout(r, 3000))]); } catch (_) { /* */ }
+      const overflows = (b) => {
+        if (b.scrollHeight > b.clientHeight + 1) return true;
+        const last = b.lastElementChild;
+        return !!last && last.getBoundingClientRect().bottom > b.getBoundingClientRect().bottom - 2;
+      };
+      for (const pg of pages) {
+        const b = pg.querySelector('.rp-body');
+        for (let g = 0; g < 14 && overflows(b); g++) {
+          b.querySelectorAll('.rp-table').forEach((tb) => { tb.style.fontSize = (parseFloat(getComputedStyle(tb).fontSize) * 0.95) + 'px'; });
+          if (g === 0) b.querySelectorAll('.rp-table td, .rp-table th').forEach((c) => { c.style.paddingTop = '2px'; c.style.paddingBottom = '2px'; });
+        }
+      }
       const { jsPDF } = window.jspdf;
       const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: rep.portrait ? 'portrait' : 'landscape' });
       for (let i = 0; i < pages.length; i++) {
