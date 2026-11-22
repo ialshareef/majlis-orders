@@ -83,7 +83,7 @@ window.addEventListener('unhandledrejection', function (e) { window.TEST_ERRORS.
     // B4: لمس المصمم
     t('B4-touch', css.indexOf('.zoom-ctl .tb-btn { min-height: 44px') >= 0 && css.indexOf('.wall-inline input { height: 44px') >= 0, 'sizes');
     // B5/C6: تنبيه عدم الاتصال
-    t('B5-offline', app.indexOf('تصدير PDF يحتاج اتصالًا بالإنترنت') >= 0, 'offline msg');
+    t('B5-offline', app.indexOf('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.') >= 0 && app.indexOf('if (!navigator.onLine)') < 0, 'offline msg (failure-based, not navigator.onLine)');
     // الإصدار
     // الإصدار يُحقن من وسم git عند البناء (configure-version.js)؛ المصدر يبقى قيمة تطوير واضحة
     t('ver-1-0-50', /APP_VERSION = '(0\.0\.0-dev|\d+\.\d+\.\d+)'/.test(app), 'version');
