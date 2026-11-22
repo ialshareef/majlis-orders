@@ -448,13 +448,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.32';
-// بصمة asalh-najd-1.1.32.apk (إصدار GitHub v1.1.32، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.32 وversionCode 10132، ونفس شهادة توقيع 1.1.31).
-const UPDATE_FALLBACK_SHA256 = '5f3f81eb715b4b74f0e89fec5b1b3873febd7b5046cea4025656e00a0a6a9978';
+const UPDATE_FALLBACK_VERSION = '1.1.33';
+// بصمة asalh-najd-1.1.33.apk (إصدار GitHub v1.1.33، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.33 وversionCode 10133، ونفس شهادة توقيع 1.1.32).
+const UPDATE_FALLBACK_SHA256 = '91f96f22aed9b5ca40edb5cd66d9de4e3657286003a6f28eb587a9110f67e48e';
 const UPDATE_FALLBACK_NOTES = [
-  'ملخص الطلب أوضح: حساب العميل، ثم الربح والتكاليف، ثم العمولات — في جداول قصيرة',
-  'ملف PDF لملخص الطلب لا يقص آخر الصفوف في الصفحة',
+  'إصلاح «غير متصل / لا يوجد اتصال» الكاذب في بعض أجوال أندرويد: المزامنة تعمل ما دام الإنترنت يعمل',
+  'تغيير متعثّر لا يوقف حفظ بقية التغييرات، وشارة المزامنة تعرض سبب التعذّر عند الضغط عليها',
 ];
 
 function versionCodeOfName(v) {
