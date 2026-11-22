@@ -196,6 +196,17 @@ try {
   st = await syncNow();
   ok(st.state === 'ok' && !!env.DB.tables.get('orders').find((r) => r.id === 'bad-o'), 'trickle: بعد عودة الاتصال يصل التغيير المعلّق والشارة «محدّث»', { st, syncLog });
 
+  /* ----- 5) جهاز أندرويد يُبلغ navigator.onLine=false والإنترنت يعمل: المزامنة تُحاوَل وتنجح (كانت لا تُحاوَل أصلاً) ----- */
+  await page.evaluate(() => { Object.defineProperty(Navigator.prototype, 'onLine', { configurable: true, get: () => false }); });
+  await page.evaluate(() => { const o = Store.db.orders.find((x) => x.id === 'ok-o'); o.customer.name = 'عميل بعد onLine كاذب'; o.updatedAt = new Date().toISOString(); });
+  syncLog.length = 0;
+  await page.evaluate(() => document.getElementById('netState').click());
+  await page.waitForFunction(() => document.getElementById('netState').dataset.state !== 'sync', { timeout: 30000 });
+  await sleep(600);
+  const st5 = await page.evaluate(() => document.getElementById('netState').dataset.state);
+  const srvOk = JSON.parse(env.DB.tables.get('orders').find((r) => r.id === 'ok-o').data);
+  ok(st5 === 'ok' && syncLog.length > 0 && srvOk.customer.name === 'عميل بعد onLine كاذب', 'onLine كاذب: المزامنة تُحاوَل وتنجح والشارة «محدّث»', { st5, syncLog });
+
   await ctx.close();
   ok(pageErrors.length === 0, 'ui: لا أخطاء JavaScript في الصفحة', pageErrors);
 } catch (e) {

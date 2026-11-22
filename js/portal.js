@@ -1482,7 +1482,6 @@ if (navigator.canShare && navigator.canShare({ files: [file] })) {
   }
 
   async function makeDesignPdfBlob(number) {
-    if (!navigator.onLine) throw new Error('تصدير PDF يحتاج اتصالًا بالإنترنت.');
     try { await loadScript(H2C_URL); await loadScript(JSPDF_URL); }
     catch (_) { throw new Error('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.'); }
     var o = designSheetOpts(number);

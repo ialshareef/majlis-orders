@@ -4367,12 +4367,6 @@ function docTitle(order) {
 
       async function prepare() {
         // إنشاء PDF يحتاج مكتبات من الإنترنت: رسالة واضحة مبكراً بدل خطأ تقني لاحق
-        if (!navigator.onLine) {
-          state.className = 'pdf-state err';
-          state.innerHTML = `${icon('alert')}<span class="pdf-state-txt">تصدير PDF يحتاج اتصالًا بالإنترنت.</span>`;
-          note.textContent = 'تحقق من الاتصال ثم أعد فتح النافذة.';
-          return;
-        }
         const my = ++run;
         const fileName = isReceipt ? `${money(payment.amount) < 0 ? 'سند-صرف' : 'سند-قبض'}-${order.number}.pdf` : ORDER_DOCS[curKind].file(order);
         btnWa.disabled = btnSave.disabled = btnPrint.disabled = true;
@@ -7531,7 +7525,6 @@ function docTitle(order) {
       تُبنى من الوحدة المشتركة js/design-sheet.js — نفس ورقة العميل
       حرفياً، والمكوّنات الإضافية في صدر الصفحة فقط. */
   async function makeDesignSheetBlob(d) {
-    if (!navigator.onLine) throw new Error('تصدير PDF يحتاج اتصالًا بالإنترنت.');
     try { await loadScript(H2C_URL); await loadScript(JSPDF_URL); }
     catch (_) { throw new Error('تعذّر تحميل مكتبة PDF. تحقق من الاتصال.'); }
     const meta = [
@@ -10186,7 +10179,8 @@ async function exportExpensesXlsx() {
     // نافذة منبثقة مفتوحة (إعدادات، صنف، تكاليف): المزامنة تستبدل كائنات البيانات
     // فتصير المراجع التي التقطتها النافذة يتيمة ويضيع ما يُحفظ. تُؤجَّل حتى تُغلق.
     if (!$('#modal').hidden) return;
-    if (!navigator.onLine) { setNetState('off'); return; }
+    /* لا نثق بـ navigator.onLine=false: بعض أجهزة أندرويد (شبكات/VPN/DNS خاص) تُبلغ «غير متصل» والإنترنت يعمل،
+       فكانت المزامنة لا تُحاوَل أصلاً وتبقى الشارة «غير متصل». نحاول دائماً، والفشل الفعلي وحده يعني انقطاعاً */
     syncing = true;
     // شريط تحميل رفيع أعلى الصفحة: كانت الجداول تبقى على بياناتها القديمة بلا أي إشارة
     document.body.classList.add('syncing');
@@ -10247,6 +10241,7 @@ async function exportExpensesXlsx() {
     setInterval(refreshNetAge, 30000);
     document.addEventListener('visibilitychange', () => { if (!document.hidden) syncFromServer(); });
     window.addEventListener('online', () => { setNetState('sync'); syncFromServer(); });
+    // حدث «offline» من النظام قد يكون كاذباً على بعض الأجهزة: يُعرض، لكن المزامنة الدورية تبقى تحاول
     window.addEventListener('offline', () => setNetState('off'));
     $('#netState').hidden = false;
     $('#netState').addEventListener('click', () => {
@@ -10255,7 +10250,7 @@ async function exportExpensesXlsx() {
       else if ($('#netState').dataset.state === 'off' && navigator.onLine) toast(netFailText() + ' — جارٍ إعادة المحاولة…', true);
       syncFromServer();
     });
-    setNetState(navigator.onLine ? 'ok' : 'off');
+    setNetState('sync');
   }
 
   /* وضوح أدوات اللمس وتسميات المدخلات، بما فيها المحتوى المنشأ ديناميكياً. */
