@@ -228,6 +228,8 @@ $metaObj = @{
   # رفع السكربت يستبدل الربط كله: بدون هذا تُمسح متغيرات اللوحة (ALLOWED_ORIGIN — وبدونه يُرفض
   # تطبيق أندرويد) والأسرار (ADMIN_INIT_PASSWORD، AI_API_KEY) مع كل نشر.
   keep_bindings      = @('plain_text', 'secret_text')
+  # سجلات الطلبات والأخطاء (Workers Logs، مجانية ضمن الحصة): لتشخيص أي «تعذّر الاتصال» من لوحة Cloudflare
+  observability      = @{ enabled = $true; head_sampling_rate = 1 }
 }
 # Verify binding points only to the resolved (test) D1 database
 foreach ($b in $metaObj.bindings) {

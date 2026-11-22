@@ -3566,12 +3566,22 @@ function canEditOrder(o) {
     if (!el || !Store.isRemote) return;
     if (state === 'ok') lastSyncAt = Date.now();
     el.dataset.state = state;
-    const labels = { ok: 'محدّث', sync: 'يزامن…', off: 'غير متصل', err: 'تعذّر التحديث' };
+    // الجهاز متصل بالإنترنت لكن الطلب لم يصل الخادم: ليس «غير متصل» — نقول ذلك بدقة مع التفاصيل
+    const reach = state === 'off' && navigator.onLine;
+    const labels = { ok: 'محدّث', sync: 'يزامن…', off: reach ? 'تعذّر الوصول' : 'غير متصل', err: 'تعذّر التحديث' };
     $('#netLabel').textContent = labels[state] || '';
     // «تعذّر التحديث» مع سببه الفعلي من الخادم (كان بلا سبب فلا يُعرف ما الخطأ)
     el.title = state === 'ok' && lastSyncAt ? `آخر تحديث ${fmtDateTimeUi(new Date(lastSyncAt).toISOString())}`
-      : state === 'err' && Store.lastError ? `تعذّر التحديث: ${humanError(Store.lastError)} — اضغط لإعادة المحاولة` : (labels[state] || '');
+      : state === 'err' && Store.lastError ? `تعذّر التحديث: ${humanError(Store.lastError)} — اضغط لإعادة المحاولة`
+      : reach ? netFailText() + ' — اضغط لإعادة المحاولة' : (labels[state] || '');
     if (state !== 'sync') announceRejected();
+  }
+  /** وصف آخر فشل اتصال بالخادم (الطلب، حجمه، وقته) — للتشخيص من صورة شاشة */
+  function netFailText() {
+    const f = Store.lastNetFail;
+    if (!f) return 'تعذّر الوصول للخادم والجهاز متصل بالإنترنت';
+    const kb = f.size ? ` • حجم ${f.size > 1048576 ? (f.size / 1048576).toFixed(1) + ' م.ب' : Math.max(1, Math.round(f.size / 1024)) + ' ك.ب'}` : '';
+    return `تعذّر الوصول للخادم والجهاز متصل بالإنترنت (${f.method} ${f.path}${kb}${f.parts ? ` • ${f.parts} تغيير معلّق` : ''} • ${fmtDateTimeUi(f.at)}${f.msg ? ' • ' + f.msg.slice(0, 60) : ''})`;
   }
   /** تغيير محلي رفضه الخادم (لا صلاحية / بيانات غير صالحة): أُعيدت نسخة الخادم، ويُبلَّغ المستخدم مرة واحدة */
   function announceRejected() {
@@ -10242,6 +10252,7 @@ async function exportExpensesXlsx() {
     $('#netState').addEventListener('click', () => {
       // عند الخطأ: يظهر السبب فوراً (على الجوال لا يظهر title)، ثم تُعاد المحاولة
       if ($('#netState').dataset.state === 'err' && Store.lastError) toast('تعذّر التحديث: ' + humanError(Store.lastError) + ' — جارٍ إعادة المحاولة…', true);
+      else if ($('#netState').dataset.state === 'off' && navigator.onLine) toast(netFailText() + ' — جارٍ إعادة المحاولة…', true);
       syncFromServer();
     });
     setNetState(navigator.onLine ? 'ok' : 'off');

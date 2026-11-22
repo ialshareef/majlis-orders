@@ -56,6 +56,8 @@ const server = http.createServer((req, res) => {
     const u = new URL(req.url, 'http://x');
     if (u.pathname.startsWith('/api/')) {
       if (failMe && u.pathname === '/api/me') { req.socket.destroy(); return; }
+      // محاكاة طلب مزامنة لا يصل الخادم (شبكة/حجم) متى حمل العلامة NETFAIL — يُقطع الاتصال
+      if (u.pathname === '/api/sync' && Buffer.concat(chunks).toString('utf8').includes('NETFAIL')) { req.socket.destroy(); return; }
       try {
         const body = Buffer.concat(chunks).toString('utf8');
         const r = await worker.fetch(new Request(origin + req.url, { method: req.method, headers: Object.fromEntries(Object.entries(req.headers).filter(([k]) => k !== 'host')), body: ['GET', 'HEAD'].includes(req.method) ? undefined : body }), env);
@@ -171,6 +173,28 @@ try {
   ok(st.state === 'ok' && /الدفعات/.test(st.toast), 'single: تغيير واحد مرفوض يُعاد مع رسالته ولا يعلّق المزامنة', { st, syncLog });
   st = await syncNow();
   ok(st.state === 'ok' && !syncLog.some((x) => x.status >= 400), 'single: والمزامنة بعده سليمة', { st, syncLog });
+
+  /* ----- 4) تغيير لا يصل الخادم (انقطاع أثناء إرساله) مع تغيير سليم: السليم يُحفظ، والمتعثّر يبقى معلّقاً،
+     والشارة تقول «تعذّر الوصول» (لا «غير متصل») مع تفاصيل الطلب الفاشل ----- */
+  await page.evaluate(() => {
+    const mk = (id, name, number) => ({ id, number, status: 'new', createdBy: '2', createdByName: 'عاصم', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
+      customer: { name, phone: '0500000003' }, design: { walls: [], pieces: [] }, lines: [], manualRows: [{ name: 'خدمة', qty: 1, unit: 'خدمة', price: 100 }],
+      subtotal: 100, discount: 0, vat: { enabled: false, rate: 15 }, vatRate: 0, vatAmount: 0, total: 100, paid: 0, remaining: 100, payments: [] });
+    Store.db.orders.push(mk('ok-o', 'عميل سليم', 1003), mk('bad-o', 'NETFAIL', 1004));
+  });
+  syncLog.length = 0;
+  await page.evaluate(() => document.getElementById('netState').click());
+  await page.waitForFunction(() => document.getElementById('netState').dataset.state !== 'sync', { timeout: 30000 });
+  await sleep(800);
+  st = await page.evaluate(() => ({ state: document.getElementById('netState').dataset.state, label: document.getElementById('netLabel').textContent, title: document.getElementById('netState').title }));
+  ok(!!env.DB.tables.get('orders').find((r) => r.id === 'ok-o') && !env.DB.tables.get('orders').find((r) => r.id === 'bad-o'), 'trickle: التغيير السليم وصل الخادم رغم تعثّر إرسال تغيير آخر', syncLog);
+  ok(st.state === 'off' && st.label === 'تعذّر الوصول' && /POST \/api\/sync/.test(st.title), 'trickle: الشارة «تعذّر الوصول» مع تفاصيل الطلب الفاشل', st);
+  const pend = await page.evaluate(() => Store.db.orders.some((o) => o.id === 'bad-o'));
+  ok(pend, 'trickle: التغيير المتعثّر باقٍ على الجهاز ليُعاد لاحقاً');
+  // عاد الاتصال: يصل المتعثّر
+  await page.evaluate(() => { const o = Store.db.orders.find((x) => x.id === 'bad-o'); o.customer.name = 'عميل كان متعثراً'; });
+  st = await syncNow();
+  ok(st.state === 'ok' && !!env.DB.tables.get('orders').find((r) => r.id === 'bad-o'), 'trickle: بعد عودة الاتصال يصل التغيير المعلّق والشارة «محدّث»', { st, syncLog });
 
   await ctx.close();
   ok(pageErrors.length === 0, 'ui: لا أخطاء JavaScript في الصفحة', pageErrors);

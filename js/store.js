@@ -291,6 +291,9 @@
       } catch (e) {
         const err = new Error('تعذر الاتصال بالخادم. تحقق من الإنترنت.');
         err.offline = true;
+        // تفاصيل للتشخيص (تظهر عند الضغط على شارة المزامنة): أي طلب فشل، وحجمه، وهل الجهاز متصل أصلاً
+        let size = 0; try { size = body === undefined ? 0 : JSON.stringify(body).length; } catch (_) { /* */ }
+        this.lastNetFail = { at: new Date().toISOString(), method, path: String(path).split('?')[0], size, online: typeof navigator === 'undefined' ? null : navigator.onLine, msg: String((e && e.message) || e || '') };
         this.lastError = err.message;
         this.lastStatus = -1;
         throw err;
@@ -445,6 +448,9 @@
         catch (e) {
           // رفض نهائي (400/403) لحمولة فيها أكثر من تغيير: يُعزل التغيير المرفوض وحده ويُرفع الباقي
           if (e.status === 400 || e.status === 403) return await this._isolate(payload, e);
+          // فشل شبكة لحمولة فيها أكثر من تغيير: تُرسل التغييرات واحداً واحداً، فلا يحجب تغيير كبير
+          // (طلب بصور تصميم مثلاً) تعثّر إرساله بقية التغييرات — ما لم يصل يبقى معلّقاً ويُعاد لاحقاً
+          if (e.offline && this._partsOf(payload).length > 1) return await this._trickle(payload, e);
           throw e;
         }
         // أرقام الطلبات الجديدة يمنحها الخادم عند أول حفظ ناجح — على الحيّ وعلى المُرسَل معاً
@@ -472,6 +478,36 @@
         this.lastStatus = e.status || (e.offline ? -1 : 0);
         return false;
       }
+    },
+
+    /** إرسال التغييرات المعلّقة جزءاً جزءاً بعد فشل شبكة: الناجح يُثبَّت، والمتعثّر يبقى معلّقاً */
+    async _trickle(payload, firstErr) {
+      let failed = 0, last = firstErr, anyOk = false;
+      for (const part of this._partsOf(payload)) {
+        try {
+          const r = await this.api('POST', '/api/sync', part);
+          const nums = (r && r.numbers) || {};
+          Object.keys(nums).forEach((id) => {
+            const o = this.db.orders.find((x) => x.id === id);
+            if (o) o.number = nums[id];
+            ((part.orders && part.orders.upsert) || []).forEach((x) => { if (x.id === id) x.number = nums[id]; });
+          });
+          this._snapshotSent(part);
+          emitWa(r);
+        } catch (e) {
+          if (e.status === 400 || e.status === 403) { await this._isolate(part, e); continue; }
+          failed++; last = e;
+          if (!this.lastNetFail || !this.lastNetFail.parts) this.lastNetFail = Object.assign({}, this.lastNetFail || {}, { parts: 0 });
+          this.lastNetFail.parts = failed;
+          // الخادم نفسه لا يُبلغ (انقطاع حقيقي): لا داعي لتجربة البقية الآن
+          if (failed >= 2 && !anyOk) break;
+          continue;
+        }
+        anyOk = true;
+      }
+      if (failed) throw last;
+      this.lastError = ''; this.lastStatus = 0;
+      return true;
     },
 
     /** تقسيم حمولة المزامنة إلى أجزاء مستقلة: كل طلب/صنف/حذف وحده، والسجل والإعدادات جزءاً لكل منهما */
@@ -711,6 +747,7 @@
     get db() { return backend.db; },
     get lastError() { return backend.lastError || ''; },
     get lastStatus() { return backend.lastStatus || 0; },
+    get lastNetFail() { return backend.lastNetFail || null; },
     set onSessionLost(fn) { Remote.onSessionLost = fn; },
     uid, now, hash,
     init: () => backend.init(),
