@@ -448,13 +448,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.33';
-// بصمة asalh-najd-1.1.33.apk (إصدار GitHub v1.1.33، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.33 وversionCode 10133، ونفس شهادة توقيع 1.1.32).
-const UPDATE_FALLBACK_SHA256 = '91f96f22aed9b5ca40edb5cd66d9de4e3657286003a6f28eb587a9110f67e48e';
+const UPDATE_FALLBACK_VERSION = '1.1.34';
+// بصمة asalh-najd-1.1.34.apk (إصدار GitHub v1.1.34، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.34 وversionCode 10134، ونفس شهادة توقيع 1.1.33).
+const UPDATE_FALLBACK_SHA256 = 'e4b2272d03a163b22dd6fbffeafd20f5a128f11ab90e3fae7026c0f1a13e81d2';
 const UPDATE_FALLBACK_NOTES = [
-  'إصلاح «غير متصل / لا يوجد اتصال» الكاذب في بعض أجوال أندرويد: المزامنة تعمل ما دام الإنترنت يعمل',
-  'تغيير متعثّر لا يوقف حفظ بقية التغييرات، وشارة المزامنة تعرض سبب التعذّر عند الضغط عليها',
+  'المشتريات: ربط فاتورة المورد بطلب، فتظهر في ملخص الطلب ويمكن إضافتها لتكاليفه بضغطة',
+  'تفاصيل الفاتورة على الجوال أوضح: كل بند بطاقة كاملة بكميته وسعره وصنفه',
 ];
 
 function versionCodeOfName(v) {
