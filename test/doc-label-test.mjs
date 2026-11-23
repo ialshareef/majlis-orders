@@ -52,7 +52,8 @@ console.log('== 2) سلاسل app.js المعروضة ==');
   const withInv = strs.filter((s) => /فاتورة/.test(s.text));
   // المسموح: المستند الضريبي النظامي فقط
   const allowed = withInv.filter((s) => /الفاتورة الضريبية|فاتورة ضريبية/.test(s.text));
-  const unexpected = withInv.filter((s) => !/الفاتورة الضريبية|فاتورة ضريبية/.test(s.text));
+  // فواتير الموردين الواردة (المشتريات) ليست مستندات العملاء: مسموحة متى ذُكر المورد أو المشتريات
+  const unexpected = withInv.filter((s) => !/الفاتورة الضريبية|فاتورة ضريبية|المورد|المشتريات/.test(s.text));
   t('app.js: كل «فاتورة» المتبقية مستند ضريبي نظامي', unexpected.length === 0,
     unexpected.map((s) => 'L' + s.at + ': ' + s.text.slice(0, 70)).join(' | '));
   t('app.js: ذُكر المستند الضريبي (' + allowed.length + ' موضعاً)', allowed.length > 0);

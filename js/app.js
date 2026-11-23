@@ -4842,7 +4842,7 @@ function docTitle(order) {
     if (seeCost && linkedPur && linkedPur.length) {
       tables.push({
         title: 'فواتير المشتريات المرتبطة بالطلب', columns: [{ key: 'd', label: 'التاريخ', kind: 'date' }, { key: 'sup', label: 'المورد' },
-          { key: 'no', label: 'رقم الفاتورة' }, { key: 'net', label: 'قبل الضريبة', kind: 'money' }, { key: 'tot', label: 'الإجمالي', kind: 'money' }],
+          { key: 'no', label: 'رقم فاتورة المورد' }, { key: 'net', label: 'قبل الضريبة', kind: 'money' }, { key: 'tot', label: 'الإجمالي', kind: 'money' }],
         rows: linkedPur.map((p) => ({ d: p.invoice_date ? fmtDate(p.invoice_date) : '—', sup: p.supplier, no: p.invoice_no || '—', net: purNet(p), tot: purTotal(p) })),
         totals: { d: 'المجموع', net: money(linkedPur.reduce((t, p) => t + purNet(p), 0)), tot: money(linkedPur.reduce((t, p) => t + purTotal(p), 0)) },
       });
