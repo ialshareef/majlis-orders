@@ -450,13 +450,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.35';
-// بصمة asalh-najd-1.1.35.apk (إصدار GitHub v1.1.35، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.35 وversionCode 10135، ونفس شهادة توقيع 1.1.34).
-const UPDATE_FALLBACK_SHA256 = 'f27d37eeae0335b996d20bbff51a04c72b6d74a7503ab68f104fbe4a690b6e6c';
+const UPDATE_FALLBACK_VERSION = '1.1.36';
+// بصمة asalh-najd-1.1.36.apk (إصدار GitHub v1.1.36، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.36 وversionCode 10136، ونفس شهادة توقيع 1.1.35).
+const UPDATE_FALLBACK_SHA256 = 'da40bcedc7393ffc68ada73e5754455847f21abc59c388d6db950dea0b5ef481';
 const UPDATE_FALLBACK_NOTES = [
-  'المشتريات: «اقتراحات ربط الفواتير بالطلبات» — تكاليف يدوية تطابق فاتورة بالمبلغ أو بالنوع والتاريخ، مع زر ربط',
-  'ربط فاتورة المورد بطلب، وإضافتها لتكاليفه بضغطة',
+  'كتابة الكسور في الخصم والأسعار والتكاليف (مثل 15.5) بلا مشاكل، ودعم لوحة المفاتيح العربية',
+  'تغيير نسبة عمولة الموظف أو الافتراضية يسري فوراً على كل طلب لم تُصرف عمولته',
 ];
 
 function versionCodeOfName(v) {
