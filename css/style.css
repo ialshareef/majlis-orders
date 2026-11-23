@@ -4043,3 +4043,17 @@ input[data-est="1"] { background: var(--warn-soft); }
 #purItemsCard .card-head select { max-width: 100%; min-width: 0; }
 #purItemsTable tr[data-pit] { cursor: pointer; }
 .item-cost { display: block; font-weight: 400; }
+
+/* تفاصيل فاتورة المورد: البنود بطاقات تُقرأ كاملة على الجوال */
+.pur-sum { display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px; margin-bottom: 10px; }
+.pur-sum > div { background: var(--surface-2); border: 1px solid var(--line-soft); border-radius: var(--r-sm); padding: 8px 10px; }
+.pur-sum span { display: block; font-size: .76rem; color: var(--ink-3); }
+.pur-lines { display: grid; gap: 8px; margin: 10px 0; }
+.pl-card { border: 1px solid var(--line-soft); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 6px; background: var(--surface-2); min-width: 0; }
+.pl-name b { display: block; overflow-wrap: anywhere; }
+.pl-name small { display: block; overflow-wrap: anywhere; }
+.pl-nums { display: flex; justify-content: space-between; gap: 10px; align-items: baseline; }
+.pl-link select { width: 100%; max-width: 100%; }
+.pur-ord { display: block; }
+.pur-link-box { display: grid; gap: 6px; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--line-soft); border-radius: var(--r-sm); }
+.pur-link-box .cc-line { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }

@@ -1360,7 +1360,7 @@ function cleanPurchase(p) {
       category: cat, itemId: str(l.itemId, 64), sheetLen: numv(l.sheetLen, 'طول اللوح'), note: str(l.note, 200) };
   });
   const t = p.totals && typeof p.totals === 'object' ? p.totals : {};
-  return { supplier, invoice_no: str(p.invoice_no, 60), invoice_date: date, vat_no: str(p.vat_no, 30), note: str(p.note, 300), lines: L,
+  return { supplier, invoice_no: str(p.invoice_no, 60), invoice_date: date, vat_no: str(p.vat_no, 30), note: str(p.note, 300), order_id: str(p.order_id, 64), lines: L,
     totals: { net: numv(t.net, 'الصافي'), vat: numv(t.vat, 'الضريبة'), total: numv(t.total, 'الإجمالي') } };
 }
 async function listPurchases(env, user) {
@@ -1394,15 +1394,24 @@ async function importPurchases(env, user, body) {
   for (let i = 0; i < st.length; i += 50) await env.DB.batch(st.slice(i, i + 50));
   return { ok: true, added, skipped };
 }
-/** تحديث ربط البنود بالأصناف (itemId لكل بند بالترتيب) — لا يغيّر الأرقام */
+/** تحديث ربط الفاتورة: البنود بالأصناف (itemIds بالترتيب) و/أو الطلب المرتبط (orderId) — لا يغيّر الأرقام */
 async function updatePurchase(env, user, id, body) {
   await ensurePurchases(env);
   const row = await env.DB.prepare('SELECT * FROM purchases WHERE id = ?').bind(id).first();
   if (!row) throw new HttpError(404, 'الفاتورة غير موجودة');
   const data = safeParse(row.data, {}) || {};
   const links = body && Array.isArray(body.itemIds) ? body.itemIds : null;
-  if (!links || !Array.isArray(data.lines) || links.length !== data.lines.length) throw new HttpError(400, 'ربط غير صالح');
-  data.lines = data.lines.map((l, i) => ({ ...l, itemId: String(links[i] == null ? '' : links[i]).slice(0, 64) }));
+  const hasOrder = !!body && Object.prototype.hasOwnProperty.call(body, 'orderId');
+  if (!links && !hasOrder) throw new HttpError(400, 'ربط غير صالح');
+  if (links) {
+    if (!Array.isArray(data.lines) || links.length !== data.lines.length) throw new HttpError(400, 'ربط غير صالح');
+    data.lines = data.lines.map((l, i) => ({ ...l, itemId: String(links[i] == null ? '' : links[i]).slice(0, 64) }));
+  }
+  if (hasOrder) {
+    const oid = String(body.orderId == null ? '' : body.orderId).slice(0, 64);
+    if (oid && !(await env.DB.prepare('SELECT id FROM orders WHERE id = ?').bind(oid).first())) throw new HttpError(400, 'الطلب غير موجود');
+    data.order_id = oid;
+  }
   await env.DB.prepare('UPDATE purchases SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(data), now(), id).run();
   return { ok: true };
 }

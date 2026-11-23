@@ -104,6 +104,22 @@ await ta('الجدول في schema.sql والهجرة 009، ويُنشأ تلق�
   assert.ok(env.DB.tables.has('purchases'));
 });
 
+await ta('ربط الفاتورة بطلب: يُحفظ order_id، ويُرفض طلب غير موجود، ويُلغى بقيمة فارغة', async () => {
+  const env = mk();
+  env.DB.tables.get('orders').push({ id: 'ord-1', number: 1001, status: 'new', customer_name: 'C', created_by: '1', created_at: past, updated_at: past, data: JSON.stringify({ id: 'ord-1', number: 1001 }) });
+  await call(env, '/api/purchases/import', '1', { purchases: [Object.assign(INV('L-1', '2026-11-05'), { order_id: 'ord-1' })] });
+  let P = (await call(env, '/api/purchases', '1')).d.purchases;
+  assert.equal(P[0].order_id, 'ord-1', 'الاستيراد يحفظ الطلب المرتبط');
+  assert.equal((await call(env, '/api/purchases/' + P[0].id, '1', { orderId: 'nope' }, 'PUT')).s, 400, 'طلب غير موجود: 400');
+  assert.equal((await call(env, '/api/purchases/' + P[0].id, '1', { orderId: '' }, 'PUT')).s, 200);
+  P = (await call(env, '/api/purchases', '1')).d.purchases;
+  assert.equal(P[0].order_id, '', 'أُلغي الربط');
+  assert.equal((await call(env, '/api/purchases/' + P[0].id, '1', { orderId: 'ord-1', itemIds: ['', ''] }, 'PUT')).s, 200);
+  P = (await call(env, '/api/purchases', '1')).d.purchases;
+  assert.equal(P[0].order_id, 'ord-1');
+  assert.equal((await call(env, '/api/purchases/' + P[0].id, '2', { orderId: 'ord-1' }, 'PUT')).s, 403, 'الموظف لا يربط');
+});
+
 await ta('الاستيراد بمفتاح مؤقت: مغلق بلا Secret، ويرفض المفتاح الخاطئ، وينشئ الأصناف مخفية ويحدّث سعر الجملة بلا تكرار', async () => {
   const env = mk();
   env.DB.tables.set('items', [{ id: 'f-old', data: JSON.stringify({ id: 'f-old', name: 'قائم', category: 'fabric', price: 90, active: true, purchaseCodes: ['مورد تجريبي|T-1'], cost: 40, costDate: '2026-01-01' }), updated_at: past }]);

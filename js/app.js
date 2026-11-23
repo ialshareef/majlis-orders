@@ -4723,7 +4723,7 @@ function docTitle(order) {
   /* ---------------- ملخص الطلب (عرض + PDF داخلي للإدارة) ----------------
      مصدر واحد للأرقام: نفس دوال الحساب (computeLines/computeCosts/orderCommission…)
      فيطابق الملخص الجدول والتقارير. التكاليف والربح والعمولة تظهر بحسب الصلاحية فقط. */
-  function orderSummaryRep(o, linkedExp) {
+  function orderSummaryRep(o, linkedExp, linkedPur) {
     const L = computeLines(o);
     const seeCost = canSeeCosts(o), seeProfit = canSeeProfit(o), seeComm = canSeeComm(o);
     const info = seeCost ? computeCosts(o) : null;
@@ -4838,6 +4838,15 @@ function docTitle(order) {
         totals: { d: 'المجموع', amount: money(linkedExp.reduce((s, e) => s + money(e.amount), 0)) },
       });
     }
+    // 6) فواتير الموردين المربوطة بهذا الطلب (للإدارة: من صفحة المشتريات)
+    if (seeCost && linkedPur && linkedPur.length) {
+      tables.push({
+        title: 'فواتير المشتريات المرتبطة بالطلب', columns: [{ key: 'd', label: 'التاريخ', kind: 'date' }, { key: 'sup', label: 'المورد' },
+          { key: 'no', label: 'رقم الفاتورة' }, { key: 'net', label: 'قبل الضريبة', kind: 'money' }, { key: 'tot', label: 'الإجمالي', kind: 'money' }],
+        rows: linkedPur.map((p) => ({ d: p.invoice_date ? fmtDate(p.invoice_date) : '—', sup: p.supplier, no: p.invoice_no || '—', net: purNet(p), tot: purTotal(p) })),
+        totals: { d: 'المجموع', net: money(linkedPur.reduce((t, p) => t + purNet(p), 0)), tot: money(linkedPur.reduce((t, p) => t + purTotal(p), 0)) },
+      });
+    }
     const notes = [];
     if (seeCost && info.missing) {
       notes.push(info.extras.length
@@ -4846,6 +4855,7 @@ function docTitle(order) {
     }
     if (seeCost && !hasCost) notes.push('لم تُسجَّل تكاليف لهذا الطلب بعد: أضفها من «تعديل التكاليف» ليظهر صافي الربح.');
     if (seeCost && linkedExp && linkedExp.length) notes.push('المصروفات المسجّلة في صفحة المصروفات تظهر للاطلاع ولا تدخل في صافي ربح الطلب (كما في التقارير).');
+    if (seeCost && linkedPur && linkedPur.length) notes.push('فواتير المشتريات المرتبطة للاطلاع؛ تدخل صافي الربح متى أُضيفت لتكاليف الطلب من «تعديل التكاليف».');
     if (seeCost) notes.push('مستند داخلي للإدارة: فيه التكاليف والأرباح — لا يُرسل للعميل.');
     const meta = [['العميل', (o.customer && o.customer.name) || '—'], ['الجوال', (o.customer && o.customer.phone) ? iso(o.customer.phone) : '—'],
       ['الحالة', STATUS[o.status] || o.status || '—'], ['تاريخ الطلب', day(o.createdAt)],
@@ -4857,6 +4867,11 @@ function docTitle(order) {
       nums: { total: money(o.total), cost: costAll, profit: profitAll } };
   }
 
+  /** فواتير المشتريات المربوطة بالطلب (لمن يرى تكاليف الجميع فقط — الخادم يفرض ذلك) */
+  async function linkedPurchasesOf(o) {
+    if (!o || !canPage('purchases')) return [];
+    try { return (await loadPurchases()).filter((p) => p.order_id === o.id); } catch (_) { return []; }
+  }
   /** نافذة ملخص الطلب المفصّل، ومنها تصدير PDF الإدارة */
   async function orderSummary(o) {
     if (!o) return;
@@ -4864,7 +4879,8 @@ function docTitle(order) {
     if (canSeeCosts(o) && canAny('expenses.view_own', 'expenses.view_all')) {
       try { linked = (await loadExpenses()).filter((e) => e.order_id === o.id); } catch (_) { linked = []; }
     }
-    const rep = orderSummaryRep(o, linked);
+    const linkedPur = await linkedPurchasesOf(o);
+    const rep = orderSummaryRep(o, linked, linkedPur);
     const cell = (v, kind) => repCell(v, kind);
     const cur$ = esc(currency());
     const kpis = rep.summary.map((s) => `<div class="stat${/الربح/.test(s.label) && s.value !== null ? (s.value < 0 ? ' neg' : ' pos') : ''}${s.label === 'المتبقي' && s.value > 0.004 ? ' remaining' : ''}"><span>${esc(s.label)}</span><b>${s.value === null || s.value === undefined ? '—' : s.kind === 'pct' ? r2(s.value) + '٪' : fmt(s.value)}${s.kind === 'money' && s.value !== null && s.value !== undefined ? ` <small class="sum-cur">${cur$}</small>` : ''}</b></div>`).join('');
@@ -4894,15 +4910,15 @@ function docTitle(order) {
         ${canCostEdit ? `<button class="btn small" id="sumCost">${icon('wallet')} ${orderCost(o) === null ? 'إضافة التكاليف' : 'تعديل التكاليف'}</button>` : ''}
       </div>` : ''}`, (b) => {
       if ($('#sumCost', b)) $('#sumCost', b).addEventListener('click', () => { closeModal(); costForm(o); });
-      if ($('#sumPdf', b)) $('#sumPdf', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumPdf', b)));
-      if ($('#sumWa', b)) $('#sumWa', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumWa', b), true));
+      if ($('#sumPdf', b)) $('#sumPdf', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumPdf', b), false, linkedPur));
+      if ($('#sumWa', b)) $('#sumWa', b).addEventListener('click', () => exportOrderSummaryPdf(o, linked, $('#sumWa', b), true, linkedPur));
     }, 'drawer wide');
   }
 
   /** PDF داخلي للإدارة: ملخص الطلب + كل بند تكلفة كما سُجّل (بمحرّك التقارير نفسه) */
-  async function exportOrderSummaryPdf(o, linked, btn, share) {
+  async function exportOrderSummaryPdf(o, linked, btn, share, linkedPur) {
     if (!o || !canSeeCosts(o)) return;
-    const rep = orderSummaryRep(o, linked || []);
+    const rep = orderSummaryRep(o, linked || [], linkedPur || []);
     const meta = rep.meta.concat([['صُدِّر في', fmtDateTime(Store.now())], ['أعدّه', (currentUser && currentUser.name) || '']]);
     const fileName = `order-summary-${o.number}.pdf`;
     if (!share) { await repPdfRender(rep, meta, fileName, btn); return; }
@@ -5064,6 +5080,22 @@ function docTitle(order) {
         $('#costOk', b).disabled = bad > 0;
       }
 
+      // فواتير مشتريات مربوطة بالطلب: زر يضيف كلاً منها بنداً بتكلفتها قبل الضريبة (مرة واحدة لكل فاتورة)
+      linkedPurchasesOf(o).then((list) => {
+        if (!list.length || !b.isConnected) return;
+        const lbl = (p) => `فاتورة ${p.supplier}${p.invoice_no ? ' ' + p.invoice_no : ''}`;
+        const box = document.createElement('div'); box.className = 'pur-link-box';
+        const draw = () => {
+          const have = new Set(readExtras().map((e) => String(e.name || '').trim()));
+          box.innerHTML = `<small class="hint">${icon('receipt')} فواتير مشتريات مرتبطة بهذا الطلب:</small>` + list.map((p, i) => `<div class="cc-line"><span>${esc(lbl(p))} <small class="hint">${p.invoice_date ? esc(fmtDate(p.invoice_date)) : ''}</small></span>
+            <b class="num">${fmt(purNet(p))}</b>${have.has(lbl(p)) ? '<small class="hint">مُضافة</small>' : `<button type="button" class="btn small" data-addpur="${i}">${icon('plus')} أضفها للتكاليف</button>`}</div>`).join('');
+          $$('[data-addpur]', box).forEach((btn) => btn.addEventListener('click', () => {
+            const p = list[+btn.dataset.addpur];
+            extraRows = readExtras(); extraRows.push({ name: lbl(p), amount: String(purNet(p)) }); renderExtras(); recalc(); draw();
+          }));
+        };
+        $('#extraList', b).before(box); draw();
+      });
       inputs.forEach((inp) => inp.addEventListener('input', recalc));
       $('#extraAdd', b).onclick = () => addExtra();
       $$('[data-preset]', b).forEach((p) => p.addEventListener('click', () => addExtra(p.dataset.preset)));
@@ -6147,7 +6179,7 @@ function docTitle(order) {
     $('#purTable tbody').innerHTML = list.map((p) => `<tr>
       <td data-label="التاريخ" class="num"><bdi>${esc(p.invoice_date ? fmtDate(p.invoice_date) : '—')}</bdi></td>
       <td data-label="المورد"><b>${esc(p.supplier)}</b></td>
-      <td data-label="رقم الفاتورة" class="num">${esc(p.invoice_no || '—')}</td>
+      <td data-label="رقم الفاتورة" class="num">${esc(p.invoice_no || '—')}${p.order_id && purOrderLabel(p.order_id) ? `<small class="hint pur-ord">طلب ${esc(purOrderLabel(p.order_id))}</small>` : ''}</td>
       <td data-label="البنود">${(p.lines || []).length} <small class="hint">${esc((p.lines || []).slice(0, 2).map((l) => l.name).join('، '))}${(p.lines || []).length > 2 ? '…' : ''}</small></td>
       <td data-label="قبل الضريبة" class="num">${fmt(purNet(p))}</td>
       <td data-label="الإجمالي" class="num"><b>${fmt(purTotal(p))}</b></td>
@@ -6170,6 +6202,11 @@ function docTitle(order) {
     if (has$(l.unitNet) && (!it.costDate || d >= it.costDate)) { it.cost = money(l.unitNet); it.costDate = d; it.supplier = p.supplier; if (l.sheetLen && it.category === 'foam') it.sheetLen = num(l.sheetLen); return true; }
     return false;
   }
+  /** خيارات «الطلب المرتبط» لفاتورة مورد: أحدث الطلبات أولاً */
+  const purOrderOpts = (sel) => '<option value="">— بلا طلب —</option>' + db().orders.filter((o) => o.number)
+    .slice().sort((a, b) => num(b.number) - num(a.number)).slice(0, 400)
+    .map((o) => `<option value="${esc(o.id)}"${o.id === sel ? ' selected' : ''}>#${esc(o.number)} — ${esc(o.customer?.name || '')}</option>`).join('');
+  const purOrderLabel = (id) => { const o = id && db().orders.find((x) => x.id === id); return o ? `#${o.number}${o.customer?.name ? ' — ' + o.customer.name : ''}` : ''; };
   function purchaseModal(id) {
     const p = purList.find((x) => x.id === id);
     if (!p) return;
@@ -6177,16 +6214,26 @@ function docTitle(order) {
     const lines = p.lines || [];
     const opts = (l) => '<option value="">— بلا ربط —</option>' + db().items.filter((i) => !l.category || i.category === l.category)
       .map((i) => `<option value="${esc(i.id)}"${i.id === l.itemId ? ' selected' : ''}>${esc(i.name)}${i.active === false ? ' (مخفي)' : ''}</option>`).join('');
+    // البنود بطاقات (لا جدول): تُقرأ كاملة على الجوال — الاسم، ثم الرمز والفئة، ثم الكمية × السعر = الصافي، ثم الصنف
     openModal(`فاتورة ${esc(p.supplier)}${p.invoice_no ? ' — ' + esc(p.invoice_no) : ''}`, `
-      <p class="hint">${p.invoice_date ? 'بتاريخ ' + esc(fmtDate(p.invoice_date)) + ' • ' : ''}${lines.length} بند • قبل الضريبة ${fmt(purNet(p))} • الإجمالي ${fmt(purTotal(p))} ${cu}${p.note ? '<br>' + esc(p.note) : ''}</p>
-      <div class="table-wrap"><table class="table pur-lines"><thead><tr><th>البند</th><th class="ta-end">الكمية</th><th class="ta-end">سعر الوحدة قبل الضريبة</th><th class="ta-end">الصافي</th><th>الصنف في التطبيق</th></tr></thead><tbody>
-        ${lines.map((l, i) => `<tr><td><b>${esc(l.name)}</b>${l.code ? `<small class="hint"> ${esc(l.code)}</small>` : ''}<small class="mv-at">${esc(PUR_CAT[l.category] || 'أخرى')}${l.discount ? ' • خصم ' + fmt(l.discount) : ''}${l.note ? ' • ' + esc(l.note) : ''}</small></td>
-          <td class="num">${fmtQty(l.qty)} ${esc(l.unit || '')}</td><td class="num">${has$(l.unitNet) ? fmt(l.unitNet) : '—'}</td><td class="num">${has$(l.net) ? fmt(l.net) : '—'}</td>
-          <td>${l.category ? `<select data-pl="${i}" aria-label="الصنف المرتبط">${opts(l)}</select>` : '<small class="hint">لا يُربط (ليس صنف تصميم)</small>'}</td></tr>`).join('')}
-      </tbody></table></div>
-      <p class="hint">ربط البند بصنف يحدّث سعر جملة الصنف إن كانت هذه الفاتورة الأحدث.</p>
+      <div class="pur-sum">
+        <div><span>التاريخ</span><b class="num">${p.invoice_date ? esc(fmtDate(p.invoice_date)) : '—'}</b></div>
+        <div><span>البنود</span><b>${lines.length}</b></div>
+        <div><span>قبل الضريبة</span><b class="num">${fmt(purNet(p))}</b></div>
+        <div><span>الإجمالي</span><b class="num">${fmt(purTotal(p))} <small>${cu}</small></b></div>
+      </div>
+      ${p.note ? `<p class="hint">${esc(p.note)}</p>` : ''}
+      <label>الطلب المرتبط <select id="plOrder">${purOrderOpts(p.order_id)}</select></label>
+      <div class="pur-lines">
+        ${lines.map((l, i) => `<div class="pl-card">
+          <div class="pl-name"><b>${esc(l.name)}</b><small class="hint">${[l.code, PUR_CAT[l.category] || 'أخرى', l.discount ? 'خصم ' + fmt(l.discount) : '', l.note].filter(Boolean).map(esc).join(' • ')}</small></div>
+          <div class="pl-nums"><span><bdi class="num">${fmtQty(l.qty)}</bdi> ${esc(l.unit || '')} × <bdi class="num">${has$(l.unitNet) ? fmt(l.unitNet) : '—'}</bdi></span><b class="num">${has$(l.net) ? fmt(l.net) : '—'}</b></div>
+          ${l.category ? `<label class="pl-link">الصنف في التطبيق <select data-pl="${i}">${opts(l)}</select></label>` : '<small class="hint">لا يُربط بصنف (ليس من مواد التصميم)</small>'}
+        </div>`).join('')}
+      </div>
+      <p class="hint">ربط البند بصنف يحدّث سعر جملة الصنف إن كانت هذه الفاتورة الأحدث. وربط الفاتورة بطلب يُظهرها في ملخص الطلب ويتيح إضافتها لتكاليفه.</p>
       <p class="error" id="plErr"></p>
-      <div class="btn-row"><button class="btn danger" id="plDel">${icon('trash')} حذف الفاتورة</button><button class="btn" id="plCancel">إغلاق</button><button class="btn primary" id="plSave">${icon('save')} حفظ الربط</button></div>`, (b) => {
+      <div class="btn-row"><button class="btn danger" id="plDel">${icon('trash')} حذف الفاتورة</button><button class="btn" id="plCancel">إغلاق</button><button class="btn primary" id="plSave">${icon('save')} حفظ</button></div>`, (b) => {
       $('#plCancel', b).onclick = closeModal;
       $('#plDel', b).onclick = async () => {
         if (!(await confirmDlg('حذف فاتورة', `حذف فاتورة ${p.supplier} ${p.invoice_no || ''}؟ لا يغيّر أسعار الأصناف.`))) return;
@@ -6194,14 +6241,16 @@ function docTitle(order) {
         closeModal(); await renderPurchases(); toast('حُذفت الفاتورة');
       };
       $('#plSave', b).onclick = async () => {
-        const ids = lines.map((l, i) => { const s = $(`[data-pl="${i}"]`, b); return s ? s.value : (l.itemId || ''); });
+        const ids = lines.map((l, i) => { const s2 = $(`[data-pl="${i}"]`, b); return s2 ? s2.value : (l.itemId || ''); });
+        const orderId = $('#plOrder', b).value;
         let changed = 0;
         ids.forEach((iid, i) => { const it = iid && Store.getItem(iid); if (it && can('items.manage') && applyLineToItem(it, p, lines[i])) changed++; });
         try {
           if (changed && !(await Store.save())) throw new Error(Store.lastError || 'تعذّر حفظ الأصناف');
-          await Store.api('PUT', '/api/purchases/' + encodeURIComponent(p.id), { itemIds: ids });
+          await Store.api('PUT', '/api/purchases/' + encodeURIComponent(p.id), { itemIds: ids, orderId });
         } catch (e) { $('#plErr', b).textContent = humanError(e && e.message, 'تعذّر الحفظ'); return; }
-        closeModal(); await renderPurchases(); toast(changed ? `حُفظ الربط وحُدّث سعر جملة ${changed} صنف` : 'حُفظ الربط');
+        closeModal(); await renderPurchases();
+        toast([orderId !== (p.order_id || '') ? (orderId ? `رُبطت الفاتورة بالطلب ${purOrderLabel(orderId)}` : 'أُلغي ربط الفاتورة بالطلب') : '', changed ? `حُدّث سعر جملة ${changed} صنف` : ''].filter(Boolean).join(' • ') || 'حُفظت الفاتورة');
       };
     }, 'drawer wide');
   }
@@ -6272,6 +6321,7 @@ function docTitle(order) {
         <label>رقم الفاتورة <input id="pfNo" maxlength="60" class="num"></label>
         <label>التاريخ <input id="pfDate" type="date" value="${today()}"></label>
       </div>
+      <label>الطلب المرتبط <select id="pfOrder">${purOrderOpts('')}</select></label>
       <label class="check"><input type="checkbox" id="pfVat" checked> الأسعار قبل ضريبة 15٪ (تُضاف الضريبة للإجمالي)</label>
       <div id="pfLines">${lineHtml()}</div>
       <button type="button" class="btn small" id="pfAdd">${icon('plus')} بند آخر</button>
@@ -6321,7 +6371,7 @@ function docTitle(order) {
         if (no && purList.some((p) => p.supplier === supplier && p.invoice_no === no)) { err.textContent = 'هذه الفاتورة مسجّلة سابقاً لنفس المورد'; return; }
         for (const l of lines) { l.itemName = l.name; if (l.category === 'foam' && l.unit === 'لوح') l.sheetLen = 2; }
         const net = money(lines.reduce((s, l) => s + l.net, 0)), vat = money(lines.reduce((s, l) => s + l.vat, 0));
-        const p = { supplier, invoice_no: no, invoice_date: $('#pfDate', b).value || today(), lines, totals: { net, vat, total: money(net + vat) } };
+        const p = { supplier, invoice_no: no, invoice_date: $('#pfDate', b).value || today(), order_id: $('#pfOrder', b).value, lines, totals: { net, vat, total: money(net + vat) } };
         const btn = $('#pfSave', b); btn.disabled = true;
         const ok = await importPurchaseList([p]);
         btn.disabled = false;

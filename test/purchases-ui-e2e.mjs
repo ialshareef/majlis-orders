@@ -32,8 +32,10 @@ const ord = (id, number, by, byName, rates, extra = {}) => {
     commRates: rates, payments: [{ id: 'p' + id, at: at.slice(0, 10), amount: 2000, method: 'cash', by: byName }] }, extra);
   return { id, number, status: d.status, customer_name: d.customer.name, created_by: by, created_at: at, updated_at: at, data: JSON.stringify(d) };
 };
-const orders = [];
 const now = new Date().toISOString();
+const od = { id: 'o1', number: 1001, status: 'new', createdBy: '1', createdByName: 'المالك', createdAt: now, updatedAt: now, customer: { name: 'عميل الفاتورة', phone: '0500000001' },
+  design: { walls: [], pieces: [] }, lines: [], manualRows: [{ name: 'خدمة', qty: 1, unit: 'خدمة', price: 2000 }], subtotal: 2000, discount: 0, vat: { enabled: false, rate: 15 }, vatRate: 0, total: 2000, paid: 0, remaining: 2000, payments: [] };
+const orders = [{ id: 'o1', number: 1001, status: 'new', customer_name: od.customer.name, created_by: '1', created_at: now, updated_at: now, data: JSON.stringify(od) }];
 // صنف قائم مربوط مسبقاً برمز المورد: يُحدَّث سعر جملته ولا يُنشأ مكرراً
 const ITEMS = [{ id: 'f-old', name: 'قماش قائم', category: 'fabric', unit: 'm', price: 120, cost: 40, costDate: '2026-10-01', purchaseCodes: ['مورد تجريبي|T-2'], active: true, color: '#aa8866' }];
 const env = envWith({
@@ -175,7 +177,23 @@ try {
   const m = clean(await page.evaluate(() => document.getElementById('modal').innerText));
   ok(/قماش جديد تجريبي/.test(m) && /52\.50/.test(m) && /موكيت تجريبي/.test(m) && /لا يُربط/.test(m), 'التفاصيل: البنود بأسعارها وربطها', m.slice(0, 300));
   ok(await page.evaluate(() => { const s = document.querySelector('[data-pl="0"]'); return s && s.selectedOptions[0] && /قماش جديد/.test(s.selectedOptions[0].textContent); }), 'البند مربوط بصنفه الجديد');
-  await page.evaluate(() => document.getElementById('plCancel').click()); await sleep(300);
+  // ربط الفاتورة بطلب من نافذة التفاصيل
+  await page.evaluate(() => { const s = document.getElementById('plOrder'); s.value = 'o1'; s.dispatchEvent(new Event('change', { bubbles: true })); document.getElementById('plSave').click(); });
+  await sleep(1500);
+  ok(JSON.parse(env.DB.tables.get('purchases')[0].data).order_id === 'o1', 'ربط الفاتورة بالطلب #1001 محفوظ على الخادم');
+  ok(/طلب #1001/.test(clean(await page.evaluate(() => document.getElementById('purTable').innerText))), 'جدول الفواتير: «طلب #1001» تحت رقم الفاتورة');
+  // ملخص الطلب: جدول الفواتير المرتبطة، والتكاليف: زر «أضفها للتكاليف»
+  await page.evaluate(() => document.querySelector('#mainNav [data-page="orders"]').click()); await sleep(900);
+  await page.evaluate(() => document.querySelector('[data-sum="o1"]').click()); await sleep(1500);
+  const sumTxt = clean(await page.evaluate(() => document.getElementById('modal').innerText));
+  ok(/فواتير المشتريات المرتبطة بالطلب/.test(sumTxt) && /T-100/.test(sumTxt) && /1,364\.00/.test(sumTxt), 'ملخص الطلب: جدول «فواتير المشتريات المرتبطة» بالفاتورة وقيمتها', sumTxt.slice(0, 400));
+  await page.evaluate(() => document.getElementById('sumCost').click()); await sleep(1500);
+  await page.evaluate(() => document.querySelector('[data-addpur="0"]').click()); await sleep(400);
+  const ex = await page.evaluate(() => [...document.querySelectorAll('.extra-row')].map((r) => [r.querySelector('[data-ex="name"]').value, r.querySelector('[data-ex="amount"]').value]));
+  ok(ex.some(([n, a]) => /فاتورة مورد تجريبي T-100/.test(n) && Number(a) === 1364), 'التكاليف: «أضفها للتكاليف» يضيف بند الفاتورة بقيمتها قبل الضريبة', ex);
+  ok(await page.evaluate(() => !document.querySelector('[data-addpur="0"]') && /مُضافة/.test(document.querySelector('.pur-link-box').innerText)), 'التكاليف: لا تُضاف الفاتورة مرتين («مُضافة»)');
+  await page.evaluate(() => document.getElementById('costCancel').click()); await sleep(400);
+  await page.evaluate(() => document.querySelector('#mainNav [data-page="purchases"]').click()); await sleep(1000);
 
   // جدول «أسعار الجملة للأصناف»: سعر الجملة وتاريخه ومورده
   const pit = await page.evaluate(() => [...document.querySelectorAll('#purItemsTable tbody tr')].map((tr) => tr.innerText.replace(/\s+/g, ' ').trim()));
