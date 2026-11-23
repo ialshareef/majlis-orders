@@ -471,6 +471,8 @@
         emitWa(r);
         this.lastError = '';
         this.lastStatus = 0;
+        // تغيير النسب الافتراضية حدّث عمولات الطلبات غير المصروفة على الخادم: تُجلب فوراً
+        if (r && r.commUpdated) { try { await this.loadAll(); } catch (_) { /* تُجلب في المزامنة التالية */ } }
         return true;
       } catch (e) {
         console.error(e);
@@ -685,6 +687,10 @@
       const r = await this.api('POST', '/api/users', { id: data.id || null, name: data.name, username: data.username, password: password || '', role: data.role, active: data.active !== false, parentId: data.parentId || null, rate: data.rate, parentRate: data.parentRate, ...(data.wa !== undefined ? { wa: data.wa } : {}) });
       this.db.users = r.users || this.db.users;
       if (this.user && data.id === this.user.id) this.user = Object.assign({}, this.user, { name: data.name, username: data.username, role: data.role });
+      // الخادم حدّث نسب عمولة طلباته غير المصروفة: تُجلب الطلبات فوراً لتظهر العمولة الجديدة
+      const n = Number(r && r.commUpdated) || 0;
+      if (n) { try { await this.refresh(); } catch (_) { /* تُجلب في المزامنة التالية */ } }
+      return n;
     },
 
     async deleteUser(id) {

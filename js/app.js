@@ -2283,6 +2283,8 @@ function canEditOrder(o) {
    * النسب الفعلية لعمولات الطلب — المصدر الوحيد لكل الشاشات والتقارير والملفات:
    * اللقطة المحفوظة على الطلب وقت اعتماده (commRates)، أو النسب الحالية لطلب بلا لقطة،
    * والنسبة المخصّصة لهذا الطلب من نافذة «نسبة البائع/المندوب» تغلب دائماً (قرار صريح من المدير).
+   * تغيير نسبة الموظف أو الافتراضية يحدّث الخادمُ لقطاتِ طلباته غير المصروفة (refreshUnpaidCommRates)،
+   * فتتطابق كل الشاشات والتقارير — والمصروفة تبقى بنسبتها.
    */
   function commRatesOf(o) {
     const owner = Store.getUser(o && o.createdBy);
@@ -5951,7 +5953,8 @@ function docTitle(order) {
           const man = role === 'mandoub';
           const rate = man ? rv('#uMRate', u.role === 'mandoub' ? u.rate : null) : rv('#uRate', u.role !== 'mandoub' ? u.rate : null);
           const parentRate = man ? rv('#uMPRate', u.parentRate) : null;
-          await Store.saveUser({ id: user ? user.id : null, name, username, role, active, wa: waBody, parentId: man ? (u.parentId || null) : null, rate, parentRate }, pass);
+          const cu = await Store.saveUser({ id: user ? user.id : null, name, username, role, active, wa: waBody, parentId: man ? (u.parentId || null) : null, rate, parentRate }, pass);
+          if (cu) setTimeout(() => toast(`حُدّثت نسبة العمولة في ${cu} طلب لم تُصرف عمولته (المصروفة باقية بنسبتها)`), 400);
         } catch (e) {
           saveBtn.disabled = false; saveBtn.removeAttribute('aria-busy');
           err.textContent = (e && e.message) || 'تعذّر حفظ المستخدم. تحقق من الاتصال وحاول مرة أخرى.'; return;
@@ -7326,10 +7329,10 @@ function docTitle(order) {
         const parentRate = Math.min(100, Math.max(0, num($('#mParentRate', b).value)));
         const active = $('#mActive', b).checked;
         try {
-          await Store.saveUser({ id: m.id, name: m.name, username: m.username, role: 'mandoub', active, parentId, rate, parentRate }, '');
+          var cuM = await Store.saveUser({ id: m.id, name: m.name, username: m.username, role: 'mandoub', active, parentId, rate, parentRate }, '');
         } catch (e) { $('#mErr', b).textContent = e.message; return; }
         closeModal(); renderUsers(); renderMandoubs();
-        toast('تم حفظ إعدادات المندوب');
+        toast('تم حفظ إعدادات المندوب' + (cuM ? ` — وحُدّثت العمولة في ${cuM} طلب لم تُصرف عمولته` : ''));
       };
     }, 'drawer');
   }

@@ -2711,6 +2711,7 @@ function checkItemFin(i) {
    نفس المصير لأي فشل لاحق — التغيير كله أو لا شيء. عند تجاوز الحد (50 عملية)
    لا ضمان عابر — حفظ الطلب الواحد (~3-10 بيانات) دائماً داخل مقطع واحد. */
 async function sync(env, user, body) {
+  let commDefaultsChanged = false;   // تغيّرت النسب الافتراضية في الإعدادات؟ (تُحدَّث الطلبات غير المصروفة بعد الحفظ)
   const ts = now();
   const stmts = [];
   const q = (sql, ...args) => stmts.push(env.DB.prepare(sql).bind(...args));
@@ -2982,6 +2983,11 @@ async function sync(env, user, body) {
         if (old.estimate !== undefined) body.settings.estimate = old.estimate; else delete body.settings.estimate;
       }
     }
+    {
+      const prevRow = await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+      const prevS = (prevRow && safeParse(prevRow.data, {})) || {};
+      commDefaultsChanged = ['sellerRate', 'mandoubRate', 'mandoubParentRate'].some((k) => rateOrNull(prevS[k]) !== rateOrNull(body.settings[k]));
+    }
     q('INSERT INTO settings (id, data, updated_at) VALUES (1, ?, ?) ON CONFLICT(id) DO UPDATE SET data = excluded.data, updated_at = excluded.updated_at', JSON.stringify(body.settings), ts);
   }
 
@@ -3005,6 +3011,8 @@ async function sync(env, user, body) {
   }
   if (chunk.length) await env.DB.batch(chunk);
   const out = { ok: true, applied: stmts.length, numbers };
+  // النسب الافتراضية تغيّرت: كل طلب لم تُصرف عمولته يتبعها (ومن له نسبة خاصة يبقى على نسبته)
+  if (commDefaultsChanged) out.commUpdated = await refreshUnpaidCommRates(env, null, body.settings);
   // الواجهة تعرض «إرسال تنبيه» لمن يملك صلاحية الإرسال فقط
   const waShow = await waVisibleNew(env, user, waNew);
   if (waShow.length) out.wa = waShow;
@@ -3077,6 +3085,40 @@ function serverCommSnapshot(o, owner, s) {
     parentRate: parentId ? (rateOrNull(owner.parent_rate) ?? rateOrNull(s.mandoubParentRate) ?? 0) : null,
     shareRate: rateOrNull(o.shareRate !== undefined ? o.shareRate : o.othersRate) ?? rateOrNull(s.shareRate) ?? 0,
   };
+}
+/** بعد تغيير نسبة موظف/مندوب (صفحة المستخدمين) أو النسب الافتراضية (الإعدادات): تحديث لقطة نسب العمولة
+    في كل طلب لم تُصرف عمولته — المصروفة تبقى بنسبتها. لا يمس: النسبة المخصّصة لطلب بعينه (sellerRate/mandoubRate)،
+    ولا حصة المشاركة، ولا الطلبات الملغاة. userIds = null ⇒ كل الطلبات (تغيير الإعدادات). يعيد عدد الطلبات المحدّثة. */
+async function refreshUnpaidCommRates(env, userIds, settingsNow) {
+  if (Array.isArray(userIds) && !userIds.length) return 0;
+  const srow = settingsNow ? null : await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
+  const s = settingsNow || (srow && safeParse(srow.data, {})) || {};
+  const users = new Map(((await env.DB.prepare('SELECT id, role, rate, parent_id, parent_rate FROM users').all()).results || []).map((u) => [String(u.id), u]));
+  const rows = userIds
+    ? (await env.DB.prepare(`SELECT id, created_by, status, data FROM orders WHERE created_by IN (${userIds.map(() => '?').join(',')})`).bind(...userIds.map(String)).all()).results || []
+    : (await env.DB.prepare('SELECT id, created_by, status, data FROM orders').all()).results || [];
+  const ts = now();
+  const st = [];
+  for (const r of rows) {
+    if (r.status === 'cancelled') continue;
+    const d = safeParse(r.data, null);
+    if (!d || !d.commRates || typeof d.commRates !== 'object') continue;
+    const owner = users.get(String(r.created_by || d.createdBy || ''));
+    if (!owner) continue;
+    const cp = d.commPaid || {};
+    const fresh = serverCommSnapshot(d, owner, s);
+    const cr = { ...d.commRates };
+    const isMan = owner.role === 'mandoub';
+    const custom = rateOrNull(isMan ? d.mandoubRate : d.sellerRate) !== null;
+    if (!(cp.owner && cp.owner.at) && !custom) cr.ownerRate = fresh.ownerRate;
+    if (!(cp.parent && cp.parent.at)) { cr.parentId = fresh.parentId; cr.parentRate = fresh.parentRate; }
+    if (cr.ownerRate === d.commRates.ownerRate && cr.parentId === (d.commRates.parentId ?? null) && cr.parentRate === (d.commRates.parentRate ?? null)) continue;
+    d.commRates = cr;
+    d.updatedAt = ts;
+    st.push(env.DB.prepare('UPDATE orders SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(d), ts, r.id));
+  }
+  for (let i = 0; i < st.length; i += 50) await env.DB.batch(st.slice(i, i + 50));
+  return st.length;
 }
 function lockCommission(rec, prev, owner, s) {
   for (const k of COMMISSION_FIELDS) { if (prev && prev[k] !== undefined) rec[k] = prev[k]; else delete rec[k]; }
@@ -3737,7 +3779,9 @@ async function saveUser(env, me, body, myToken) {
     stmts.push(...(await waUserLinkStmts(env, me, body.id, name, active, body.wa)));
     await env.DB.batch(stmts).catch(waDupErr);
   }
-  return { ok: true, users: await listUsers(env, me) };
+  // نسبة الموظف/المندوب قد تغيّرت: طلباته غير المصروفة تتبع النسبة الجديدة فوراً
+  const commUpdated = body.id ? await refreshUnpaidCommRates(env, [body.id]) : 0;
+  return { ok: true, users: await listUsers(env, me), commUpdated };
 }
 
 async function deleteUser(env, me, id) {
