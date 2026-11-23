@@ -311,6 +311,7 @@ async function route(request, env, url) {
   if (path === '/api/owner/recover' && method === 'POST') return ownerRecover(env, body, request);
   // استيراد فواتير المشتريات بمفتاح مؤقت (Secret في Cloudflare) — مغلق (404) بلا المفتاح؛ انظر purchasesImportByKey
   if (path === '/api/purchases/import-key' && method === 'POST') return purchasesImportByKey(env, body, request);
+  if (path === '/api/purchases/matches-key' && method === 'GET') { await checkImportKey(env, request); return purchaseMatches(env); }
 
   // بوابة العميل (عامة): كل مسار يتحقق من customer token ولا يرى إلا صفّه
   if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request, body);
@@ -387,6 +388,7 @@ async function route(request, env, url) {
   if (mExp && method === 'DELETE') { requireAnyPerm(user, ['expenses.delete_own', 'expenses.delete_all']); return deleteExpense(env, user, decodeURIComponent(mExp[1])); }
   if (path === '/api/purchases' && method === 'GET') { requirePerm(user, 'costs.view_all'); return listPurchases(env, user); }
   if (path === '/api/purchases/import' && method === 'POST') { requirePerm(user, 'costs.view_all'); return importPurchases(env, user, body); }
+  if (path === '/api/purchases/matches' && method === 'GET') { requirePerm(user, 'costs.view_all'); return purchaseMatches(env); }
   const mPur = path.match(/^\/api\/purchases\/([^/]+)$/);
   if (mPur && method === 'PUT') { requirePerm(user, 'costs.view_all'); return updatePurchase(env, user, decodeURIComponent(mPur[1]), body); }
   if (mPur && method === 'DELETE') { requirePerm(user, 'costs.view_all'); return deletePurchase(env, user, decodeURIComponent(mPur[1])); }
@@ -4052,16 +4054,21 @@ async function ownerRecover(env, body, request) {
       يربط كل بند (قماش/إسفنج/خشب/إكسسوار) بصنفه برمز المورد، أو يُنشئ صنفاً مخفياً بسعر جملته (price 0)،
       ويحدّث سعر الجملة لأحدث فاتورة، ثم يحفظ الفواتير (بلا تكرار: المورد + رقم الفاتورة) باسم المالك.
    3) يُحذف الـ Secret بعد الاستخدام. بلا المفتاح المسار غير موجود (404)، والمحاولات الخاطئة محدودة. */
-async function purchasesImportByKey(env, body, request) {
+/** التحقق من المفتاح المؤقت PURCHASE_IMPORT_KEY (ترويسة X-Import-Key): بلا Secret ⇒ 404، والمحاولات الخاطئة محدودة */
+async function checkImportKey(env, request) {
   const secret = env && env.PURCHASE_IMPORT_KEY != null ? String(env.PURCHASE_IMPORT_KEY) : '';
-  const ownerId = ownerIdOf(env);
-  if (secret.length < 32 || !ownerId) throw new HttpError(404, 'المسار غير موجود');
+  if (secret.length < 32 || !ownerIdOf(env)) throw new HttpError(404, 'المسار غير موجود');
   const ip = (request && request.headers.get('CF-Connecting-IP')) || '';
   const keys = ['pimport:all'].concat(ip ? ['pimport:ip:' + ip] : []);
   const mins = await loginLocked(env, keys);
   if (mins) throw new HttpError(429, `محاولات كثيرة — أعد المحاولة بعد ${mins} دقيقة`);
   const given = await sha256Hex(String((request && request.headers.get('X-Import-Key')) || ''));
   if (!timingSafeEqual(given, await sha256Hex(secret))) { await loginFailed(env, keys); throw new HttpError(403, 'مفتاح الاستيراد غير صحيح'); }
+  return keys;
+}
+async function purchasesImportByKey(env, body, request) {
+  const keys = await checkImportKey(env, request);
+  const ownerId = ownerIdOf(env);
   const owner = await env.DB.prepare('SELECT id, name FROM users WHERE id = ?').bind(ownerId).first();
   if (!owner) throw new HttpError(400, 'حساب المالك غير موجود');
   const list = body && Array.isArray(body.purchases) ? body.purchases : null;
@@ -4101,6 +4108,64 @@ async function purchasesImportByKey(env, body, request) {
   const r = await importPurchases(env, { id: owner.id }, { purchases: list });
   await env.DB.batch(keys.map((k) => env.DB.prepare('DELETE FROM login_fail WHERE k = ?').bind(k)));
   return { ok: true, added: r.added, skipped: r.skipped, itemsCreated: created, itemsUpdated: updated, itemsChanged: changed.size };
+}
+
+/* اقتراحات ربط فواتير الموردين بالتكاليف المسجّلة يدوياً في الطلبات (البنود الإضافية):
+   - «مطابقة المبلغ»: بند تكلفة يساوي صافي الفاتورة أو إجماليها أو أحد بنودها (فرق ≤ 1 ريال أو 0.5٪) خلال 60 يوماً.
+   - «نوع وتاريخ متقاربان»: اسم البند يدل على نوع الفاتورة (قماش، إسفنج، موكيت…) وبينهما 10 أيام أو أقل — أقرب فاتورتين لكل بند.
+   التاريخ المرجعي للطلب: آخر تعديل للتكاليف أو تاريخ الطلب (الأقرب للفاتورة). قراءة فقط — لا يغيّر شيئاً. */
+const PUR_KINDS = [
+  ['قماش', /قماش|شنيل|قطيف|جوت|بوكليه|مخمل|كتان|جاكار|خيش/],
+  ['إسفنج', /[اإ]سفنج|فوم/],
+  ['موكيت وسجاد', /موكيت|سجاد|لباد|فنيل|فرام/],
+  ['خشب', /خشب|بديل/],
+  ['تصنيع مجلس', /مجلس|تصنيع|مصنع/],
+  ['إكسسوار', /حبل|سلسل|اكسسوار|إكسسوار|شراشيب|كلف/],
+];
+const kindsOf = (txt) => PUR_KINDS.filter(([, re]) => re.test(String(txt || ''))).map(([k]) => k);
+async function purchaseMatches(env) {
+  await ensurePurchases(env);
+  const purs = ((await env.DB.prepare('SELECT * FROM purchases').all()).results || []).map((x) => ({ id: x.id, supplier: x.supplier, invoice_no: x.invoice_no || '', invoice_date: x.invoice_date || '', ...(safeParse(x.data, {}) || {}) }));
+  const orders = ((await env.DB.prepare('SELECT id, number, status, data FROM orders').all()).results || []).map((r) => ({ r, d: safeParse(r.data, null) })).filter((x) => x.d && x.r.status !== 'cancelled');
+  const day = (v) => { const t = Date.parse(String(v || '').slice(0, 10)); return Number.isFinite(t) ? t : null; };
+  const n2 = (v) => Math.round(Number(v) * 100) / 100;
+  const close = (a, b) => Number.isFinite(a) && Number.isFinite(b) && b > 0 && Math.abs(a - b) <= Math.max(1, b * 0.005);
+  const P = purs.map((p) => {
+    const lines = Array.isArray(p.lines) ? p.lines : [];
+    const net = p.totals && Number.isFinite(Number(p.totals.net)) ? n2(p.totals.net) : n2(lines.reduce((t, l) => t + (Number(l.net) || 0), 0));
+    const total = p.totals && Number.isFinite(Number(p.totals.total)) ? n2(p.totals.total) : n2(lines.reduce((t, l) => t + (Number(l.total) || 0), 0));
+    const amounts = [['net', 'صافي الفاتورة قبل الضريبة', net], ['total', 'إجمالي الفاتورة شامل الضريبة', total]]
+      .concat(lines.length > 1 ? lines.flatMap((l) => [['line', 'بند «' + String(l.name || '').slice(0, 40) + '» قبل الضريبة', n2(l.net)], ['line', 'بند «' + String(l.name || '').slice(0, 40) + '» شامل الضريبة', n2(l.total)]]) : []);
+    const kinds = [...new Set(lines.flatMap((l) => kindsOf(l.name + ' ' + (l.category === 'fabric' ? 'قماش' : l.category === 'foam' ? 'إسفنج' : ''))).concat(kindsOf(p.supplier)))];
+    return { p, t: day(p.invoice_date), net, total, amounts, kinds };
+  });
+  const out = [];
+  for (const { r, d } of orders) {
+    const extras = Array.isArray(d.extraCosts) ? d.extraCosts : [];
+    const refs = [day(d.costUpdatedAt), day(d.createdAt)].filter((x) => x !== null);
+    extras.forEach((e, ei) => {
+      const amt = n2(e && e.amount), name = String((e && e.name) || '').trim();
+      if (!(amt > 0)) return;
+      const ek = kindsOf(name);
+      const cands = [];
+      for (const x of P) {
+        const days = x.t === null || !refs.length ? null : Math.round(Math.min(...refs.map((t) => Math.abs(t - x.t))) / 864e5);
+        const hit = x.amounts.find(([, , a]) => close(amt, a));
+        if (hit && (days === null || days <= 60)) { cands.push({ x, days, strength: 'amount', basis: hit[1], score: 1000 - (days || 0) }); continue; }
+        if (ek.length && x.kinds.some((k) => ek.includes(k)) && days !== null && days <= 10) cands.push({ x, days, strength: 'kind', basis: 'النوع: ' + ek.filter((k) => x.kinds.includes(k)).join('، '), score: 100 - days });
+      }
+      cands.sort((a, b) => b.score - a.score);
+      const strong = cands.filter((c) => c.strength === 'amount');
+      (strong.length ? strong.slice(0, 3) : cands.slice(0, 2)).forEach((c) => out.push({
+        strength: c.strength, basis: c.basis, days: c.days,
+        order: { id: r.id, number: r.number, customer: (d.customer && d.customer.name) || '', date: String(d.createdAt || '').slice(0, 10), costDate: String(d.costUpdatedAt || '').slice(0, 10) },
+        cost: { index: ei, name, amount: amt },
+        purchase: { id: c.x.p.id, supplier: c.x.p.supplier, invoice_no: c.x.p.invoice_no, invoice_date: c.x.p.invoice_date, net: c.x.net, total: c.x.total, order_id: c.x.p.order_id || '' },
+      }));
+    });
+  }
+  out.sort((a, b) => (a.strength === b.strength ? 0 : a.strength === 'amount' ? -1 : 1) || (a.days ?? 99) - (b.days ?? 99));
+  return { ok: true, matches: out.slice(0, 300), counts: { purchases: purs.length, orders: orders.length } };
 }
 
 /* ------------------------------ خدمة ملفات الواجهة ------------------------------ */

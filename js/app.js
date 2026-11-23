@@ -6192,6 +6192,37 @@ function docTitle(order) {
     try { await loadPurchases(); } catch (e) { err.textContent = humanError(e && e.message, 'تعذّر تحميل المشتريات. تحقق من الاتصال.'); err.hidden = false; }
     renderPurchasesTable();
     renderPurItems();
+    renderPurMatches();
+  }
+  /* اقتراحات ربط فواتير الموردين بالتكاليف اليدوية في الطلبات (الحساب على الخادم: /api/purchases/matches) */
+  async function renderPurMatches() {
+    const card = $('#purMatchCard'), box = $('#purMatches');
+    if (!card) return;
+    let list = [];
+    try { list = ((await Store.api('GET', '/api/purchases/matches')) || {}).matches || []; } catch (_) { card.hidden = true; return; }
+    card.hidden = !list.length;
+    const cu = esc(currency());
+    box.innerHTML = list.map((m, i) => {
+      const linked = m.purchase.order_id === m.order.id;
+      return `<div class="pm-card">
+        <div class="pm-top"><span class="badge ${m.strength === 'amount' ? 'st-delivered' : 'st-quote'}">${m.strength === 'amount' ? 'مطابقة المبلغ' : 'نوع وتاريخ متقاربان'}</span>
+          <small class="hint">${esc(m.basis)}${m.days !== null && m.days !== undefined ? ` • الفرق ${m.days} يوم` : ''}</small></div>
+        <div class="pm-row"><span>الطلب <b>#${esc(m.order.number)}</b> — ${esc(m.order.customer)}</span><small class="hint num">${esc(m.order.costDate || m.order.date)}</small></div>
+        <div class="pm-row"><span>بند التكلفة: <b>${esc(m.cost.name || '—')}</b></span><b class="num">${fmt(m.cost.amount)}</b></div>
+        <div class="pm-row"><span>الفاتورة: <b>${esc(m.purchase.supplier)}</b> ${esc(m.purchase.invoice_no || '')}</span><small class="hint num">${esc(m.purchase.invoice_date || '')}</small></div>
+        <div class="pm-row"><span class="hint">قبل الضريبة ${fmt(m.purchase.net)} • شامل ${fmt(m.purchase.total)} ${cu}</span>
+          ${linked ? '<small class="hint">✓ مربوطة بهذا الطلب</small>' : `<button type="button" class="btn small" data-pm="${i}">${icon('check')} ربط بالطلب #${esc(m.order.number)}</button>`}</div>
+      </div>`;
+    }).join('');
+    $$('[data-pm]', box).forEach((b) => b.addEventListener('click', async () => {
+      const m = list[+b.dataset.pm];
+      if (m.purchase.order_id && m.purchase.order_id !== m.order.id && !(await confirmDlg('نقل الربط', `الفاتورة مربوطة بطلب آخر (${purOrderLabel(m.purchase.order_id) || 'طلب'}). نقلها إلى الطلب #${m.order.number}؟`))) return;
+      b.disabled = true;
+      try { await Store.api('PUT', '/api/purchases/' + encodeURIComponent(m.purchase.id), { orderId: m.order.id }); }
+      catch (e) { b.disabled = false; toast(humanError(e && e.message, 'تعذّر الربط'), true); return; }
+      toast(`رُبطت فاتورة ${m.purchase.supplier} بالطلب #${m.order.number}`);
+      await renderPurchases();
+    }));
   }
   /** تحديث سعر الجملة لصنف من بند فاتورة (أحدث فاتورة تفوز) */
   function applyLineToItem(it, p, l) {

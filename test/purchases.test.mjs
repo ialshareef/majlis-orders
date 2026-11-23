@@ -120,6 +120,29 @@ await ta('ربط الفاتورة بطلب: يُحفظ order_id، ويُرفض �
   assert.equal((await call(env, '/api/purchases/' + P[0].id, '2', { orderId: 'ord-1' }, 'PUT')).s, 403, 'الموظف لا يربط');
 });
 
+await ta('اقتراحات الربط: مطابقة المبلغ (صافي/إجمالي/بند) والنوع مع تاريخ متقارب، للإدارة فقط وبالمفتاح المؤقت', async () => {
+  const env = mk();
+  const O = (id, number, date, extras) => ({ id, number, status: 'new', customer_name: 'C' + number, created_by: '1', created_at: date, updated_at: date,
+    data: JSON.stringify({ id, number, createdAt: date + 'T10:00:00Z', costUpdatedAt: date + 'T12:00:00Z', customer: { name: 'عميل ' + number }, extraCosts: extras }) });
+  env.DB.tables.get('orders').push(
+    O('a', 1001, '2026-11-06', [{ name: 'قماش الطلب', amount: 600 }, { name: 'توصيل', amount: 150 }]),   // 600 = صافي INV(L-1, 50) = 500+100
+    O('b', 1002, '2026-11-08', [{ name: 'اسفنج', amount: 999 }]),                                        // نوع: لا فاتورة إسفنج
+    O('c', 1003, '2026-11-09', [{ name: 'قماش إضافي', amount: 77 }]),                                     // نوع قماش وتاريخ قريب
+    O('d', 1004, '2026-03-01', [{ name: 'قماش قديم', amount: 600 }]));                                   // المبلغ نفسه لكن بعيد جداً
+  await call(env, '/api/purchases/import', '1', { purchases: [INV('L-1', '2026-11-05', 50)] });
+  const r = await call(env, '/api/purchases/matches', '1');
+  assert.equal(r.s, 200, JSON.stringify(r.d));
+  const M = r.d.matches;
+  const a = M.find((m) => m.order.number === 1001 && m.cost.name === 'قماش الطلب');
+  assert.ok(a && a.strength === 'amount' && a.days === 1 && /صافي الفاتورة/.test(a.basis), JSON.stringify(M));
+  assert.ok(M.some((m) => m.order.number === 1003 && m.strength === 'kind'), 'نوع وتاريخ');
+  assert.ok(!M.some((m) => m.order.number === 1004) && !M.some((m) => m.order.number === 1002) && !M.some((m) => m.cost.name === 'توصيل'), 'لا اقتراحات بعيدة أو بلا صلة');
+  assert.equal((await call(env, '/api/purchases/matches', '2')).s, 403, 'الموظف ممنوع');
+  assert.equal((await call(env, '/api/purchases/matches-key', null)).s, 404, 'بلا Secret: 404');
+  env.PURCHASE_IMPORT_KEY = 'z'.repeat(40);
+  assert.equal((await call(env, '/api/purchases/matches-key', null, undefined, 'GET', { 'X-Import-Key': 'z'.repeat(40) })).s, 200);
+});
+
 await ta('الاستيراد بمفتاح مؤقت: مغلق بلا Secret، ويرفض المفتاح الخاطئ، وينشئ الأصناف مخفية ويحدّث سعر الجملة بلا تكرار', async () => {
   const env = mk();
   env.DB.tables.set('items', [{ id: 'f-old', data: JSON.stringify({ id: 'f-old', name: 'قائم', category: 'fabric', price: 90, active: true, purchaseCodes: ['مورد تجريبي|T-1'], cost: 40, costDate: '2026-01-01' }), updated_at: past }]);

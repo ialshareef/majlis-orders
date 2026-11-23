@@ -834,6 +834,11 @@
         <p class="empty" id="purEmpty" hidden>لا توجد فواتير بعد — أضف فاتورة بزر «فاتورة جديدة» أو استورد ملف الفواتير.</p>
         <p class="error" id="purErr" role="alert" hidden></p>
       </div>
+      <div class="card" id="purMatchCard" hidden>
+        <div class="card-head"><h3>اقتراحات ربط الفواتير بالطلبات</h3></div>
+        <p class="hint">تكاليف سُجّلت يدوياً في الطلبات (البنود الإضافية) تشبه فاتورة مورد: بالمبلغ نفسه، أو بالنوع نفسه وتاريخ متقارب. راجعها واربط ما يصح.</p>
+        <div id="purMatches"></div>
+      </div>
       <div class="card" id="purItemsCard">
         <div class="card-head"><h3>أسعار الجملة للأصناف</h3>
           <select id="purItemsF" aria-label="تصفية الأصناف"><option value="">كل الأصناف</option><option value="nocost">بلا سعر جملة</option><option value="noprice">مخفية أو بلا سعر بيع</option><option value="old">آخر تحديث قبل 90 يوماً</option></select></div>

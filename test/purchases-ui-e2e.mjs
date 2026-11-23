@@ -34,7 +34,7 @@ const ord = (id, number, by, byName, rates, extra = {}) => {
 };
 const now = new Date().toISOString();
 const od = { id: 'o1', number: 1001, status: 'new', createdBy: '1', createdByName: 'المالك', createdAt: now, updatedAt: now, customer: { name: 'عميل الفاتورة', phone: '0500000001' },
-  design: { walls: [], pieces: [] }, lines: [], manualRows: [{ name: 'خدمة', qty: 1, unit: 'خدمة', price: 2000 }], subtotal: 2000, discount: 0, vat: { enabled: false, rate: 15 }, vatRate: 0, total: 2000, paid: 0, remaining: 2000, payments: [] };
+  design: { walls: [], pieces: [] }, lines: [], manualRows: [{ name: 'خدمة', qty: 1, unit: 'خدمة', price: 2000 }], subtotal: 2000, discount: 0, vat: { enabled: false, rate: 15 }, vatRate: 0, total: 2000, paid: 0, remaining: 2000, payments: [], extraCosts: [{ name: 'قماش من المورد', amount: 1364 }], costUpdatedAt: '2026-11-11T09:00:00Z' };
 const orders = [{ id: 'o1', number: 1001, status: 'new', customer_name: od.customer.name, created_by: '1', created_at: now, updated_at: now, data: JSON.stringify(od) }];
 // صنف قائم مربوط مسبقاً برمز المورد: يُحدَّث سعر جملته ولا يُنشأ مكرراً
 const ITEMS = [{ id: 'f-old', name: 'قماش قائم', category: 'fabric', unit: 'm', price: 120, cost: 40, costDate: '2026-10-01', purchaseCodes: ['مورد تجريبي|T-2'], active: true, color: '#aa8866' }];
@@ -172,6 +172,12 @@ try {
   // إعادة الاستيراد: لا تكرار للفاتورة ولا للأصناف
   await input.uploadFile(FILE); await sleep(2500);
   ok(env.DB.tables.get('purchases').length === 1 && itemRows().length === its.length, 'إعادة الاستيراد: لا فاتورة مكررة ولا أصناف مكررة', { p: env.DB.tables.get('purchases').length, n: itemRows().length });
+  // اقتراحات الربط: بند «قماش من المورد» 1364 في الطلب #1001 = صافي الفاتورة T-100 (قبل الضريبة)
+  await sleep(800);
+  const pm = clean(await page.evaluate(() => { const c = document.getElementById('purMatchCard'); return c && !c.hidden ? c.innerText : ''; }));
+  ok(/مطابقة المبلغ/.test(pm) && /#1001/.test(pm) && /قماش من المورد/.test(pm) && /T-100/.test(pm) && /الفرق 1 يوم/.test(pm), 'اقتراحات الربط: التكلفة اليدوية 1364 تطابق صافي الفاتورة (بفرق يوم)', pm.slice(0, 300));
+  await page.evaluate(() => document.querySelector('[data-pm]').click()); await sleep(1500);
+  ok(JSON.parse(env.DB.tables.get('purchases')[0].data).order_id === 'o1' && /مربوطة بهذا الطلب/.test(clean(await page.evaluate(() => document.getElementById('purMatches').innerText))), 'اقتراحات الربط: زر «ربط بالطلب» يربط الفاتورة ويظهر «مربوطة»');
   // التفاصيل: البنود والأصناف المرتبطة
   await page.evaluate(() => document.querySelector('[data-pur]').click()); await sleep(900);
   const m = clean(await page.evaluate(() => document.getElementById('modal').innerText));

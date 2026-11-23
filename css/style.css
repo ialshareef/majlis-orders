@@ -4057,3 +4057,10 @@ input[data-est="1"] { background: var(--warn-soft); }
 .pur-ord { display: block; }
 .pur-link-box { display: grid; gap: 6px; margin: 8px 0; padding: 8px 10px; border: 1px dashed var(--line-soft); border-radius: var(--r-sm); }
 .pur-link-box .cc-line { display: flex; align-items: center; gap: 8px; justify-content: space-between; flex-wrap: wrap; }
+
+/* اقتراحات ربط الفواتير بالطلبات */
+#purMatchCard { margin-top: 14px; }
+#purMatches { display: grid; gap: 8px; }
+.pm-card { border: 1px solid var(--line-soft); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 5px; background: var(--surface-2); min-width: 0; }
+.pm-top, .pm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; min-width: 0; }
+.pm-row > span { min-width: 0; overflow-wrap: anywhere; }
