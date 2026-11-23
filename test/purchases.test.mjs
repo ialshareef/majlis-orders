@@ -127,7 +127,7 @@ await ta('اقتراحات الربط: مطابقة المبلغ (صافي/إج�
   env.DB.tables.get('orders').push(
     O('a', 1001, '2026-11-06', [{ name: 'قماش الطلب', amount: 600 }, { name: 'توصيل', amount: 150 }]),   // 600 = صافي INV(L-1, 50) = 500+100
     O('b', 1002, '2026-11-08', [{ name: 'اسفنج', amount: 999 }]),                                        // نوع: لا فاتورة إسفنج
-    O('c', 1003, '2026-11-09', [{ name: 'قماش إضافي', amount: 77 }]),                                     // نوع قماش وتاريخ قريب
+    O('c', 1003, '2026-11-09', [{ name: 'قماش إضافي', amount: 520 }, { name: 'تركيب', amount: 100 }]),   // نوع قماش ومبلغ قريب؛ «تركيب 100» = بند موكيت مصادفة
     O('d', 1004, '2026-03-01', [{ name: 'قماش قديم', amount: 600 }]));                                   // المبلغ نفسه لكن بعيد جداً
   await call(env, '/api/purchases/import', '1', { purchases: [INV('L-1', '2026-11-05', 50)] });
   const r = await call(env, '/api/purchases/matches', '1');
@@ -136,6 +136,11 @@ await ta('اقتراحات الربط: مطابقة المبلغ (صافي/إج�
   const a = M.find((m) => m.order.number === 1001 && m.cost.name === 'قماش الطلب');
   assert.ok(a && a.strength === 'amount' && a.days === 1 && /صافي الفاتورة/.test(a.basis), JSON.stringify(M));
   assert.ok(M.some((m) => m.order.number === 1003 && m.strength === 'kind'), 'نوع وتاريخ');
+  assert.ok(!M.some((m) => m.cost.name === 'تركيب'), 'مبلغ مدوّر يساوي بنداً بلا صلة بالنوع: لا اقتراح');
+  // اسم المورد في التكلفة يكفي مع تاريخ قريب
+  env.DB.tables.get('orders').push(O('e', 1005, '2026-11-07', [{ name: 'حساب مورد تجريبي', amount: 3333 }]));
+  const r2 = await call(env, '/api/purchases/matches', '1');
+  assert.ok(r2.d.matches.some((m) => m.order.number === 1005 && m.strength === 'name'), JSON.stringify(r2.d.matches.map((m) => [m.order.number, m.strength])));
   assert.ok(!M.some((m) => m.order.number === 1004) && !M.some((m) => m.order.number === 1002) && !M.some((m) => m.cost.name === 'توصيل'), 'لا اقتراحات بعيدة أو بلا صلة');
   assert.equal((await call(env, '/api/purchases/matches', '2')).s, 403, 'الموظف ممنوع');
   assert.equal((await call(env, '/api/purchases/matches-key', null)).s, 404, 'بلا Secret: 404');

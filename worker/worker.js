@@ -4110,19 +4110,25 @@ async function purchasesImportByKey(env, body, request) {
   return { ok: true, added: r.added, skipped: r.skipped, itemsCreated: created, itemsUpdated: updated, itemsChanged: changed.size };
 }
 
-/* اقتراحات ربط فواتير الموردين بالتكاليف المسجّلة يدوياً في الطلبات (البنود الإضافية):
-   - «مطابقة المبلغ»: بند تكلفة يساوي صافي الفاتورة أو إجماليها أو أحد بنودها (فرق ≤ 1 ريال أو 0.5٪) خلال 60 يوماً.
-   - «نوع وتاريخ متقاربان»: اسم البند يدل على نوع الفاتورة (قماش، إسفنج، موكيت…) وبينهما 10 أيام أو أقل — أقرب فاتورتين لكل بند.
-   التاريخ المرجعي للطلب: آخر تعديل للتكاليف أو تاريخ الطلب (الأقرب للفاتورة). قراءة فقط — لا يغيّر شيئاً. */
+/* اقتراحات ربط فواتير الموردين بالتكاليف المسجّلة يدوياً في الطلبات (البنود الإضافية). قراءة فقط.
+   - «مطابقة المبلغ»: بند تكلفة يساوي صافي الفاتورة أو إجماليها (فرق ≤ 1 ريال أو 0.5٪) خلال 60 يوماً،
+     أو يساوي أحد بنودها بشرط أن يدل اسم التكلفة على النوع نفسه أو المورد نفسه (الأرقام المدوّرة وحدها مصادفة).
+   - «اسم المورد أو الصنف»: اسم التكلفة يذكر المورد (القثمي، النساج…) أو اسم صنف من الفاتورة، خلال 20 يوماً.
+   - «نوع وتاريخ متقاربان»: النوع نفسه (قماش، إسفنج…) خلال 10 أيام ومبلغ قريب (±30٪ من الفاتورة أو أحد بنودها).
+   يُستبعد ما يتعارض: اسم التكلفة يذكر نوعاً آخر أو مورداً آخر. التاريخ المرجعي: آخر تعديل للتكاليف أو تاريخ الطلب. */
 const PUR_KINDS = [
-  ['قماش', /قماش|شنيل|قطيف|جوت|بوكليه|مخمل|كتان|جاكار|خيش/],
-  ['إسفنج', /[اإ]سفنج|فوم/],
-  ['موكيت وسجاد', /موكيت|سجاد|لباد|فنيل|فرام/],
+  ['قماش', /قماش|شنيل|قطيف|جوت|بوكليه|مخمل|كتان|جاكار|جاكر|خيش/],
+  ['إسفنج', /[اإ]?سفنج|فوم/],
+  ['بوليستر', /بوليستر|بلستر|بليستر/],
+  ['موكيت وسجاد', /موكيت|مكيت|سجاد|لباد|فنيل|فرام/],
   ['خشب', /خشب|بديل/],
-  ['تصنيع مجلس', /مجلس|تصنيع|مصنع/],
+  ['تصنيع مجلس', /مصنع|تصنيع/],
   ['إكسسوار', /حبل|سلسل|اكسسوار|إكسسوار|شراشيب|كلف/],
 ];
-const kindsOf = (txt) => PUR_KINDS.filter(([, re]) => re.test(String(txt || ''))).map(([k]) => k);
+const normAr = (t) => String(t || '').replace(/[أإآ]/g, 'ا').replace(/ة/g, 'ه').replace(/ى/g, 'ي').replace(/[ً-ْ]/g, '');
+const kindsOf = (txt) => PUR_KINDS.filter(([, re]) => re.test(normAr(txt))).map(([k]) => k);
+const SUP_STOP = new Set(['شركه', 'شركة', 'مؤسسه', 'مصنع', 'محلات', 'للتجاره', 'التجاريه', 'للتجارة', 'التجارية', 'المطوره', 'للاسفنج', 'للاثاث', 'للاقمشه', 'التجهيز', 'البدائل', 'الارضيات', 'المدينه', 'علي', 'محمد', 'travera']);
+const supTokens = (name) => normAr(name).replace(/[()]/g, ' ').split(/\s+/).filter((w) => w.length >= 3 && !SUP_STOP.has(w));
 async function purchaseMatches(env) {
   await ensurePurchases(env);
   const purs = ((await env.DB.prepare('SELECT * FROM purchases').all()).results || []).map((x) => ({ id: x.id, supplier: x.supplier, invoice_no: x.invoice_no || '', invoice_date: x.invoice_date || '', ...(safeParse(x.data, {}) || {}) }));
@@ -4130,33 +4136,48 @@ async function purchaseMatches(env) {
   const day = (v) => { const t = Date.parse(String(v || '').slice(0, 10)); return Number.isFinite(t) ? t : null; };
   const n2 = (v) => Math.round(Number(v) * 100) / 100;
   const close = (a, b) => Number.isFinite(a) && Number.isFinite(b) && b > 0 && Math.abs(a - b) <= Math.max(1, b * 0.005);
+  const near = (a, b) => Number.isFinite(a) && Number.isFinite(b) && b > 0 && Math.abs(a - b) <= b * 0.3;
+  const allSupTokens = new Set(purs.flatMap((p) => supTokens(p.supplier)));
   const P = purs.map((p) => {
     const lines = Array.isArray(p.lines) ? p.lines : [];
     const net = p.totals && Number.isFinite(Number(p.totals.net)) ? n2(p.totals.net) : n2(lines.reduce((t, l) => t + (Number(l.net) || 0), 0));
     const total = p.totals && Number.isFinite(Number(p.totals.total)) ? n2(p.totals.total) : n2(lines.reduce((t, l) => t + (Number(l.total) || 0), 0));
-    const amounts = [['net', 'صافي الفاتورة قبل الضريبة', net], ['total', 'إجمالي الفاتورة شامل الضريبة', total]]
-      .concat(lines.length > 1 ? lines.flatMap((l) => [['line', 'بند «' + String(l.name || '').slice(0, 40) + '» قبل الضريبة', n2(l.net)], ['line', 'بند «' + String(l.name || '').slice(0, 40) + '» شامل الضريبة', n2(l.total)]]) : []);
-    const kinds = [...new Set(lines.flatMap((l) => kindsOf(l.name + ' ' + (l.category === 'fabric' ? 'قماش' : l.category === 'foam' ? 'إسفنج' : ''))).concat(kindsOf(p.supplier)))];
-    return { p, t: day(p.invoice_date), net, total, amounts, kinds };
+    const whole = [['net', 'صافي الفاتورة قبل الضريبة', net], ['total', 'إجمالي الفاتورة شامل الضريبة', total]];
+    const parts = lines.length > 1 ? lines.flatMap((l) => [['بند «' + String(l.name || '').slice(0, 40) + '» قبل الضريبة', n2(l.net), l], ['بند «' + String(l.name || '').slice(0, 40) + '» شامل الضريبة', n2(l.total), l]]) : [];
+    const kinds = [...new Set(lines.flatMap((l) => kindsOf(l.name + ' ' + (l.category === 'fabric' ? 'قماش' : l.category === 'foam' ? 'اسفنج' : ''))))];
+    // كلمات أسماء الأصناف المميزة (مثل «أبو طير»): كلمتان متتاليتان من اسم البند
+    const prod = [...new Set(lines.flatMap((l) => { const w = normAr(l.name).split(/[\s\-–]+/).filter((x) => x.length >= 2 && !/^[\d×x*]+$/.test(x)); return w.slice(0, -1).map((x, i) => x + ' ' + w[i + 1]); }))].filter((b) => !kindsOf(b).length || b.split(' ').length > 1);
+    return { p, t: day(p.invoice_date), net, total, whole, parts, kinds, sup: supTokens(p.supplier), prod };
   });
   const out = [];
   for (const { r, d } of orders) {
     const extras = Array.isArray(d.extraCosts) ? d.extraCosts : [];
     const refs = [day(d.costUpdatedAt), day(d.createdAt)].filter((x) => x !== null);
     extras.forEach((e, ei) => {
-      const amt = n2(e && e.amount), name = String((e && e.name) || '').trim();
+      const amt = n2(e && e.amount), name = String((e && e.name) || '').trim(), nn = normAr(name);
       if (!(amt > 0)) return;
       const ek = kindsOf(name);
+      const namedSups = [...allSupTokens].filter((t) => nn.includes(t));
       const cands = [];
       for (const x of P) {
         const days = x.t === null || !refs.length ? null : Math.round(Math.min(...refs.map((t) => Math.abs(t - x.t))) / 864e5);
-        const hit = x.amounts.find(([, , a]) => close(amt, a));
-        if (hit && (days === null || days <= 60)) { cands.push({ x, days, strength: 'amount', basis: hit[1], score: 1000 - (days || 0) }); continue; }
-        if (ek.length && x.kinds.some((k) => ek.includes(k)) && days !== null && days <= 10) cands.push({ x, days, strength: 'kind', basis: 'النوع: ' + ek.filter((k) => x.kinds.includes(k)).join('، '), score: 100 - days });
+        const kindOk = ek.length && x.kinds.some((k) => ek.includes(k));
+        const kindConflict = ek.length && x.kinds.length && !kindOk;
+        const supHit = x.sup.some((t) => nn.includes(t));
+        const supConflict = namedSups.length && !supHit;
+        if (kindConflict || supConflict) continue;
+        const prodHit = x.prod.some((b) => b.length >= 6 && nn.includes(b));
+        const hitW = x.whole.find(([, , a]) => close(amt, a));
+        const hitL = !hitW && (kindOk || supHit || prodHit) ? x.parts.find(([, a]) => close(amt, a)) : null;
+        const lim = (n) => days === null || days <= n;
+        if ((hitW || hitL) && lim(60)) { cands.push({ x, days, strength: 'amount', basis: hitW ? hitW[1] : hitL[0], score: 1000 + (supHit || prodHit ? 200 : 0) - (days || 0) }); continue; }
+        if ((supHit || prodHit) && days !== null && days <= 20) { cands.push({ x, days, strength: 'name', basis: supHit ? 'اسم المورد في بند التكلفة' : 'اسم الصنف في بند التكلفة', score: 500 - days }); continue; }
+        const amtNear = near(amt, x.net) || near(amt, x.total) || x.parts.some(([, a]) => near(amt, a));
+        if (kindOk && amtNear && days !== null && days <= 10) cands.push({ x, days, strength: 'kind', basis: 'النوع: ' + ek.filter((k) => x.kinds.includes(k)).join('، ') + ' ومبلغ قريب', score: 100 - days });
       }
       cands.sort((a, b) => b.score - a.score);
-      const strong = cands.filter((c) => c.strength === 'amount');
-      (strong.length ? strong.slice(0, 3) : cands.slice(0, 2)).forEach((c) => out.push({
+      const best = cands.filter((c) => c.strength === cands[0]?.strength);
+      best.slice(0, 2).forEach((c) => out.push({
         strength: c.strength, basis: c.basis, days: c.days,
         order: { id: r.id, number: r.number, customer: (d.customer && d.customer.name) || '', date: String(d.createdAt || '').slice(0, 10), costDate: String(d.costUpdatedAt || '').slice(0, 10) },
         cost: { index: ei, name, amount: amt },
@@ -4164,7 +4185,8 @@ async function purchaseMatches(env) {
       }));
     });
   }
-  out.sort((a, b) => (a.strength === b.strength ? 0 : a.strength === 'amount' ? -1 : 1) || (a.days ?? 99) - (b.days ?? 99));
+  const rank = { amount: 0, name: 1, kind: 2 };
+  out.sort((a, b) => rank[a.strength] - rank[b.strength] || (a.days ?? 99) - (b.days ?? 99));
   return { ok: true, matches: out.slice(0, 300), counts: { purchases: purs.length, orders: orders.length } };
 }
 

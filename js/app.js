@@ -6205,7 +6205,7 @@ function docTitle(order) {
     box.innerHTML = list.map((m, i) => {
       const linked = m.purchase.order_id === m.order.id;
       return `<div class="pm-card">
-        <div class="pm-top"><span class="badge ${m.strength === 'amount' ? 'st-delivered' : 'st-quote'}">${m.strength === 'amount' ? 'مطابقة المبلغ' : 'نوع وتاريخ متقاربان'}</span>
+        <div class="pm-top"><span class="badge ${m.strength === 'amount' ? 'st-delivered' : m.strength === 'name' ? 'st-progress' : 'st-quote'}">${m.strength === 'amount' ? 'مطابقة المبلغ' : m.strength === 'name' ? 'اسم المورد أو الصنف' : 'نوع وتاريخ متقاربان'}</span>
           <small class="hint">${esc(m.basis)}${m.days !== null && m.days !== undefined ? ` • الفرق ${m.days} يوم` : ''}</small></div>
         <div class="pm-row"><span>الطلب <b>#${esc(m.order.number)}</b> — ${esc(m.order.customer)}</span><small class="hint num">${esc(m.order.costDate || m.order.date)}</small></div>
         <div class="pm-row"><span>بند التكلفة: <b>${esc(m.cost.name || '—')}</b></span><b class="num">${fmt(m.cost.amount)}</b></div>
