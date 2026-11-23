@@ -450,13 +450,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.34';
-// بصمة asalh-najd-1.1.34.apk (إصدار GitHub v1.1.34، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.34 وversionCode 10134، ونفس شهادة توقيع 1.1.33).
-const UPDATE_FALLBACK_SHA256 = 'e4b2272d03a163b22dd6fbffeafd20f5a128f11ab90e3fae7026c0f1a13e81d2';
+const UPDATE_FALLBACK_VERSION = '1.1.35';
+// بصمة asalh-najd-1.1.35.apk (إصدار GitHub v1.1.35، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.35 وversionCode 10135، ونفس شهادة توقيع 1.1.34).
+const UPDATE_FALLBACK_SHA256 = 'f27d37eeae0335b996d20bbff51a04c72b6d74a7503ab68f104fbe4a690b6e6c';
 const UPDATE_FALLBACK_NOTES = [
-  'المشتريات: ربط فاتورة المورد بطلب، فتظهر في ملخص الطلب ويمكن إضافتها لتكاليفه بضغطة',
-  'تفاصيل الفاتورة على الجوال أوضح: كل بند بطاقة كاملة بكميته وسعره وصنفه',
+  'المشتريات: «اقتراحات ربط الفواتير بالطلبات» — تكاليف يدوية تطابق فاتورة بالمبلغ أو بالنوع والتاريخ، مع زر ربط',
+  'ربط فاتورة المورد بطلب، وإضافتها لتكاليفه بضغطة',
 ];
 
 function versionCodeOfName(v) {
