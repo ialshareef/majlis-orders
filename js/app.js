@@ -2574,7 +2574,7 @@ function canEditOrder(o) {
           <td class="price-cat" data-label="الفئة"><span class="cat-tag">${catCell}</span></td>
           <td class="price-unit" data-label="الوحدة">${unitCell}</td>
           <td class="price-qty" data-label="الكمية">${qtyCell}</td>
-          <td class="price-edit" data-label="سعر الوحدة"><input aria-label="سعر ${esc(l.name || 'الصنف')}" inputmode="numeric" class="inline num" type="number" step="1" min="0" data-price="${esc(l.key)}" value="${l.price}">
+          <td class="price-edit" data-label="سعر الوحدة"><input aria-label="سعر ${esc(l.name || 'الصنف')}" inputmode="decimal" class="inline num" type="text" data-price="${esc(l.key)}" value="${l.price}">
               ${overridden ? `<button type="button" class="overridden" data-reset="${esc(l.key)}" title="إرجاع للسعر الأصلي">↺ إرجاع للأصلي (${fmt(l.basePrice)})</button>` : ''}</td>
           <td class="num price-total" data-label="الإجمالي"><b>${fmt(l.total)}</b></td>
           <td class="row-actions"><span class="ra">${acts}</span></td>
@@ -2602,7 +2602,8 @@ function canEditOrder(o) {
       const v = Math.max(0, money(inp.value));
       if (key.startsWith('manual:')) cur.manualRows[+key.split(':')[1]].price = v;
       else cur.priceOverrides[key] = v;
-      setDirty(true); renderPricing();
+      // إعادة الرسم بعد انتهاء الحدث: «change» عند Enter يأتي والخانة مركّزة، وحذفها أثناءه يرمي خطأ في المتصفح
+      setDirty(true); setTimeout(renderPricing, 0);
     }));
     $$('input[data-accqty]', tb).forEach((inp) => inp.addEventListener('change', () => {
       const it = getItem(inp.dataset.accqty);
@@ -2914,7 +2915,8 @@ function canEditOrder(o) {
     const paid = paidOf(cur);
     cur.paid = paid;
     const rem = remainingOf(total, paid);
-    $('#payDiscount').value = num(cur.discount || 0);
+    // لا تُعاد كتابة الخانة والمستخدم يكتب فيها: كانت «15.» تصير «15» فتضيع النقطة ويصير الرقم التالي 155
+    { const d = $('#payDiscount'); if (document.activeElement !== d) d.value = num(cur.discount || 0) || ''; }
     // العملة في العنوان لا بجانب كل رقم: يوفّر عرضاً ويمنع قصّ الأرقام في الجوال
     const cu = currency();
     $('#payTotalLbl').textContent = `الإجمالي (${cu})`;
@@ -3060,6 +3062,8 @@ function canEditOrder(o) {
 
   $('#payDiscount').addEventListener('input', () => {
     const raw = latinDigits($('#payDiscount').value).trim();
+    // كتابة جارية لرقم عشري («15.»): لا خطأ ولا تحديث حتى يكتمل الرقم
+    if (/^\d*\.$/.test(raw)) { setFieldError($('#payDiscount'), ''); return; }
     if (!raw) { cur.discount = 0; setFieldError($('#payDiscount'), ''); setDirty(true); renderPricing(); renderPayment(); return; }
     const n = strictNum(raw);
     if (n === null || n < 0) { setFieldError($('#payDiscount'), 'خصم غير صالح — أدخل أرقاماً فقط'); return; }
@@ -4947,7 +4951,7 @@ function docTitle(order) {
         <td data-label="الكمية" class="num">${r.kind === 'sofa' ? fmtQty(r.qty) : r.qty} ${esc(r.unit)}</td>
         <td data-label="سعر البيع" class="num">${fmt(r.price)}</td>
         <td data-label="إجمالي البيع" class="num">${fmt(r.total)}</td>
-        <td data-label="تكلفة الوحدة"><input class="inline num" type="number" step="1" min="0" inputmode="numeric" data-ck="${esc(r.key)}" value="${r.unitCost === null ? (prefill && prefill[r.key] !== undefined ? prefill[r.key] : '') : r.unitCost}"${r.unitCost === null && prefill && prefill[r.key] !== undefined ? ' data-est="1" title="قيمة تقديرية — عدّلها بالفعلية"' : ''} placeholder="0" aria-label="تكلفة الوحدة لـ ${esc(r.name)}"></td>
+        <td data-label="تكلفة الوحدة"><input class="inline num" type="text" inputmode="decimal" data-ck="${esc(r.key)}" value="${r.unitCost === null ? (prefill && prefill[r.key] !== undefined ? prefill[r.key] : '') : r.unitCost}"${r.unitCost === null && prefill && prefill[r.key] !== undefined ? ' data-est="1" title="قيمة تقديرية — عدّلها بالفعلية"' : ''} placeholder="0" aria-label="تكلفة الوحدة لـ ${esc(r.name)}"></td>
         <td data-label="إجمالي التكلفة" class="num" data-ct="${esc(r.key)}">—</td>
         <td data-label="الربح" class="num" data-cp="${esc(r.key)}">—</td>
       </tr>`).join('');
@@ -5003,7 +5007,7 @@ function docTitle(order) {
         host.innerHTML = extraRows.length ? extraRows.map((e, i) => `
           <div class="extra-row" data-i="${i}">
             <input class="inline wide" data-ex="name" value="${esc(e.name)}" placeholder="اسم البند (مثل: التوصيل)" aria-label="اسم البند الإضافي">
-            <input class="inline num" type="number" step="1" min="0" inputmode="numeric" data-ex="amount" value="${esc(e.amount)}" placeholder="0" aria-label="مبلغ البند الإضافي">
+            <input class="inline num" type="text" inputmode="decimal" data-ex="amount" value="${esc(e.amount)}" placeholder="0" aria-label="مبلغ البند الإضافي">
             <button type="button" class="icon-btn" data-exdel="${i}" aria-label="حذف البند">${icon('x')}</button>
           </div>`).join('') : '<p class="hint empty-extras">لا توجد بنود إضافية.</p>';
         $$('[data-ex]', host).forEach((inp) => inp.addEventListener('input', recalc));
@@ -5546,7 +5550,7 @@ function docTitle(order) {
           <option value="acc" ${it.category === 'acc' ? 'selected' : ''}>إكسسوار (يُسعّر بالقطعة)</option>
           ${it.category === 'sofa' ? '<option value="sofa" selected>كنب (فئة قديمة)</option>' : ''}
         </select></label>
-        <label id="fPriceLbl">السعر (${currency()}) <input id="fPrice" type="number" min="0" step="1" value="${it.price}"></label>
+        <label id="fPriceLbl">السعر (${currency()}) <input id="fPrice" type="text" inputmode="decimal" class="num" value="${it.price}"></label>
       </div>
       <div id="fSofa">
         <div class="row2">
@@ -5557,7 +5561,7 @@ function docTitle(order) {
       </div>
       <p id="fSpecHint" class="hint" hidden></p>
       ${canSeeCostAny() ? `<fieldset class="f-cost"><legend>التكلفة (للإدارة فقط)</legend>
-        <label><span id="fCostLbl">سعر الجملة</span> <input id="fCost" type="number" min="0" step="0.01" value="${has$(it.cost) ? esc(it.cost) : ''}" placeholder="بدون"></label>
+        <label><span id="fCostLbl">سعر الجملة</span> <input id="fCost" type="text" inputmode="decimal" class="num" value="${has$(it.cost) ? esc(it.cost) : ''}" placeholder="بدون"></label>
         ${it.costDate ? `<small class="hint">آخر سعر من فاتورة${it.supplier ? ' ' + esc(it.supplier) : ''} بتاريخ ${esc(fmtDate(it.costDate))}</small>` : ''}
         <label id="fSheet">طول اللوح (م) — مثل 200×80×10 = 2 <input id="fSheetLen" type="number" min="0.1" step="0.05" value="${has$(it.sheetLen) ? esc(it.sheetLen) : ''}" placeholder="2"></label>
         <div id="fSeat">
@@ -10340,6 +10344,18 @@ async function exportExpensesXlsx() {
     root.querySelectorAll('input[type="number"]').forEach(el => el.setAttribute('inputmode', 'decimal'));
     root.querySelectorAll('[data-m]').forEach(el => el.setAttribute('aria-label', ({name:'اسم الصنف', qty:'الكمية', unit:'الوحدة'})[el.dataset.k] || 'الصنف'));
   }
+
+  /* خانات الأرقام النصية (inputmode decimal/numeric أو .num): لوحة المفاتيح العربية قد تكتب «١٥٫٥»؛
+     تُحوَّل فوراً إلى «15.5» مع إبقاء موضع المؤشر، فيقرؤها كل مكان في التطبيق رقماً صحيحاً */
+  document.addEventListener('input', (e) => {
+    const el = e.target;
+    if (!(el instanceof HTMLInputElement) || el.type !== 'text' || !el.matches('input[inputmode="decimal"], input[inputmode="numeric"], input.num')) return;
+    const v = el.value, nv = v.replace(/[٠-٩]/g, (d) => d.charCodeAt(0) - 1632).replace(/[۰-۹]/g, (d) => d.charCodeAt(0) - 1776).replace(/[٫]/g, '.');
+    if (nv === v) return;
+    const pos = el.selectionStart;
+    el.value = nv;
+    try { if (pos != null) el.setSelectionRange(pos, pos); } catch (_) { /* */ }
+  }, true);
 
   /* عند الدخول إلى خانة أرقام بالنقر أو اللمس: ضع المؤشر بعد آخر رقم (يمينه) بدل بدايته لتسهيل التعديل. */
   const NUM_FIELDS = 'input[type="number"], input[inputmode="decimal"], input[inputmode="numeric"], input[inputmode="tel"], input.num';
