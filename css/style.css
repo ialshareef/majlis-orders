@@ -4073,3 +4073,5 @@ input[data-est="1"] { background: var(--warn-soft); }
 .t-total { flex-wrap: wrap; row-gap: 2px; }
 .t-total > span { flex: 1 1 auto; }
 .t-total > b { font-size: clamp(1.15rem, 6.2vw, 1.5rem); max-width: 100%; margin-inline-start: auto; }
+/* رابط الاتصال في بطاقة العميل: هدف لمس مريح (≥ 32px) */
+#custTable td.c-phone a { display: inline-flex; align-items: center; min-height: 34px; padding: 0 4px; }
