@@ -452,13 +452,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.38';
-// بصمة asalh-najd-1.1.38.apk (إصدار GitHub v1.1.38، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.38 وversionCode 10138، ونفس شهادة توقيع 1.1.37).
-const UPDATE_FALLBACK_SHA256 = 'a777387ac58038ab955c14b3d50238354859867f5987a520c19495897124c1c1';
+const UPDATE_FALLBACK_VERSION = '1.1.39';
+// بصمة asalh-najd-1.1.39.apk (إصدار GitHub v1.1.39، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.39 وversionCode 10139، ونفس شهادة توقيع 1.1.38).
+const UPDATE_FALLBACK_SHA256 = '908b4d0de4e0077982c08f264a3e9c4c5cf217a72eb186aea3ae2d78934f77b1';
 const UPDATE_FALLBACK_NOTES = [
-  'العمولة: كل طلب لم تُصرف عمولته يتبع نسبة الموظف الحالية تلقائياً — حتى ما غُيّر قبل هذا التحديث',
-  'ملخص التسعير أوضح، وكتابة الكسور في الخصم والأسعار',
+  'بطاقة العميل في الجوال: رقم الجوال لا يتراكب على عدد الطلبات، والضغط عليه يتصل مباشرة',
+  'العمولة غير المصروفة تتبع نسبة الموظف الحالية تلقائياً',
 ];
 
 function versionCodeOfName(v) {
