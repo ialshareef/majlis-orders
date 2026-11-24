@@ -1536,7 +1536,7 @@ body[data-page="order"] main { padding-top: 10px; }
 .t-total { border-bottom: 0; margin-top: 6px; padding-top: 12px; border-top: 1px solid var(--line-strong); color: var(--ink); font-weight: 600; font-size: .97rem; }
 .t-total > b { font-size: 1.5rem; color: var(--accent); }
 /* خصم الفاتورة: يظهر فقط عند وجود خصم */
-.t-disc { border-bottom: 0; padding: 5px 0 0; font-size: .9rem; }
+.t-disc { font-size: .9rem; }
 .t-disc > b { color: var(--ok); }
 #discRow[data-state="none"] { display: none; }
 /* المدفوع والمتبقي أسفل الإجمالي: خلاصة الفاتورة كاملة في مكان واحد */
@@ -4064,3 +4064,9 @@ input[data-est="1"] { background: var(--warn-soft); }
 .pm-card { border: 1px solid var(--line-soft); border-radius: var(--r); padding: 10px 12px; display: grid; gap: 5px; background: var(--surface-2); min-width: 0; }
 .pm-top, .pm-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; min-width: 0; }
 .pm-row > span { min-width: 0; overflow-wrap: anywhere; }
+
+/* ملخص التسعير على الجوال: الإجمالي الكبير لا يخرج عن الصندوق — يصغر مع عرض الشاشة، وينزل تحت عنوانه إن لم يتسع */
+.t-row > span { min-width: 0; }
+.t-total { flex-wrap: wrap; row-gap: 2px; }
+.t-total > span { flex: 1 1 auto; }
+.t-total > b { font-size: clamp(1.15rem, 6.2vw, 1.5rem); max-width: 100%; margin-inline-start: auto; }
