@@ -3920,6 +3920,9 @@ body.portal { background: var(--bg); }
   #ordersTable td.row-actions { order: 11; }
   #custTable td.c-cust::before { content: none; }
   #custTable td.c-cust b { font-size: 1rem; }
+  /* الجوال 10 أرقام لا تلتف: عمودان له حتى لا يتراكب على «الطلبات» */
+  #custTable td.c-phone { grid-column: span 2; }
+  #custTable td.c-orders small { display: block; }
 }
 
 /* لوحة الأرقام: أقسام ثانوية مطويّة (تحليلات الموقع، تقرير الطلبات والتصدير السريع) */

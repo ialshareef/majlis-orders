@@ -5385,8 +5385,8 @@ function docTitle(order) {
     tb.innerHTML = shown.map((c) => `
       <tr>
         <td data-label="العميل" class="c-cust span2"><b>${esc(c.name || '—')}</b>${c.address ? `<span class="sub">${esc(c.address)}</span>` : ''}</td>
-        <td data-label="الجوال" class="num">${esc(c.phone || '—')}</td>
-        <td data-label="الطلبات" class="num">${c.orders.filter(isSale).length}${c.quotes ? ` <small class="hint">+ ${c.quotes} عرض</small>` : ''}</td>
+        <td data-label="الجوال" class="num c-phone">${c.phone ? `<a href="tel:${esc(String(c.phone).replace(/[^\d+]/g, ''))}" dir="ltr">${esc(c.phone)}</a>` : '—'}</td>
+        <td data-label="الطلبات" class="num c-orders">${c.orders.filter(isSale).length}${c.quotes ? ` <small class="hint">+ ${c.quotes} عرض سعر</small>` : ''}</td>
         <td data-label="المبيعات" class="num">${fmt(c.sales)}</td>
         <td data-label="المتبقي" class="num ${c.remaining > 0.5 ? 'warn-num' : ''}">${fmt(c.remaining)}</td>
         <td data-label="آخر طلب" class="num">${esc(fmtDate(c.last))}</td>
