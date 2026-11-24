@@ -43,7 +43,7 @@ const lateDay = new Date(Date.now() - 86400000 * 2).toISOString().slice(0, 10);
 const orders = [mk('o1', 1, '1', 'المالك', { deliveryDate: lateDay }), mk('o3', 3, '5', 'موظف بلا تكاليف')];
 const grant = (user_id, list, value = 1) => list.map((permission) => ({ user_id, permission, value, updated_by: '1', updated_at: past }));
 const env = envWith({
-  users: [U('1', 'owner', 'المالك', 'admin'), U('5', 'staff2', 'موظف بلا تكاليف', 'staff')],
+  users: [U('1', 'owner', 'المالك', 'admin', { rate: 10 }), U('5', 'staff2', 'موظف بلا تكاليف', 'staff')],
   sessions: [], orders, counters: [{ key: 'order_no', value: 10 }], settings: [{ id: 1, data: '{}', updated_at: past }], items: [],
 });
 for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses']) env.DB.tables.set(t, []);

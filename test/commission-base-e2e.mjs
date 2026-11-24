@@ -45,7 +45,7 @@ const orders = [
   ord('o2', 2, '2', 'سالم الموظف', thisMonth(1), { subtotal: 500, cost: null }),
 ];
 const env = envWith({
-  users: [U('1', 'owner', 'المالك', 'admin'), U('2', 'staff1', 'سالم الموظف', 'staff')],
+  users: [U('1', 'owner', 'المالك', 'admin', { rate: 10 }), U('2', 'staff1', 'سالم الموظف', 'staff', { rate: 10 })],
   sessions: [], orders, counters: [{ key: 'order_no', value: 200 }], settings: [{ id: 1, data: '{}', updated_at: past }], items: [],
 });
 for (const t of ['customer_designs', 'permission_audit', 'activity', 'expenses', 'user_permissions']) env.DB.tables.set(t, []);

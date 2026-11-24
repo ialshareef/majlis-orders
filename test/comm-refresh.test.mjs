@@ -93,5 +93,21 @@ await ta('تغيير النسبة الافتراضية في الإعدادات: 
   assert.equal(rates(env, 'M').parentRate, 3);
 });
 
+await ta('تصحيح لمرة واحدة بعد النشر: نسبة غُيّرت قبل التحديث التلقائي تُطبَّق على غير المصروفة، والتقرير يذكر المتخطّى وسببه', async () => {
+  const env = mk({ settings: { sellerRate: 2, mandoubRate: 5, shareRate: 4, mandoubParentRate: 1 } });
+  userRow(env, '2').rate = 3;   // غُيّرت من 2 إلى 3 قبل الإصدار، وبقيت الطلبات على 2
+  const R = { ownerRate: 2, parentId: null, parentRate: null, shareRate: 4 };
+  ord(env, 'A', '2', R);
+  ord(env, 'B', '2', R, { commPaid: { owner: { at: past, amount: 20 } } });
+  ord(env, 'C', '2', R, { sellerRate: 2 });
+  await call(env, '/api/bootstrap', '1');       // أول طلب بعد النشر
+  assert.deepEqual(['A', 'B', 'C'].map((id) => rates(env, id).ownerRate), [3, 2, 2]);
+  assert.ok(env.DB.tables.get('counters').some((c) => c.key === 'comm_refresh_once_v1'), 'علامة التشغيل مرة واحدة');
+  env.PURCHASE_IMPORT_KEY = 'q'.repeat(40);
+  const r = await call(env, '/api/comm-refresh-key', null, {}, 'POST', { 'X-Import-Key': 'q'.repeat(40) });
+  assert.equal(r.s, 200, JSON.stringify(r.d));
+  assert.ok(r.d.report.some((x) => x.kept === 'مصروفة') && r.d.report.some((x) => x.kept === 'نسبة مخصّصة لهذا الطلب' && x.rate === 2 && x.live === 3), JSON.stringify(r.d.report));
+});
+
 console.log(`\n=== comm-refresh: PASS=${pass}  FAIL=${fail} ===`);
 process.exit(fail ? 1 : 0);

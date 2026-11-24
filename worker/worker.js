@@ -290,6 +290,7 @@ export default {
     try {
       if (!env.DB) throw new HttpError(500, 'قاعدة D1 غير مربوطة: أضف Binding باسم DB في إعدادات الـ Worker');
       await ensureSeed(env);
+      await commRefreshOnce(env);
       const result = await route(request, env, url);
       return json(result, 200, cors);
     } catch (e) {
@@ -312,6 +313,7 @@ async function route(request, env, url) {
   // استيراد فواتير المشتريات بمفتاح مؤقت (Secret في Cloudflare) — مغلق (404) بلا المفتاح؛ انظر purchasesImportByKey
   if (path === '/api/purchases/import-key' && method === 'POST') return purchasesImportByKey(env, body, request);
   if (path === '/api/purchases/matches-key' && method === 'GET') { await checkImportKey(env, request); return purchaseMatches(env); }
+  if (path === '/api/comm-refresh-key' && method === 'POST') { await checkImportKey(env, request); const report = []; const n = await refreshUnpaidCommRates(env, null, null, report); return { ok: true, updated: n, report }; }
 
   // بوابة العميل (عامة): كل مسار يتحقق من customer token ولا يرى إلا صفّه
   if (path === '/api/portal/session' && method === 'POST') return portalSession(env, request, body);
@@ -3089,7 +3091,7 @@ function serverCommSnapshot(o, owner, s) {
 /** بعد تغيير نسبة موظف/مندوب (صفحة المستخدمين) أو النسب الافتراضية (الإعدادات): تحديث لقطة نسب العمولة
     في كل طلب لم تُصرف عمولته — المصروفة تبقى بنسبتها. لا يمس: النسبة المخصّصة لطلب بعينه (sellerRate/mandoubRate)،
     ولا حصة المشاركة، ولا الطلبات الملغاة. userIds = null ⇒ كل الطلبات (تغيير الإعدادات). يعيد عدد الطلبات المحدّثة. */
-async function refreshUnpaidCommRates(env, userIds, settingsNow) {
+async function refreshUnpaidCommRates(env, userIds, settingsNow, report) {
   if (Array.isArray(userIds) && !userIds.length) return 0;
   const srow = settingsNow ? null : await env.DB.prepare('SELECT data FROM settings WHERE id = 1').first();
   const s = settingsNow || (srow && safeParse(srow.data, {})) || {};
@@ -3112,13 +3114,35 @@ async function refreshUnpaidCommRates(env, userIds, settingsNow) {
     const custom = rateOrNull(isMan ? d.mandoubRate : d.sellerRate) !== null;
     if (!(cp.owner && cp.owner.at) && !custom) cr.ownerRate = fresh.ownerRate;
     if (!(cp.parent && cp.parent.at)) { cr.parentId = fresh.parentId; cr.parentRate = fresh.parentRate; }
+    if (report) {
+      // النسبة الحالية لصاحب الطلب بلا تخصيص الطلب: لمعرفة ما بقي مختلفاً ولماذا
+      const plain = serverCommSnapshot({ ...d, sellerRate: undefined, mandoubRate: undefined }, owner, s).ownerRate;
+      if (plain !== d.commRates.ownerRate || custom) {
+        if (cp.owner && cp.owner.at) report.push({ number: d.number, rate: d.commRates.ownerRate, live: plain, kept: 'مصروفة' });
+        else if (custom && plain !== rateOrNull(isMan ? d.mandoubRate : d.sellerRate)) report.push({ number: d.number, rate: rateOrNull(isMan ? d.mandoubRate : d.sellerRate), live: plain, kept: 'نسبة مخصّصة لهذا الطلب' });
+      }
+    }
     if (cr.ownerRate === d.commRates.ownerRate && cr.parentId === (d.commRates.parentId ?? null) && cr.parentRate === (d.commRates.parentRate ?? null)) continue;
+    if (report) report.push({ number: d.number, rate: d.commRates.ownerRate, live: cr.ownerRate, updated: true });
     d.commRates = cr;
     d.updatedAt = ts;
     st.push(env.DB.prepare('UPDATE orders SET data = ?, updated_at = ? WHERE id = ?').bind(JSON.stringify(d), ts, r.id));
   }
   for (let i = 0; i < st.length; i += 50) await env.DB.batch(st.slice(i, i + 50));
   return st.length;
+}
+/** تصحيح لمرة واحدة: طلبات غير مصروفة بقيت على نسبة قديمة لأن النسبة غُيّرت قبل التحديث التلقائي */
+const COMM_REFRESH_KEY = 'comm_refresh_once_v1';
+const commRefreshDone = new WeakSet();
+async function commRefreshOnce(env) {
+  if (commRefreshDone.has(env.DB)) return;
+  commRefreshDone.add(env.DB);
+  try {
+    const done = await env.DB.prepare('SELECT value FROM counters WHERE key = ?').bind(COMM_REFRESH_KEY).first();
+    if (done) return;
+    await env.DB.prepare('INSERT INTO counters (key, value) VALUES (?, 1)').bind(COMM_REFRESH_KEY).run();
+    await refreshUnpaidCommRates(env, null);
+  } catch (e) { console.error('commRefreshOnce', e); }
 }
 function lockCommission(rec, prev, owner, s) {
   for (const k of COMMISSION_FIELDS) { if (prev && prev[k] !== undefined) rec[k] = prev[k]; else delete rec[k]; }
