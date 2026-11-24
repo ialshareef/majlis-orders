@@ -450,13 +450,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.36';
-// بصمة asalh-najd-1.1.36.apk (إصدار GitHub v1.1.36، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.36 وversionCode 10136، ونفس شهادة توقيع 1.1.35).
-const UPDATE_FALLBACK_SHA256 = 'da40bcedc7393ffc68ada73e5754455847f21abc59c388d6db950dea0b5ef481';
+const UPDATE_FALLBACK_VERSION = '1.1.37';
+// بصمة asalh-najd-1.1.37.apk (إصدار GitHub v1.1.37، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.37 وversionCode 10137، ونفس شهادة توقيع 1.1.36).
+const UPDATE_FALLBACK_SHA256 = '869abe509b8df4305787216a04023b8d29d45c821ce0dccd9b1d19059b5f7967';
 const UPDATE_FALLBACK_NOTES = [
-  'كتابة الكسور في الخصم والأسعار والتكاليف (مثل 15.5) بلا مشاكل، ودعم لوحة المفاتيح العربية',
-  'تغيير نسبة عمولة الموظف أو الافتراضية يسري فوراً على كل طلب لم تُصرف عمولته',
+  'ملخص التسعير أوضح: مجموع الأصناف ثم الخصم ثم الضريبة ثم الإجمالي، والإجمالي لا يخرج عن الشاشة',
+  'كتابة الكسور في الخصم والأسعار، وتحديث العمولة غير المصروفة فوراً عند تغيير النسبة',
 ];
 
 function versionCodeOfName(v) {
