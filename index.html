@@ -834,6 +834,13 @@
         <p class="empty" id="purEmpty" hidden>لا توجد فواتير بعد — أضف فاتورة بزر «فاتورة جديدة» أو استورد ملف الفواتير.</p>
         <p class="error" id="purErr" role="alert" hidden></p>
       </div>
+      <div class="card" id="vjBoard">
+        <div class="card-head"><h3>مستحقات الموردين والمصانع على الطلبات</h3>
+          <select id="vjBoardF" aria-label="تصفية المستحقات"><option value="due">عليها متبقٍ فقط</option><option value="">كل الأعمال</option></select></div>
+        <p class="hint">من «أعمال الموردين والمصانع» المسجّلة في تكاليف كل طلب: الاتفاق والمدفوع (المقدم والمؤخر) والمتبقي لكل مورد. اضغط الطلب لتسجيل دفعة.</p>
+        <div class="stats-row" id="vjStats"></div>
+        <div id="vjSuppliers"></div>
+      </div>
       <div class="card" id="purMatchCard" hidden>
         <div class="card-head"><h3>اقتراحات ربط الفواتير بالطلبات</h3></div>
         <p class="hint">تكاليف سُجّلت يدوياً في الطلبات (البنود الإضافية) تشبه فاتورة مورد: بالمبلغ نفسه، أو بالنوع نفسه وتاريخ متقارب. راجعها واربط ما يصح.</p>

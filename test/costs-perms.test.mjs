@@ -385,6 +385,37 @@ await ta('8s) API protection: authorized (admin) receives cost fields', async ()
   assert.strictEqual(o.costTotal, 7, 'admin receives costTotal');
 });
 
+/* ============================ أعمال الموردين والمصانع ============================ */
+const VJ = (extra = {}) => Object.assign({ id: 'vj1', supplier: 'مصنع الإسفنج', desc: 'إسفنج المجلس', amount: 1150, vat: true, done: false,
+  payments: [{ id: 'p1', at: '2026-11-20', amount: 500, kind: 'advance' }] }, extra);
+
+await ta('vj1) المدير يسجّل عمل مورد بدفعة مقدمة: يُحفظ، وتصل للمدير ولا تصل لموظف بلا صلاحية', async () => {
+  const env = envWith(seeded());
+  const r = await syncUp(env, 'tok-admin', Object.assign(costPayload(orderJSON('o-staff2', 1002), {}, [], { name: 'المدير' }, 1000), { vendorJobs: [VJ()] }));
+  assert.strictEqual(r.status, 200, JSON.stringify(r.data).slice(0, 160));
+  const o = stored(env, 'o-staff2');
+  assert.ok(o.vendorJobs && o.vendorJobs[0].amount === 1150 && o.vendorJobs[0].payments[0].kind === 'advance', JSON.stringify(o.vendorJobs));
+  const adm = await call(env, '/api/bootstrap', 'tok-admin');
+  assert.ok((adm.data.orders.find((x) => x.id === 'o-staff2') || {}).vendorJobs, 'المدير يراها');
+  const st = await call(env, '/api/bootstrap', 'tok-staff');
+  assert.ok(!(st.data.orders || []).some((x) => x.vendorJobs), 'الموظف لا يرى أعمال موردي غيره');
+});
+
+await ta('vj2) بيانات غير صالحة تُرفض: مبلغ سالب، نوع دفعة مجهول، أكثر من 50 عملاً', async () => {
+  const env = envWith(seeded());
+  for (const bad of [[VJ({ amount: -5 })], [VJ({ payments: [{ amount: 10, kind: 'xx' }] })], Array.from({ length: 51 }, (_, i) => VJ({ id: 'v' + i }))]) {
+    const r = await syncUp(env, 'tok-admin', Object.assign(costPayload(orderJSON('o-admin', 1005), {}, [], { name: 'المدير' }, 0), { vendorJobs: bad }));
+    assert.strictEqual(r.status, 400, 'status=' + r.status);
+  }
+});
+
+await ta('vj3) موظف بلا صلاحية تكاليف على طلب غيره لا يستطيع إدخال أعمال موردين', async () => {
+  const env = envWith(seeded());
+  const r = await syncUp(env, 'tok-staff', Object.assign(orderJSON('o-staff2', 1002), { vendorJobs: [VJ()] }));
+  assert.strictEqual(r.status, 403, 'status=' + r.status);
+  assert.ok(!stored(env, 'o-staff2').vendorJobs, 'لم يُكتب شيء');
+});
+
 const report = lines.join('\n') + '\n\n=== النتيجة: PASS=' + pass + '  FAIL=' + fail + ' ===';
 console.log(report);
 process.exit(fail ? 1 : 0);

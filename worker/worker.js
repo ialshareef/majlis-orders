@@ -2220,6 +2220,13 @@ function computeOrderCost(d) {
       if (Number.isFinite(v)) cost += v;
     }
   }
+  // أعمال الموردين والمصانع: مبلغ الاتفاق قبل الضريبة
+  if (d && Array.isArray(d.vendorJobs)) {
+    for (const j of d.vendorJobs) {
+      const v = Number(j && j.amount || 0);
+      if (Number.isFinite(v)) cost += j && j.vat ? v / 1.15 : v;
+    }
+  }
   return cost;
 }
 
@@ -2687,6 +2694,21 @@ function checkOrderFin(o) {
       if (!e || typeof e !== 'object' || !isOptNonNeg(e.amount)) finErr('order.extraCosts');
     }
   }
+  // أعمال الموردين والمصانع: مبالغ غير سالبة، ونصوص محدودة، ودفعات بأنواع معروفة
+  if (o.vendorJobs !== undefined && o.vendorJobs !== null) {
+    const okStr = (v, n) => v === undefined || v === null || (typeof v === 'string' && v.length <= n);
+    if (!Array.isArray(o.vendorJobs) || o.vendorJobs.length > 50) finErr('order.vendorJobs');
+    else for (const j of o.vendorJobs) {
+      if (!j || typeof j !== 'object' || !isOptNonNeg(j.amount) || !okStr(j.supplier, 120) || !okStr(j.desc, 200) || !okStr(j.id, 64)) finErr('order.vendorJobs');
+      if (j.payments !== undefined && j.payments !== null) {
+        if (!Array.isArray(j.payments) || j.payments.length > 50) finErr('order.vendorJobs.payments');
+        else for (const p of j.payments) {
+          if (!p || typeof p !== 'object' || !isOptNonNeg(p.amount) || !okStr(p.at, 30) || !okStr(p.note, 200) || !okStr(p.id, 64)
+            || (p.kind !== undefined && !['advance', 'part', 'final'].includes(p.kind))) finErr('order.vendorJobs.payments');
+        }
+      }
+    }
+  }
   if (o.commRates !== undefined && o.commRates !== null) {
     if (typeof o.commRates !== 'object') finErr('order.commRates');
     else {
@@ -2832,6 +2854,7 @@ async function sync(env, user, body) {
     if (!x || typeof x !== "object") return false;
     if (x.costs && Object.keys(x.costs).length) return true;
     if (Array.isArray(x.extraCosts) && x.extraCosts.length) return true;
+    if (Array.isArray(x.vendorJobs) && x.vendorJobs.length) return true;
     if (x.costTotal !== undefined && x.costTotal !== null && x.costTotal !== "") return true;
     if (Array.isArray(x.manualRows) && x.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== "")) return true;
     return false;
@@ -3027,7 +3050,7 @@ async function sync(env, user, body) {
    created_by في جدول orders (وهو نفسه أساس فحص الملكية في sync)، وطلب
    الغير يصل مكسوفاً stripCosts في bootstrap، وأي محاولة تعديله عبر /api/sync
    تُرفض 403 قبل الكتابة. الهوية والدور يأتان من جلسة الخادم لا من الحمولة. */
-const COST_FIELDS = ['costs', 'costTotal', 'extraCosts', 'costUpdatedAt', 'costUpdatedByName'];
+const COST_FIELDS = ['costs', 'costTotal', 'extraCosts', 'vendorJobs', 'costUpdatedAt', 'costUpdatedByName'];
 
 /** نسخة الطلب كما تصل الموظف: بلا تكلفة ولا ربح */
 /* أسعار الجملة ومعدّلات الاستهلاك على الأصناف (والتقدير في الإعدادات): لمن يرى التكاليف فقط */
@@ -3066,6 +3089,7 @@ function hasCostIntent(o) {
   if (o.costUpdatedAt !== undefined || o.costUpdatedByName !== undefined) return true;
   if (o.costs && typeof o.costs === 'object' && Object.keys(o.costs).length > 0) return true;
   if (Array.isArray(o.extraCosts) && o.extraCosts.length > 0) return true;
+  if (Array.isArray(o.vendorJobs) && o.vendorJobs.length > 0) return true;
   if (o.costTotal !== undefined && o.costTotal !== null && o.costTotal !== '') return true;
   if (Array.isArray(o.manualRows) && o.manualRows.some((m) => m && m.cost !== undefined && m.cost !== null && m.cost !== '')) return true;
   return false;

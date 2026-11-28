@@ -4075,3 +4075,27 @@ input[data-est="1"] { background: var(--warn-soft); }
 .t-total > b { font-size: clamp(1.15rem, 6.2vw, 1.5rem); max-width: 100%; margin-inline-start: auto; }
 /* رابط الاتصال في بطاقة العميل: هدف لمس مريح (≥ 32px) */
 #custTable td.c-phone a { display: inline-flex; align-items: center; min-height: 34px; padding: 0 4px; }
+
+/* أعمال الموردين والمصانع في نافذة التكاليف */
+.vendor-jobs { margin-top: 14px; }
+.vj-card { border: 1px solid var(--line-soft); border-radius: var(--r); padding: 10px 12px; margin: 8px 0; display: grid; gap: 8px; background: var(--surface-2); min-width: 0; }
+.vj-amt { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px 14px; }
+.vj-amt > label:first-child { flex: 1 1 160px; }
+.vj-pays { display: grid; gap: 6px; }
+.vj-pay { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1fr) auto; gap: 6px; align-items: center; }
+.vj-pay input, .vj-pay select { min-width: 0; min-height: 40px; }
+.vj-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; justify-content: space-between; }
+.vj-sum { font-size: .86rem; color: var(--ink-2); }
+.danger-text { color: var(--danger); }
+@media (max-width: 520px) { .vj-pay { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } .vj-pay [data-vp="amount"] { grid-column: 1 / 2; } }
+
+/* لوحة مستحقات الموردين */
+#vjBoard { margin-top: 14px; }
+#vjBoard .card-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+#vjBoard .card-head select { max-width: 100%; min-width: 0; }
+.vj-sup { border: 1px solid var(--line-soft); border-radius: var(--r); margin: 8px 0; background: var(--surface-2); }
+.vj-sup > summary { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 10px 12px; cursor: pointer; min-height: 44px; }
+.vj-sup-rem { margin-inline-start: auto; }
+.vj-row { border-top: 1px solid var(--line-soft); padding: 8px 12px; display: grid; gap: 4px; cursor: pointer; min-width: 0; }
+.vj-row small { display: block; overflow-wrap: anywhere; }
+.vj-nums { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: .86rem; }

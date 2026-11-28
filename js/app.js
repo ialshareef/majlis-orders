@@ -631,7 +631,7 @@
     { page: 'mandoubs', t: 'المناديب والعمولات', d: 'المناديب ومستوياتهم ونسبهم', i: 'truck' },
     { page: 'reports', t: 'التقارير والتحليلات', d: 'تقارير جاهزة PDF وExcel ولوحة الأرقام', i: 'chart' },
     { page: 'whatsapp', t: 'إشعارات واتساب', d: 'رسائل جاهزة للعملاء والفريق', i: 'whatsapp' },
-    { page: 'purchases', t: 'المشتريات', d: 'فواتير الموردين وأسعار الجملة', i: 'receipt' },
+    { page: 'purchases', t: 'المشتريات', d: 'فواتير الموردين، وأسعار الجملة، ومستحقات الموردين والمصانع على الطلبات', i: 'receipt' },
     { page: 'items', t: 'الأصناف والأسعار', d: 'الكنب والأقمشة والإسفنج وأسعارها', i: 'tag' },
     { page: 'users', t: 'المستخدمون ونشاطهم', d: 'الحسابات والصلاحيات والنسب', i: 'users' },
     { page: 'settings', t: 'الإعدادات', d: 'بيانات المحل والضريبة والنسب والنسخ الاحتياطي', i: 'settings' },
@@ -2099,6 +2099,26 @@ function canEditOrder(o) {
   }
 
   /** بنود التكلفة الإضافية التي يكتبها المستخدم (توصيل، تحميل وتنزيل…) */
+  /* أعمال الموردين والمصانع على الطلب (vendorJobs): ما يُتفق عليه مع مصنع أو مورد لتنفيذ جزء من الطلب
+     (إسفنج، قماش، خشب، تنجيد…) ودفعاته المقدمة والمؤخرة.
+     محاسبياً: التكلفة = مبلغ الاتفاق قبل الضريبة (استحقاق — لا تنتظر الدفع)، والدفعات تحدد المتبقي للمورد فقط.
+     j = { id, supplier, desc, amount (المستحق للمورد كما في الاتفاق), vat (المبلغ شامل الضريبة؟), done (أنجز العمل؟),
+           payments: [{ id, at, amount, kind: advance|part|final, note }] } */
+  const VJ_KINDS = { advance: 'دفعة مقدمة', part: 'دفعة', final: 'دفعة نهائية' };
+  const vjVatRate = () => { const r = num(settings().vatRate); return r > 0 ? r : 15; };
+  function vendorJobs(order) {
+    return (order && Array.isArray(order.vendorJobs) ? order.vendorJobs : [])
+      .filter((j) => j && (String(j.supplier || '').trim() || num(j.amount)))
+      .map((j) => {
+        const pays = (Array.isArray(j.payments) ? j.payments : []).filter((p) => p && num(p.amount));
+        const amount = money(j.amount);
+        const paid = money(pays.reduce((s, p) => s + money(p.amount), 0));
+        return Object.assign({}, j, {
+          supplier: String(j.supplier || '').trim(), desc: String(j.desc || '').trim(), amount, paid, payments: pays,
+          remaining: money(amount - paid), cost: j.vat ? money(amount / (1 + vjVatRate() / 100)) : amount,
+        });
+      });
+  }
   function extraCosts(order) {
     return (order.extraCosts || [])
       .filter((e) => e && (String(e.name || '').trim() || num(e.amount)))
@@ -2149,13 +2169,15 @@ function canEditOrder(o) {
     const extrasCost = money(extras.reduce((s, e) => s + e.amount, 0));
     const commLines = opts.noComm ? [] : commCostLines(order);
     const commCost = money(commLines.reduce((s, e) => s + e.amount, 0));
-    const costTotal = money(linesCost + extrasCost + commCost);
+    const vendor = vendorJobs(order);
+    const vendorCost = money(vendor.reduce((s, j) => s + j.cost, 0));
+    const costTotal = money(linesCost + extrasCost + vendorCost + commCost);
     const revenue = calcRevenue(subtotal, order.discount);
     const profit = calcProfit(revenue, costTotal);
     return {
       rows, subtotal, revenue, vatEnabled, total, costTotal, profit,
-      linesCost, extras, extrasCost, commLines, commCost,
-      entered: filled.length + extras.length, missing: rows.length - filled.length,
+      linesCost, extras, extrasCost, commLines, commCost, vendor, vendorCost,
+      entered: filled.length + extras.length + vendor.length, missing: rows.length - filled.length,
       margin: revenue > 0 && profit !== null ? r2((profit / revenue) * 100) : 0,
     };
   }
@@ -2167,7 +2189,7 @@ function canEditOrder(o) {
   /** noComm: بلا بنود العمولة المصروفة (لأساس احتساب العمولة) */
   function orderCost(o, noComm = false) {
     if (!o) return null;
-    const has = (o.costs && Object.keys(o.costs).length) || (o.extraCosts && o.extraCosts.length)
+    const has = (o.costs && Object.keys(o.costs).length) || (o.extraCosts && o.extraCosts.length) || (o.vendorJobs && o.vendorJobs.length)
       || (o.manualRows || []).some((r) => r && r.cost !== undefined && r.cost !== null && r.cost !== '');
     if (!has) {
       if (o.costTotal === undefined || o.costTotal === null) return null;
@@ -3432,7 +3454,7 @@ function canEditOrder(o) {
   const MERGE_SKIP = new Set(['id', 'number', 'createdAt', 'createdBy', 'createdByName', 'updatedAt', 'updatedByName', 'payments', 'paid', 'remaining',
     'subtotal', 'vatAmount', 'vatRate', 'total', 'costTotal', 'statusAt', 'statusByName', 'commRates', 'sellerRate', 'mandoubRate', 'shareRate', 'othersRate', '_base']);
   const MERGE_LABELS = { status: 'الحالة', deliveryDate: 'تاريخ التوصيل', notes: 'الملاحظات', discount: 'الخصم', vat: 'الضريبة', design: 'التصميم', manualRows: 'الأصناف الإضافية',
-    priceOverrides: 'الأسعار', attachments: 'المرفقات', costs: 'التكاليف', extraCosts: 'التكاليف الإضافية', validUntil: 'صلاحية العرض',
+    priceOverrides: 'الأسعار', attachments: 'المرفقات', costs: 'التكاليف', extraCosts: 'التكاليف الإضافية', vendorJobs: 'أعمال الموردين والمصانع', validUntil: 'صلاحية العرض',
     'customer.name': 'اسم العميل', 'customer.phone': 'الجوال', 'customer.address': 'مكان التوصيل', 'customer.mapsUrl': 'رابط الموقع' };
   const mergeVal = (k, v) => {
     if (k === 'status') return STATUS[v || 'new'] || v || '—';
@@ -4795,6 +4817,15 @@ function docTitle(order) {
         totals: { name: 'المجموع', amount: money(info.extrasCost + info.commCost) },
       });
     }
+    // 2ب) أعمال الموردين والمصانع: الاتفاق والمدفوع والمتبقي لكل مورد
+    if (seeCost && info.vendor.length) {
+      tables.push({
+        title: 'أعمال الموردين والمصانع', columns: [{ key: 'name', label: 'المورد — العمل' }, { key: 'amt', label: 'الاتفاق', kind: 'money' },
+          { key: 'paid', label: 'المدفوع', kind: 'money' }, { key: 'rem', label: 'المتبقي', kind: 'money' }],
+        rows: info.vendor.map((j) => ({ name: `${j.supplier}${j.desc ? ' — ' + j.desc : ''}${j.done ? ' (أُنجز)' : ''}${j.vat ? ' • شامل الضريبة' : ''}`, amt: j.amount, paid: j.paid, rem: j.remaining })),
+        totals: { name: 'المجموع', amt: money(info.vendor.reduce((t, j) => t + j.amount, 0)), paid: money(info.vendor.reduce((t, j) => t + j.paid, 0)), rem: money(info.vendor.reduce((t, j) => t + j.remaining, 0)) },
+      });
+    }
     /* 3) الحساب في ثلاثة جداول قصيرة بعناوين واضحة (بدل جدول طويل واحد):
        حساب العميل ← الربح والتكاليف ← العمولات */
     const money2 = [{ key: 'k', label: 'البند' }, { key: 'v', label: 'المبلغ', kind: 'money' }];
@@ -4810,6 +4841,7 @@ function docTitle(order) {
       const acc = [{ k: (L.vatEnabled ? 'المبيعات قبل الضريبة' : 'المبيعات') + ' (أساس الربح)', v: revenue }];
       if (linesHave) acc.push({ k: 'تكاليف الأصناف', v: -info.linesCost });
       if (info.extras.length) acc.push({ k: 'التكاليف الإضافية', v: -info.extrasCost });
+      if (info.vendor.length) acc.push({ k: 'أعمال الموردين والمصانع' + (info.vendor.some((j) => j.vat) ? ' (قبل الضريبة)' : ''), v: -info.vendorCost });
       if (info.commLines.length && hasCost) acc.push({ k: 'العمولات المصروفة (' + info.commLines.map((e) => e.name).join('، ') + ')', v: -info.commCost });
       acc.push({ k: 'إجمالي التكاليف', v: hasCost ? -costAll : null, b: true });
       if (seeProfit) acc.push({ k: hasCost ? `صافي الربح (هامش ${pct(marginAll)})` : 'صافي الربح', v: profitAll, b: true });
@@ -4979,6 +5011,15 @@ function docTitle(order) {
           ${info.commLines.map((e) => `<div class="cc-line"><span>${esc(e.name)}${e.at ? ` <small class="hint">صُرفت ${esc(fmtDate(e.at))}</small>` : ''}</span><b class="num">${fmt(e.amount)}</b></div>`).join('')}</div>` : ''}
       </div>
 
+      <div class="vendor-jobs">
+        <div class="extra-head">
+          <h4>${icon('receipt')} أعمال الموردين والمصانع</h4>
+          <button type="button" class="btn small" id="vjAdd">${icon('plus')} عمل جديد</button>
+        </div>
+        <p class="hint">مصنع أو مورد ينفّذ جزءاً من الطلب (إسفنج، قماش، خشب، تنجيد…): سجّل مبلغ الاتفاق ودفعاته المقدمة والمؤخرة. مبلغ الاتفاق يدخل تكاليف الطلب مباشرة (قبل الضريبة)، والمتبقي يظهر للإدارة في «مستحقات الموردين». لا تسجّله مرة ثانية في التكاليف الإضافية.</p>
+        <div id="vjList"></div>
+      </div>
+
       <div class="cost-sum" id="costSum"></div>
       <p class="hint">التكلفة تُدخَل لكل وحدة (متر أو قطعة) وتُضرب في الكمية. صافي الربح = إجمالي البيع قبل الضريبة − (تكاليف الأصناف + التكاليف الإضافية)؛ الضريبة تُحصَّل للدولة فلا تُحتسب ربحاً. لا تظهر التكاليف في ملف PDF الذي يصل العميل.</p>
       <p id="costErr" class="error"></p>
@@ -4995,6 +5036,78 @@ function docTitle(order) {
 
       /* --- البنود الإضافية: تُدار كقائمة محلية ثم تُحفظ مع الطلب --- */
       let extraRows = info.extras.map((e) => ({ name: e.name, amount: String(e.amount) }));
+
+      /* --- أعمال الموردين والمصانع: بطاقة لكل عمل بدفعاته --- */
+      let vjRows = (Array.isArray(o.vendorJobs) ? o.vendorJobs : []).map((j) => JSON.parse(JSON.stringify(j)));
+      const vjNew = () => ({ id: Store.uid(), supplier: '', desc: '', amount: '', vat: false, done: false, payments: [] });
+      function readVJ() {
+        return $$('.vj-card', b).map((card) => ({
+          id: card.dataset.id,
+          supplier: $('[data-vj="supplier"]', card).value,
+          desc: $('[data-vj="desc"]', card).value,
+          amount: $('[data-vj="amount"]', card).value,
+          vat: $('[data-vj="vat"]', card).checked,
+          done: $('[data-vj="done"]', card).checked,
+          payments: $$('.vj-pay', card).map((r) => ({ id: r.dataset.id, at: $('[data-vp="at"]', r).value, amount: $('[data-vp="amount"]', r).value, kind: $('[data-vp="kind"]', r).value })),
+        }));
+      }
+      function vjSum(card) {
+        const amt = read($('[data-vj="amount"]', card));
+        const paid = money($$('[data-vp="amount"]', card).reduce((s, i) => { const v = read(i); return s + (v > 0 ? v : 0); }, 0));
+        const rem = amt > 0 ? money(amt - paid) : null;
+        $('.vj-sum', card).innerHTML = `المدفوع <b class="num">${fmt(paid)}</b> • المتبقي للمورد <b class="num ${rem > 0.004 ? 'warn-num' : rem < -0.004 ? 'neg' : 'pos'}">${rem === null ? '—' : fmt(rem)}</b>`;
+      }
+      function renderVJ() {
+        const host = $('#vjList', b);
+        const kindOpts = (k) => Object.entries(VJ_KINDS).map(([v, t]) => `<option value="${v}"${v === k ? ' selected' : ''}>${t}</option>`).join('');
+        host.innerHTML = vjRows.length ? vjRows.map((j, i) => `
+          <div class="vj-card" data-id="${esc(j.id || Store.uid())}">
+            <div class="row2">
+              <label>المورد / المصنع <input data-vj="supplier" maxlength="120" value="${esc(j.supplier || '')}" placeholder="مثال: مصنع الشروق للإسفنج"></label>
+              <label>العمل المطلوب <input data-vj="desc" maxlength="200" value="${esc(j.desc || '')}" placeholder="مثال: إسفنج المجلس 12 لوح"></label>
+            </div>
+            <div class="vj-amt">
+              <label>مبلغ الاتفاق <input data-vj="amount" class="num" type="text" inputmode="decimal" value="${esc(j.amount === undefined || j.amount === null ? '' : j.amount)}" placeholder="0"></label>
+              <label class="check"><input type="checkbox" data-vj="vat"${j.vat ? ' checked' : ''}> شامل الضريبة</label>
+              <label class="check"><input type="checkbox" data-vj="done"${j.done ? ' checked' : ''}> أنجز المورد العمل</label>
+            </div>
+            <div class="vj-pays">
+              ${(j.payments || []).map((p) => `<div class="vj-pay" data-id="${esc(p.id || Store.uid())}">
+                <input data-vp="at" type="date" value="${esc(String(p.at || today()).slice(0, 10))}" aria-label="تاريخ الدفعة">
+                <select data-vp="kind" aria-label="نوع الدفعة">${kindOpts(p.kind || 'part')}</select>
+                <input data-vp="amount" class="num" type="text" inputmode="decimal" value="${esc(p.amount === undefined ? '' : p.amount)}" placeholder="المبلغ" aria-label="مبلغ الدفعة">
+                <button type="button" class="icon-btn" data-vpdel aria-label="حذف الدفعة">${icon('x')}</button>
+              </div>`).join('')}
+            </div>
+            <div class="vj-foot">
+              <button type="button" class="btn small" data-vpadd="${i}">${icon('plus')} دفعة</button>
+              <span class="vj-sum"></span>
+              <button type="button" class="btn small ghost danger-text" data-vjdel="${i}">${icon('trash')} حذف العمل</button>
+            </div>
+          </div>`).join('') : '<p class="hint empty-extras">لا أعمال موردين على هذا الطلب.</p>';
+        $$('.vj-card', host).forEach((card) => {
+          card.addEventListener('input', () => { vjSum(card); recalc(); });
+          card.addEventListener('change', () => { vjSum(card); recalc(); });
+          vjSum(card);
+        });
+        $$('[data-vpadd]', host).forEach((btn) => btn.addEventListener('click', () => {
+          vjRows = readVJ();
+          const j = vjRows[+btn.dataset.vpadd];
+          const left = money(num(j.amount) - j.payments.reduce((s, p) => s + num(p.amount), 0));
+          j.payments.push({ id: Store.uid(), at: today(), amount: j.payments.length && left > 0 ? String(left) : '', kind: j.payments.length ? 'final' : 'advance' });
+          renderVJ(); recalc();
+          const pays = $$('.vj-card', host)[+btn.dataset.vpadd].querySelectorAll('[data-vp="amount"]');
+          if (pays.length) pays[pays.length - 1].focus({ preventScroll: true });
+        }));
+        $$('[data-vpdel]', host).forEach((btn) => btn.addEventListener('click', () => {
+          const card = btn.closest('.vj-card'), ci = $$('.vj-card', host).indexOf(card);
+          const pi = $$('.vj-pay', card).indexOf(btn.closest('.vj-pay'));
+          vjRows = readVJ(); vjRows[ci].payments.splice(pi, 1); renderVJ(); recalc();
+        }));
+        $$('[data-vjdel]', host).forEach((btn) => btn.addEventListener('click', () => {
+          vjRows = readVJ(); vjRows.splice(+btn.dataset.vjdel, 1); renderVJ(); recalc();
+        }));
+      }
 
       /** قراءة ما كتبه المستخدم في الحقول الآن (قبل أي إعادة رسم) */
       function readExtras() {
@@ -5066,16 +5179,31 @@ function docTitle(order) {
         });
         extrasCost = money(extrasCost);
 
-        costTotal = money(linesCost + extrasCost + (filled > 0 || extrasCount > 0 ? info.commCost : 0));
+        // أعمال الموردين: مبلغ الاتفاق قبل الضريبة يدخل التكاليف
+        let vendorCost = 0, vendorCount = 0;
+        $$('.vj-card', b).forEach((card) => {
+          const amtInp = $('[data-vj="amount"]', card);
+          const v = read(amtInp);
+          amtInp.classList.toggle('bad', Number.isNaN(v));
+          if (Number.isNaN(v)) { bad++; return; }
+          $$('[data-vp="amount"]', card).forEach((pi) => { const pv = read(pi); pi.classList.toggle('bad', Number.isNaN(pv)); if (Number.isNaN(pv)) bad++; });
+          if (!$('[data-vj="supplier"]', card).value.trim() && v === null) return;
+          vendorCost += $('[data-vj="vat"]', card).checked ? (v || 0) / (1 + vjVatRate() / 100) : (v || 0);
+          vendorCount++;
+        });
+        vendorCost = money(vendorCost);
+
+        costTotal = money(linesCost + extrasCost + vendorCost + (filled > 0 || extrasCount > 0 || vendorCount > 0 ? info.commCost : 0));
         const profit = calcProfit(info.revenue, costTotal);
         const margin = info.revenue > 0 && profit !== null ? r2((profit / info.revenue) * 100) : 0;
         const missing = inputs.length - filled;
-        const anyCost = filled > 0 || extrasCount > 0;
+        const anyCost = filled > 0 || extrasCount > 0 || vendorCount > 0;
         // بلا أي تكلفة لا يوجد ربح يُحسب: إظهار المبيعات كاملة كربح مضلّل
         const pcls = profit < 0 ? 'neg' : 'pos';
         const breakdown = [
           missing ? `أصناف بلا تكلفة: ${missing}` : '',
           extrasCount ? `إضافية: ${fmt(extrasCost)}` : '',
+          vendorCount ? `موردون ومصانع: ${fmt(vendorCost)}` : '',
         ].filter(Boolean).join(' • ');
         $('#costSum', b).innerHTML = `
           <div class="stat"><span>إجمالي البيع${info.vatEnabled ? ' <small>(قبل الضريبة)</small>' : ''}</span><b>${fmt(info.subtotal)}</b></div>
@@ -5102,6 +5230,8 @@ function docTitle(order) {
         };
         $('#extraList', b).before(box); draw();
       });
+      $('#vjAdd', b).onclick = () => { vjRows = readVJ(); vjRows.push(vjNew()); renderVJ(); recalc(); const s = $$('[data-vj="supplier"]', b).pop(); if (s) s.focus({ preventScroll: true }); };
+      renderVJ();
       inputs.forEach((inp) => inp.addEventListener('input', recalc));
       $('#extraAdd', b).onclick = () => addExtra();
       $$('[data-preset]', b).forEach((p) => p.addEventListener('click', () => addExtra(p.dataset.preset)));
@@ -5129,15 +5259,27 @@ function docTitle(order) {
           if (!name && v === null) return;
           extras.push({ name: name || 'تكلفة إضافية', amount: money(v || 0) });
         });
+        // أعمال الموردين: يُحذف الفارغ تماماً، والدفعة بلا مبلغ تُهمل
+        const vendor = [];
+        readVJ().forEach((j) => {
+          const amt = read({ value: j.amount });
+          if (Number.isNaN(amt)) { bad = true; return; }
+          const pays = [];
+          j.payments.forEach((p) => { const pv = read({ value: p.amount }); if (Number.isNaN(pv)) { bad = true; return; } if (pv > 0) pays.push({ id: p.id || Store.uid(), at: p.at || today(), amount: money(pv), kind: VJ_KINDS[p.kind] ? p.kind : 'part' }); });
+          const supplier = j.supplier.trim(), desc = j.desc.trim();
+          if (!supplier && !desc && amt === null && !pays.length) return;
+          vendor.push({ id: j.id || Store.uid(), supplier: supplier || 'مورد', desc, amount: money(amt || 0), vat: !!j.vat, done: !!j.done, payments: pays });
+        });
         if (bad) { $('#costErr', b).textContent = 'تكلفة غير صالحة: أدخل رقماً لا يقل عن صفر'; return; }
         // تفريغ كل التكاليف من طلب كانت عليه = حذف تكاليف: صلاحية مستقلة (الخادم يرفضه أيضاً)
-        const clearing = !Object.keys(costs).length && !Object.keys(manual).length && !extras.length && orderCost(o) !== null;
+        const clearing = !Object.keys(costs).length && !Object.keys(manual).length && !extras.length && !vendor.length && orderCost(o) !== null;
         if (clearing && !canClearCosts(o)) { $('#costErr', b).textContent = 'لا تملك صلاحية حذف تكاليف هذا الطلب'; return; }
 
         const before = JSON.parse(JSON.stringify(o));
         const prevCost = orderCost(o);
         o.costs = costs;
         o.extraCosts = extras;
+        o.vendorJobs = vendor;
         (o.manualRows || []).forEach((r, i) => { if (manual[i] !== undefined) r.cost = manual[i]; else delete r.cost; });
         const after = syncCostTotal(o);
         o.costUpdatedAt = Store.now(); o.costUpdatedByName = currentUser.name;
@@ -5149,6 +5291,7 @@ function docTitle(order) {
           after.entered ? `صافي الربح ${fmt(after.profit)} (هامش ${fmtQty(after.margin)}٪)` : 'لا تكاليف مسجّلة على الطلب',
           after.entered ? `تكاليف الأصناف ${fmt(after.linesCost)} • إضافية ${fmt(after.extrasCost)}` : '',
           after.extras.length ? `بنود إضافية: ${after.extras.map((e) => `${e.name} ${fmt(e.amount)}`).join('، ')}` : '',
+          after.vendor.length ? `موردون ومصانع: ${after.vendor.map((j) => `${j.supplier} ${fmt(j.amount)} (مدفوع ${fmt(j.paid)}، متبقٍ ${fmt(j.remaining)})`).join('، ')}` : '',
         ].filter(Boolean));
         if (!(await Store.save())) {
           // إرجاع الطلب كما كان حتى لا تبقى أرقام لم تصل الخادم
@@ -5172,6 +5315,7 @@ function docTitle(order) {
         closeModal();
         renderOrders();
         toast(`حُفظت تكاليف الطلب #${o.number} — صافي الربح ${fmt(after.profit)}`);
+        if (document.body.dataset.page === 'purchases') renderVendorBoard();
       };
     }, 'drawer wide');
   }
@@ -6200,7 +6344,37 @@ function docTitle(order) {
     renderPurchasesTable();
     renderPurItems();
     renderPurMatches();
+    renderVendorBoard();
   }
+  /* لوحة «مستحقات الموردين والمصانع»: كل أعمال الموردين في الطلبات (غير الملغاة) مجمّعة بالمورد */
+  function renderVendorBoard() {
+    const box = $('#vjSuppliers'); if (!box) return;
+    const onlyDue = $('#vjBoardF').value === 'due';
+    const all = [];
+    db().orders.filter((o) => o.status !== 'cancelled').forEach((o) => vendorJobs(o).forEach((j) => all.push({ o, j })));
+    const list = all.filter((x) => !onlyDue || x.j.remaining > 0.004);
+    const sum = (arr, k) => money(arr.reduce((t, x) => t + x.j[k], 0));
+    const cu = esc(currency());
+    const groups = new Map();
+    list.forEach((x) => { const k = x.j.supplier || 'مورد'; if (!groups.has(k)) groups.set(k, []); groups.get(k).push(x); });
+    const sorted = [...groups.entries()].sort((a, b) => sum(b[1], 'remaining') - sum(a[1], 'remaining'));
+    $('#vjStats').innerHTML = `
+      <div class="stat"><span>إجمالي الاتفاقات</span><b>${fmt(sum(list, 'amount'))}</b><small>${cu}</small></div>
+      <div class="stat"><span>المدفوع</span><b>${fmt(sum(list, 'paid'))}</b><small>${cu}</small></div>
+      <div class="stat remaining"><span>المتبقي للموردين</span><b>${fmt(sum(list, 'remaining'))}</b><small>${cu}</small></div>
+      <div class="stat"><span>موردون عليهم متبقٍ</span><b>${sorted.filter(([, xs]) => sum(xs, 'remaining') > 0.004).length}</b></div>`;
+    box.innerHTML = sorted.length ? sorted.map(([sup, xs]) => `<details class="vj-sup">
+      <summary><b>${esc(sup)}</b><span class="hint">${xs.length} عمل</span><span class="vj-sup-rem">متبقٍ <b class="num ${sum(xs, 'remaining') > 0.004 ? 'warn-num' : 'pos'}">${fmt(sum(xs, 'remaining'))}</b></span></summary>
+      ${xs.map(({ o, j }) => `<div class="vj-row" data-vjo="${esc(o.id)}" role="button" tabindex="0">
+        <div><b>#${esc(o.number || '—')}</b> ${esc(o.customer?.name || '')}<small class="hint">${esc(j.desc || '')}${j.done ? ' • أُنجز' : ' • قيد العمل'}</small></div>
+        <div class="vj-nums num"><span>اتفاق ${fmt(j.amount)}</span><span>مدفوع ${fmt(j.paid)}</span><b class="${j.remaining > 0.004 ? 'warn-num' : 'pos'}">متبقٍ ${fmt(j.remaining)}</b></div>
+        ${j.payments.length ? `<small class="hint vj-pl">${j.payments.map((p) => `${esc(VJ_KINDS[p.kind] || 'دفعة')} ${fmt(p.amount)} (${esc(fmtDate(p.at))})`).join(' • ')}</small>` : '<small class="hint vj-pl">لا دفعات بعد</small>'}
+      </div>`).join('')}
+    </details>`).join('') : `<p class="hint">${onlyDue ? 'لا مستحقات متبقية للموردين على الطلبات.' : 'لا أعمال موردين مسجّلة بعد — تُسجَّل من «تعديل التكاليف» في الطلب.'}</p>`;
+    const open = (el) => { const o = db().orders.find((x) => x.id === el.dataset.vjo); if (o) costForm(o); };
+    $$('[data-vjo]', box).forEach((el) => { el.addEventListener('click', () => open(el)); el.addEventListener('keydown', (e) => { if (e.key === 'Enter') open(el); }); });
+  }
+  $('#vjBoardF').addEventListener('change', renderVendorBoard);
   /* اقتراحات ربط فواتير الموردين بالتكاليف اليدوية في الطلبات (الحساب على الخادم: /api/purchases/matches) */
   async function renderPurMatches() {
     const card = $('#purMatchCard'), box = $('#purMatches');
