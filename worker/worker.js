@@ -452,13 +452,13 @@ async function route(request, env, url) {
 const UPDATE_APK_ALLOW = 'https://github.com/ialshareef/majlis-orders/releases/download/';
 /** أصل ملف الملف التعريفي PDF: المستودع العام عبر شبكة jsDelivr، ثم «vالإصدار/المسار» */
 const PROFILE_PDF_BASE = 'https://cdn.jsdelivr.net/gh/ialshareef/majlis-orders@';
-const UPDATE_FALLBACK_VERSION = '1.1.39';
-// بصمة asalh-najd-1.1.39.apk (إصدار GitHub v1.1.39، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
-// versionName 1.1.39 وversionCode 10139، ونفس شهادة توقيع 1.1.38).
-const UPDATE_FALLBACK_SHA256 = '908b4d0de4e0077982c08f264a3e9c4c5cf217a72eb186aea3ae2d78934f77b1';
+const UPDATE_FALLBACK_VERSION = '1.1.40';
+// بصمة asalh-najd-1.1.40.apk (إصدار GitHub v1.1.40، بناء CI الموقّع — مُتحقَّق منها بعد التنزيل:
+// versionName 1.1.40 وversionCode 10140، ونفس شهادة توقيع 1.1.39).
+const UPDATE_FALLBACK_SHA256 = 'd9df77ed92f0077b6e838e4f7233eaae193be1d3ed3c8dec56e2d2d127cb561f';
 const UPDATE_FALLBACK_NOTES = [
-  'بطاقة العميل في الجوال: رقم الجوال لا يتراكب على عدد الطلبات، والضغط عليه يتصل مباشرة',
-  'العمولة غير المصروفة تتبع نسبة الموظف الحالية تلقائياً',
+  'أعمال الموردين والمصانع على الطلب: الاتفاق والدفعات المقدمة والمؤخرة، وتدخل تكاليف الطلب مباشرة',
+  'لوحة «مستحقات الموردين والمصانع» في المشتريات: المتبقي لكل مورد على كل الطلبات',
 ];
 
 function versionCodeOfName(v) {
